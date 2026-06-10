@@ -260,18 +260,19 @@ class MainActivity : FlutterActivity() {
                     if (!(resultQueue.callAttr("empty").toJava(Boolean::class.java) as Boolean)) {
                         try {
                             val resultVal = resultQueue.callAttr("get_nowait")
-                            val resultMap = resultVal.asMap().mapValues<String, Any?> { it.value.toJava(Any::class.java) }
+                            @Suppress("UNCHECKED_CAST")
+                            val resultMap = resultVal.asMap() as Map<String, PyObject>
                             val isSuccess = try {
-                                resultMap["success"] as? Boolean ?: false
+                                resultMap["success"]?.toBoolean() ?: false
                             } catch (_: Exception) { false }
                             val eventJson = if (isSuccess) {
                                 "{\"type\":\"event\",\"event\":\"finished\",\"download_id\":\"$downloadId\"}"
                             } else {
                                 val errType = try {
-                                    resultMap["error_type"] as? String ?: "ERROR_UNKNOWN"
+                                    resultMap["error_type"]?.toString() ?: "ERROR_UNKNOWN"
                                 } catch (_: Exception) { "ERROR_UNKNOWN" }
                                 val errMsg = try {
-                                    resultMap["error_message"] as? String ?: "Unknown error"
+                                    resultMap["error_message"]?.toString() ?: "Unknown error"
                                 } catch (_: Exception) { "Unknown error" }
                                 "{\"type\":\"event\",\"event\":\"error\",\"download_id\":\"$downloadId\",\"error_type\":\"$errType\",\"error_message\":\"$errMsg\",\"recoverable\":true}"
                             }
