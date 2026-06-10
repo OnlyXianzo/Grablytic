@@ -13,6 +13,8 @@ class DesktopEngineService implements EngineService {
   StreamSubscription<String>? _stdoutSubscription;
   StreamSubscription<String>? _stderrSubscription;
 
+  String? _dataDir;
+
   final _pending = <String, Completer<Map<String, dynamic>>>{};
   final _progressController = StreamController<Map<String, dynamic>>.broadcast();
 
@@ -25,8 +27,10 @@ class DesktopEngineService implements EngineService {
   DesktopEngineService({
     String pythonPath = 'python',
     String? workingDirectory,
+    String? dataDir,
   })  : _pythonPath = pythonPath,
-        _workingDirectory = workingDirectory;
+        _workingDirectory = workingDirectory,
+        _dataDir = dataDir;
 
   void dispose() {
     _disposed = true;
@@ -104,6 +108,8 @@ class DesktopEngineService implements EngineService {
 
     env['PYTHONPATH'] = pythonPaths.join(Platform.isWindows ? ';' : ':');
 
+    await ensureDependencies(executable);
+
     _process = await Process.start(
       executable,
       ['-m', 'truestream_engine'],
@@ -173,6 +179,67 @@ class DesktopEngineService implements EngineService {
     } catch (_) {}
   }
 
+  Future<bool> _hasYtDlp(String pythonPath) async {
+    try {
+      final result = await Process.run(
+        pythonPath,
+        ['-c', 'import yt_dlp; print(yt_dlp.__version__)'],
+        timeout: const Duration(seconds: 10),
+      );
+      return result.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _installYtDlpViaUv(String uvPath) async {
+    final result = await Process.run(
+      uvPath,
+      ['pip', 'install', 'yt-dlp'],
+      timeout: const Duration(seconds: 120),
+    );
+    if (result.exitCode != 0) {
+      throw Exception('Failed to install yt-dlp via uv: ${result.stderr}');
+    }
+  }
+
+  Future<void> ensureDependencies(String pythonPath) async {
+    if (await _hasYtDlp(pythonPath)) return;
+
+    String? uvPath;
+    if (_dataDir != null) {
+      final uvCandidate = Platform.isWindows
+          ? '$_dataDir\\bin\\uv.exe'
+          : '$_dataDir/bin/uv';
+      if (File(uvCandidate).existsSync()) {
+        uvPath = uvCandidate;
+      }
+    }
+    if (uvPath == null) {
+      final uvName = Platform.isWindows ? 'uv.exe' : 'uv';
+      final whichCmd = Platform.isWindows ? 'where' : 'which';
+      final whichResult = await Process.run(whichCmd, [uvName]);
+      if (whichResult.exitCode == 0) {
+        uvPath = whichResult.stdout.toString().trim().split('\n').first.trim();
+      }
+    }
+
+    if (uvPath == null) {
+      throw Exception(
+        'yt-dlp is required but not installed. Run the bootstrap process first.',
+      );
+    }
+
+    stderr.writeln('[truestream-engine] Installing yt-dlp...');
+    await _installYtDlpViaUv(uvPath);
+
+    if (!await _hasYtDlp(pythonPath)) {
+      throw Exception(
+        'yt-dlp installation via uv completed but verification failed.',
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> _sendRequest(
     String method,
     Map<String, dynamic> params,
@@ -215,6 +282,7 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<void> setPaths(Map<String, dynamic> paths) async {
+    _dataDir = paths['data_dir'] as String?;
     await _sendRequest('paths/set', paths);
   }
 
