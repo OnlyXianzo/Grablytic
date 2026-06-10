@@ -260,7 +260,7 @@ class MainActivity : FlutterActivity() {
                     if (!(resultQueue.callAttr("empty").toJava(Boolean::class.java) as Boolean)) {
                         try {
                             val resultVal = resultQueue.callAttr("get_nowait")
-                            val resultMap = resultVal.asMap().mapValues { it.value.toJava() }
+                            val resultMap = resultVal.asMap().mapValues<String, Any?> { it.value.toJava(Any::class.java) }
                             val isSuccess = try {
                                 resultMap["success"] as? Boolean ?: false
                             } catch (_: Exception) { false }
