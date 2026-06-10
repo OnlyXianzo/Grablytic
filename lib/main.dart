@@ -10,7 +10,6 @@ import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/shell/screens/app_shell.dart';
 import 'providers/settings_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
-import 'providers/settings_provider.dart' show getDefaultDownloadPath;
 import 'core/engine/engine_provider.dart' show setEngineDirs;
 
 void main() async {

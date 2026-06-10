@@ -24,6 +24,8 @@ final engineProvider = Provider<EngineService>((ref) {
       'cache_dir': _cacheDir,
       'output_dir': initialOutputDir,
       'ffmpeg_path': _ffmpegPath,
+      'aria2c_path': _aria2cPath,
+      'deno_path': _denoPath,
       'cookies_path': settings.cookiesPath,
     });
   }
@@ -38,6 +40,8 @@ final engineProvider = Provider<EngineService>((ref) {
         'cache_dir': _cacheDir,
         'output_dir': outputDir,
         'ffmpeg_path': _ffmpegPath,
+        'aria2c_path': _aria2cPath,
+        'deno_path': _denoPath,
         'cookies_path': next.cookiesPath,
       });
     }
@@ -52,9 +56,19 @@ final engineProvider = Provider<EngineService>((ref) {
 String? _appDir;
 String? _cacheDir;
 String? _ffmpegPath;
+String? _aria2cPath;
+String? _denoPath;
 
-void setEngineDirs(String appDir, String cacheDir, {String? ffmpegPath}) {
+void setEngineDirs(
+  String appDir,
+  String cacheDir, {
+  String? ffmpegPath,
+  String? aria2cPath,
+  String? denoPath,
+}) {
   _appDir = appDir;
   _cacheDir = cacheDir;
   _ffmpegPath = ffmpegPath;
+  _aria2cPath = aria2cPath;
+  _denoPath = denoPath;
 }

@@ -116,7 +116,7 @@ Runs widget and unit tests under `test/`.
 pytest engine/tests/ -v
 ```
 
-Runs 91+ unit tests covering config, errors, format selection, opts building,
+Runs 93+ unit tests covering config, errors, format selection, opts building,
 paths, playlists, and miscellaneous engine modules.
 
 ## Static Analysis
