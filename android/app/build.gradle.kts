@@ -47,10 +47,7 @@ android {
         python {
             version = "3.11"
             buildPython("/usr/bin/python3")
-            pip {
-                install("yt-dlp")
-                install("curl_cffi")
-            }
+            pip("yt-dlp", "curl_cffi")
         }
     }
 
