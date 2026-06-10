@@ -48,6 +48,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   bool _suggestsVpn = false;
   List<Map<String, dynamic>> _videoFormats = [];
   List<Map<String, dynamic>> _audioFormats = [];
+  List<Map<String, dynamic>> _muxedFormats = [];
+  String? _selectedMuxedFormat;
   String _fetchedTitle = '';
   Playlist? _selectedPlaylist;
 
@@ -107,6 +109,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         final formats = (result['formats'] as List).cast<Map<String, dynamic>>();
         _videoFormats = formats.where((f) => f['stream_type'] == 'video').toList();
         _audioFormats = formats.where((f) => f['stream_type'] == 'audio').toList();
+        _muxedFormats = formats.where((f) => f['stream_type'] == 'muxed').toList();
         _fetchedTitle = result['title'] as String? ?? widget.title;
         
         final activePreset = ref.read(presetsProvider).activePreset;
@@ -145,6 +148,12 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
           } else {
             _selectedVideoFormat = result['recommended_video_format_id'] as String?;
           }
+
+          // For platforms with only muxed formats (Twitter, Instagram, etc.)
+          if (_videoFormats.isEmpty && _muxedFormats.isNotEmpty) {
+            _selectedMuxedFormat = _muxedFormats.first['format_id'] as String?;
+            _selectedVideoFormat = null;
+          }
         }
       } else {
         _error = result['error_message'] as String? ?? 'Failed to load formats';
@@ -168,15 +177,15 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   }
 
   Future<void> _startDownload() async {
-    if (_selectedVideoFormat == null && _selectedAudioFormat == null) return;
+    if (_selectedVideoFormat == null && _selectedAudioFormat == null && _selectedMuxedFormat == null) return;
 
     final downloadId = _uuid.v4();
     final engine = ref.read(engineProvider);
 
     final config = <String, dynamic>{
       'container': _selectedContainer,
-      'explicit_format_id': _selectedVideoFormat,
-      'explicit_audio_format_id': _selectedAudioFormat,
+      'explicit_format_id': _selectedMuxedFormat ?? _selectedVideoFormat,
+      'explicit_audio_format_id': _selectedMuxedFormat != null ? null : _selectedAudioFormat,
     };
 
     final result = await engine.startDownload(
@@ -313,6 +322,19 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                           const SizedBox(height: 8),
                           ..._videoFormats.map((fmt) => _buildFormatRow(fmt, true, colorScheme, textTheme)),
                         ],
+                        if (_muxedFormats.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          Text(
+                            'COMBINED STREAMS',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ..._muxedFormats.map((fmt) => _buildMuxedFormatRow(fmt, colorScheme, textTheme)),
+                        ],
                         if (_audioFormats.isNotEmpty) ...[
                           const SizedBox(height: 24),
                           Text(
@@ -380,7 +402,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: (_selectedVideoFormat != null || _selectedAudioFormat != null)
+                            onPressed: (_selectedVideoFormat != null || _selectedAudioFormat != null || _selectedMuxedFormat != null)
                                 ? _startDownload
                                 : null,
                             style: ElevatedButton.styleFrom(
@@ -452,8 +474,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         children: [
                           Text(
                             isVideo
-                                ? '$formatId · ${fmt['height']}p${fmt['fps']}'
-                                : '$formatId · ${fmt['acodec'] ?? 'Audio'} · ${fmt['abr'] != null ? (fmt['abr'] as num).toInt() : 'unknown'} kbps',
+                                ? '$formatId · ${fmt['height'] != null ? '${fmt['height']}p' : ''}${fmt['fps'] != null ? '${fmt['fps']}' : ''}'
+                                : '$formatId · ${fmt['acodec'] ?? 'Audio'} · ${fmt['abr'] != null ? '${(fmt['abr'] as num).toInt()} kbps' : (fmt['tbr'] != null ? '${(fmt['tbr'] as num).toInt()} kbps' : 'unknown')}',
                             style: textTheme.mono.copyWith(fontWeight: FontWeight.bold),
                           ),
                           if (isHdr) ...[
@@ -480,6 +502,70 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         isVideo
                             ? '${fmt['vcodec']} · ${fmt['ext']} · ${_formatSize(fmt['filesize'])}'
                             : '${fmt['ext']} · ${_formatSize(fmt['filesize'])}',
+                        style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMuxedFormatRow(
+    Map<String, dynamic> fmt,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final formatId = fmt['format_id'] as String;
+    final isSelected = _selectedMuxedFormat == formatId;
+    final height = fmt['height'];
+    final note = fmt['format_note'] as String? ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? colorScheme.primaryContainer.withValues(alpha: 0.1)
+            : colorScheme.surfaceContainerLowest,
+        border: Border.all(
+          color: isSelected
+              ? colorScheme.primary
+              : colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Semantics(
+        button: true,
+        label: 'Combined format $formatId${isSelected ? ", selected" : ""}',
+        child: InkWell(
+          onTap: () => setState(() {
+            _selectedMuxedFormat = formatId;
+            _selectedVideoFormat = null;
+            _selectedAudioFormat = null;
+          }),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                _buildRadio(isSelected, formatId, colorScheme),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        height != null
+                            ? '$formatId · ${height}p${note.isNotEmpty ? ' · $note' : ''}'
+                            : '$formatId${note.isNotEmpty ? ' · $note' : ''}',
+                        style: textTheme.mono.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        '${fmt['vcodec']} + ${fmt['acodec']} · ${fmt['ext']} · ${_formatSize(fmt['filesize'] as int?)}',
                         style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ],
