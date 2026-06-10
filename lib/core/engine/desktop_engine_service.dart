@@ -80,6 +80,8 @@ class DesktopEngineService implements EngineService {
     return executable;
   }
 
+  Future<void>? _startFuture;
+
   Future<void> _ensureRunning() async {
     if (_running && _process != null) return;
     if (_disposed) throw Exception('Engine disposed');
@@ -87,6 +89,20 @@ class DesktopEngineService implements EngineService {
       throw Exception('Engine failed to start after $_maxReconnectAttempts attempts');
     }
 
+    if (_startFuture != null) {
+      await _startFuture;
+      return;
+    }
+
+    _startFuture = _doEnsureRunning();
+    try {
+      await _startFuture;
+    } finally {
+      _startFuture = null;
+    }
+  }
+
+  Future<void> _doEnsureRunning() async {
     _reconnectAttempts++;
 
     final executable = await ensureDependencies(await _resolvePythonPath());
@@ -268,12 +284,12 @@ class DesktopEngineService implements EngineService {
     return venvPython;
   }
 
+  Future<void>? _requestQueue;
+
   Future<Map<String, dynamic>> _sendRequest(
     String method,
     Map<String, dynamic> params,
   ) async {
-    await _ensureRunning();
-
     final id = _uuid.v4();
     final completer = Completer<Map<String, dynamic>>();
     _pending[id] = completer;
@@ -284,8 +300,20 @@ class DesktopEngineService implements EngineService {
       'params': params,
     });
 
-    _process!.stdin.writeln(request);
-    _process!.stdin.flush();
+    final previousQueue = _requestQueue;
+    final currentTask = () async {
+      if (previousQueue != null) {
+        try {
+          await previousQueue;
+        } catch (_) {}
+      }
+      await _ensureRunning();
+      _process!.stdin.writeln(request);
+      _process!.stdin.flush();
+    }();
+    _requestQueue = currentTask;
+
+    await currentTask;
 
     final timeout = Timer(_requestTimeout, () {
       if (!completer.isCompleted) {
