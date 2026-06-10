@@ -101,13 +101,18 @@ def build_ydl_opts(
             }
         ]
 
-    if paths.get("po_token"):
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["web"],
-                "po_token": [paths["po_token"]],
-            }
+    # YouTube extractor args — use web player client with yt-dlp's built-in
+    # pure-Python JSInterpreter (yt_dlp/jsinterp.py) for nsig decryption.
+    # No external JS runtime required for this — QuickJS/Deno only needed
+    # for PO Token generation, which is added when available.
+    extractor_args: dict = {
+        "youtube": {
+            "player_client": ["web"],
         }
+    }
+    if paths.get("po_token"):
+        extractor_args["youtube"]["po_token"] = [paths["po_token"]]
+    opts["extractor_args"] = extractor_args
 
     if cfg.get("explicit_format_id"):
         vid = cfg["explicit_format_id"]
