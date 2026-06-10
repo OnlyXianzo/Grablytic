@@ -66,10 +66,13 @@ android {
 }
 
 chaquopy {
-    buildPython("/usr/bin/python3")
+    buildPython = "/usr/bin/python3"
     defaultConfig {
         version = "3.11"
-        pip("yt-dlp", "curl_cffi")
+        pip {
+            install("yt-dlp")
+            install("curl_cffi")
+        }
     }
     sourceSets {
         getByName("main") {
