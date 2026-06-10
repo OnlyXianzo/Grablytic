@@ -46,16 +46,7 @@ class DesktopEngineService implements EngineService {
     _pending.clear();
   }
 
-  Future<void> _ensureRunning() async {
-    if (_running && _process != null) return;
-    if (_disposed) throw Exception('Engine disposed');
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      throw Exception('Engine failed to start after $_maxReconnectAttempts attempts');
-    }
-
-    _reconnectAttempts++;
-
-    // Resolve python executable path dynamically, checking local virtual environments first in development
+  Future<String> _resolvePythonPath() async {
     String executable = _pythonPath;
     if (executable == 'python' || executable == 'python3') {
       final venvCandidates = Platform.isWindows
@@ -70,23 +61,35 @@ class DesktopEngineService implements EngineService {
 
       for (final path in venvCandidates) {
         if (File(path).existsSync()) {
-          executable = path;
-          break;
+          return path;
         }
       }
     }
 
-    // Fall back to system python3 on Unix platforms if system python is requested and no local venv was resolved
     if (executable == 'python' && (Platform.isLinux || Platform.isMacOS)) {
       try {
         final result = await Process.run('which', ['python3']);
         if (result.exitCode == 0 && result.stdout.toString().trim().isNotEmpty) {
-          executable = 'python3';
+          return 'python3';
         }
       } catch (_) {
-        executable = 'python3';
+        return 'python3';
       }
     }
+
+    return executable;
+  }
+
+  Future<void> _ensureRunning() async {
+    if (_running && _process != null) return;
+    if (_disposed) throw Exception('Engine disposed');
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      throw Exception('Engine failed to start after $_maxReconnectAttempts attempts');
+    }
+
+    _reconnectAttempts++;
+
+    final executable = await ensureDependencies(await _resolvePythonPath());
 
     // Set up PYTHONPATH environment variable to include the executable directory
     // and development paths so python can always find 'truestream_engine'.
@@ -108,7 +111,6 @@ class DesktopEngineService implements EngineService {
 
     env['PYTHONPATH'] = pythonPaths.join(Platform.isWindows ? ';' : ':');
 
-    await ensureDependencies(executable);
 
     _process = await Process.start(
       executable,
@@ -191,51 +193,73 @@ class DesktopEngineService implements EngineService {
     }
   }
 
-  Future<void> _installYtDlpViaUv(String uvPath) async {
-    final result = await Process.run(
-      uvPath,
-      ['pip', 'install', '--system', 'yt-dlp'],
-    ).timeout(const Duration(seconds: 120));
-    if (result.exitCode != 0) {
-      throw Exception('Failed to install yt-dlp via uv: ${result.stderr}');
-    }
-  }
-
-  Future<void> ensureDependencies(String pythonPath) async {
-    if (await _hasYtDlp(pythonPath)) return;
-
-    String? uvPath;
+  Future<String?> _findUv() async {
     if (_dataDir != null) {
       final uvCandidate = Platform.isWindows
           ? '$_dataDir\\bin\\uv.exe'
           : '$_dataDir/bin/uv';
-      if (File(uvCandidate).existsSync()) {
-        uvPath = uvCandidate;
-      }
+      if (File(uvCandidate).existsSync()) return uvCandidate;
     }
-    if (uvPath == null) {
-      final uvName = Platform.isWindows ? 'uv.exe' : 'uv';
-      final whichCmd = Platform.isWindows ? 'where' : 'which';
-      final whichResult = await Process.run(whichCmd, [uvName]);
-      if (whichResult.exitCode == 0) {
-        uvPath = whichResult.stdout.toString().trim().split('\n').first.trim();
-      }
+    final uvName = Platform.isWindows ? 'uv.exe' : 'uv';
+    final whichCmd = Platform.isWindows ? 'where' : 'which';
+    final whichResult = await Process.run(whichCmd, [uvName]);
+    if (whichResult.exitCode == 0) {
+      return whichResult.stdout.toString().trim().split('\n').first.trim();
+    }
+    return null;
+  }
+
+  Future<String> _installYtDlpViaUv(String uvPath) async {
+    final venvDir = (_dataDir ?? '${Directory.systemTemp.path}/truestream-venv');
+    final venvPython = Platform.isWindows
+        ? '$venvDir\\Scripts\\python.exe'
+        : '$venvDir/bin/python';
+
+    stderr.writeln('[truestream-engine] Creating uv venv at $venvDir...');
+    var result = await Process.run(
+      uvPath,
+      ['venv', venvDir],
+    ).timeout(const Duration(seconds: 60));
+
+    if (result.exitCode != 0) {
+      stderr.writeln('[truestream-engine] uv venv failed: ${result.stderr}');
     }
 
+    stderr.writeln('[truestream-engine] Installing yt-dlp into venv...');
+    result = await Process.run(
+      uvPath,
+      ['pip', 'install', 'yt-dlp'],
+      workingDirectory: venvDir,
+    ).timeout(const Duration(seconds: 120));
+
+    if (result.exitCode != 0) {
+      throw Exception('Failed to install yt-dlp: ${result.stderr}');
+    }
+
+    return venvPython;
+  }
+
+  /// Ensures yt-dlp is available. Returns the Python path to use (system
+  /// or venv). If a venv was created, its Python is returned.
+  Future<String> ensureDependencies(String pythonPath) async {
+    if (await _hasYtDlp(pythonPath)) return pythonPath;
+
+    final uvPath = await _findUv();
     if (uvPath == null) {
       throw Exception(
-        'yt-dlp is required but not installed. Run the bootstrap process first.',
+        'yt-dlp is required but uv not found. Run the bootstrap process first.',
       );
     }
 
-    stderr.writeln('[truestream-engine] Installing yt-dlp...');
-    await _installYtDlpViaUv(uvPath);
+    stderr.writeln('[truestream-engine] Installing yt-dlp via uv...');
+    final venvPython = await _installYtDlpViaUv(uvPath);
 
-    if (!await _hasYtDlp(pythonPath)) {
-      throw Exception(
-        'yt-dlp installation via uv completed but verification failed.',
-      );
+    if (!await _hasYtDlp(venvPython)) {
+      throw Exception('yt-dlp installation completed but verification failed.');
     }
+
+    stderr.writeln('[truestream-engine] yt-dlp ready via venv: $venvPython');
+    return venvPython;
   }
 
   Future<Map<String, dynamic>> _sendRequest(
