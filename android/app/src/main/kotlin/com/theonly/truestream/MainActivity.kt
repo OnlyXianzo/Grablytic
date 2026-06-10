@@ -262,19 +262,21 @@ class MainActivity : FlutterActivity() {
                             val resultVal = resultQueue.callAttr("get_nowait")
                             val resultMap = resultVal.asMap()
                             val isSuccess = try {
-                                val successObj = resultMap["success"] as? PyObject
-                                successObj?.toJava(Boolean::class.java) as? Boolean ?: false
+                                val raw = resultMap["success"]
+                                if (raw is PyObject) {
+                                    raw.toJava(Boolean::class.java) as? Boolean ?: false
+                                } else false
                             } catch (_: Exception) { false }
                             val eventJson = if (isSuccess) {
                                 "{\"type\":\"event\",\"event\":\"finished\",\"download_id\":\"$downloadId\"}"
                             } else {
                                 val errType = try {
-                                    val errTypeObj = resultMap["error_type"] as? PyObject
-                                    errTypeObj?.toString() ?: "ERROR_UNKNOWN"
+                                    val rawType = resultMap["error_type"]
+                                    if (rawType is PyObject) rawType.toString() else "ERROR_UNKNOWN"
                                 } catch (_: Exception) { "ERROR_UNKNOWN" }
                                 val errMsg = try {
-                                    val errMsgObj = resultMap["error_message"] as? PyObject
-                                    errMsgObj?.toString() ?: "Unknown error"
+                                    val rawMsg = resultMap["error_message"]
+                                    if (rawMsg is PyObject) rawMsg.toString() else "Unknown error"
                                 } catch (_: Exception) { "Unknown error" }
                                 "{\"type\":\"event\",\"event\":\"error\",\"download_id\":\"$downloadId\",\"error_type\":\"$errType\",\"error_message\":\"$errMsg\",\"recoverable\":true}"
                             }
