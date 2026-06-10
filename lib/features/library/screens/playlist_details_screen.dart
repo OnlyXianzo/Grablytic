@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../providers/batch_provider.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../home/screens/batch_download_screen.dart';
@@ -159,6 +160,7 @@ class _PlaylistDetailsScreenState extends ConsumerState<PlaylistDetailsScreen> {
 
     final selected = _playlistItems
         .where((item) => _selectedIds.contains(item.id))
+        .map((item) => BatchItem(url: item.url, title: item.title))
         .toList();
 
     Navigator.push(

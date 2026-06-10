@@ -1,16 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
-import '../../../core/engine/engine_provider.dart';
-import '../../../providers/download_provider.dart';
-import '../../../providers/playlist_provider.dart';
-import '../../../providers/preset_provider.dart';
-import 'format_picker_screen.dart';
-
-const _uuid = Uuid();
+import '../../../providers/batch_provider.dart';
 
 class BatchDownloadScreen extends ConsumerStatefulWidget {
-  final List<DownloadItem> items;
+  final List<BatchItem> items;
   final String? playlistId;
 
   const BatchDownloadScreen({
@@ -20,85 +13,38 @@ class BatchDownloadScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<BatchDownloadScreen> createState() => _BatchDownloadScreenState();
+  ConsumerState<BatchDownloadScreen> createState() =>
+      _BatchDownloadScreenState();
 }
 
 class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
-  bool _isDownloading = false;
-  int _completedCount = 0;
-
-  void _startSingleItemDownload(DownloadItem item) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FormatPickerScreen(
-          url: item.url,
-          title: item.title,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _startBatchDownload() async {
-    if (_isDownloading) return;
-    setState(() => _isDownloading = true);
-
-    final engine = ref.read(engineProvider);
-    final notifier = ref.read(downloadProvider.notifier);
-    final activePreset = ref.read(presetsProvider).activePreset;
-
-    for (final item in widget.items) {
-      if (!mounted) break;
-
-      final downloadId = _uuid.v4();
-
-      final config = <String, dynamic>{
-        'container': activePreset.preferredContainer,
-        'quality_ceiling': activePreset.qualityCeiling,
-        'audio_only': activePreset.audioOnly,
-      };
-
-      final result = await engine.startDownload(
-        url: item.url,
-        downloadId: downloadId,
-        config: config,
-        networkType: 'wifi',
-      );
-
-      if (result['success'] == true) {
-        notifier.addDownload(
-          DownloadItem(
-            id: downloadId,
-            title: item.title,
-            url: item.url,
-            status: 'downloading',
-          ),
-        );
-
-        if (widget.playlistId != null) {
-          ref.read(playlistProvider.notifier).addDownloadToPlaylist(
-            widget.playlistId!,
-            downloadId,
-          );
-        }
-
-        setState(() => _completedCount++);
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.items.isNotEmpty) {
+        ref
+            .read(batchProvider.notifier)
+            .startBatch(widget.items, playlistId: widget.playlistId);
       }
-    }
-
-    if (mounted) {
-      setState(() => _isDownloading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$_completedCount of ${widget.items.length} downloads started')),
-      );
-      Navigator.pop(context);
-    }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final batchState = ref.watch(batchProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+
+    final total = widget.items.length;
+    final completed = batchState.items
+        .where((i) => i.status == BatchItemStatus.completed)
+        .length;
+    final progress = total > 0 ? completed / total : 0.0;
+    final allDone = batchState.items.every(
+      (i) => i.status == BatchItemStatus.completed ||
+          i.status == BatchItemStatus.failed,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -112,22 +58,62 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               color: colorScheme.primaryContainer.withValues(alpha: 0.15),
               child: Text(
-                '${widget.items.length} items selected',
+                '$total items selected',
                 style: textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Progress',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Text(
+                        '$completed / $total',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 6,
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-                itemCount: widget.items.length,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                itemCount: batchState.items.length,
                 itemBuilder: (context, index) {
-                  final item = widget.items[index];
+                  final item = batchState.items[index];
+                  final isCurrent = index == batchState.currentIndex;
                   return Card(
                     margin: const EdgeInsets.only(bottom: 10),
                     elevation: 0,
@@ -135,29 +121,48 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
-                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        color: isCurrent
+                            ? colorScheme.primary.withValues(alpha: 0.4)
+                            : colorScheme.outlineVariant
+                                .withValues(alpha: 0.3),
                       ),
                     ),
                     child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      leading: _buildStatusIcon(item.status, colorScheme),
                       title: Text(
                         item.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                        style: textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          widget.playlistId != null ? 'Add to playlist' : 'New download',
-                          style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+                          _statusLabel(item.status),
+                          style: textTheme.labelSmall?.copyWith(
+                            color: _statusColor(item.status, colorScheme),
+                          ),
                         ),
                       ),
-                      trailing: IconButton(
-                        icon: Icon(Icons.tune, color: colorScheme.primary),
-                        tooltip: 'Pick Format',
-                        onPressed: _isDownloading ? null : () => _startSingleItemDownload(item),
-                      ),
+                      trailing: item.status == BatchItemStatus.pending
+                          ? IconButton(
+                              icon: Icon(
+                                Icons.cancel_outlined,
+                                color: colorScheme.error,
+                              ),
+                              onPressed: () {
+                                ref
+                                    .read(batchProvider.notifier)
+                                    .cancelItem(index);
+                              },
+                            )
+                          : null,
                     ),
                   );
                 },
@@ -166,21 +171,71 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: (_isDownloading || widget.items.isEmpty) ? null : _startBatchDownload,
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-        icon: _isDownloading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.download),
-        label: Text(_isDownloading
-            ? 'Starting $_completedCount/${widget.items.length}...'
-            : 'Download All (${widget.items.length})'),
-      ),
+      floatingActionButton: allDone
+          ? FloatingActionButton.extended(
+              onPressed: () => Navigator.pop(context),
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              icon: const Icon(Icons.check),
+              label: const Text('Done'),
+            )
+          : batchState.isRunning
+              ? FloatingActionButton.extended(
+                  onPressed: () {
+                    ref.read(batchProvider.notifier).cancelAll();
+                  },
+                  backgroundColor: colorScheme.error,
+                  foregroundColor: colorScheme.onError,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Cancel All'),
+                )
+              : null,
     );
+  }
+
+  Widget _buildStatusIcon(BatchItemStatus status, ColorScheme colorScheme) {
+    switch (status) {
+      case BatchItemStatus.pending:
+        return Icon(Icons.hourglass_empty, color: colorScheme.outline);
+      case BatchItemStatus.downloading:
+        return SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colorScheme.primary,
+          ),
+        );
+      case BatchItemStatus.completed:
+        return Icon(Icons.check_circle, color: colorScheme.primary);
+      case BatchItemStatus.failed:
+        return Icon(Icons.error_outline, color: colorScheme.error);
+    }
+  }
+
+  Color _statusColor(BatchItemStatus status, ColorScheme colorScheme) {
+    switch (status) {
+      case BatchItemStatus.pending:
+        return colorScheme.outline;
+      case BatchItemStatus.downloading:
+        return colorScheme.primary;
+      case BatchItemStatus.completed:
+        return colorScheme.primary;
+      case BatchItemStatus.failed:
+        return colorScheme.error;
+    }
+  }
+
+  String _statusLabel(BatchItemStatus status) {
+    switch (status) {
+      case BatchItemStatus.pending:
+        return 'Pending';
+      case BatchItemStatus.downloading:
+        return 'Downloading...';
+      case BatchItemStatus.completed:
+        return 'Completed';
+      case BatchItemStatus.failed:
+        return 'Failed';
+    }
   }
 }
