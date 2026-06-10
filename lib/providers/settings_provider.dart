@@ -71,6 +71,8 @@ class AppSettings {
   final String scheduleTime;
   final List<int> scheduleDays;
   final List<String> sponsorBlockCats;
+  final bool downloadArchive;
+  final bool archiveByFolder;
 
   const AppSettings({
     this.wifiOnly = false,
@@ -106,6 +108,8 @@ class AppSettings {
     this.scheduleTime = '22:00',
     this.scheduleDays = const [1, 2, 3, 4, 5],
     this.sponsorBlockCats = const ['sponsor'],
+    this.downloadArchive = false,
+    this.archiveByFolder = true,
   });
 
   static const Object _sentinel = Object();
@@ -144,6 +148,8 @@ class AppSettings {
     String? scheduleTime,
     List<int>? scheduleDays,
     List<String>? sponsorBlockCats,
+    bool? downloadArchive,
+    bool? archiveByFolder,
   }) {
     return AppSettings(
       wifiOnly: wifiOnly ?? this.wifiOnly,
@@ -175,6 +181,8 @@ class AppSettings {
       observedSources: observedSources ?? this.observedSources,
       useGridView: useGridView ?? this.useGridView,
       sponsorBlockCats: sponsorBlockCats ?? this.sponsorBlockCats,
+      downloadArchive: downloadArchive ?? this.downloadArchive,
+      archiveByFolder: archiveByFolder ?? this.archiveByFolder,
     );
   }
 }
@@ -233,6 +241,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final scheduleDaysRaw = _prefs.getStringList('scheduleDays') ?? ['1', '2', '3', '4', '5'];
     final scheduleDays = scheduleDaysRaw.map((e) => int.tryParse(e) ?? 1).toList();
     final sponsorBlockCats = _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
+    final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
+    final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
 
     state = AppSettings(
       wifiOnly: wifiOnly,
@@ -268,6 +278,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       scheduleDays: scheduleDays,
       sponsorBlockCats: sponsorBlockCats,
       useGridView: useGridView,
+      downloadArchive: downloadArchive,
+      archiveByFolder: archiveByFolder,
     );
   }
 
@@ -446,6 +458,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setSponsorBlockCats(List<String> cats) {
     _prefs.setStringList('sponsorBlockCats', cats);
     state = state.copyWith(sponsorBlockCats: cats);
+  }
+
+  void setDownloadArchive(bool value) {
+    _prefs.setBool('downloadArchive', value);
+    state = state.copyWith(downloadArchive: value);
+  }
+
+  void setArchiveByFolder(bool value) {
+    _prefs.setBool('archiveByFolder', value);
+    state = state.copyWith(archiveByFolder: value);
   }
 
   void setCustomTemplates(List<String> templates) {

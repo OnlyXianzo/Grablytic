@@ -145,6 +145,33 @@ class SettingsScreen extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 24, bottom: 8),
                 child: Text(
+                  'Download Archive',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              _SettingSwitch(
+                icon: Icons.archive_outlined,
+                title: 'Track downloaded videos',
+                subtitle: 'yt-dlp avoids re-downloading duplicates',
+                value: settings.downloadArchive,
+                onChanged: () => ref.read(settingsProvider.notifier).setDownloadArchive(!settings.downloadArchive),
+                colorScheme: colorScheme,
+              ).animate().fadeIn(delay: 250.ms, duration: 300.ms).slideX(begin: 0.1),
+              if (settings.downloadArchive)
+                _SettingSwitch(
+                  icon: Icons.folder_special_outlined,
+                  title: 'Organize by folder',
+                  subtitle: 'Separate archive per download folder',
+                  value: settings.archiveByFolder,
+                  onChanged: () => ref.read(settingsProvider.notifier).setArchiveByFolder(!settings.archiveByFolder),
+                  colorScheme: colorScheme,
+                ).animate().fadeIn(delay: 260.ms, duration: 300.ms).slideX(begin: 0.1),
+              Padding(
+                padding: const EdgeInsets.only(top: 24, bottom: 8),
+                child: Text(
                   'Content Filtering',
                   style: textTheme.titleMedium?.copyWith(
                     color: colorScheme.primary,
