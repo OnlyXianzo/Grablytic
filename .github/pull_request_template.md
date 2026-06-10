@@ -1,35 +1,45 @@
-## Motivation
+## Summary
 
-Explain why this change is needed. What problem does it solve? What user-facing
-behavior does it affect? Reference any relevant issues or discussions.
-
-## Description
-
-Describe what changed. Focus on the net effect of this pull request. Use
-repo-relative paths when referencing files.
+What problem does this PR solve? Why does it matter now? What is the intended outcome?
 
 ```diff
-// A code snippet or diff fragment can help illustrate the change.
+// Optional: a key code or config snippet that illustrates the change.
 ```
+
+---
+
+## Documentation review
+
+Before submitting, check which docs are relevant to your change and confirm you've read them.
+
+- [ ] `docs/architecture.md` — high-level architecture and data flow
+- [ ] `docs/building.md` — build instructions per platform
+- [ ] `docs/contributing.md` — development workflow and standards
+
+_If your change touches the download engine, IPC layer, or UI:_
+
+- [ ] `docs/architecture.md` — Flutter ↔ Python IPC contract and engine architecture
+- [ ] `DESIGN.md` — TrueStream design system tokens and guidelines
+
+---
 
 ## Verification
 
-How did you verify this change works? What did you test, and on which
-platforms? Mention any new tests you added.
+- [ ] `dart analyze` passes with zero errors
+- [ ] `flutter test` passes
+- [ ] `pytest engine/tests/ -v` passes (if engine changed)
+- [ ] Built and smoke-tested on affected platforms (Android / Linux / Windows)
 
-- [ ] Built and tested on Android
-- [ ] Built and tested on Windows
-- [ ] Built and tested on Linux
-- [ ] Lint and type checks pass
+What did you test, and on what platform?
 
-## Documentation
+---
 
-If this change needs updates to project docs or user-facing docs, list what
-needs updating and whether it's included in this PR.
+## Checklist
 
-- [ ] README.md
-- [ ] docs/architecture.md
-- [ ] docs/building.md
-- [ ] docs/contributing.md
-- [ ] Other: \_\_\_\_\_\_\_\_\_\_
-- [ ] No documentation changes needed
+- [ ] No hardcoded paths — all paths injected via `set_paths()`
+- [ ] No hex color literals — all colors from DESIGN.md tokens
+- [ ] No system fonts — body `GoogleFonts.instrumentSans()`, mono `Theme.of(context).textTheme.mono`
+- [ ] No `setState()` for shared state — Riverpod only
+- [ ] No `subprocess.run()` with yt-dlp — `YoutubeDL` class API only
+- [ ] No new yt-dlp options that conflict with `merge_output_format` + `remux_video` together
+- [ ] Changelog updated if user-facing behavior changed
