@@ -44,11 +44,6 @@ android {
             abiFilters.clear()
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
-        python {
-            version = "3.11"
-            buildPython("/usr/bin/python3")
-            pip("yt-dlp", "curl_cffi")
-        }
     }
 
     signingConfigs {
@@ -71,6 +66,11 @@ android {
 }
 
 chaquopy {
+    buildPython("/usr/bin/python3")
+    defaultConfig {
+        version = "3.11"
+        pip("yt-dlp", "curl_cffi")
+    }
     sourceSets {
         getByName("main") {
             srcDir("../../engine")
