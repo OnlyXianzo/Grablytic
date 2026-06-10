@@ -5,6 +5,7 @@ import '../../../features/home/screens/media_preview_screen.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/settings_provider.dart';
+import 'download_history_screen.dart';
 import 'playlist_details_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -21,7 +22,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       setState(() {}); // Rebuild to show/hide FAB based on active tab
     });
@@ -129,6 +130,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               tabs: const [
                 Tab(text: 'Videos'),
                 Tab(text: 'Playlists'),
+                Tab(text: 'History'),
               ],
             ),
             // Content
@@ -138,6 +140,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 children: [
                   _buildLibraryContent(downloads, colorScheme, textTheme, settings.useGridView),
                   _buildPlaylistsTab(playlists, colorScheme, textTheme),
+                  const DownloadHistoryScreen(),
                 ],
               ),
             ),
