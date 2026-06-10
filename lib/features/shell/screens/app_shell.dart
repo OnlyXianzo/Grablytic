@@ -71,6 +71,8 @@ class _AppShellState extends ConsumerState<AppShell> {
           title: url,
           url: url,
           status: 'downloading',
+          config: config,
+          networkType: 'wifi',
         ),
       );
 

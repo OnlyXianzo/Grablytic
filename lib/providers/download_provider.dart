@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/engine/engine_provider.dart';
+import '../core/engine/engine_service.dart';
 
 class DownloadItem {
   final String id;
@@ -16,7 +17,10 @@ class DownloadItem {
   final String? completedDate;
   final String? errorType;
   final String? errorMessage;
+  final String? recoveryAction;
   final bool suggestsVpn;
+  final Map<String, dynamic>? config;
+  final String? networkType;
 
   DownloadItem({
     required this.id,
@@ -33,12 +37,17 @@ class DownloadItem {
     this.completedDate,
     this.errorType,
     this.errorMessage,
+    this.recoveryAction,
     this.suggestsVpn = false,
+    this.config,
+    this.networkType,
   }) : addedAt = addedAt ?? DateTime.now();
 }
 
 class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
-  DownloadNotifier() : super([]);
+  final EngineService _engine;
+
+  DownloadNotifier(this._engine) : super([]);
 
   List<DownloadItem> get completed =>
       state.where((d) => d.status == 'completed').toList();
@@ -65,6 +74,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         addedAt: d.addedAt,
         fileSize: d.fileSize,
         completedDate: progress >= 1.0 ? 'Today' : null,
+        config: d.config,
+        networkType: d.networkType,
       );
     }).toList();
   }
@@ -94,6 +105,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           thumbnailUrl: d.thumbnailUrl,
           filePath: d.filePath,
           addedAt: d.addedAt,
+          config: d.config,
+          networkType: d.networkType,
         );
       }).toList();
     } else if (eventType == 'finished') {
@@ -114,6 +127,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           addedAt: d.addedAt,
           fileSize: sizeStr,
           completedDate: 'Today',
+          config: d.config,
+          networkType: d.networkType,
         );
       }).toList();
     } else if (eventType == 'error') {
@@ -136,9 +151,85 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           errorType: errorType,
           errorMessage: errorMessage,
           suggestsVpn: suggestsVpn,
+          config: d.config,
+          networkType: d.networkType,
+        );
+      }).toList();
+    } else if (eventType == 'cancelled') {
+      state = state.map((d) {
+        if (d.id != downloadId) return d;
+        return DownloadItem(
+          id: d.id,
+          title: d.title,
+          url: d.url,
+          status: 'cancelled',
+          progress: d.progress,
+          downloadedBytes: d.downloadedBytes,
+          totalBytes: d.totalBytes,
+          thumbnailUrl: d.thumbnailUrl,
+          addedAt: d.addedAt,
+          errorType: 'ERROR_CANCELLED',
+          errorMessage: 'Download cancelled',
+          recoveryAction: 'none',
+          config: d.config,
+          networkType: d.networkType,
         );
       }).toList();
     }
+  }
+
+  void retryDownload(String id) {
+    final index = state.indexWhere((d) => d.id == id);
+    if (index == -1) return;
+
+    final item = state[index];
+
+    state = state.map((d) {
+      if (d.id != id) return d;
+      return DownloadItem(
+        id: d.id,
+        title: d.title,
+        url: d.url,
+        status: 'downloading',
+        progress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        thumbnailUrl: d.thumbnailUrl,
+        addedAt: d.addedAt,
+        config: d.config,
+        networkType: d.networkType,
+      );
+    }).toList();
+
+    _engine.startDownload(
+      url: item.url,
+      downloadId: id,
+      config: item.config ?? <String, dynamic>{},
+      networkType: item.networkType ?? 'wifi',
+    );
+  }
+
+  void cancelDownload(String id) {
+    _engine.cancelDownload(id);
+    state = state.map((d) {
+      if (d.id != id) return d;
+      return DownloadItem(
+        id: d.id,
+        title: d.title,
+        url: d.url,
+        status: 'cancelled',
+        progress: d.progress,
+        downloadedBytes: d.downloadedBytes,
+        totalBytes: d.totalBytes,
+        thumbnailUrl: d.thumbnailUrl,
+        addedAt: d.addedAt,
+        errorType: 'ERROR_CANCELLED',
+        errorMessage: 'Download cancelled',
+        recoveryAction: 'none',
+        config: d.config,
+        networkType: d.networkType,
+      );
+    }).toList();
   }
 
   String _formatFilesize(int bytes) {
@@ -151,8 +242,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
 final downloadProvider =
     StateNotifierProvider<DownloadNotifier, List<DownloadItem>>((ref) {
-  final notifier = DownloadNotifier();
   final engine = ref.watch(engineProvider);
+  final notifier = DownloadNotifier(engine);
   final subscription = engine.progressStream.listen((event) {
     notifier.handleProgressEvent(event);
   });

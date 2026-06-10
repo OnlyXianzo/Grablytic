@@ -193,6 +193,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
           title: _fetchedTitle.isNotEmpty ? _fetchedTitle : widget.title,
           url: widget.url,
           status: 'downloading',
+          config: config,
+          networkType: 'wifi',
         ),
       );
 

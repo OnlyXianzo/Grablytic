@@ -6,7 +6,10 @@ import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
 import '../../../providers/resume_provider.dart';
 import '../screens/format_picker_screen.dart';
+import '../../../features/settings/screens/cookie_webview_screen.dart';
+import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
+import '../widgets/error_recovery_card.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -55,13 +58,61 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 // Download cards
-                ...recentDownloads.map((item) => Padding(
+                ...recentDownloads.expand((item) {
+                  final tiles = <Widget>[
+                    Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: _DownloadCard(
                         item: item,
                         colorScheme: colorScheme,
                       ),
-                    )),
+                    ),
+                  ];
+                  if (item.status == 'error') {
+                    tiles.add(
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: ErrorRecoveryCard(
+                          errorType: item.errorType,
+                          errorMessage: item.errorMessage,
+                          onRetry: () {
+                            ref.read(downloadProvider.notifier).retryDownload(item.id);
+                          },
+                          onOpenCookies: () {
+                            final siteName = _deriveSiteName(item.url);
+                            final loginUrl = _deriveLoginUrl(item.url);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => CookieWebViewScreen(
+                                  loginUrl: loginUrl,
+                                  siteName: siteName,
+                                ),
+                              ),
+                            );
+                          },
+                          onOpenProxy: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsScreen(),
+                              ),
+                            );
+                          },
+                          onPickFormat: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => FormatPickerScreen(
+                                  url: item.url,
+                                  title: item.title,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                  return tiles;
+                }),
               ]               else ...[
                 const SizedBox(height: 60),
                 Semantics(
@@ -775,4 +826,38 @@ class _ResumeScanSection extends ConsumerWidget {
       error: (_, _) => const SizedBox.shrink(),
     );
   }
+}
+
+String _deriveSiteName(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return 'Unknown';
+  final host = uri.host.replaceFirst('www.', '');
+  if (host.contains('youtube') || host.contains('youtu.be')) return 'YouTube';
+  if (host.contains('twitter') || host.contains('x.com')) return 'Twitter';
+  if (host.contains('instagram')) return 'Instagram';
+  if (host.contains('twitch')) return 'Twitch';
+  if (host.contains('bilibili')) return 'Bilibili';
+  return host.split('.').first;
+}
+
+String _deriveLoginUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return url;
+  final host = uri.host.replaceFirst('www.', '');
+  if (host.contains('youtube') || host.contains('youtu.be')) {
+    return 'https://accounts.google.com';
+  }
+  if (host.contains('twitter') || host.contains('x.com')) {
+    return 'https://twitter.com/login';
+  }
+  if (host.contains('instagram')) {
+    return 'https://www.instagram.com/accounts/login/';
+  }
+  if (host.contains('twitch')) {
+    return 'https://www.twitch.tv/login';
+  }
+  if (host.contains('bilibili')) {
+    return 'https://passport.bilibili.com/login';
+  }
+  return 'https://${uri.host}/login';
 }
