@@ -514,7 +514,7 @@ class _Aria2cChunkSlider extends StatelessWidget {
               children: [
                 Text('Concurrent chunks', style: textTheme.bodyLarge),
                 Text(
-                  '${chunks} connections',
+                  '$chunks connections',
                   style: textTheme.labelSmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),

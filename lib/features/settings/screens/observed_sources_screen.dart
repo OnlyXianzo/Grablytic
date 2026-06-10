@@ -204,7 +204,7 @@ class ObservedSourcesScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: selectedQuality,
+                initialValue: selectedQuality,
                 decoration: InputDecoration(
                   labelText: 'Quality',
                   border: OutlineInputBorder(
