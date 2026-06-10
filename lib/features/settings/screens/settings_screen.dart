@@ -6,7 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/settings_provider.dart';
 import 'command_templates_screen.dart';
-import 'observed_sources_screen.dart';
 import 'presets_screen.dart';
 import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
