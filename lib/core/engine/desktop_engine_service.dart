@@ -185,7 +185,7 @@ class DesktopEngineService implements EngineService {
     try {
       final result = await Process.run(
         pythonPath,
-        ['-c', 'import yt_dlp; print(yt_dlp.__version__)'],
+        ['-m', 'yt_dlp', '--version'],
       ).timeout(const Duration(seconds: 10));
       return result.exitCode == 0;
     } catch (_) {
