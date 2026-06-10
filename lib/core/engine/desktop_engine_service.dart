@@ -210,7 +210,7 @@ class DesktopEngineService implements EngineService {
   }
 
   Future<String> _installYtDlpViaUv(String uvPath) async {
-    final venvDir = (_dataDir ?? '${Directory.systemTemp.path}/truestream-venv');
+    final venvDir = _dataDir != null ? '$_dataDir/venv' : '${Directory.systemTemp.path}/truestream-venv';
     final venvPython = Platform.isWindows
         ? '$venvDir\\Scripts\\python.exe'
         : '$venvDir/bin/python';
@@ -246,8 +246,14 @@ class DesktopEngineService implements EngineService {
 
     final uvPath = await _findUv();
     if (uvPath == null) {
+      stderr.writeln('[truestream-engine] uv not found, attempting pip fallback...');
+      final pipCmd = Platform.isWindows ? 'pip' : 'pip3';
+      final pipResult = await Process.run(pipCmd, ['install', '--user', 'yt-dlp']);
+      if (pipResult.exitCode == 0 && await _hasYtDlp(pythonPath)) {
+        return pythonPath;
+      }
       throw Exception(
-        'yt-dlp is required but uv not found. Run the bootstrap process first.',
+        'yt-dlp is required but uv not found and pip fallback failed. Run the bootstrap process first.',
       );
     }
 
