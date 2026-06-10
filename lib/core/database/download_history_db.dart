@@ -142,7 +142,6 @@ class DownloadHistoryDb {
       args.add(statusFilter);
     }
 
-    final whereStr = where.isNotEmpty ? 'WHERE ${where.join(' AND ')}' : '';
     final rows = await db.query(
       'downloads',
       where: where.isNotEmpty ? where.join(' AND ') : null,
