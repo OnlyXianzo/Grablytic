@@ -260,21 +260,18 @@ class MainActivity : FlutterActivity() {
                     if (!(resultQueue.callAttr("empty").toJava(Boolean::class.java) as Boolean)) {
                         try {
                             val resultVal = resultQueue.callAttr("get_nowait")
-                            val resultMap = resultVal.asMap()
+                            val resultMap = resultVal.asMap().mapValues { it.value.toJava() }
                             val isSuccess = try {
-                                val raw = resultMap["success"]
-                                if (raw is PyObject) raw.toJava(Boolean::class.java) as Boolean else false
+                                resultMap["success"] as? Boolean ?: false
                             } catch (_: Exception) { false }
                             val eventJson = if (isSuccess) {
                                 "{\"type\":\"event\",\"event\":\"finished\",\"download_id\":\"$downloadId\"}"
                             } else {
                                 val errType = try {
-                                    val raw = resultMap["error_type"]
-                                    if (raw is PyObject) raw.toString() else "ERROR_UNKNOWN"
+                                    resultMap["error_type"] as? String ?: "ERROR_UNKNOWN"
                                 } catch (_: Exception) { "ERROR_UNKNOWN" }
                                 val errMsg = try {
-                                    val raw = resultMap["error_message"]
-                                    if (raw is PyObject) raw.toString() else "Unknown error"
+                                    resultMap["error_message"] as? String ?: "Unknown error"
                                 } catch (_: Exception) { "Unknown error" }
                                 "{\"type\":\"event\",\"event\":\"error\",\"download_id\":\"$downloadId\",\"error_type\":\"$errType\",\"error_message\":\"$errMsg\",\"recoverable\":true}"
                             }
