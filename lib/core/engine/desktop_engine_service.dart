@@ -194,7 +194,7 @@ class DesktopEngineService implements EngineService {
   Future<void> _installYtDlpViaUv(String uvPath) async {
     final result = await Process.run(
       uvPath,
-      ['pip', 'install', 'yt-dlp'],
+      ['pip', 'install', '--system', 'yt-dlp'],
     ).timeout(const Duration(seconds: 120));
     if (result.exitCode != 0) {
       throw Exception('Failed to install yt-dlp via uv: ${result.stderr}');
