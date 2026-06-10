@@ -164,6 +164,7 @@ class DesktopEngineService implements EngineService {
     _stdoutSubscription?.cancel();
     _stderrSubscription?.cancel();
     _process = null;
+    _running = false;
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Engine process exited'));
@@ -176,8 +177,14 @@ class DesktopEngineService implements EngineService {
     try {
       final data = jsonDecode(line) as Map<String, dynamic>;
 
-      if (data['type'] == 'event' && !_progressController.isClosed) {
-        _progressController.add(data);
+      if (data['type'] == 'event') {
+        if (!_progressController.isClosed) {
+          try {
+            _progressController.add(data);
+          } catch (_) {
+            // StreamSink may be in bad state after engine restart
+          }
+        }
         return;
       }
 
