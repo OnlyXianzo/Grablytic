@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'engine_service.dart';
 
@@ -145,7 +146,7 @@ class DesktopEngineService implements EngineService {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((line) {
-      stderr.writeln('[truestream-engine] $line');
+      debugPrint('[truestream-engine] $line');
     });
 
     _process!.exitCode.then((code) {
@@ -231,17 +232,17 @@ class DesktopEngineService implements EngineService {
         ? '$venvDir\\Scripts\\python.exe'
         : '$venvDir/bin/python';
 
-    stderr.writeln('[truestream-engine] Creating uv venv at $venvDir...');
+    debugPrint('[truestream-engine] Creating uv venv at $venvDir...');
     var result = await Process.run(
       uvPath,
       ['venv', venvDir],
     ).timeout(const Duration(seconds: 60));
 
     if (result.exitCode != 0) {
-      stderr.writeln('[truestream-engine] uv venv failed: ${result.stderr}');
+      debugPrint('[truestream-engine] uv venv failed: ${result.stderr}');
     }
 
-    stderr.writeln('[truestream-engine] Installing yt-dlp into venv...');
+    debugPrint('[truestream-engine] Installing yt-dlp into venv...');
     result = await Process.run(
       uvPath,
       ['pip', 'install', 'yt-dlp'],
@@ -262,7 +263,7 @@ class DesktopEngineService implements EngineService {
 
     final uvPath = await _findUv();
     if (uvPath == null) {
-      stderr.writeln('[truestream-engine] uv not found, attempting pip fallback...');
+      debugPrint('[truestream-engine] uv not found, attempting pip fallback...');
       final pipCmd = Platform.isWindows ? 'pip' : 'pip3';
       final pipResult = await Process.run(pipCmd, ['install', '--user', 'yt-dlp']);
       if (pipResult.exitCode == 0 && await _hasYtDlp(pythonPath)) {
@@ -273,14 +274,14 @@ class DesktopEngineService implements EngineService {
       );
     }
 
-    stderr.writeln('[truestream-engine] Installing yt-dlp via uv...');
+    debugPrint('[truestream-engine] Installing yt-dlp via uv...');
     final venvPython = await _installYtDlpViaUv(uvPath);
 
     if (!await _hasYtDlp(venvPython)) {
       throw Exception('yt-dlp installation completed but verification failed.');
     }
 
-    stderr.writeln('[truestream-engine] yt-dlp ready via venv: $venvPython');
+    debugPrint('[truestream-engine] yt-dlp ready via venv: $venvPython');
     return venvPython;
   }
 
