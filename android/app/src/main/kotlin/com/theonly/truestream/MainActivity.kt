@@ -262,13 +262,20 @@ class MainActivity : FlutterActivity() {
                             val resultVal = resultQueue.callAttr("get_nowait")
                             val resultMap = resultVal.asMap()
                             val isSuccess = try {
-                                (resultMap["success"] as? PyObject)?.toJava(Boolean::class.java) as? Boolean ?: false
+                                val successObj = resultMap["success"] as? PyObject
+                                successObj?.toJava(Boolean::class.java) as? Boolean ?: false
                             } catch (_: Exception) { false }
                             val eventJson = if (isSuccess) {
                                 "{\"type\":\"event\",\"event\":\"finished\",\"download_id\":\"$downloadId\"}"
                             } else {
-                                val errType = try { (resultMap["error_type"] as? PyObject)?.toString() ?: "ERROR_UNKNOWN" } catch (_: Exception) { "ERROR_UNKNOWN" }
-                                val errMsg = try { (resultMap["error_message"] as? PyObject)?.toString() ?: "Unknown error" } catch (_: Exception) { "Unknown error" }
+                                val errType = try {
+                                    val errTypeObj = resultMap["error_type"] as? PyObject
+                                    errTypeObj?.toString() ?: "ERROR_UNKNOWN"
+                                } catch (_: Exception) { "ERROR_UNKNOWN" }
+                                val errMsg = try {
+                                    val errMsgObj = resultMap["error_message"] as? PyObject
+                                    errMsgObj?.toString() ?: "Unknown error"
+                                } catch (_: Exception) { "Unknown error" }
                                 "{\"type\":\"event\",\"event\":\"error\",\"download_id\":\"$downloadId\",\"error_type\":\"$errType\",\"error_message\":\"$errMsg\",\"recoverable\":true}"
                             }
                             withContext(Dispatchers.Main) { eventSink?.success(eventJson) }
