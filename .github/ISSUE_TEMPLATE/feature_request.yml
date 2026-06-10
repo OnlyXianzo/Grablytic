@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a new capability or improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us evaluate your idea with concrete use cases. Check the existing issues first
+        to avoid duplicates.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line statement of the requested capability.
+      placeholder: Add SponsorBlock integration to skip sponsored segments.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What user pain this solves and why current behavior is insufficient.
+      placeholder: Downloaded videos still contain sponsored segments that users have to manually skip.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Desired behavior, UI, or API with as much specificity as possible.
+      placeholder: A toggle in Settings > Downloads > "Skip sponsored segments" that passes `--sponsorblock-mark all` to yt-dlp.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches and why they don't work as well.
+      placeholder: Post-processing with external tools is cumbersome and not mobile-friendly.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who benefits, how often, and how much does it matter?
+      placeholder: All users downloading YouTube content. High value for ad-heavy creators.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Links to prior art, related issues, screenshots, or references.

@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a crash, regression, or incorrect behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please keep answers concise and grounded in observed evidence.
+        Only report one issue per submission.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of what's broken.
+      placeholder: Downloading a YouTube playlist crashes on the third video.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Shortest deterministic repro path.
+      placeholder: |
+        1. Open TrueStream.
+        2. Paste a YouTube playlist URL.
+        3. Tap "Download All".
+        4. App crashes at 30% on the third video.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead.
+      placeholder: All videos in the playlist should download sequentially.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Observed result including any error messages or logs.
+      placeholder: App closes without warning. No error shown to user.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where does this occur?
+      options:
+        - Android
+        - Linux
+        - Windows
+        - Multiple
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TrueStream version
+      placeholder: e.g. 1.0.0 or commit hash
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Attach logs, crash reports, or screenshots. Redact any personal info.
+      render: shell
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: How severe is this? How often does it happen?
+      placeholder: Blocks playlist downloads entirely. Happens every time.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Device model, Android version, network type, yt-dlp version, etc.
