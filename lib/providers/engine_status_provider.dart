@@ -5,18 +5,35 @@ class EngineStatus {
   final bool ready;
   final String? ytDlpVersion;
   final bool ffmpegOk;
+  final String? ffmpegVersion;
+  final bool aria2cOk;
+  final String? aria2cVersion;
+  final bool denoOk;
+  final String? denoVersion;
   final String? jsRuntime;
+  final String? jsRuntimeVersion;
   final List<String> updateComponents;
+  final String? bootstrapProgress;
   final String? error;
 
   const EngineStatus({
     required this.ready,
     this.ytDlpVersion,
     this.ffmpegOk = false,
+    this.ffmpegVersion,
+    this.aria2cOk = false,
+    this.aria2cVersion,
+    this.denoOk = false,
+    this.denoVersion,
     this.jsRuntime,
+    this.jsRuntimeVersion,
     this.updateComponents = const [],
+    this.bootstrapProgress,
     this.error,
   });
+
+  bool get allBinariesOk =>
+      ytDlpVersion != null && ffmpegOk && aria2cOk;
 
   String? get statusMessage {
     if (error != null) return error;
@@ -45,11 +62,19 @@ final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
               ?.map((e) => e.toString())
               .toList() ??
           [];
+      final jsRuntime = result['js_runtime'] as String?;
+      final jsRuntimeVersion = result['js_runtime_version'] as String?;
       return EngineStatus(
         ready: true,
         ytDlpVersion: result['yt_dlp_version'] as String?,
         ffmpegOk: result['ffmpeg_ok'] as bool? ?? false,
-        jsRuntime: result['js_runtime'] as String?,
+        ffmpegVersion: result['ffmpeg_version'] as String?,
+        aria2cOk: result['aria2c_ok'] as bool? ?? false,
+        aria2cVersion: result['aria2c_version'] as String?,
+        denoOk: jsRuntime == 'deno',
+        denoVersion: jsRuntime == 'deno' ? jsRuntimeVersion : null,
+        jsRuntime: jsRuntime,
+        jsRuntimeVersion: jsRuntimeVersion,
         updateComponents: components,
       );
     }

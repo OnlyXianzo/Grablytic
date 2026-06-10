@@ -5,6 +5,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../providers/engine_status_provider.dart';
+import '../../../core/theme/text_styles.dart';
+import '../../home/widgets/bootstrap_status_card.dart';
 import 'command_templates_screen.dart';
 import 'presets_screen.dart';
 import 'subtitle_settings_screen.dart';
@@ -214,6 +217,21 @@ class SettingsScreen extends ConsumerWidget {
                   );
                 },
               ).animate().fadeIn(delay: 260.ms, duration: 300.ms).slideX(begin: 0.1),
+              Padding(
+                padding: const EdgeInsets.only(top: 24, bottom: 8),
+                child: Text(
+                  'Binary Downloads',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              _BinaryDownloadsSection(
+                colorScheme: colorScheme,
+                textTheme: textTheme,
+              ).animate().fadeIn(delay: 280.ms, duration: 300.ms).slideX(begin: 0.1),
+              const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(top: 24, bottom: 8),
                 child: Text(
@@ -699,5 +717,213 @@ class _SettingThemeSelector extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BinaryDownloadsSection extends ConsumerWidget {
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+
+  const _BinaryDownloadsSection({
+    required this.colorScheme,
+    required this.textTheme,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statusAsync = ref.watch(engineStatusProvider);
+
+    return statusAsync.when(
+      loading: () => const BootstrapStatusCard(),
+      error: (err, _) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'Engine unavailable: $err',
+          style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
+        ),
+      ),
+      data: (status) {
+        if (status.error != null) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              children: [
+                Text(
+                  status.error!,
+                  style: textTheme.bodySmall
+                      ?.copyWith(color: colorScheme.error),
+                ),
+                const SizedBox(height: 8),
+                _buildRebootstrapAllButton(ref),
+              ],
+            ),
+          );
+        }
+
+        final binaries = [
+          _SettingsBinaryInfo(
+            name: 'yt-dlp',
+            ok: status.ytDlpVersion != null,
+            version: status.ytDlpVersion,
+          ),
+          _SettingsBinaryInfo(
+            name: 'FFmpeg',
+            ok: status.ffmpegOk,
+            version: status.ffmpegVersion,
+          ),
+          _SettingsBinaryInfo(
+            name: 'aria2c',
+            ok: status.aria2cOk,
+            version: status.aria2cVersion,
+          ),
+          _SettingsBinaryInfo(
+            name: 'Deno',
+            ok: status.denoOk,
+            version: status.denoVersion,
+          ),
+        ];
+
+        return Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withAlpha(40),
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...binaries.map((binary) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        binary.ok
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        size: 18,
+                        color: binary.ok
+                            ? colorScheme.tertiary
+                            : colorScheme.error,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              binary.name,
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            if (binary.version != null)
+                              Text(
+                                binary.version!,
+                                style: textTheme.mono.copyWith(
+                                  color: colorScheme.outline,
+                                  fontSize: 11,
+                                ),
+                              )
+                            else
+                              Text(
+                                binary.ok ? 'installed' : 'missing',
+                                style: textTheme.mono.copyWith(
+                                  color: binary.ok
+                                      ? colorScheme.tertiary
+                                      : colorScheme.error,
+                                  fontSize: 11,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        height: 32,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            ref.invalidate(engineStatusProvider);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: colorScheme.primary,
+                            side: BorderSide(
+                              color: colorScheme.primary.withAlpha(100),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                          child: const Text('Redownload'),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ref.invalidate(engineStatusProvider);
+                  },
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Re-bootstrap all'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: colorScheme.primary,
+                    side: BorderSide(
+                      color: colorScheme.primary.withAlpha(100),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRebootstrapAllButton(WidgetRef ref) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          ref.invalidate(engineStatusProvider);
+        },
+        icon: const Icon(Icons.refresh, size: 16),
+        label: const Text('Re-bootstrap all'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          side: BorderSide(
+            color: colorScheme.primary.withAlpha(100),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsBinaryInfo {
+  final String name;
+  final bool ok;
+  final String? version;
+
+  const _SettingsBinaryInfo({
+    required this.name,
+    required this.ok,
+    this.version,
+  });
 }
 

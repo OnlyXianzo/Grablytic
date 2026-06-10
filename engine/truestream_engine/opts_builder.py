@@ -101,18 +101,16 @@ def build_ydl_opts(
             }
         ]
 
-    # YouTube extractor args — use web player client with yt-dlp's built-in
-    # pure-Python JSInterpreter (yt_dlp/jsinterp.py) for nsig decryption.
-    # No external JS runtime required for this — QuickJS/Deno only needed
-    # for PO Token generation, which is added when available.
-    extractor_args: dict = {
-        "youtube": {
-            "player_client": ["web"],
-        }
-    }
+    # YouTube extractor args — never force player_client. yt-dlp's default
+    # multi-client strategy (android → web → tv) returns more formats than
+    # forcing a single client. The android VR API returns 31+ formats with
+    # AV1/VP9 without requiring JS execution or PO Token. web client alone
+    # returns only 5 formats without a PO Token.
+    # Only add po_token when one is available.
     if paths.get("po_token"):
-        extractor_args["youtube"]["po_token"] = [paths["po_token"]]
-    opts["extractor_args"] = extractor_args
+        opts.setdefault("extractor_args", {})
+        opts["extractor_args"].setdefault("youtube", {})
+        opts["extractor_args"]["youtube"]["po_token"] = [paths["po_token"]]
 
     if cfg.get("explicit_format_id"):
         vid = cfg["explicit_format_id"]

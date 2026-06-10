@@ -407,35 +407,8 @@ def _install_yt_dlp_via_uv(uv_bin: str, data_dir: str) -> bool:
 
 
 def _detect_js_runtime() -> dict:
-    try:
-        import quickjs
-        return {"name": "quickjs", "version": getattr(quickjs, "__version__", "0.8.0")}
-    except ImportError:
-        pass
-
-    deno_name = "deno.exe" if os.name == "nt" else "deno"
-    deno_path = shutil.which("deno")
-    if not deno_path:
-        paths = get_paths()
-        if paths.get("data_dir"):
-            bin_dir = os.path.join(paths["data_dir"], "bin")
-            candidate = os.path.join(bin_dir, deno_name)
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                deno_path = candidate
-
-    if deno_path:
-        try:
-            res = subprocess.run(
-                [deno_path, "--version"], capture_output=True, text=True, timeout=2
-            )
-            if res.returncode == 0:
-                first_line = res.stdout.splitlines()[0]
-                version = first_line.replace("deno", "").strip()
-                return {"name": "deno", "version": version}
-        except Exception:
-            return {"name": "deno", "version": "unknown"}
-
-    return {"name": "none", "version": None}
+    from truestream_engine.po_token import detect_js_runtime as _pot_detect
+    return _pot_detect()
 
 
 def bootstrap() -> dict:

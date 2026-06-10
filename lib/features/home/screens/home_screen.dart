@@ -10,6 +10,7 @@ import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
 import '../widgets/error_recovery_card.dart';
+import '../widgets/bootstrap_status_card.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -588,51 +589,93 @@ class _EngineStatusBanner extends ConsumerWidget {
     final statusAsync = ref.watch(engineStatusProvider);
 
     return statusAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
-      data: (status) {
-        final message = status.statusMessage;
-        if (message == null) return const SizedBox.shrink();
-
-        final hasError = status.error != null;
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: hasError
-                ? colorScheme.errorContainer
-                : colorScheme.tertiaryContainer,
-            borderRadius: BorderRadius.circular(8),
+      loading: () => const BootstrapStatusCard(),
+      error: (err, _) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Semantics(
+          label: 'Engine error: $err',
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber,
+                  size: 16, color: colorScheme.onErrorContainer),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  err.toString(),
+                  style: textTheme.labelSmall
+                      ?.copyWith(color: colorScheme.onErrorContainer),
+                ),
+              ),
+            ],
           ),
-          child: Semantics(
-            label: hasError ? 'Engine error: $message' : 'Engine status: $message',
+        ),
+      ),
+      data: (status) {
+        if (status.error != null) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Row(
               children: [
-                Semantics(
-                  label: hasError ? 'Warning' : 'Update',
-                  child: Icon(
-                    hasError ? Icons.warning_amber : Icons.system_update,
-                    size: 16,
-                    color: hasError
-                        ? colorScheme.onErrorContainer
-                        : colorScheme.onTertiaryContainer,
-                  ),
-                ),
+                Icon(Icons.warning_amber,
+                    size: 16, color: colorScheme.onErrorContainer),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    message,
-                    style: textTheme.labelSmall?.copyWith(
-                      color: hasError
-                          ? colorScheme.onErrorContainer
-                          : colorScheme.onTertiaryContainer,
-                    ),
+                    status.error!,
+                    style: textTheme.labelSmall
+                        ?.copyWith(color: colorScheme.onErrorContainer),
                   ),
                 ),
               ],
             ),
-          ),
+          );
+        }
+
+        final message = status.statusMessage;
+        return Column(
+          children: [
+            const BootstrapStatusCard(),
+            if (message != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Semantics(
+                  label: 'Engine status: $message',
+                  child: Row(
+                    children: [
+                      Icon(Icons.system_update,
+                          size: 16, color: colorScheme.onTertiaryContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          message,
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onTertiaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         );
       },
     );

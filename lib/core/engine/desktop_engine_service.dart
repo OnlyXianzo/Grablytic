@@ -184,8 +184,7 @@ class DesktopEngineService implements EngineService {
       final result = await Process.run(
         pythonPath,
         ['-c', 'import yt_dlp; print(yt_dlp.__version__)'],
-        timeout: const Duration(seconds: 10),
-      );
+      ).timeout(const Duration(seconds: 10));
       return result.exitCode == 0;
     } catch (_) {
       return false;
@@ -196,8 +195,7 @@ class DesktopEngineService implements EngineService {
     final result = await Process.run(
       uvPath,
       ['pip', 'install', 'yt-dlp'],
-      timeout: const Duration(seconds: 120),
-    );
+    ).timeout(const Duration(seconds: 120));
     if (result.exitCode != 0) {
       throw Exception('Failed to install yt-dlp via uv: ${result.stderr}');
     }
