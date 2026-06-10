@@ -5,6 +5,7 @@ _paths = {
     "cache_dir": None,
     "cookies_path": None,
     "aria2c_path": None,
+    "deno_path": None,
     "po_token": None,
     "update_channel": "stable",
 }
@@ -17,6 +18,7 @@ def set_paths(
     cache_dir: str,
     cookies_path: str | None = None,
     aria2c_path: str | None = None,
+    deno_path: str | None = None,
     po_token: str | None = None,
 ) -> dict:
     import os
@@ -35,15 +37,21 @@ def set_paths(
         _paths["ffmpeg_path"] = os.path.join(bin_dir, f"ffmpeg{ext}")
 
     _paths["aria2c_path"] = aria2c_path
+
+    if deno_path:
+        _paths["deno_path"] = deno_path
+    else:
+        _paths["deno_path"] = os.path.join(bin_dir, f"deno{ext}")
+
     _paths["cookies_path"] = cookies_path
     _paths["po_token"] = po_token
 
-    # Inject binary directory to PATH environment variable
+    # Inject binary directories into PATH
     path_dirs = [bin_dir]
-    if _paths["ffmpeg_path"]:
-        path_dirs.append(os.path.dirname(_paths["ffmpeg_path"]))
-    if _paths["aria2c_path"]:
-        path_dirs.append(os.path.dirname(_paths["aria2c_path"]))
+    for key in ("ffmpeg_path", "aria2c_path", "deno_path"):
+        val = _paths.get(key)
+        if val:
+            path_dirs.append(os.path.dirname(val))
 
     existing_path = os.environ.get("PATH", "")
     for pd in path_dirs:

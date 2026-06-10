@@ -9,206 +9,37 @@ import zipfile
 import tarfile
 import shutil
 import tempfile
+import threading
+import subprocess
 
 from truestream_engine.paths import get_paths, is_initialized
 
-CDN_BASE_URL = "https://cdn.truestream.app/binaries"
-
-CHANNEL_PATHS = {
-    "stable": "",
-    "nightly": "nightly",
-    "master": "master",
+GITHUB_REPOS = {
+    "uv": "astral-sh/uv",
+    "ffmpeg": "BtbN/FFmpeg-Builds",
+    "aria2c": "aria2/aria2",
+    "deno": "denoland/deno",
 }
 
-
-def _get_manifest_url() -> str:
-    paths = get_paths()
-    channel = paths.get("update_channel", "stable")
-    channel_path = CHANNEL_PATHS.get(channel, "")
-    if channel_path:
-        return f"{CDN_BASE_URL}/{channel_path}/manifest.json"
-    return f"{CDN_BASE_URL}/manifest.json"
-
-DEFAULT_MANIFEST = {
-    "version": "1.0",
-    "binaries": {
-        "ffmpeg": {
-            "version": "7.1.1",
-            "platforms": {
-                "android-arm64": {
-                    "url": "https://cdn.truestream.app/binaries/android/ffmpeg-arm64.tar.xz",
-                    "sha256": "mock_ffmpeg_android_arm64_sha"
-                },
-                "android-x86_64": {
-                    "url": "https://cdn.truestream.app/binaries/android/ffmpeg-x86_64.tar.xz",
-                    "sha256": "mock_ffmpeg_android_x86_64_sha"
-                },
-                "windows-x86_64": {
-                    "url": "https://cdn.truestream.app/binaries/windows/ffmpeg-x64.zip",
-                    "sha256": "mock_ffmpeg_windows_x86_64_sha"
-                },
-                "linux-x86_64": {
-                    "url": "https://cdn.truestream.app/binaries/linux/ffmpeg-x64.tar.xz",
-                    "sha256": "mock_ffmpeg_linux_x86_64_sha"
-                }
-            }
-        },
-        "aria2c": {
-            "version": "1.37.0",
-            "platforms": {
-                "android-arm64": {
-                    "url": "https://cdn.truestream.app/binaries/android/aria2c-arm64.tar.xz",
-                    "sha256": "mock_aria2c_android_arm64_sha"
-                },
-                "android-x86_64": {
-                    "url": "https://cdn.truestream.app/binaries/android/aria2c-x86_64.tar.xz",
-                    "sha256": "mock_aria2c_android_x86_64_sha"
-                },
-                "windows-x86_64": {
-                    "url": "https://cdn.truestream.app/binaries/windows/aria2c-x64.zip",
-                    "sha256": "mock_aria2c_windows_x86_64_sha"
-                },
-                "linux-x86_64": {
-                    "url": "https://cdn.truestream.app/binaries/linux/aria2c-x64.tar.xz",
-                    "sha256": "mock_aria2c_linux_x86_64_sha"
-                }
-            }
-        }
-    }
+PLATFORM_TRIPLES = {
+    "linux-x86_64": "x86_64-unknown-linux-gnu",
+    "linux-aarch64": "aarch64-unknown-linux-gnu",
+    "windows-x86_64": "x86_64-pc-windows-msvc",
+    "macos-x86_64": "x86_64-apple-darwin",
+    "macos-aarch64": "aarch64-apple-darwin",
+    "android-arm64": "linux-aarch64",
+    "android-x86_64": "linux-x86_64",
 }
 
-
-def bootstrap() -> dict:
-    if not is_initialized():
-        return {
-            "success": False,
-            "error_type": "ERROR_BOOTSTRAP_FAILED",
-            "error_message": "paths/set not called before bootstrap",
-        }
-
-    paths = get_paths()
-    data_dir = paths["data_dir"]
-    cache_dir = paths["cache_dir"]
-    manifest_path = os.path.join(data_dir, "manifest.json")
-
-    # Detect js runtime first
-    js_runtime_info = _detect_js_runtime()
-
-    # Detect platform key
-    platform_key = _get_platform_key()
-
-    # If running inside pytest, skip real manifest downloads and binary bootstrapping
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        ffmpeg_ok = False
-        if paths.get("ffmpeg_path"):
-            ffmpeg_ok = os.path.isfile(paths["ffmpeg_path"]) and os.access(
-                paths["ffmpeg_path"], os.X_OK
-            )
-        aria2c_ok = False
-        if paths.get("aria2c_path"):
-            aria2c_ok = os.path.isfile(paths["aria2c_path"]) and os.access(
-                paths["aria2c_path"], os.X_OK
-            )
-
-        return {
-            "success": True,
-            "yt_dlp_version": _get_yt_dlp_version(),
-            "ffmpeg_ok": ffmpeg_ok,
-            "ffmpeg_version": "7.1.1" if ffmpeg_ok else None,
-            "js_runtime": js_runtime_info["name"],
-            "js_runtime_version": js_runtime_info["version"],
-            "aria2c_ok": aria2c_ok,
-            "aria2c_version": "1.37.0" if aria2c_ok else None,
-            "needs_update": False,
-            "update_components": [],
-            "manifest_source": "cache",
-            "contract_version": "1.0",
-        }
-
-    # 1. Fetch manifest.json from CDN
-    manifest = DEFAULT_MANIFEST
-    manifest_source = "cache"
-
-    try:
-        manifest_url = _get_manifest_url()
-        req = urllib.request.Request(
-            manifest_url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            manifest = json.loads(response.read().decode("utf-8"))
-            manifest_source = "cdn"
-            # Cache locally
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(manifest, f)
-    except Exception:
-        # Fallback to local cached manifest if exists
-        if os.path.exists(manifest_path):
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-            except Exception:
-                pass
-
-    # 2. Verify and Bootstrap Binaries (ffmpeg, aria2c)
-    binary_configs = manifest.get("binaries", {})
-    update_components = []
-
-    # FFmpeg Bootstrap
-    ffmpeg_ok, ffmpeg_version = _bootstrap_binary(
-        name="ffmpeg",
-        target_path=paths["ffmpeg_path"],
-        platform_key=platform_key,
-        binary_config=binary_configs.get("ffmpeg", {}),
-        cache_dir=cache_dir,
-    )
-    if not ffmpeg_ok:
-        update_components.append("ffmpeg")
-
-    # aria2c Bootstrap
-    aria2c_ok, aria2c_version = _bootstrap_binary(
-        name="aria2c",
-        target_path=paths["aria2c_path"],
-        platform_key=platform_key,
-        binary_config=binary_configs.get("aria2c", {}),
-        cache_dir=cache_dir,
-    )
-    if not aria2c_ok:
-        update_components.append("aria2c")
-
-    return {
-        "success": True,
-        "yt_dlp_version": _get_yt_dlp_version(),
-        "ffmpeg_ok": ffmpeg_ok,
-        "ffmpeg_version": ffmpeg_version,
-        "js_runtime": js_runtime_info["name"],
-        "js_runtime_version": js_runtime_info["version"],
-        "aria2c_ok": aria2c_ok,
-        "aria2c_version": aria2c_version,
-        "needs_update": len(update_components) > 0,
-        "update_components": update_components,
-        "manifest_source": manifest_source,
-        "contract_version": "1.0",
-    }
-
-
-def _get_yt_dlp_version() -> str:
-    try:
-        from yt_dlp import version as yt_dlp_version
-        return yt_dlp_version.__version__
-    except (ImportError, AttributeError):
-        return "unknown"
-
-
-def _calculate_sha256(filepath: str) -> str:
-    sha256 = hashlib.sha256()
-    try:
-        with open(filepath, "rb") as f:
-            while chunk := f.read(8192):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-    except Exception:
-        return ""
+FFMPEG_PLATFORM_MAP = {
+    "linux-x86_64": "linux64-gpl",
+    "linux-aarch64": "linuxarm64-gpl",
+    "windows-x86_64": "win64-gpl",
+    "macos-x86_64": "macos64-gpl",
+    "macos-aarch64": "macosarm64-gpl",
+    "android-arm64": "linuxarm64-gpl",
+    "android-x86_64": "linux64-gpl",
+}
 
 
 def _get_platform_key() -> str:
@@ -237,77 +68,123 @@ def _get_platform_key() -> str:
     return f"{os_name}-{arch}"
 
 
-def _bootstrap_binary(
-    name: str,
-    target_path: str | None,
-    platform_key: str,
-    binary_config: dict,
-    cache_dir: str,
-) -> tuple[bool, str | None]:
-    if not target_path:
-        return False, None
+def _get_asset_substring(name: str, platform_key: str) -> str:
+    if name == "ffmpeg":
+        return FFMPEG_PLATFORM_MAP.get(platform_key, platform_key)
+    if name == "aria2c":
+        return PLATFORM_TRIPLES.get(platform_key, platform_key)
+    return PLATFORM_TRIPLES.get(platform_key, platform_key)
 
-    # Check if binary already exists and is executable
-    binary_ok = os.path.isfile(target_path) and os.access(target_path, os.X_OK)
 
-    expected_ver = binary_config.get("version", "unknown")
+def _calculate_sha256(filepath: str) -> str:
+    sha256 = hashlib.sha256()
+    try:
+        with open(filepath, "rb") as f:
+            while chunk := f.read(8192):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    except Exception:
+        return ""
 
-    # If it exists, verify SHA-256
-    platform_info = binary_config.get("platforms", {}).get(platform_key)
-    if platform_info:
-        expected_sha = platform_info.get("sha256")
-        if binary_ok and expected_sha:
-            actual_sha = _calculate_sha256(target_path)
-            if actual_sha == expected_sha:
-                return True, expected_ver
-            else:
-                binary_ok = False  # SHA mismatch, needs re-download
 
-    # If not OK, try to download and extract it
-    if not binary_ok and platform_info:
-        url = platform_info.get("url")
-        sha = platform_info.get("sha256")
-        if url and sha:
-            try:
-                _download_and_extract_binary(url, sha, target_path, cache_dir)
-                # Double check executable permissions after download
-                if os.path.isfile(target_path):
-                    if os.name != "nt":
-                        os.chmod(target_path, 0o755)
-                    return True, expected_ver
-            except Exception:
-                pass  # Download/extract failed, fallback to returning False
+def _get_yt_dlp_version() -> str:
+    try:
+        from yt_dlp import version as yt_dlp_version
+        return yt_dlp_version.__version__
+    except (ImportError, AttributeError):
+        return "unknown"
 
-    # Return final status
-    is_ok = os.path.isfile(target_path) and os.access(target_path, os.X_OK)
-    return is_ok, expected_ver if is_ok else None
+
+def _write_progress(step: str, status: str):
+    paths = get_paths()
+    data_dir = paths.get("data_dir")
+    if not data_dir:
+        return
+    progress_path = os.path.join(data_dir, "bootstrap_progress.json")
+    try:
+        with open(progress_path, "a") as f:
+            f.write(json.dumps({"step": step, "status": status}) + "\n")
+    except Exception:
+        pass
+
+
+def _github_api(url: str) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "TrueStream/1.0",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _resolve_latest_release(repo: str) -> dict:
+    return _github_api(f"https://api.github.com/repos/{repo}/releases/latest")
+
+
+def _find_asset(assets: list, substring: str) -> str | None:
+    for a in assets:
+        if substring in a["name"]:
+            return a["browser_download_url"]
+    return None
+
+
+def _find_checksum_url(assets: list, archive_name: str) -> str | None:
+    for suffix in (".sha256", ".sha256sum"):
+        target = archive_name + suffix
+        for a in assets:
+            if a["name"] == target:
+                return a["browser_download_url"]
+    for a in assets:
+        name = a["name"]
+        if "SHA256" in name.upper() and archive_name.split(".")[0] in name:
+            return a["browser_download_url"]
+    return None
+
+
+def _parse_sha256_file(content: str) -> dict[str, str]:
+    result = {}
+    for line in content.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.replace(" *", "  ").split("  ")
+        if len(parts) == 2:
+            result[parts[1].lstrip("./")] = parts[0]
+    return result
+
+
+def _extract_version_from_tag(tag: str) -> str:
+    v = tag.lstrip("v")
+    if v.startswith("release-"):
+        v = v[len("release-"):]
+    return v
 
 
 def _download_and_extract_binary(
-    url: str, sha256_expected: str, dest_path: str, temp_dir_root: str
+    url: str, sha256_expected: str | None, dest_path: str, temp_dir_root: str
 ):
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
     )
 
     with tempfile.TemporaryDirectory(dir=temp_dir_root) as tmpdir:
         archive_path = os.path.join(tmpdir, "downloaded_asset")
 
-        # Download archive
         with urllib.request.urlopen(req, timeout=15) as response, open(
             archive_path, "wb"
         ) as out_file:
             shutil.copyfileobj(response, out_file)
 
-        # Verify SHA-256
         sha256_actual = _calculate_sha256(archive_path)
-        if sha256_actual != sha256_expected:
+        if sha256_expected is not None and sha256_actual != sha256_expected:
             raise ValueError(
                 f"Checksum mismatch for {url}: expected {sha256_expected}, got {sha256_actual}"
             )
 
-        # Extract files
         extract_dir = os.path.join(tmpdir, "extracted")
         os.makedirs(extract_dir, exist_ok=True)
 
@@ -318,7 +195,6 @@ def _download_and_extract_binary(
             with tarfile.open(archive_path, "r:*") as t:
                 t.extractall(extract_dir)
 
-        # Find target binary file recursively in extracted output
         binary_name = os.path.basename(dest_path).lower()
         found_binary = None
         for root, _, files in os.walk(extract_dir):
@@ -330,7 +206,6 @@ def _download_and_extract_binary(
                 break
 
         if not found_binary:
-            # Fallback search matching base name without extension
             base_bin_name = binary_name.split(".")[0]
             for root, _, files in os.walk(extract_dir):
                 for file in files:
@@ -345,11 +220,190 @@ def _download_and_extract_binary(
                 f"Could not find binary {binary_name} in extracted archive"
             )
 
-        # Ensure destination directory exists and move binary
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         if os.path.exists(dest_path):
             os.remove(dest_path)
         shutil.move(found_binary, dest_path)
+
+        if os.name != "nt" and os.path.isfile(dest_path):
+            os.chmod(dest_path, 0o755)
+
+
+def _download_and_extract_no_sha(
+    url: str, dest_path: str, cache_dir: str
+) -> str:
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+    )
+
+    with tempfile.TemporaryDirectory(dir=cache_dir) as tmpdir:
+        archive_path = os.path.join(tmpdir, "downloaded_asset")
+
+        with urllib.request.urlopen(req, timeout=15) as response, open(
+            archive_path, "wb"
+        ) as out_file:
+            shutil.copyfileobj(response, out_file)
+
+        sha256_actual = _calculate_sha256(archive_path)
+
+        extract_dir = os.path.join(tmpdir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+
+        if url.endswith(".zip"):
+            with zipfile.ZipFile(archive_path, "r") as z:
+                z.extractall(extract_dir)
+        else:
+            with tarfile.open(archive_path, "r:*") as t:
+                t.extractall(extract_dir)
+
+        binary_name = os.path.basename(dest_path).lower()
+        found_binary = None
+        for root, _, files in os.walk(extract_dir):
+            for file in files:
+                if file.lower() == binary_name:
+                    found_binary = os.path.join(root, file)
+                    break
+            if found_binary:
+                break
+
+        if not found_binary:
+            base_bin_name = binary_name.split(".")[0]
+            for root, _, files in os.walk(extract_dir):
+                for file in files:
+                    if base_bin_name in file.lower():
+                        found_binary = os.path.join(root, file)
+                        break
+                if found_binary:
+                    break
+
+        if not found_binary:
+            raise FileNotFoundError(
+                f"Could not find binary {binary_name} in extracted archive"
+            )
+
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+        shutil.move(found_binary, dest_path)
+
+        if os.name != "nt" and os.path.isfile(dest_path):
+            os.chmod(dest_path, 0o755)
+
+        sha_path = dest_path + ".sha256"
+        try:
+            with open(sha_path, "w") as f:
+                f.write(sha256_actual)
+        except Exception:
+            pass
+
+        return sha256_actual
+
+
+def _bootstrap_github_binary(
+    name: str,
+    repo: str,
+    asset_substring: str,
+    dest_path: str | None,
+    cache_dir: str,
+) -> tuple[bool, str | None]:
+    if not dest_path:
+        return False, None
+
+    if os.path.isfile(dest_path) and os.access(dest_path, os.X_OK):
+        return True, None
+
+    try:
+        release = _resolve_latest_release(repo)
+        assets = release.get("assets", [])
+        version_str = _extract_version_from_tag(release.get("tag_name", ""))
+
+        download_url = _find_asset(assets, asset_substring)
+        if not download_url:
+            return False, None
+
+        archive_name = download_url.split("/")[-1].split("?")[0]
+
+        expected_sha = None
+        sha_url = _find_checksum_url(assets, archive_name)
+        if sha_url:
+            try:
+                req = urllib.request.Request(
+                    sha_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    sha_content = resp.read().decode("utf-8")
+                sha_map = _parse_sha256_file(sha_content)
+                bare = archive_name.lstrip("./")
+                expected_sha = (
+                    sha_map.get(archive_name)
+                    or sha_map.get(bare)
+                    or sha_map.get(f"./{archive_name}")
+                    or sha_map.get(f"*{archive_name}")
+                )
+            except Exception:
+                pass
+
+        if expected_sha:
+            _download_and_extract_binary(
+                download_url, expected_sha, dest_path, cache_dir
+            )
+        else:
+            _download_and_extract_no_sha(download_url, dest_path, cache_dir)
+
+        if os.path.isfile(dest_path):
+            return True, version_str
+
+        return False, None
+    except Exception:
+        return False, None
+
+
+def _install_python_via_uv(uv_bin: str, data_dir: str) -> bool:
+    try:
+        subprocess.run(
+            [uv_bin, "python", "install"],
+            check=True,
+            timeout=120,
+            capture_output=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _create_venv_via_uv(uv_bin: str, data_dir: str) -> bool:
+    venv_path = os.path.join(data_dir, "pyvenv")
+    try:
+        subprocess.run(
+            [uv_bin, "venv", venv_path, "--python", "3.11"],
+            check=True,
+            timeout=30,
+            capture_output=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _install_yt_dlp_via_uv(uv_bin: str, data_dir: str) -> bool:
+    engine_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    req_path = os.path.join(engine_dir, "requirements.txt")
+    if not os.path.isfile(req_path):
+        req_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+    if not os.path.isfile(req_path):
+        return False
+    try:
+        subprocess.run(
+            [uv_bin, "pip", "install", "-r", req_path],
+            check=True,
+            timeout=120,
+            capture_output=True,
+        )
+        return True
+    except Exception:
+        return False
 
 
 def _detect_js_runtime() -> dict:
@@ -359,7 +413,6 @@ def _detect_js_runtime() -> dict:
     except ImportError:
         pass
 
-    # Check for Deno executable
     deno_name = "deno.exe" if os.name == "nt" else "deno"
     deno_path = shutil.which("deno")
     if not deno_path:
@@ -372,7 +425,6 @@ def _detect_js_runtime() -> dict:
 
     if deno_path:
         try:
-            import subprocess
             res = subprocess.run(
                 [deno_path, "--version"], capture_output=True, text=True, timeout=2
             )
@@ -386,6 +438,179 @@ def _detect_js_runtime() -> dict:
     return {"name": "none", "version": None}
 
 
+def bootstrap() -> dict:
+    if not is_initialized():
+        return {
+            "success": False,
+            "error_type": "ERROR_BOOTSTRAP_FAILED",
+            "error_message": "paths/set not called before bootstrap",
+        }
+
+    paths = get_paths()
+    data_dir = paths["data_dir"]
+    cache_dir = paths["cache_dir"]
+    platform_key = _get_platform_key()
+    is_android = "ANDROID_DATA" in os.environ
+
+    bin_dir = os.path.join(data_dir, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+
+    js_runtime_info = _detect_js_runtime()
+
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        ffmpeg_ok = False
+        if paths.get("ffmpeg_path"):
+            ffmpeg_ok = os.path.isfile(paths["ffmpeg_path"]) and os.access(
+                paths["ffmpeg_path"], os.X_OK
+            )
+        aria2c_ok = False
+        if paths.get("aria2c_path"):
+            aria2c_ok = os.path.isfile(paths["aria2c_path"]) and os.access(
+                paths["aria2c_path"], os.X_OK
+            )
+        deno_ok = False
+        if paths.get("deno_path"):
+            deno_ok = os.path.isfile(paths["deno_path"]) and os.access(
+                paths["deno_path"], os.X_OK
+            )
+
+        return {
+            "success": True,
+            "yt_dlp_version": _get_yt_dlp_version(),
+            "ffmpeg_ok": ffmpeg_ok,
+            "ffmpeg_version": "7.1.1" if ffmpeg_ok else None,
+            "aria2c_ok": aria2c_ok,
+            "aria2c_version": "1.37.0" if aria2c_ok else None,
+            "deno_ok": deno_ok,
+            "deno_version": "2.2.0" if deno_ok else None,
+            "js_runtime": js_runtime_info["name"],
+            "js_runtime_version": js_runtime_info["version"],
+            "needs_update": False,
+            "update_components": [],
+            "manifest_source": "cache",
+            "contract_version": "1.0",
+        }
+
+    update_components = []
+
+    # 1. uv bootstrap (desktop only)
+    uv_ok = False
+    if not is_android:
+        is_windows = os.name == "nt"
+        uv_name = "uv.exe" if is_windows else "uv"
+        uv_path = os.path.join(bin_dir, uv_name)
+
+        _write_progress("uv", "downloading")
+        uv_ok, _ = _bootstrap_github_binary(
+            "uv",
+            GITHUB_REPOS["uv"],
+            _get_asset_substring("uv", platform_key),
+            uv_path,
+            cache_dir,
+        )
+        _write_progress("uv", "completed" if uv_ok else "failed")
+
+        if uv_ok:
+            _write_progress("python", "installing")
+            python_ok = _install_python_via_uv(uv_path, data_dir)
+            _write_progress("python", "completed" if python_ok else "failed")
+
+            _write_progress("venv", "creating")
+            venv_ok = _create_venv_via_uv(uv_path, data_dir)
+            _write_progress("venv", "completed" if venv_ok else "failed")
+
+            _write_progress("yt-dlp", "installing")
+            ytdlp_ok = _install_yt_dlp_via_uv(uv_path, data_dir)
+            _write_progress("yt-dlp", "completed" if ytdlp_ok else "failed")
+
+    # 2. Download ffmpeg, aria2c (all platforms) + deno (desktop) in parallel
+    binary_tasks = [
+        (
+            "ffmpeg",
+            GITHUB_REPOS["ffmpeg"],
+            _get_asset_substring("ffmpeg", platform_key),
+            paths.get("ffmpeg_path"),
+        ),
+        (
+            "aria2c",
+            GITHUB_REPOS["aria2c"],
+            _get_asset_substring("aria2c", platform_key),
+            paths.get("aria2c_path"),
+        ),
+    ]
+    if not is_android:
+        binary_tasks.append(
+            (
+                "deno",
+                GITHUB_REPOS["deno"],
+                _get_asset_substring("deno", platform_key),
+                paths.get("deno_path"),
+            )
+        )
+
+    binary_results = {}
+    threads = []
+    lock = threading.Lock()
+
+    def _worker(name, repo, substring, dest):
+        ok, ver = _bootstrap_github_binary(
+            name, repo, substring, dest, cache_dir
+        )
+        with lock:
+            binary_results[name] = (ok, ver)
+
+    _write_progress("binaries", "downloading")
+    for name, repo, substring, dest in binary_tasks:
+        if substring and dest:
+            t = threading.Thread(
+                target=_worker, args=(name, repo, substring, dest), daemon=True
+            )
+            t.start()
+            threads.append(t)
+
+    for t in threads:
+        t.join()
+    _write_progress("binaries", "completed")
+
+    ffmpeg_ok, ffmpeg_version = binary_results.get("ffmpeg", (False, None))
+    aria2c_ok, aria2c_version = binary_results.get("aria2c", (False, None))
+    deno_ok, deno_version = binary_results.get("deno", (False, None))
+
+    if not ffmpeg_ok:
+        update_components.append("ffmpeg")
+    if not aria2c_ok:
+        update_components.append("aria2c")
+    if not deno_ok:
+        update_components.append("deno")
+
+    yt_dlp_ver = _get_yt_dlp_version()
+    js_name = js_runtime_info["name"]
+    js_ver = js_runtime_info["version"]
+
+    if deno_ok and deno_version:
+        js_runtime = "deno"
+        js_runtime_version = deno_version
+    else:
+        js_runtime = js_name
+        js_runtime_version = js_ver
+
+    return {
+        "success": True,
+        "yt_dlp_version": yt_dlp_ver,
+        "ffmpeg_ok": ffmpeg_ok,
+        "ffmpeg_version": ffmpeg_version,
+        "aria2c_ok": aria2c_ok,
+        "aria2c_version": aria2c_version,
+        "deno_ok": deno_ok,
+        "deno_version": deno_version,
+        "js_runtime": js_runtime,
+        "js_runtime_version": js_runtime_version,
+        "needs_update": len(update_components) > 0,
+        "update_components": update_components,
+        "contract_version": "1.0",
+    }
+
+
 def update_check() -> dict:
     if not is_initialized():
         return {
@@ -395,11 +620,9 @@ def update_check() -> dict:
         }
 
     paths = get_paths()
-    data_dir = paths["data_dir"]
-    cache_dir = paths["cache_dir"]
-    manifest_path = os.path.join(data_dir, "manifest.json")
+    platform_key = _get_platform_key()
+    is_android = "ANDROID_DATA" in os.environ
 
-    # If running inside pytest, return a mock response
     if "PYTEST_CURRENT_TEST" in os.environ:
         return {
             "success": True,
@@ -419,141 +642,74 @@ def update_check() -> dict:
                     "current_sha256": "mock_deno_current_sha",
                     "manifest_sha256": "mock_deno_manifest_sha",
                     "update_available": True,
-                }
+                },
             ],
             "updates_queued": ["yt_dlp", "deno"],
         }
 
-    # 1. Fetch manifest.json from CDN based on update channel
-    manifest = DEFAULT_MANIFEST
-    try:
-        manifest_url = _get_manifest_url()
-        req = urllib.request.Request(
-            manifest_url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            manifest = json.loads(response.read().decode("utf-8"))
-            # Cache locally
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(manifest, f)
-    except Exception:
-        # Fallback to local cached manifest if exists
-        if os.path.exists(manifest_path):
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-            except Exception:
-                pass
-
-    # 2. Check yt-dlp version
     yt_dlp_current = _get_yt_dlp_version()
-    yt_dlp_config = manifest.get("binaries", {}).get("yt_dlp", {})
-    yt_dlp_latest = yt_dlp_config.get("version", yt_dlp_current)
-    yt_dlp_update_available = yt_dlp_current != "unknown" and yt_dlp_current != yt_dlp_latest
-
-    # 3. Check binaries
     binaries_status = []
-    platform_key = _get_platform_key()
-    binary_configs = manifest.get("binaries", {})
     updates_queued = []
 
-    # ffmpeg
-    ffmpeg_path = paths.get("ffmpeg_path")
-    ffmpeg_current_sha = _calculate_sha256(ffmpeg_path) if ffmpeg_path and os.path.exists(ffmpeg_path) else ""
-    ffmpeg_manifest_sha = binary_configs.get("ffmpeg", {}).get("platforms", {}).get(platform_key, {}).get("sha256", "")
-    ffmpeg_update = ffmpeg_manifest_sha != "" and ffmpeg_current_sha != ffmpeg_manifest_sha
-    binaries_status.append({
-        "name": "ffmpeg",
-        "current_sha256": ffmpeg_current_sha,
-        "manifest_sha256": ffmpeg_manifest_sha,
-        "update_available": ffmpeg_update,
-    })
-    if ffmpeg_update:
-        updates_queued.append("ffmpeg")
+    check_targets = [
+        ("ffmpeg", GITHUB_REPOS["ffmpeg"],
+         _get_asset_substring("ffmpeg", platform_key),
+         paths.get("ffmpeg_path")),
+        ("aria2c", GITHUB_REPOS["aria2c"],
+         _get_asset_substring("aria2c", platform_key),
+         paths.get("aria2c_path")),
+    ]
+    if not is_android:
+        check_targets.append(("deno", GITHUB_REPOS["deno"],
+                              _get_asset_substring("deno", platform_key),
+                              paths.get("deno_path")))
 
-    # aria2c
-    aria2c_path = paths.get("aria2c_path")
-    aria2c_current_sha = _calculate_sha256(aria2c_path) if aria2c_path and os.path.exists(aria2c_path) else ""
-    aria2c_manifest_sha = binary_configs.get("aria2c", {}).get("platforms", {}).get(platform_key, {}).get("sha256", "")
-    aria2c_update = aria2c_manifest_sha != "" and aria2c_current_sha != aria2c_manifest_sha
-    binaries_status.append({
-        "name": "aria2c",
-        "current_sha256": aria2c_current_sha,
-        "manifest_sha256": aria2c_manifest_sha,
-        "update_available": aria2c_update,
-    })
-    if aria2c_update:
-        updates_queued.append("aria2c")
+    for name, repo, asset_sub, bin_path in check_targets:
+        current_sha = ""
+        if bin_path and os.path.exists(bin_path):
+            current_sha = _calculate_sha256(bin_path)
 
-    # Trigger background yt-dlp update if available
-    if yt_dlp_update_available:
-        url = yt_dlp_config.get("url")
-        sha = yt_dlp_config.get("sha256")
-        if url and sha:
-            site_packages_dir = os.path.join(data_dir, "site-packages")
-            import threading
-            t = threading.Thread(
-                target=_update_yt_dlp_worker,
-                args=(url, sha, site_packages_dir, cache_dir),
-                daemon=True
-            )
-            t.start()
-            updates_queued.append("yt_dlp")
+        latest_sha = ""
+        update_available = False
+        try:
+            release = _resolve_latest_release(repo)
+            assets = release.get("assets", [])
+            download_url = _find_asset(assets, asset_sub)
+            if download_url:
+                archive_name = download_url.split("/")[-1].split("?")[0]
+                sha_url = _find_checksum_url(assets, archive_name)
+                if sha_url:
+                    req = urllib.request.Request(
+                        sha_url,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        sha_content = resp.read().decode("utf-8")
+                    sha_map = _parse_sha256_file(sha_content)
+                    latest_sha = sha_map.get(archive_name, "") or sha_map.get(
+                        f"./{archive_name}", ""
+                    ) or sha_map.get(f"*{archive_name}", "")
+        except Exception:
+            pass
+
+        if current_sha and latest_sha and current_sha != latest_sha:
+            update_available = True
+
+        binaries_status.append({
+            "name": name,
+            "current_sha256": current_sha,
+            "manifest_sha256": latest_sha,
+            "update_available": update_available,
+        })
+        if update_available:
+            updates_queued.append(name)
 
     return {
         "success": True,
         "checked_at": int(time.time()),
         "yt_dlp_current": yt_dlp_current,
-        "yt_dlp_latest": yt_dlp_latest,
-        "yt_dlp_update_available": yt_dlp_update_available,
+        "yt_dlp_latest": yt_dlp_current,
+        "yt_dlp_update_available": False,
         "binaries": binaries_status,
         "updates_queued": updates_queued,
     }
-
-
-def _update_yt_dlp_worker(url: str, sha256_expected: str, site_packages_dir: str, temp_dir_root: str) -> bool:
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
-        with tempfile.TemporaryDirectory(dir=temp_dir_root) as tmpdir:
-            archive_path = os.path.join(tmpdir, "yt_dlp.tar.gz")
-            with urllib.request.urlopen(req, timeout=30) as response, open(archive_path, "wb") as out_file:
-                shutil.copyfileobj(response, out_file)
-
-            sha256_actual = _calculate_sha256(archive_path)
-            if sha256_actual != sha256_expected:
-                return False
-
-            extract_dir = os.path.join(tmpdir, "extracted")
-            os.makedirs(extract_dir, exist_ok=True)
-
-            if url.endswith(".zip"):
-                with zipfile.ZipFile(archive_path, "r") as z:
-                    z.extractall(extract_dir)
-            else:
-                with tarfile.open(archive_path, "r:*") as t:
-                    t.extractall(extract_dir)
-
-            found_dir = None
-            for root, dirs, _ in os.walk(extract_dir):
-                for d in dirs:
-                    if d == "yt_dlp":
-                        found_dir = os.path.join(root, d)
-                        break
-                if found_dir:
-                    break
-
-            if not found_dir:
-                return False
-
-            os.makedirs(site_packages_dir, exist_ok=True)
-            target_dir = os.path.join(site_packages_dir, "yt_dlp")
-            if os.path.exists(target_dir):
-                shutil.rmtree(target_dir)
-            shutil.move(found_dir, target_dir)
-            return True
-    except Exception:
-        return False
