@@ -100,11 +100,12 @@ def main():
                 set_paths(
                     data_dir=params["data_dir"],
                     output_dir=params["output_dir"],
-                    ffmpeg_path=params["ffmpeg_path"],
+                    ffmpeg_path=params.get("ffmpeg_path"),
                     cache_dir=params["cache_dir"],
                     cookies_path=params.get("cookies_path"),
                     aria2c_path=params.get("aria2c_path"),
-                    po_token=params.get("po_token")
+                    deno_path=params.get("deno_path"),
+                    po_token=params.get("po_token"),
                 )
                 res = {"success": True}
             elif method == "engine/bootstrap":

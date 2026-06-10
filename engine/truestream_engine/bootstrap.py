@@ -313,6 +313,11 @@ def _bootstrap_github_binary(
     if os.path.isfile(dest_path) and os.access(dest_path, os.X_OK):
         return True, None
 
+    # Check if binary is available on system PATH (e.g. /usr/bin/ffmpeg)
+    system_bin = shutil.which(name)
+    if system_bin and os.path.isfile(system_bin) and os.access(system_bin, os.X_OK):
+        return True, None
+
     try:
         release = _resolve_latest_release(repo)
         assets = release.get("assets", [])
@@ -548,6 +553,20 @@ def bootstrap() -> dict:
     ffmpeg_ok, ffmpeg_version = binary_results.get("ffmpeg", (False, None))
     aria2c_ok, aria2c_version = binary_results.get("aria2c", (False, None))
     deno_ok, deno_version = binary_results.get("deno", (False, None))
+
+    # Also check resolved paths from set_paths (may point to system binaries)
+    if not ffmpeg_ok and paths.get("ffmpeg_path"):
+        p = paths["ffmpeg_path"]
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            ffmpeg_ok = True
+    if not aria2c_ok and paths.get("aria2c_path"):
+        p = paths["aria2c_path"]
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            aria2c_ok = True
+    if not deno_ok and paths.get("deno_path"):
+        p = paths["deno_path"]
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            deno_ok = True
 
     if not ffmpeg_ok:
         update_components.append("ffmpeg")

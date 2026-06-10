@@ -25,7 +25,12 @@ def test_get_paths_returns_what_was_set():
     assert paths["cache_dir"] == "/tmp/cache"
 
 
-def test_get_paths_optional_fields_default_none():
+def test_get_paths_optional_fields_default_none(monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    from truestream_engine.paths import _paths
+    _paths["aria2c_path"] = None
+    _paths["deno_path"] = None
     set_paths(
         data_dir="/tmp/data",
         output_dir="/tmp/output",
@@ -33,8 +38,11 @@ def test_get_paths_optional_fields_default_none():
         cache_dir="/tmp/cache",
     )
     paths = get_paths()
+    import os
+    ext = ".exe" if os.name == "nt" else ""
     assert paths["cookies_path"] is None
-    assert paths["aria2c_path"] is None
+    assert paths["aria2c_path"] == f"/tmp/data/bin/aria2c{ext}"
+    assert paths["deno_path"] == f"/tmp/data/bin/deno{ext}"
     assert paths["po_token"] is None
 
 

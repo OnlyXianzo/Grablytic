@@ -5,8 +5,10 @@ from truestream_engine.hooks import build_progress_hook, build_postprocessor_hoo
 
 
 def apply_aria2c_opts(opts: dict, config: dict) -> dict:
+    import os
     from truestream_engine.paths import get_paths
-    if config.get("aria2c_enabled") and get_paths().get("aria2c_path"):
+    aria_path = get_paths().get("aria2c_path")
+    if config.get("aria2c_enabled") and aria_path and os.path.isfile(aria_path):
         chunks = config.get("aria2c_chunks", 5)
         args = [f"-x{chunks}", "-k1M", "--min-split-size=1M"]
         max_speed = config.get("aria2c_max_speed")

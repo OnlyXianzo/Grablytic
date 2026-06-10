@@ -4,8 +4,12 @@ from truestream_engine.opts_builder import build_ydl_opts
 
 
 @pytest.fixture(autouse=True)
-def reset_paths():
+def reset_paths(monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     _paths["data_dir"] = None
+    _paths["aria2c_path"] = None
+    _paths["deno_path"] = None
     set_paths(
         data_dir="/tmp/data",
         output_dir="/tmp/output",
@@ -35,15 +39,19 @@ def test_ffmpeg_path_added():
     assert opts["ffmpeg_location"] == "/usr/bin/ffmpeg"
 
 
-def test_aria2c_wired_when_enabled():
-    _paths["aria2c_path"] = "/usr/bin/aria2c"
+def test_aria2c_wired_when_enabled(tmp_path):
+    dummy = tmp_path / "aria2c"
+    dummy.touch()
+    _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"aria2c_enabled": True, "aria2c_chunks": 5})
     assert opts["external_downloader"] == "aria2c"
     assert "-x5" in opts["external_downloader_args"]
 
 
-def test_aria2c_not_wired_when_disabled():
-    _paths["aria2c_path"] = "/usr/bin/aria2c"
+def test_aria2c_not_wired_when_disabled(tmp_path):
+    dummy = tmp_path / "aria2c"
+    dummy.touch()
+    _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"aria2c_enabled": False})
     assert "external_downloader" not in opts
 
@@ -53,8 +61,10 @@ def test_aria2c_without_path_not_enabled():
     assert "external_downloader" not in opts
 
 
-def test_aria2c_max_speed_applied():
-    _paths["aria2c_path"] = "/usr/bin/aria2c"
+def test_aria2c_max_speed_applied(tmp_path):
+    dummy = tmp_path / "aria2c"
+    dummy.touch()
+    _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={
         "aria2c_enabled": True,
         "aria2c_chunks": 8,

@@ -1,3 +1,5 @@
+import shutil as _shutil
+
 _paths = {
     "data_dir": None,
     "output_dir": None,
@@ -31,17 +33,38 @@ def set_paths(
     is_windows = os.name == "nt" or (isinstance(os.environ.get("OS"), str) and "windows" in os.environ.get("OS").lower())
     ext = ".exe" if is_windows else ""
 
-    if ffmpeg_path:
+    # Resolve ffmpeg: explicit → bundled → system → placeholder
+    if ffmpeg_path and os.path.isfile(ffmpeg_path):
         _paths["ffmpeg_path"] = ffmpeg_path
     else:
-        _paths["ffmpeg_path"] = os.path.join(bin_dir, f"ffmpeg{ext}")
+        bundled = os.path.join(bin_dir, f"ffmpeg{ext}")
+        if os.path.isfile(bundled):
+            _paths["ffmpeg_path"] = bundled
+        else:
+            system = _shutil.which(f"ffmpeg{ext}") or _shutil.which("ffmpeg")
+            _paths["ffmpeg_path"] = system or bundled
 
-    _paths["aria2c_path"] = aria2c_path
+    # Resolve aria2c: explicit → bundled → system → placeholder
+    if aria2c_path and os.path.isfile(aria2c_path):
+        _paths["aria2c_path"] = aria2c_path
+    else:
+        bundled = os.path.join(bin_dir, f"aria2c{ext}")
+        if os.path.isfile(bundled):
+            _paths["aria2c_path"] = bundled
+        else:
+            system = _shutil.which(f"aria2c{ext}") or _shutil.which("aria2c")
+            _paths["aria2c_path"] = system or bundled
 
-    if deno_path:
+    # Resolve deno: explicit → bundled → system → placeholder
+    if deno_path and os.path.isfile(deno_path):
         _paths["deno_path"] = deno_path
     else:
-        _paths["deno_path"] = os.path.join(bin_dir, f"deno{ext}")
+        bundled = os.path.join(bin_dir, f"deno{ext}")
+        if os.path.isfile(bundled):
+            _paths["deno_path"] = bundled
+        else:
+            system = _shutil.which(f"deno{ext}") or _shutil.which("deno")
+            _paths["deno_path"] = system or bundled
 
     _paths["cookies_path"] = cookies_path
     _paths["po_token"] = po_token
