@@ -52,6 +52,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   String? _selectedMuxedFormat;
   String _fetchedTitle = '';
   Playlist? _selectedPlaylist;
+  bool _isStarting = false; // guard against duplicate download taps
 
   @override
   void initState() {
@@ -178,6 +179,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
   Future<void> _startDownload() async {
     if (_selectedVideoFormat == null && _selectedAudioFormat == null && _selectedMuxedFormat == null) return;
+    if (_isStarting) return; // prevent duplicate taps
+    setState(() => _isStarting = true);
 
     final downloadId = _uuid.v4();
     final engine = ref.read(engineProvider);
@@ -217,6 +220,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
           const SnackBar(content: Text('Download started')),
         );
       }
+    } else {
+      if (mounted) setState(() => _isStarting = false);
     }
   }
 
@@ -402,7 +407,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: (_selectedVideoFormat != null || _selectedAudioFormat != null || _selectedMuxedFormat != null)
+                            onPressed: (!_isStarting && (_selectedVideoFormat != null || _selectedAudioFormat != null || _selectedMuxedFormat != null))
                                 ? _startDownload
                                 : null,
                             style: ElevatedButton.styleFrom(

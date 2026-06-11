@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -775,10 +776,12 @@ class _BinaryDownloadsSection extends ConsumerWidget {
             ok: status.aria2cOk,
             version: status.aria2cVersion,
           ),
+          // JS runtime: QuickJS on Android (pending), Deno on desktop
           _SettingsBinaryInfo(
-            name: 'Deno',
-            ok: status.denoOk,
-            version: status.denoVersion,
+            name: Platform.isAndroid ? 'QuickJS' : 'Deno',
+            ok: status.jsRuntimeOk,
+            version: status.jsRuntimeOk ? status.jsRuntimeVersion : null,
+            optional: Platform.isAndroid,
           ),
         ];
 
@@ -802,11 +805,11 @@ class _BinaryDownloadsSection extends ConsumerWidget {
                       Icon(
                         binary.ok
                             ? Icons.check_circle
-                            : Icons.cancel,
+                            : (binary.optional ? Icons.hourglass_empty : Icons.cancel),
                         size: 18,
                         color: binary.ok
                             ? colorScheme.tertiary
-                            : colorScheme.error,
+                            : (binary.optional ? colorScheme.outline : colorScheme.error),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -829,17 +832,23 @@ class _BinaryDownloadsSection extends ConsumerWidget {
                               )
                             else
                               Text(
-                                binary.ok ? 'installed' : 'missing',
+                                binary.ok
+                                    ? 'installed'
+                                    : (binary.optional ? 'pending' : 'missing'),
                                 style: textTheme.mono.copyWith(
                                   color: binary.ok
                                       ? colorScheme.tertiary
-                                      : colorScheme.error,
+                                      : (binary.optional
+                                          ? colorScheme.outline
+                                          : colorScheme.error),
                                   fontSize: 11,
                                 ),
                               ),
                           ],
                         ),
                       ),
+                      // Hide Redownload for optional pending binaries (not downloadable)
+                      if (!binary.optional)
                       SizedBox(
                         height: 32,
                         child: OutlinedButton(
@@ -919,11 +928,14 @@ class _SettingsBinaryInfo {
   final String name;
   final bool ok;
   final String? version;
+  /// When true and not ok, shows 'pending' (neutral) instead of 'missing' (error).
+  final bool optional;
 
   const _SettingsBinaryInfo({
     required this.name,
     required this.ok,
     this.version,
+    this.optional = false,
   });
 }
 

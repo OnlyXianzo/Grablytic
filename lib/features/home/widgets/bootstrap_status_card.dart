@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -141,10 +142,13 @@ class BootstrapStatusCard extends ConsumerWidget {
         ok: status.aria2cOk,
         version: status.aria2cVersion,
       ),
+      // JS runtime: QuickJS on Android (pending), Deno on desktop
       _BinaryInfo(
-        name: 'Deno',
-        ok: status.denoOk,
-        version: status.denoVersion,
+        name: Platform.isAndroid ? 'QuickJS' : 'Deno',
+        ok: status.jsRuntimeOk,
+        version: status.jsRuntimeOk ? status.jsRuntimeVersion : null,
+        // QuickJS on Android has no Chaquopy wheel yet — show as pending, not error
+        optional: Platform.isAndroid,
       ),
     ];
 
@@ -223,11 +227,14 @@ class _BinaryInfo {
   final String name;
   final bool ok;
   final String? version;
+  /// When true and not ok, shows 'pending' with a neutral icon instead of error red.
+  final bool optional;
 
   const _BinaryInfo({
     required this.name,
     required this.ok,
     this.version,
+    this.optional = false,
   });
 }
 
@@ -244,14 +251,20 @@ class _BinaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // For optional binaries that are missing, show neutral 'pending' state
+    final isOptionalMissing = binary.optional && !binary.ok;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(
-            binary.ok ? Icons.check_circle : Icons.cancel,
+            binary.ok
+                ? Icons.check_circle
+                : (isOptionalMissing ? Icons.hourglass_empty : Icons.cancel),
             size: 16,
-            color: binary.ok ? colorScheme.tertiary : colorScheme.error,
+            color: binary.ok
+                ? colorScheme.tertiary
+                : (isOptionalMissing ? colorScheme.outline : colorScheme.error),
           ),
           const SizedBox(width: 8),
           Text(
@@ -270,10 +283,11 @@ class _BinaryRow extends StatelessWidget {
             )
           else
             Text(
-              binary.ok ? 'installed' : 'missing',
+              binary.ok ? 'installed' : (isOptionalMissing ? 'pending' : 'missing'),
               style: textTheme.mono.copyWith(
-                color:
-                    binary.ok ? colorScheme.tertiary : colorScheme.error,
+                color: binary.ok
+                    ? colorScheme.tertiary
+                    : (isOptionalMissing ? colorScheme.outline : colorScheme.error),
                 fontSize: 11,
               ),
             ),

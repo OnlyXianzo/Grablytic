@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/engine/engine_provider.dart';
 
@@ -8,8 +9,12 @@ class EngineStatus {
   final String? ffmpegVersion;
   final bool aria2cOk;
   final String? aria2cVersion;
+  // Desktop-only: Deno
   final bool denoOk;
   final String? denoVersion;
+  // Android-only: QuickJS
+  final bool quickjsOk;
+  // Common: detected JS runtime (quickjs | deno | none)
   final String? jsRuntime;
   final String? jsRuntimeVersion;
   final List<String> updateComponents;
@@ -25,6 +30,7 @@ class EngineStatus {
     this.aria2cVersion,
     this.denoOk = false,
     this.denoVersion,
+    this.quickjsOk = false,
     this.jsRuntime,
     this.jsRuntimeVersion,
     this.updateComponents = const [],
@@ -32,8 +38,15 @@ class EngineStatus {
     this.error,
   });
 
-  bool get allBinariesOk =>
-      ytDlpVersion != null && ffmpegOk && aria2cOk;
+  /// True if essential binaries (yt-dlp + ffmpeg) are ready.
+  /// aria2c is optional; JS runtime is platform-specific.
+  bool get allBinariesOk => ytDlpVersion != null && ffmpegOk && aria2cOk;
+
+  /// True if the JS runtime for this platform is available.
+  bool get jsRuntimeOk {
+    if (Platform.isAndroid) return quickjsOk;
+    return denoOk;
+  }
 
   String? get statusMessage {
     if (error != null) return error;
@@ -43,7 +56,8 @@ class EngineStatus {
     if (updateComponents.contains('ffmpeg')) {
       return 'FFmpeg update available';
     }
-    if (updateComponents.contains('deno')) {
+    // Deno updates are desktop-only — never surface on Android
+    if (!Platform.isAndroid && updateComponents.contains('deno')) {
       return 'Deno update available';
     }
     if (updateComponents.contains('aria2c')) {
@@ -64,6 +78,7 @@ final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
           [];
       final jsRuntime = result['js_runtime'] as String?;
       final jsRuntimeVersion = result['js_runtime_version'] as String?;
+      final quickjsOk = result['quickjs_ok'] as bool? ?? false;
       return EngineStatus(
         ready: true,
         ytDlpVersion: result['yt_dlp_version'] as String?,
@@ -73,6 +88,7 @@ final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
         aria2cVersion: result['aria2c_version'] as String?,
         denoOk: jsRuntime == 'deno',
         denoVersion: jsRuntime == 'deno' ? jsRuntimeVersion : null,
+        quickjsOk: quickjsOk,
         jsRuntime: jsRuntime,
         jsRuntimeVersion: jsRuntimeVersion,
         updateComponents: components,
