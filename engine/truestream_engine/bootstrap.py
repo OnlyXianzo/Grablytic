@@ -459,8 +459,9 @@ def bootstrap() -> dict:
             "ffmpeg_version": "7.1.1" if ffmpeg_ok else None,
             "aria2c_ok": aria2c_ok,
             "aria2c_version": "1.37.0" if aria2c_ok else None,
-            "deno_ok": deno_ok,
-            "deno_version": "2.2.0" if deno_ok else None,
+            "deno_ok": deno_ok if not is_android else False,
+            "deno_version": "2.2.0" if (deno_ok and not is_android) else None,
+            "quickjs_ok": False,  # never available in test env
             "js_runtime": js_runtime_info["name"],
             "js_runtime_version": js_runtime_info["version"],
             "needs_update": False,
@@ -563,23 +564,40 @@ def bootstrap() -> dict:
         p = paths["aria2c_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             aria2c_ok = True
-    if not deno_ok and paths.get("deno_path"):
+    # Deno is desktop-only — never check deno_path on Android
+    if not is_android and not deno_ok and paths.get("deno_path"):
         p = paths["deno_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             deno_ok = True
+
+    # QuickJS availability (Android JS runtime)
+    quickjs_ok = False
+    if is_android:
+        try:
+            import quickjs  # type: ignore[import-untyped]
+            quickjs_ok = True
+        except ImportError:
+            pass
 
     if not ffmpeg_ok:
         update_components.append("ffmpeg")
     if not aria2c_ok:
         update_components.append("aria2c")
-    if not deno_ok:
+    # Deno is desktop-only — never flag as missing on Android
+    if not is_android and not deno_ok:
         update_components.append("deno")
 
     yt_dlp_ver = _get_yt_dlp_version()
     js_name = js_runtime_info["name"]
     js_ver = js_runtime_info["version"]
 
-    if deno_ok and deno_version:
+    if is_android:
+        # On Android: QuickJS is the JS runtime; Deno is never used
+        js_runtime = js_name  # "quickjs" or "none"
+        js_runtime_version = js_ver
+        deno_ok = False
+        deno_version = None
+    elif deno_ok and deno_version:
         js_runtime = "deno"
         js_runtime_version = deno_version
     else:
@@ -595,6 +613,7 @@ def bootstrap() -> dict:
         "aria2c_version": aria2c_version,
         "deno_ok": deno_ok,
         "deno_version": deno_version,
+        "quickjs_ok": quickjs_ok,
         "js_runtime": js_runtime,
         "js_runtime_version": js_runtime_version,
         "needs_update": len(update_components) > 0,

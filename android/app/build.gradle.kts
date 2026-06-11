@@ -70,6 +70,8 @@ chaquopy {
         version = "3.11"
         pip {
             install("yt-dlp")
+            // python-quickjs requires native Android wheel not yet available via Chaquopy pip.
+            // QuickJS on Android will be bridged via Kotlin JNI in a future milestone.
         }
     }
     sourceSets {
