@@ -69,3 +69,7 @@ GEMINI.md
 .gemini/
 .opencode/
 .mcp.json
+.env
+.kilo/
+opencode.json
+wiki/
