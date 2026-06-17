@@ -1,4 +1,16 @@
 from truestream_engine.paths import set_paths, get_paths, is_initialized
+import pytest
+import os
+
+@pytest.fixture(autouse=True)
+def mock_isfile(monkeypatch):
+    original_isfile = os.path.isfile
+    monkeypatch.setattr(
+        os.path,
+        "isfile",
+        lambda path: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_isfile(path)
+    )
+
 
 
 def test_set_paths_returns_success():

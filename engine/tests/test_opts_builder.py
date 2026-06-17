@@ -6,6 +6,13 @@ from truestream_engine.opts_builder import build_ydl_opts
 @pytest.fixture(autouse=True)
 def reset_paths(monkeypatch):
     import shutil
+    import os
+    original_isfile = os.path.isfile
+    monkeypatch.setattr(
+        os.path,
+        "isfile",
+        lambda path: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_isfile(path)
+    )
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     _paths["data_dir"] = None
     _paths["aria2c_path"] = None
