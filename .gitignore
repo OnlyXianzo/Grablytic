@@ -58,6 +58,7 @@ build/
 # Agent private workspace — never commit
 .agents/
 graphify-out/
+.codegraph/
 
 # Skills tooling
 skills-lock.json

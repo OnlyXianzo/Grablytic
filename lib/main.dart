@@ -21,7 +21,19 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final appDir = await getApplicationDocumentsDirectory();
   final cacheDir = await getTemporaryDirectory();
-  setEngineDirs(appDir.path, cacheDir.path);
+
+  final isWindows = !kIsWeb && Platform.isWindows;
+  final ext = isWindows ? '.exe' : '';
+
+  setEngineDirs(
+    appDir.path,
+    cacheDir.path,
+    ffmpegPath: '${appDir.path}/bin/ffmpeg$ext',
+    aria2cPath: '${appDir.path}/bin/aria2c$ext',
+    denoPath: !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+        ? '${appDir.path}/bin/deno$ext'
+        : null,
+  );
 
   // Set professional industrial-grade download path if unset or using the dummy path
   if (!prefs.containsKey('downloadPath') || prefs.getString('downloadPath') == '/Internal/Videos') {

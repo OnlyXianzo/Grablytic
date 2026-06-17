@@ -17,7 +17,7 @@ from truestream_engine.paths import get_paths, is_initialized
 GITHUB_REPOS = {
     "uv": "astral-sh/uv",
     "ffmpeg": "BtbN/FFmpeg-Builds",
-    "aria2c": "aria2/aria2",
+    "aria2c": "asdo92/aria2-static-builds",
     "deno": "denoland/deno",
 }
 
@@ -72,7 +72,11 @@ def _get_asset_substring(name: str, platform_key: str) -> str:
     if name == "ffmpeg":
         return FFMPEG_PLATFORM_MAP.get(platform_key, platform_key)
     if name == "aria2c":
-        return PLATFORM_TRIPLES.get(platform_key, platform_key)
+        if "windows" in platform_key:
+            return "windows-x86_64"
+        if "arm64" in platform_key or "aarch64" in platform_key:
+            return "aarch64"
+        return "x86_64"
     return PLATFORM_TRIPLES.get(platform_key, platform_key)
 
 

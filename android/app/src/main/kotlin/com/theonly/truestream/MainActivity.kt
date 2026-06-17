@@ -22,6 +22,10 @@ class MainActivity : FlutterActivity() {
     private var sharedUrl: String? = null
     private var py: Python? = null
 
+    private var dataDir: String? = null
+    private var ffmpegPath: String? = null
+    private var aria2cPath: String? = null
+
     private fun handleSendText(intent: Intent?) {
         if (intent == null) return
         if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
@@ -74,20 +78,20 @@ class MainActivity : FlutterActivity() {
                     sharedUrl = null
                 }
                 "paths/set" -> {
-                    val dataDir = call.argument<String>("data_dir")
+                    this.dataDir = call.argument<String>("data_dir")
                     val outputDir = call.argument<String>("output_dir")
-                    val ffmpegPath = call.argument<String>("ffmpeg_path")
+                    this.ffmpegPath = call.argument<String>("ffmpeg_path")
                     val cacheDir = call.argument<String>("cache_dir")
                     val cookiesPath = call.argument<String>("cookies_path")
-                    val aria2cPath = call.argument<String>("aria2c_path")
+                    this.aria2cPath = call.argument<String>("aria2c_path")
                     val poToken = call.argument<String>("po_token")
 
-                    if (ffmpegPath != null) {
-                        val file = File(ffmpegPath)
+                    ffmpegPath?.let { path ->
+                        val file = File(path)
                         if (file.exists()) file.setExecutable(true, false)
                     }
-                    if (aria2cPath != null) {
-                        val file = File(aria2cPath)
+                    aria2cPath?.let { path ->
+                        val file = File(path)
                         if (file.exists()) file.setExecutable(true, false)
                     }
 
@@ -108,6 +112,23 @@ class MainActivity : FlutterActivity() {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
                             val bootstrapResult = engine.callAttr("bootstrap")
+
+                            // Force executable flag on freshly downloaded binaries
+                            ffmpegPath?.let { path ->
+                                val file = File(path)
+                                if (file.exists()) file.setExecutable(true, false)
+                            }
+                            aria2cPath?.let { path ->
+                                val file = File(path)
+                                if (file.exists()) file.setExecutable(true, false)
+                            }
+                            dataDir?.let { dir ->
+                                val ffmpegFile = File(dir, "bin/ffmpeg")
+                                if (ffmpegFile.exists()) ffmpegFile.setExecutable(true, false)
+                                val aria2cFile = File(dir, "bin/aria2c")
+                                if (aria2cFile.exists()) aria2cFile.setExecutable(true, false)
+                            }
+
                             val jsonStr = pyJson(bootstrapResult)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
