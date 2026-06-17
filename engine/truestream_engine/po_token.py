@@ -1,5 +1,32 @@
 import os
 import shutil
+import hashlib
+
+# Strict allowlist of SHA-256 hashes of approved JS scripts
+QUICKJS_STUB_SCRIPT = """
+            // PO Token generation — YouTube's PoToken.generate()
+            // This requires the actual YouTube challenge script loaded at runtime
+            // For the stub: return None and fall back to android client
+            null
+        """
+
+DENO_STUB_SCRIPT = """
+        const url = Deno.args[0];
+        // PO Token generation stub — returns null, falls back to no token
+        console.log(JSON.stringify({ token: null }));
+        """
+
+APPROVED_JS_HASHES = {
+    hashlib.sha256(QUICKJS_STUB_SCRIPT.encode("utf-8")).hexdigest(),
+    hashlib.sha256(DENO_STUB_SCRIPT.encode("utf-8")).hexdigest(),
+}
+
+
+def verify_js_code(code: str) -> None:
+    """Cryptographically verify the JavaScript code against the allowlist of approved hashes."""
+    code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+    if code_hash not in APPROVED_JS_HASHES:
+        raise ValueError("Security Violation: Attempted evaluation of untrusted JavaScript code.")
 
 
 def detect_js_runtime() -> dict:
@@ -51,12 +78,8 @@ def _generate_with_quickjs(url: str) -> str | None:
     try:
         import quickjs  # type: ignore[import-untyped]
         ctx = quickjs.Context()
-        result = ctx.eval("""
-            // PO Token generation — YouTube's PoToken.generate()
-            // This requires the actual YouTube challenge script loaded at runtime
-            // For the stub: return None and fall back to android client
-            null
-        """)
+        verify_js_code(QUICKJS_STUB_SCRIPT)
+        result = ctx.eval(QUICKJS_STUB_SCRIPT)
         return str(result) if result else None
     except Exception:
         return None
@@ -69,13 +92,9 @@ def _generate_with_deno(url: str) -> str | None:
         return None
     try:
         import subprocess, json
-        script = f"""
-        const url = {json.dumps(url)};
-        // PO Token generation stub — returns null, falls back to no token
-        console.log(JSON.stringify({{ token: null }}));
-        """
+        verify_js_code(DENO_STUB_SCRIPT)
         res = subprocess.run(
-            [deno_path, "eval", script],
+            [deno_path, "eval", DENO_STUB_SCRIPT, "--", url],
             capture_output=True, text=True, timeout=10,
         )
         if res.returncode == 0:

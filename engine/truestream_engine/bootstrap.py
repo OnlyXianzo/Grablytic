@@ -176,6 +176,8 @@ def _download_and_extract_binary(
     )
 
     with tempfile.TemporaryDirectory(dir=temp_dir_root) as tmpdir:
+        if os.name != "nt":
+            os.chmod(tmpdir, 0o700)
         archive_path = os.path.join(tmpdir, "downloaded_asset")
 
         with urllib.request.urlopen(req, timeout=15) as response, open(
@@ -242,6 +244,8 @@ def _download_and_extract_no_sha(
     )
 
     with tempfile.TemporaryDirectory(dir=cache_dir) as tmpdir:
+        if os.name != "nt":
+            os.chmod(tmpdir, 0o700)
         archive_path = os.path.join(tmpdir, "downloaded_asset")
 
         with urllib.request.urlopen(req, timeout=15) as response, open(
