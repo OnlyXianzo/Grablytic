@@ -252,6 +252,14 @@ class _CookieWebViewScreenState extends ConsumerState<CookieWebViewScreen> {
 
     await cookiesFile.writeAsString(buffer.toString());
 
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['0600', cookiesFile.path]);
+      } catch (_) {
+        // Ignore chmod errors on platforms where chmod is unavailable
+      }
+    }
+
     // 4. Update path in settings provider
     final notifier = ref.read(settingsProvider.notifier);
     notifier.setCookiesPath(cookiesFile.path);

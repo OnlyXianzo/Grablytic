@@ -225,3 +225,38 @@ class TestBootstrap:
         assert "yt_dlp_latest" in res
         assert "binaries" in res
         assert "updates_queued" in res
+
+    def test_bootstrap_github_binary_missing_sha256(self, monkeypatch):
+        import shutil
+        import sys
+        import truestream_engine.bootstrap as bootstrap_dummy  # ensure module is loaded
+        from truestream_engine.bootstrap import _bootstrap_github_binary
+
+        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+
+        # Mock resolve_latest_release to return an asset but no sha256 checksum asset
+        monkeypatch.setattr(bootstrap_mod, "_resolve_latest_release", lambda repo: {
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": "ffmpeg-linux.tar.gz",
+                    "browser_download_url": "https://example.com/ffmpeg-linux.tar.gz"
+                }
+            ]
+        })
+
+        # Ensure dest_path does not exist and is not on system path
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+
+        dest_path = "/tmp/does_not_exist_ffmpeg"
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+
+        res = _bootstrap_github_binary(
+            "ffmpeg",
+            "foo/bar",
+            "linux",
+            dest_path,
+            "/tmp/cache"
+        )
+        assert res == (False, None)

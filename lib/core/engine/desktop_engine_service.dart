@@ -134,7 +134,7 @@ class DesktopEngineService implements EngineService {
       ['-m', 'truestream_engine'],
       workingDirectory: _workingDirectory,
       environment: env,
-      runInShell: true,
+      runInShell: false,
     );
 
     _stdoutSubscription = _process!.stdout

@@ -358,12 +358,12 @@ def _bootstrap_github_binary(
             except Exception:
                 pass
 
-        if expected_sha:
-            _download_and_extract_binary(
-                download_url, expected_sha, dest_path, cache_dir
-            )
-        else:
-            _download_and_extract_no_sha(download_url, dest_path, cache_dir)
+        if not expected_sha:
+            raise ValueError(f"No expected SHA-256 checksum found for {archive_name}")
+
+        _download_and_extract_binary(
+            download_url, expected_sha, dest_path, cache_dir
+        )
 
         if os.path.isfile(dest_path):
             return True, version_str
@@ -440,6 +440,8 @@ def bootstrap() -> dict:
 
     bin_dir = os.path.join(data_dir, "bin")
     os.makedirs(bin_dir, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(bin_dir, 0o700)
 
     js_runtime_info = _detect_js_runtime()
 
