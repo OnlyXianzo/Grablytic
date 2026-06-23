@@ -38,6 +38,20 @@ def download_thread(
         }
 
     try:
+        # Pre-download guard: verify ffmpeg is available and executable if required
+        paths = get_paths()
+        ffmpeg_path = paths.get("ffmpeg_path")
+        if not ffmpeg_path or not os.path.isfile(ffmpeg_path) or not os.access(ffmpeg_path, os.X_OK):
+            import shutil
+            if not shutil.which("ffmpeg"):
+                res_q.put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_FFMPEG_MISSING",
+                    "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
+                })
+                return
+
         opts = build_ydl_opts(
             config=config,
             network_type=network_type,

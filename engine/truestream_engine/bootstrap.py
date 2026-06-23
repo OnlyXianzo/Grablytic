@@ -145,6 +145,9 @@ def _find_checksum_url(assets: list, archive_name: str) -> str | None:
         name = a["name"]
         if "SHA256" in name.upper() and archive_name.split(".")[0] in name:
             return a["browser_download_url"]
+    for a in assets:
+        if a["name"] in ("checksums.sha256", "checksums.txt", "SHA256SUMS"):
+            return a["browser_download_url"]
     return None
 
 
@@ -320,6 +323,18 @@ def _bootstrap_github_binary(
 
     if os.path.isfile(dest_path) and os.access(dest_path, os.X_OK):
         return True, None
+
+    is_android = "ANDROID_DATA" in os.environ
+    if name == "ffmpeg" and is_android:
+        arch = "arm64" if "arm64" in asset_substring or "aarch64" in asset_substring else "amd64"
+        download_url = f"https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz"
+        try:
+            _download_and_extract_no_sha(download_url, dest_path, cache_dir)
+            if os.path.isfile(dest_path):
+                os.chmod(dest_path, 0o755)
+                return True, "release"
+        except Exception:
+            return False, None
 
     # Check if binary is available on system PATH (e.g. /usr/bin/ffmpeg)
     system_bin = shutil.which(name)

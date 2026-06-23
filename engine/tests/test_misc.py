@@ -260,3 +260,91 @@ class TestBootstrap:
             "/tmp/cache"
         )
         assert res == (False, None)
+
+    def test_bootstrap_github_binary_checksums_sha256_fallback(self, monkeypatch):
+        import shutil
+        import sys
+        import urllib.request
+        from truestream_engine.bootstrap import _bootstrap_github_binary
+
+        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+
+        monkeypatch.setattr(bootstrap_mod, "_resolve_latest_release", lambda repo: {
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": "ffmpeg-linux.tar.gz",
+                    "browser_download_url": "https://example.com/ffmpeg-linux.tar.gz"
+                },
+                {
+                    "name": "checksums.sha256",
+                    "browser_download_url": "https://example.com/checksums.sha256"
+                }
+            ]
+        })
+
+        class MockResponse:
+            def __init__(self, content):
+                self.content = content
+            def read(self):
+                return self.content
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        def mock_urlopen(req, timeout=None):
+            url = req.full_url if hasattr(req, "full_url") else req
+            if "checksums.sha256" in url:
+                return MockResponse(b"cd28922d804b0f4285472c09c071319cc8a75015252ca40fb7e4c5277d43ebba  ffmpeg-linux.tar.gz")
+            raise ValueError(f"Unexpected url {url}")
+
+        monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+        monkeypatch.setattr(bootstrap_mod, "_download_and_extract_binary", lambda url, sha, dest, cache: open(dest, "w").close())
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+
+        dest_path = "/tmp/test_checksum_fallback_ffmpeg"
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+
+        res = _bootstrap_github_binary(
+            "ffmpeg",
+            "foo/bar",
+            "linux",
+            dest_path,
+            "/tmp/cache"
+        )
+        assert res[0] is True
+        assert res[1] == "1.0.0"
+        
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+
+    def test_downloader_ffmpeg_guard(self, monkeypatch):
+        import queue
+        from truestream_engine.downloader import download_thread
+        from truestream_engine.paths import get_paths
+        
+        paths = get_paths()
+        old_ffmpeg = paths.get("ffmpeg_path")
+        paths["ffmpeg_path"] = "/tmp/nonexistent_ffmpeg_path_12345"
+        
+        import shutil
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        
+        res_q = queue.Queue()
+        download_thread(
+            url="https://youtube.com/watch?v=dQw4w9WgXcQ",
+            download_id="test_guard_id",
+            result_queue=res_q
+        )
+        
+        result = res_q.get()
+        assert result["success"] is False
+        assert result["error_type"] == "ERROR_FFMPEG_MISSING"
+        assert "FFmpeg binary is missing" in result["error_message"]
+        
+        if old_ffmpeg:
+            paths["ffmpeg_path"] = old_ffmpeg
+        else:
+            paths.pop("ffmpeg_path", None)
