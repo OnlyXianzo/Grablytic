@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/engine/engine_provider.dart';
+import '../../../core/utils/app_logger.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/preset_provider.dart';
@@ -97,13 +98,17 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
     try {
       final engine = ref.read(engineProvider);
-      final result = await engine.getFormats(
-        url: widget.url,
-        config: {
-          'cookies_path': null,
-          'proxy': null,
-          'verbose': false,
-        },
+      final result = await AppLogger.trace<Map<String, dynamic>>(
+        'Fetch format options for ${widget.url}',
+        () => engine.getFormats(
+          url: widget.url,
+          config: {
+            'cookies_path': null,
+            'proxy': null,
+            'verbose': false,
+          },
+        ),
+        tag: 'FormatPickerScreen',
       );
 
       if (result['success'] == true) {
@@ -180,6 +185,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   Future<void> _startDownload() async {
     if (_selectedVideoFormat == null && _selectedAudioFormat == null && _selectedMuxedFormat == null) return;
     if (_isStarting) return; // prevent duplicate taps
+    AppLogger.info('User initiated download for url: ${widget.url}', tag: 'FormatPickerScreen');
     setState(() => _isStarting = true);
 
     final downloadId = _uuid.v4();
@@ -191,11 +197,15 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       'explicit_audio_format_id': _selectedMuxedFormat != null ? null : _selectedAudioFormat,
     };
 
-    final result = await engine.startDownload(
-      url: widget.url,
-      downloadId: downloadId,
-      config: config,
-      networkType: 'wifi',
+    final result = await AppLogger.trace<Map<String, dynamic>>(
+      'Start download for ${widget.url}',
+      () => engine.startDownload(
+        url: widget.url,
+        downloadId: downloadId,
+        config: config,
+        networkType: 'wifi',
+      ),
+      tag: 'FormatPickerScreen',
     );
 
     if (result['success'] == true) {

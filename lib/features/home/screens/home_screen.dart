@@ -11,6 +11,9 @@ import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
 import '../widgets/error_recovery_card.dart';
 import '../widgets/bootstrap_status_card.dart';
+import '../../settings/screens/log_viewer_screen.dart';
+import '../../../core/utils/app_logger.dart';
+
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -235,6 +238,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
   void _submitUrl() {
     final url = _controller.text.trim();
     if (url.isEmpty) return;
+    AppLogger.info('User submitted URL: $url', tag: 'HomeScreen');
     _focusNode.unfocus();
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -294,10 +298,13 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                 borderRadius: BorderRadius.circular(8),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => const BatchImportDialog(),
-                  ),
+                  onTap: () {
+                    AppLogger.info('User clicked Batch import URLs button', tag: 'HomeScreen');
+                    showDialog(
+                      context: context,
+                      builder: (_) => const BatchImportDialog(),
+                    );
+                  },
                   child: Container(
                     width: 48,
                     height: 48,
@@ -590,55 +597,14 @@ class _EngineStatusBanner extends ConsumerWidget {
 
     return statusAsync.when(
       loading: () => const BootstrapStatusCard(),
-      error: (err, _) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Semantics(
-          label: 'Engine error: $err',
-          child: Row(
-            children: [
-              Icon(Icons.warning_amber,
-                  size: 16, color: colorScheme.onErrorContainer),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  err.toString(),
-                  style: textTheme.labelSmall
-                      ?.copyWith(color: colorScheme.onErrorContainer),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      error: (err, _) {
+        AppLogger.error('Engine status provider error', error: err);
+        return _buildErrorPlaceholder(context, colorScheme, textTheme);
+      },
       data: (status) {
         if (status.error != null) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: colorScheme.errorContainer,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.warning_amber,
-                    size: 16, color: colorScheme.onErrorContainer),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    status.error!,
-                    style: textTheme.labelSmall
-                        ?.copyWith(color: colorScheme.onErrorContainer),
-                  ),
-                ),
-              ],
-            ),
-          );
+          AppLogger.error('Engine status reports error: ${status.error}');
+          return _buildErrorPlaceholder(context, colorScheme, textTheme);
         }
 
         final message = status.statusMessage;
@@ -678,6 +644,69 @@ class _EngineStatusBanner extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildErrorPlaceholder(
+      BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withAlpha(30),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.error.withAlpha(80),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.error_outline, color: colorScheme.error, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Looks like something went wrong.',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onErrorContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'The engine encountered an error. You can view diagnostics, get an AI-generated fix template, or report this on GitHub.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              AppLogger.info('User clicked Open Log & Report button on error panel', tag: 'HomeScreen');
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const LogViewerScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.bug_report_outlined, size: 16),
+            label: const Text('Open Log & Report'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: colorScheme.error,
+              side: BorderSide(color: colorScheme.error.withAlpha(120)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -813,6 +842,7 @@ class _ResumeScanSection extends ConsumerWidget {
                       children: [
                         TextButton(
                           onPressed: () {
+                            AppLogger.info('User dismissed resume candidate: ${candidate.filename}', tag: 'HomeScreen');
                             ref.read(resumeProvider.notifier).dismiss(candidate);
                           },
                           style: TextButton.styleFrom(
@@ -824,6 +854,7 @@ class _ResumeScanSection extends ConsumerWidget {
                         if (candidate.likelyUrl != null && !candidate.expired) ...[
                           ElevatedButton(
                             onPressed: () {
+                              AppLogger.info('User clicked resume candidate: ${candidate.filename}', tag: 'HomeScreen');
                               ref.read(sharedUrlProvider.notifier).state = candidate.likelyUrl;
                               ref.read(resumeProvider.notifier).removeCandidateFromList(candidate);
                             },
@@ -839,6 +870,7 @@ class _ResumeScanSection extends ConsumerWidget {
                         ] else ...[
                           OutlinedButton(
                             onPressed: () {
+                              AppLogger.info('User clicked retry candidate: ${candidate.filename}', tag: 'HomeScreen');
                               if (candidate.likelyUrl != null) {
                                 ref.read(resumeProvider.notifier).deleteFileOnly(candidate);
                                 ref.read(sharedUrlProvider.notifier).state = candidate.likelyUrl;
