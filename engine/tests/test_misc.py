@@ -323,11 +323,10 @@ class TestBootstrap:
     def test_downloader_ffmpeg_guard(self, monkeypatch):
         import queue
         from truestream_engine.downloader import download_thread
-        from truestream_engine.paths import get_paths
+        import truestream_engine.paths
         
-        paths = get_paths()
-        old_ffmpeg = paths.get("ffmpeg_path")
-        paths["ffmpeg_path"] = "/tmp/nonexistent_ffmpeg_path_12345"
+        old_ffmpeg = truestream_engine.paths._paths.get("ffmpeg_path")
+        truestream_engine.paths._paths["ffmpeg_path"] = "/tmp/nonexistent_ffmpeg_path_12345"
         
         import shutil
         monkeypatch.setattr(shutil, "which", lambda name: None)
@@ -345,6 +344,6 @@ class TestBootstrap:
         assert "FFmpeg binary is missing" in result["error_message"]
         
         if old_ffmpeg:
-            paths["ffmpeg_path"] = old_ffmpeg
+            truestream_engine.paths._paths["ffmpeg_path"] = old_ffmpeg
         else:
-            paths.pop("ffmpeg_path", None)
+            truestream_engine.paths._paths.pop("ffmpeg_path", None)
