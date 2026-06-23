@@ -470,8 +470,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(archiveByFolder: value);
   }
 
-  void setCustomTemplates(List<String> templates) {
-    _prefs.setString('customTemplates', jsonEncode(templates));
+  Future<void> setCustomTemplates(List<String> templates) async {
+    await _prefs.setString('customTemplates', jsonEncode(templates));
     state = state.copyWith(customTemplates: templates);
   }
 
