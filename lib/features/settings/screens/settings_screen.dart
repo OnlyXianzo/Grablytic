@@ -15,6 +15,8 @@ import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
 import 'sponsorblock_settings_screen.dart';
 import 'about_screen.dart';
+import 'log_viewer_screen.dart';
+
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -277,6 +279,19 @@ class SettingsScreen extends ConsumerWidget {
                   );
                 },
               ).animate().fadeIn(delay: 340.ms, duration: 300.ms).slideX(begin: 0.1),
+              _SettingNavItem(
+                icon: Icons.bug_report_outlined,
+                title: 'Diagnostics & Logs',
+                subtitle: 'View, export, delete, or report app logs',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LogViewerScreen(),
+                    ),
+                  );
+                },
+              ).animate().fadeIn(delay: 360.ms, duration: 300.ms).slideX(begin: 0.1),
               _SettingAction(
                 icon: Icons.history,
                 title: 'Clear Search History',
