@@ -11,6 +11,7 @@ import 'features/shell/screens/app_shell.dart';
 import 'providers/settings_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
 import 'core/engine/engine_provider.dart' show setEngineDirs;
+import 'core/utils/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,8 @@ void main() async {
   }
   final prefs = await SharedPreferences.getInstance();
   final appDir = await getApplicationDocumentsDirectory();
+  await AppLogger.init(appDir.path, prefs);
+  AppLogger.info('App opened/started');
   final cacheDir = await getTemporaryDirectory();
 
   final isWindows = !kIsWeb && Platform.isWindows;
