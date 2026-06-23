@@ -8,6 +8,7 @@ import '../../settings/screens/settings_screen.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
+import '../../../core/utils/app_logger.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -18,17 +19,20 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int _currentIndex = 0;
+  late final PageController _pageController;
   StreamSubscription<String>? _intentSubscription;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _currentIndex);
     _initSharedUrlListening();
   }
 
   @override
   void dispose() {
     _intentSubscription?.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -80,10 +84,12 @@ class _AppShellState extends ConsumerState<AppShell> {
         const SnackBar(content: Text('Auto-starting download from shared link')),
       );
 
-      setState(() => _currentIndex = 0);
+      _currentIndex = 0;
+      _pageController.jumpToPage(0);
     } else {
       ref.read(sharedUrlProvider.notifier).state = url;
-      setState(() => _currentIndex = 0);
+      _currentIndex = 0;
+      _pageController.jumpToPage(0);
     }
   }
 
@@ -92,6 +98,27 @@ class _AppShellState extends ConsumerState<AppShell> {
     const LibraryScreen(),
     const SettingsScreen(),
   ];
+
+  void _onPageChanged(int index) {
+    if (index == _currentIndex) return;
+    AppLogger.info('User swiped to tab: $index (${_screens[index].runtimeType})');
+    setState(() {
+      _currentIndex = index;
+    });
+  }
+
+  void _onDestinationSelected(int index) {
+    if (index == _currentIndex) return;
+    AppLogger.info('User clicked tab navigation from $_currentIndex to $index');
+    setState(() {
+      _currentIndex = index;
+    });
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,7 +132,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           children: [
             NavigationRail(
               selectedIndex: _currentIndex,
-              onDestinationSelected: (index) => setState(() => _currentIndex = index),
+              onDestinationSelected: _onDestinationSelected,
               backgroundColor: colorScheme.surfaceContainerLowest,
               indicatorColor: colorScheme.primaryContainer,
               selectedIconTheme: IconThemeData(color: colorScheme.onPrimaryContainer),
@@ -138,8 +165,9 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
             const VerticalDivider(thickness: 1, width: 1),
             Expanded(
-              child: IndexedStack(
-                index: _currentIndex,
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: _onPageChanged,
                 children: _screens,
               ),
             ),
@@ -149,8 +177,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: _onPageChanged,
         children: _screens,
       ),
       bottomNavigationBar: Container(
@@ -173,21 +202,21 @@ class _AppShellState extends ConsumerState<AppShell> {
                   label: 'Download',
                   isActive: _currentIndex == 0,
                   colorScheme: colorScheme,
-                  onTap: () => setState(() => _currentIndex = 0),
+                  onTap: () => _onDestinationSelected(0),
                 ),
                 _NavItem(
                   icon: Icons.folder_open,
                   label: 'Library',
                   isActive: _currentIndex == 1,
                   colorScheme: colorScheme,
-                  onTap: () => setState(() => _currentIndex = 1),
+                  onTap: () => _onDestinationSelected(1),
                 ),
                 _NavItem(
                   icon: Icons.settings,
                   label: 'Settings',
                   isActive: _currentIndex == 2,
                   colorScheme: colorScheme,
-                  onTap: () => setState(() => _currentIndex = 2),
+                  onTap: () => _onDestinationSelected(2),
                 ),
               ],
             ),
