@@ -40,7 +40,7 @@ class EngineStatus {
 
   /// True if essential binaries (yt-dlp + ffmpeg) are ready.
   /// aria2c is optional; JS runtime is platform-specific.
-  bool get allBinariesOk => ytDlpVersion != null && ffmpegOk && aria2cOk;
+  bool get allBinariesOk => ytDlpVersion != null && ffmpegOk;
 
   /// True if the JS runtime for this platform is available.
   bool get jsRuntimeOk {

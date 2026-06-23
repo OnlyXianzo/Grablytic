@@ -141,6 +141,7 @@ class BootstrapStatusCard extends ConsumerWidget {
         name: 'aria2c',
         ok: status.aria2cOk,
         version: status.aria2cVersion,
+        optional: true,
       ),
       // JS runtime: QuickJS on Android (pending), Deno on desktop
       _BinaryInfo(
