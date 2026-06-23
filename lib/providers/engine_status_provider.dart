@@ -70,6 +70,12 @@ class EngineStatus {
 final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
   final engine = ref.watch(engineProvider);
   try {
+    // Ensure setPaths completes before bootstrap — prevents
+    // "paths/set not called before bootstrap" race condition.
+    final pathsFuture = engineSetPathsFuture;
+    if (pathsFuture != null) {
+      await pathsFuture;
+    }
     final result = await engine.bootstrap();
     if (result['success'] == true) {
       final components = (result['update_components'] as List?)

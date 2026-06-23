@@ -19,7 +19,7 @@ final engineProvider = Provider<EngineService>((ref) {
       : settings.downloadPath;
 
   if (_appDir != null) {
-    engine.setPaths({
+    _setPathsFuture = engine.setPaths({
       'data_dir': _appDir,
       'cache_dir': _cacheDir,
       'output_dir': initialOutputDir,
@@ -52,6 +52,11 @@ final engineProvider = Provider<EngineService>((ref) {
   }
   return engine;
 });
+
+/// Future that completes when the initial setPaths call finishes.
+/// Awaited by engineStatusProvider before calling bootstrap().
+Future<void>? _setPathsFuture;
+Future<void>? get engineSetPathsFuture => _setPathsFuture;
 
 String? _appDir;
 String? _cacheDir;
