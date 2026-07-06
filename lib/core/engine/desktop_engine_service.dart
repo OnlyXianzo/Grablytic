@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../utils/app_logger.dart';
 import 'engine_service.dart';
 
 const _uuid = Uuid();
@@ -146,7 +147,7 @@ class DesktopEngineService implements EngineService {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((line) {
-      debugPrint('[truestream-engine] $line');
+      AppLogger.warn(line, tag: 'engine-stderr');
     });
 
     _process!.exitCode.then((code) {
@@ -178,6 +179,17 @@ class DesktopEngineService implements EngineService {
       final data = jsonDecode(line) as Map<String, dynamic>;
 
       if (data['type'] == 'event') {
+        if (!_progressController.isClosed) {
+          try {
+            _progressController.add(data);
+          } catch (_) {
+            // StreamSink may be in bad state after engine restart
+          }
+        }
+        return;
+      }
+
+      if (data['type'] == 'log') {
         if (!_progressController.isClosed) {
           try {
             _progressController.add(data);
@@ -239,17 +251,17 @@ class DesktopEngineService implements EngineService {
         ? '$venvDir\\Scripts\\python.exe'
         : '$venvDir/bin/python';
 
-    debugPrint('[truestream-engine] Creating uv venv at $venvDir...');
+    AppLogger.info('Creating uv venv at $venvDir...', tag: 'engine-deps');
     var result = await Process.run(
       uvPath,
       ['venv', venvDir],
     ).timeout(const Duration(seconds: 60));
 
     if (result.exitCode != 0) {
-      debugPrint('[truestream-engine] uv venv failed: ${result.stderr}');
+      AppLogger.warn('uv venv failed: ${result.stderr}', tag: 'engine-deps');
     }
 
-    debugPrint('[truestream-engine] Installing yt-dlp into venv...');
+    AppLogger.info('Installing yt-dlp into venv...', tag: 'engine-deps');
     result = await Process.run(
       uvPath,
       ['pip', 'install', 'yt-dlp'],
@@ -270,7 +282,7 @@ class DesktopEngineService implements EngineService {
 
     final uvPath = await _findUv();
     if (uvPath == null) {
-      debugPrint('[truestream-engine] uv not found, attempting pip fallback...');
+      AppLogger.warn('uv not found, attempting pip fallback...', tag: 'engine-deps');
       final pipCmd = Platform.isWindows ? 'pip' : 'pip3';
       final pipResult = await Process.run(pipCmd, ['install', '--user', 'yt-dlp']);
       if (pipResult.exitCode == 0 && await _hasYtDlp(pythonPath)) {
@@ -281,14 +293,14 @@ class DesktopEngineService implements EngineService {
       );
     }
 
-    debugPrint('[truestream-engine] Installing yt-dlp via uv...');
+    AppLogger.info('Installing yt-dlp via uv...', tag: 'engine-deps');
     final venvPython = await _installYtDlpViaUv(uvPath);
 
     if (!await _hasYtDlp(venvPython)) {
       throw Exception('yt-dlp installation completed but verification failed.');
     }
 
-    debugPrint('[truestream-engine] yt-dlp ready via venv: $venvPython');
+    AppLogger.info('yt-dlp ready via venv: $venvPython', tag: 'engine-deps');
     return venvPython;
   }
 
@@ -374,6 +386,10 @@ class DesktopEngineService implements EngineService {
 
   @override
   Stream<Map<String, dynamic>> get progressStream => _progressController.stream;
+
+  @override
+  Stream<Map<String, dynamic>> get logStream => _progressController.stream
+      .where((data) => data['type'] == 'log');
 
   @override
   Future<Map<String, dynamic>> getFormats({

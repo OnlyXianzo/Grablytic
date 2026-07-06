@@ -252,6 +252,9 @@ class MockEngineService implements EngineService {
     return {'success': true};
   }
 
+  @override
+  Stream<Map<String, dynamic>> get logStream => const Stream.empty();
+
   void dispose() {
     _progressController.close();
   }

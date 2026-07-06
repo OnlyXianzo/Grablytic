@@ -140,5 +140,8 @@ class PlatformChannelEngineService implements EngineService {
       return {'success': false, 'error_type': 'ERROR_UNKNOWN', 'error_message': 'Not available on this platform'};
     }
   }
+
+  @override
+  Stream<Map<String, dynamic>> get logStream => const Stream.empty();
 }
 

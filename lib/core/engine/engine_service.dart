@@ -22,4 +22,5 @@ abstract class EngineService {
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir});
   Future<Map<String, dynamic>> updateCheck();
   Future<Map<String, dynamic>> setUpdateChannel(String channel);
+  Stream<Map<String, dynamic>> get logStream;
 }

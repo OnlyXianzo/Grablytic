@@ -9,9 +9,11 @@ import 'core/engine/engine_provider.dart';
 import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/shell/screens/app_shell.dart';
 import 'providers/settings_provider.dart';
+import 'providers/log_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
 import 'core/engine/engine_provider.dart' show setEngineDirs;
 import 'core/utils/app_logger.dart';
+import 'core/utils/log_buffer.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +24,12 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final appDir = await getApplicationDocumentsDirectory();
   await AppLogger.init(appDir.path, prefs);
+
+  // Initialize in-memory log buffer and wire to AppLogger
+  final logBuffer = LogBuffer(maxEntries: 5000);
+  AppLogger.initBuffer(logBuffer);
   AppLogger.info('App opened/started');
+
   final cacheDir = await getTemporaryDirectory();
 
   final isWindows = !kIsWeb && Platform.isWindows;
@@ -48,6 +55,7 @@ void main() async {
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
+        logBufferProvider.overrideWithValue(logBuffer),
       ],
       child: const TrueStreamApp(),
     ),
