@@ -185,6 +185,15 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   Future<void> _startDownload() async {
     if (_selectedVideoFormat == null && _selectedAudioFormat == null && _selectedMuxedFormat == null) return;
     if (_isStarting) return; // prevent duplicate taps
+
+    final notifier = ref.read(downloadProvider.notifier);
+    if (notifier.isDownloading(widget.url)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Download already in progress for this link')),
+      );
+      return;
+    }
+
     AppLogger.info('User initiated download for url: ${widget.url}', tag: 'FormatPickerScreen');
     setState(() => _isStarting = true);
 
@@ -209,7 +218,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
 
     if (result['success'] == true) {
-      ref.read(downloadProvider.notifier).addDownload(
+      notifier.addDownload(
         DownloadItem(
           id: downloadId,
           title: _fetchedTitle.isNotEmpty ? _fetchedTitle : widget.title,

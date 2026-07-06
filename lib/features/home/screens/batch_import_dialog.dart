@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/text_styles.dart';
-import '../../../providers/download_provider.dart';
-
-const _uuid = Uuid();
+import '../../../providers/batch_provider.dart';
+import 'batch_download_screen.dart';
 
 class BatchImportDialog extends ConsumerStatefulWidget {
   const BatchImportDialog({super.key});
@@ -75,18 +73,20 @@ class _BatchImportDialogState extends ConsumerState<BatchImportDialog> {
 
   void _importSelected() {
     setState(() => _importing = true);
-    final count = _selectedUrls.length;
-    for (final url in _selectedUrls) {
-      final id = _uuid.v4();
-      ref.read(downloadProvider.notifier).addDownload(
-        DownloadItem(id: id, title: url, url: url),
-      );
-    }
+    final batchItems = _selectedUrls
+        .map((url) => BatchItem(url: url, title: url))
+        .toList();
+
     if (mounted) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$count download${count == 1 ? '' : 's'} added')),
-      );
+      if (batchItems.isNotEmpty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BatchDownloadScreen(items: batchItems),
+          ),
+        );
+      }
     }
   }
 

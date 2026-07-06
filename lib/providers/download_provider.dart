@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
+import '../core/utils/app_logger.dart';
 
 class DownloadItem {
   final String id;
@@ -54,6 +55,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   List<DownloadItem> get inProgress =>
       state.where((d) => d.status == 'downloading').toList();
 
+  bool isDownloading(String url) {
+    return state.any((d) => d.url == url && d.status == 'downloading');
+  }
+
   void addDownload(DownloadItem item) {
     state = [...state, item];
   }
@@ -81,6 +86,15 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void handleProgressEvent(Map<String, dynamic> event) {
+    final type = event['type'] as String?;
+    if (type == 'log') {
+      final level = event['level'] as String? ?? 'INFO';
+      final message = event['message'] as String? ?? '';
+      final downloadId = event['download_id'] as String? ?? '';
+      AppLogger.log(level, '[$downloadId] $message', tag: 'yt-dlp');
+      return;
+    }
+
     final downloadId = event['download_id'] as String?;
     if (downloadId == null) return;
 

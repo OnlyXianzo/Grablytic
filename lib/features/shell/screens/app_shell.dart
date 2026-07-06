@@ -55,6 +55,16 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     final settings = ref.read(settingsProvider);
     if (settings.autoStartDownloadOnShare) {
+      final notifier = ref.read(downloadProvider.notifier);
+      if (notifier.isDownloading(url)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Download already in progress for this link')),
+        );
+        _currentIndex = 0;
+        _pageController.jumpToPage(0);
+        return;
+      }
+
       final downloadId = const Uuid().v4();
       final config = <String, dynamic>{
         'container': settings.qualityCeiling == 'best' ? 'mkv' : 'mp4',
@@ -69,7 +79,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         networkType: 'wifi',
       );
 
-      ref.read(downloadProvider.notifier).addDownload(
+      notifier.addDownload(
         DownloadItem(
           id: downloadId,
           title: url,

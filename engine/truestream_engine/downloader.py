@@ -63,6 +63,37 @@ def download_thread(
             opts["paths"] = opts.get("paths", {})
             opts["paths"]["temp"] = get_paths()["cache_dir"]
 
+        class YDLogger:
+            def __init__(self, queue: _queue.Queue, download_id: str):
+                self.queue = queue
+                self.download_id = download_id
+
+            def debug(self, msg):
+                self._log("DEBUG", msg)
+
+            def info(self, msg):
+                self._log("INFO", msg)
+
+            def warning(self, msg):
+                self._log("WARNING", msg)
+
+            def error(self, msg):
+                self._log("ERROR", msg)
+
+            def _log(self, level, msg):
+                try:
+                    self.queue.put(json.dumps({
+                        "type": "log",
+                        "level": level,
+                        "download_id": self.download_id,
+                        "message": msg
+                    }))
+                except Exception:
+                    pass
+
+        opts["logger"] = YDLogger(prog_q, download_id)
+        opts["verbose"] = True
+
         ydl = YoutubeDL(opts)
 
         def ydl_hook(d):

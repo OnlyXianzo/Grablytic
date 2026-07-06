@@ -113,6 +113,12 @@ class BatchNotifier extends StateNotifier<BatchState> {
     state = state.copyWith(items: updated, currentIndex: pendingIndex);
 
     final item = state.items[pendingIndex];
+    if (_ref.read(downloadProvider.notifier).isDownloading(item.url)) {
+      _updateItem(pendingIndex, status: BatchItemStatus.completed, progress: 1.0);
+      processNext();
+      return;
+    }
+
     final engine = _ref.read(engineProvider);
     final downloadId = _uuid.v4();
     final activePreset = _ref.read(presetsProvider).activePreset;
