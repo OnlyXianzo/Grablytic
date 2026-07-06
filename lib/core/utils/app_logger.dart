@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'log_buffer.dart';
+import 'log_entry.dart';
 
 class AppLogger {
   static String? _logsDirPath;
   static SharedPreferences? _prefs;
   static bool _loggingEnabled = true;
   static int _retentionDays = 7;
+  static LogBuffer? _buffer;
 
   static const String _keyEnabled = 'logging_enabled';
   static const String _keyRetention = 'logging_retention_days';
@@ -34,6 +37,11 @@ class AppLogger {
     }
   }
 
+  /// Wire up a LogBuffer for in-memory log buffering.
+  static void initBuffer(LogBuffer buffer) {
+    _buffer = buffer;
+  }
+
   static bool get isEnabled => _loggingEnabled;
   static int get retentionDays => _retentionDays;
 
@@ -57,6 +65,7 @@ class AppLogger {
     if (!_loggingEnabled || _logsDirPath == null) {
       // ignore: avoid_print
       print('[$level]${tag != null ? " [$tag]" : ""}: $message');
+      _buffer?.add(_buildEntry(level, message, tag: tag, error: error));
       return;
     }
 
@@ -75,6 +84,37 @@ class AppLogger {
     } catch (e) {
       // ignore: avoid_print
       print('Failed writing to log file: $e');
+    }
+
+    _buffer?.add(_buildEntry(level, message, tag: tag, error: error));
+  }
+
+  static LogEntry _buildEntry(String level, String message,
+      {String? tag, Object? error}) {
+    return LogEntry(
+      timestamp: DateTime.now(),
+      level: _parseLogLevel(level),
+      logger: tag ?? 'app',
+      message: message,
+      exception: error?.toString(),
+      source: 'ui',
+    );
+  }
+
+  static LogLevel _parseLogLevel(String level) {
+    switch (level.toUpperCase()) {
+      case 'DEBUG':
+        return LogLevel.debug;
+      case 'INFO':
+        return LogLevel.info;
+      case 'WARN':
+        return LogLevel.warn;
+      case 'ERROR':
+        return LogLevel.error;
+      case 'FATAL':
+        return LogLevel.fatal;
+      default:
+        return LogLevel.info;
     }
   }
 
