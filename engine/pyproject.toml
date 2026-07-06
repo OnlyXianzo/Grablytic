@@ -12,6 +12,11 @@ quickjs = ["python-quickjs>=0.8.0"]
 [project.urls]
 "Source" = "https://github.com/OnlyXianzo/TrueStream"
 
+[tool.pytest.ini_options]
+markers = [
+    "unit: Tests that verify individual units of functionality in isolation.",
+]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"

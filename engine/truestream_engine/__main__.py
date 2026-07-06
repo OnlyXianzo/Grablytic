@@ -2,6 +2,7 @@ import sys
 import json
 import threading
 import time
+import queue as _queue_module
 from truestream_engine import (
     set_paths,
     bootstrap,
@@ -14,14 +15,25 @@ from truestream_engine import (
     update_check,
 )
 from truestream_engine.downloader import _active_downloads, _downloads_lock
+from truestream_engine.logger import get_logger, set_global_queue, set_global_log_dir
+
+log = get_logger("truestream_engine.main")
+_log_queue: _queue_module.Queue | None = None
 
 
 def poll_queues():
     while True:
-        # Check active downloads and read queues
+        if _log_queue is not None:
+            while not _log_queue.empty():
+                try:
+                    log_entry = _log_queue.get_nowait()
+                    print(json.dumps(log_entry), flush=True)
+                except Exception:
+                    break
+
         with _downloads_lock:
             active_ids = list(_active_downloads.keys())
-        
+
         for download_id in active_ids:
             with _downloads_lock:
                 info = _active_downloads.get(download_id)
@@ -29,18 +41,15 @@ def poll_queues():
                     continue
                 prog_q = info.get("progress_queue")
                 res_q = info.get("result_queue")
-            
-            # Read progress queue
+
             if prog_q:
                 while not prog_q.empty():
                     try:
                         event_str = prog_q.get_nowait()
-                        # print event on a single line
                         print(event_str, flush=True)
                     except Exception:
                         break
-            
-            # Read result queue
+
             if res_q:
                 while not res_q.empty():
                     try:
@@ -65,12 +74,11 @@ def poll_queues():
                         print(json.dumps(event), flush=True)
                     except Exception:
                         break
-        
+
         time.sleep(0.1)
 
 
 def main():
-    # If running as standard CLI tool (not persistent IPC) with command args:
     if len(sys.argv) > 1:
         command = sys.argv[1]
         if command == "bootstrap":
@@ -81,10 +89,8 @@ def main():
             print(f"Unknown CLI command: {command}")
         return
 
-    # Start queue polling thread
     threading.Thread(target=poll_queues, daemon=True).start()
 
-    # Otherwise, enter persistent JSON-RPC stdin loop
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -94,6 +100,8 @@ def main():
             req_id = req.get("id")
             method = req.get("method")
             params = req.get("params", {})
+
+            log.info(f"Method: {method}", extra={"params": params})
 
             res = None
             if method == "paths/set":
@@ -107,6 +115,12 @@ def main():
                     deno_path=params.get("deno_path"),
                     po_token=params.get("po_token"),
                 )
+                data_dir = params["data_dir"]
+                set_global_log_dir(data_dir + "/logs")
+                global _log_queue
+                log_queue = _queue_module.Queue()
+                set_global_queue(log_queue)
+                _log_queue = log_queue
                 res = {"success": True}
             elif method == "engine/bootstrap":
                 res = bootstrap()
@@ -136,16 +150,16 @@ def main():
                     "error_message": f"Method {method} not found"
                 }
 
-            # Send response back
             response = {"id": req_id}
             if isinstance(res, dict) and res.get("success") is False:
                 response["error"] = res
             else:
                 response["result"] = res
-            
+
             print(json.dumps(response), flush=True)
 
         except Exception as e:
+            log.log_exception(e, f"Error processing {method}")
             err_res = {
                 "id": None,
                 "error": {
@@ -158,4 +172,5 @@ def main():
 
 
 if __name__ == "__main__":
+    log.info("Engine started")
     main()

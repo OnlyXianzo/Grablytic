@@ -1,3 +1,8 @@
+from truestream_engine.logger import get_logger
+
+
+log = get_logger("truestream_engine.errors")
+
 _VPN_TYPES = frozenset({
     "ERROR_GEO_BLOCKED",
     "ERROR_AGE_RESTRICTED",
@@ -52,12 +57,16 @@ def classify_error(exc: Exception, stderr: str = "") -> TrueStreamError:
 
     for keyword, (error_type, recoverable) in _ERROR_MAP.items():
         if keyword.lower() in combined:
+            log.warn(f"Classified error: {error_type} — {msg}")
             return TrueStreamError(error_type, msg, recoverable)
 
     if "http error" in combined:
+        log.warn(f"Classified error: ERROR_NETWORK — {msg}")
         return TrueStreamError("ERROR_NETWORK", msg, True)
 
     if any(kw in combined for kw in _SSL_KEYWORDS):
+        log.warn(f"Classified error: ERROR_SSL_BLOCKED — {msg}")
         return TrueStreamError("ERROR_SSL_BLOCKED", msg, True)
 
+    log.warn(f"Classified error: ERROR_UNKNOWN — {msg}")
     return TrueStreamError("ERROR_UNKNOWN", msg, True)

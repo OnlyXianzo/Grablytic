@@ -3,7 +3,10 @@ from yt_dlp import YoutubeDL
 
 from truestream_engine.paths import get_paths
 from truestream_engine.errors import classify_error, TrueStreamError
+from truestream_engine.logger import get_logger
 
+
+log = get_logger("truestream_engine.playlist")
 
 _PLAYLIST_PATTERNS = [
     r"list=",
@@ -22,6 +25,8 @@ def detect_playlist(url: str) -> bool:
 
 
 def get_playlist_info(url: str, config: dict | None = None) -> dict:
+    log.info(f"Fetching playlist info for {url}")
+
     paths = get_paths()
     cfg = config or {}
 
@@ -43,6 +48,7 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             data = ydl.extract_info(url, download=False)
 
         if data is None:
+            log.warn(f"No data returned for playlist {url}")
             return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not fetch playlist"}
 
         entries_raw = data.get("entries", []) if "entries" in data else [data]
@@ -62,9 +68,11 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
                 "is_available": e.get("title") is not None and e.get("availability") != "private",
             })
 
+        playlist_title = data.get("title", "Unknown Playlist")
+        log.info(f"Playlist '{playlist_title}' has {len(entries)} entries")
         return {
             "success": True,
-            "title": data.get("title", "Unknown Playlist"),
+            "title": playlist_title,
             "uploader": data.get("uploader"),
             "count": len(entries),
             "estimated_total_bytes": None,
@@ -72,6 +80,7 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
         }
 
     except Exception as exc:
+        log.log_exception(exc, f"Playlist fetch failed: {url}")
         err = classify_error(exc)
         return {
             "success": False,

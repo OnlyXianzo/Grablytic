@@ -3,9 +3,15 @@ from yt_dlp import YoutubeDL
 from truestream_engine.paths import get_paths
 from truestream_engine.format_selector import build_format_string
 from truestream_engine.errors import classify_error, TrueStreamError
+from truestream_engine.logger import get_logger
+
+
+log = get_logger("truestream_engine.formats")
 
 
 def get_formats(url: str, config: dict | None = None) -> dict:
+    log.info(f"Fetching formats for {url}")
+
     paths = get_paths()
     cfg = config or {}
 
@@ -25,6 +31,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             info = ydl.extract_info(url, download=False)
 
         if info is None:
+            log.warn(f"No info extracted for {url}")
             return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not extract info"}
 
         is_playlist = info.get("_type") == "playlist" or "entries" in info
@@ -44,7 +51,6 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             if not has_video and not has_audio:
                 continue
 
-            # Determine stream type: muxed (both), video-only, or audio-only
             if has_video and has_audio:
                 stream_type = "muxed"
             elif has_video:
@@ -52,7 +58,6 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             else:
                 stream_type = "audio"
 
-            # Use filesize or filesize_approx
             size = f.get("filesize") or f.get("filesize_approx")
 
             parsed.append({
@@ -76,7 +81,6 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 "url": f.get("webpage_url") or f.get("url", ""),
             })
 
-        # Find recommended formats
         best_video = None
         best_audio = None
         best_muxed = None
@@ -91,6 +95,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 if best_muxed is None or (f.get("height") or 0) > (best_muxed.get("height") or 0):
                     best_muxed = f
 
+        log.info(f"Found {len(parsed)} formats for {url}")
         return {
             "success": True,
             "title": info.get("title", ""),
@@ -107,6 +112,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         }
 
     except Exception as exc:
+        log.log_exception(exc, f"Format fetch failed: {url}")
         err = classify_error(exc)
         return {
             "success": False,

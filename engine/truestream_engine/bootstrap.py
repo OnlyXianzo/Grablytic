@@ -13,6 +13,10 @@ import threading
 import subprocess
 
 from truestream_engine.paths import get_paths, is_initialized
+from truestream_engine.logger import get_logger
+
+
+log = get_logger("truestream_engine.bootstrap")
 
 GITHUB_REPOS = {
     "uv": "astral-sh/uv",
@@ -504,7 +508,7 @@ def bootstrap() -> dict:
         uv_name = "uv.exe" if is_windows else "uv"
         uv_path = os.path.join(bin_dir, uv_name)
 
-        _write_progress("uv", "downloading")
+        log.info("Bootstrap uv: downloading")
         uv_ok, _ = _bootstrap_github_binary(
             "uv",
             GITHUB_REPOS["uv"],
@@ -512,20 +516,20 @@ def bootstrap() -> dict:
             uv_path,
             cache_dir,
         )
-        _write_progress("uv", "completed" if uv_ok else "failed")
+        log.info(f"Bootstrap uv: {'completed' if uv_ok else 'failed'}")
 
         if uv_ok:
-            _write_progress("python", "installing")
+            log.info("Bootstrap python: installing")
             python_ok = _install_python_via_uv(uv_path, data_dir)
-            _write_progress("python", "completed" if python_ok else "failed")
+            log.info(f"Bootstrap python: {'completed' if python_ok else 'failed'}")
 
-            _write_progress("venv", "creating")
+            log.info("Bootstrap venv: creating")
             venv_ok = _create_venv_via_uv(uv_path, data_dir)
-            _write_progress("venv", "completed" if venv_ok else "failed")
+            log.info(f"Bootstrap venv: {'completed' if venv_ok else 'failed'}")
 
-            _write_progress("yt-dlp", "installing")
+            log.info("Bootstrap yt-dlp: installing")
             ytdlp_ok = _install_yt_dlp_via_uv(uv_path, data_dir)
-            _write_progress("yt-dlp", "completed" if ytdlp_ok else "failed")
+            log.info(f"Bootstrap yt-dlp: {'completed' if ytdlp_ok else 'failed'}")
 
     # 2. Download ffmpeg, aria2c (all platforms) + deno (desktop) in parallel
     binary_tasks = [
@@ -563,8 +567,9 @@ def bootstrap() -> dict:
         with lock:
             binary_results[name] = (ok, ver)
 
-    _write_progress("binaries", "downloading")
+    log.info("Bootstrap binaries: downloading")
     for name, repo, substring, dest in binary_tasks:
+        log.info(f"Downloading {name} from {repo}")
         if substring and dest:
             t = threading.Thread(
                 target=_worker, args=(name, repo, substring, dest), daemon=True
@@ -574,7 +579,7 @@ def bootstrap() -> dict:
 
     for t in threads:
         t.join()
-    _write_progress("binaries", "completed")
+    log.info("Bootstrap binaries: completed")
 
     ffmpeg_ok, ffmpeg_version = binary_results.get("ffmpeg", (False, None))
     aria2c_ok, aria2c_version = binary_results.get("aria2c", (False, None))
@@ -628,6 +633,14 @@ def bootstrap() -> dict:
     else:
         js_runtime = js_name
         js_runtime_version = js_ver
+
+    log.info(
+        f"Bootstrap completed — ffmpeg={'ok' if ffmpeg_ok else 'fail'} "
+        f"aria2c={'ok' if aria2c_ok else 'fail'} "
+        f"deno={'ok' if deno_ok else 'fail'} "
+        f"quickjs={'ok' if quickjs_ok else 'fail'} "
+        f"update_needed={len(update_components) > 0}"
+    )
 
     return {
         "success": True,
