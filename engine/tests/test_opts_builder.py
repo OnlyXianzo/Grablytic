@@ -51,7 +51,9 @@ def test_aria2c_wired_when_enabled(tmp_path):
     dummy.touch()
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"aria2c_enabled": True, "aria2c_chunks": 5})
-    assert opts["external_downloader"] == "aria2c"
+    assert isinstance(opts["external_downloader"], dict)
+    assert opts["external_downloader"]["default"] == "aria2c"
+    assert opts["external_downloader"]["dash"] == "native"
     assert "-x5" in opts["external_downloader_args"]
 
 
@@ -77,7 +79,9 @@ def test_aria2c_max_speed_applied(tmp_path):
         "aria2c_chunks": 8,
         "aria2c_max_speed": "10M",
     })
-    assert opts["external_downloader"] == "aria2c"
+    assert isinstance(opts["external_downloader"], dict)
+    assert opts["external_downloader"]["default"] == "aria2c"
+    assert opts["external_downloader"]["dash"] == "native"
     assert "-x8" in opts["external_downloader_args"]
     assert "--max-download-limit=10M" in opts["external_downloader_args"]
 

@@ -14,7 +14,12 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
         max_speed = config.get("aria2c_max_speed")
         if max_speed:
             args.append(f"--max-download-limit={max_speed}")
-        opts["external_downloader"] = "aria2c"
+        # CVE-2026-50574: Avoid using aria2c for DASH/HLS fragmented manifests
+        opts["external_downloader"] = {
+            "default": "aria2c",
+            "dash": "native",
+            "hls": "native",
+        }
         opts["external_downloader_args"] = args
     return opts
 
@@ -27,6 +32,7 @@ def build_ydl_opts(
     override_audio: bool | None = None,
     override_container: str | None = None,
     download_id: str | None = None,
+    url: str | None = None,
 ) -> dict:
     cfg = {**DEFAULT_CFG, **(config or {})}
     paths = get_paths()
@@ -109,7 +115,16 @@ def build_ydl_opts(
     # AV1/VP9 without requiring JS execution or PO Token. web client alone
     # returns only 5 formats without a PO Token.
     # Only add po_token when one is available.
-    if paths.get("po_token"):
+    if url and ("youtube.com" in url or "youtu.be" in url):
+        opts.setdefault("extractor_args", {})
+        opts["extractor_args"].setdefault("youtube", {})
+        opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
+
+        from truestream_engine.po_token import generate_po_token
+        po_token = generate_po_token(url) or paths.get("po_token")
+        if po_token:
+            opts["extractor_args"]["youtube"]["po_token"] = [po_token]
+    elif paths.get("po_token"):
         opts.setdefault("extractor_args", {})
         opts["extractor_args"].setdefault("youtube", {})
         opts["extractor_args"]["youtube"]["po_token"] = [paths["po_token"]]

@@ -20,6 +20,16 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         "no_warnings": True,
     }
 
+    if "youtube.com" in url or "youtu.be" in url:
+        opts.setdefault("extractor_args", {})
+        opts["extractor_args"].setdefault("youtube", {})
+        opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
+
+        from truestream_engine.po_token import generate_po_token
+        po_token = generate_po_token(url) or paths.get("po_token")
+        if po_token:
+            opts["extractor_args"]["youtube"]["po_token"] = [po_token]
+
     cookies = cfg.get("cookies_path") or paths.get("cookies_path")
     if cookies:
         opts["cookiefile"] = cookies

@@ -105,6 +105,7 @@ def download_thread(
             network_type=network_type,
             progress_queue=prog_q,
             download_id=download_id,
+            url=url,
         )
 
         if get_paths().get("cache_dir"):
