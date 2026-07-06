@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:truestream/core/utils/log_entry.dart';
 import 'package:truestream/core/utils/log_buffer.dart';
