@@ -9,10 +9,56 @@ from yt_dlp import YoutubeDL
 from truestream_engine.opts_builder import build_ydl_opts
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.paths import get_paths
+from truestream_engine.logger import get_logger
 
+
+log = get_logger("truestream_engine.downloader")
 
 _active_downloads: dict[str, dict] = {}
 _downloads_lock = threading.Lock()
+
+
+def _cleanup_loop():
+    import time
+    while True:
+        try:
+            now = datetime.utcnow()
+            to_remove = []
+            with _downloads_lock:
+                for did, info in list(_active_downloads.items()):
+                    fin_at = info.get("finished_at")
+                    if fin_at:
+                        res_q = info.get("result_queue")
+                        # Clean up immediately if the result has been read by client
+                        if res_q and res_q.empty():
+                            to_remove.append(did)
+                        # Failsafe: clean up after 30 seconds regardless of read status
+                        elif (now - fin_at).total_seconds() > 30:
+                            to_remove.append(did)
+                
+                for did in to_remove:
+                    _active_downloads.pop(did, None)
+        except Exception:
+            pass
+        time.sleep(1.0)
+
+
+threading.Thread(target=_cleanup_loop, daemon=True).start()
+
+
+
+class YDLogger:
+    def debug(self, msg):
+        log.debug(msg)
+
+    def info(self, msg):
+        log.info(msg)
+
+    def warning(self, msg):
+        log.warn(msg)
+
+    def error(self, msg):
+        log.error(msg)
 
 
 def download_thread(
@@ -37,8 +83,10 @@ def download_thread(
             "started_at": datetime.utcnow(),
         }
 
+    log.set_context(download_id=download_id)
     try:
-        # Pre-download guard: verify ffmpeg is available and executable if required
+        log.info(f"Download started: {url}", extra={"download_id": download_id})
+
         paths = get_paths()
         ffmpeg_path = paths.get("ffmpeg_path")
         if not ffmpeg_path or not os.path.isfile(ffmpeg_path) or not os.access(ffmpeg_path, os.X_OK):
@@ -63,35 +111,7 @@ def download_thread(
             opts["paths"] = opts.get("paths", {})
             opts["paths"]["temp"] = get_paths()["cache_dir"]
 
-        class YDLogger:
-            def __init__(self, queue: _queue.Queue, download_id: str):
-                self.queue = queue
-                self.download_id = download_id
-
-            def debug(self, msg):
-                self._log("DEBUG", msg)
-
-            def info(self, msg):
-                self._log("INFO", msg)
-
-            def warning(self, msg):
-                self._log("WARNING", msg)
-
-            def error(self, msg):
-                self._log("ERROR", msg)
-
-            def _log(self, level, msg):
-                try:
-                    self.queue.put(json.dumps({
-                        "type": "log",
-                        "level": level,
-                        "download_id": self.download_id,
-                        "message": msg
-                    }))
-                except Exception:
-                    pass
-
-        opts["logger"] = YDLogger(prog_q, download_id)
+        opts["logger"] = YDLogger()
         opts["verbose"] = True
 
         ydl = YoutubeDL(opts)
@@ -106,6 +126,7 @@ def download_thread(
         ydl.download([url])
 
         if cancel.is_set():
+            log.warn(f"Download cancelled: {download_id}")
             res_q.put({
                 "success": False,
                 "download_id": download_id,
@@ -113,12 +134,14 @@ def download_thread(
                 "error_message": "Download cancelled by user",
             })
         else:
+            log.info("Download completed")
             res_q.put({
                 "success": True,
                 "download_id": download_id,
             })
 
     except KeyboardInterrupt:
+        log.warn(f"Download cancelled: {download_id}")
         res_q.put({
             "success": False,
             "download_id": download_id,
@@ -126,6 +149,7 @@ def download_thread(
             "error_message": "Download cancelled by user",
         })
     except Exception as exc:
+        log.log_exception(exc, f"Download failed: {url}")
         err = classify_error(exc)
         res_q.put({
             "success": False,
@@ -135,8 +159,10 @@ def download_thread(
             "recoverable": err.recoverable,
         })
     finally:
+        log.clear_context()
         with _downloads_lock:
-            _active_downloads.pop(download_id, None)
+            if download_id in _active_downloads:
+                _active_downloads[download_id]["finished_at"] = datetime.utcnow()
 
 
 def start_download(
