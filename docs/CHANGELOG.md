@@ -2,6 +2,24 @@
 
 > Distilled from commit history (`git log --oneline`). Current version: `0.0.1-beta+1`.
 
+## Unreleased — night loop 2026-09-11
+
+### Fixed
+- Engine logs now reach Android: `logger.set_global_event_callback()` push
+  bridge + wiring in `start_download`; file logging (`server_logs.log`,
+  `engine_*.txt`) initialized in `set_paths` on all platforms.
+- Hook events dual-write (callback + queue) so terminal `finished` honors
+  the `filesize_bytes` contract on the callback path.
+- Dead settings wired: `concurrent_fragments` → `concurrent_fragment_downloads`,
+  `socket_timeout`, `write_description`/`write_info_json`, `use_aria2` alias,
+  `format_code` override (below explicit IDs, above the ladder).
+- Diagnostics: terminal download outcome lines, single-owner engine-log
+  ingestion (fixes desktop double-logging), retention slider persists on
+  release, unique manual-report fingerprints, log-file export, full-log
+  report toggle, real Flutter version stamp.
+- PageView tab animation no longer logs intermediate fly-through pages.
+- `yt-dlp` floor raised to `>=2025.11.12` (EJS/JS-runtime requirement).
+
 ## Unreleased — September 2026
 
 ### Added
