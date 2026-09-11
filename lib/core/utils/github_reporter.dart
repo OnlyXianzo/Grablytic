@@ -31,11 +31,11 @@ class GithubReporter {
   );
 
   /// Flutter SDK version, stamped at build time:
-  /// `flutter build apk --dart-define=FLUTTER_VERSION=$(flutter --version | head -1)`
+  /// `flutter build apk --dart-define=TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -1)`
   /// (wired in .github/workflows/build.yml). `const` is required — AOT
   /// builds drop non-const environment lookups. Empty (dev runs) → 'unknown'.
   static const String _envFlutter = String.fromEnvironment(
-    'FLUTTER_VERSION',
+    'TRUESTREAM_FLUTTER_VERSION',
     defaultValue: '',
   );
 

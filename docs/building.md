@@ -192,8 +192,8 @@ Manual trigger only (`workflow_dispatch`). Builds all three platforms:
 To trigger: go to GitHub → Actions → **Build and Release** → **Run workflow**.
 
 > Diagnostics reports stamp the Flutter SDK version via
-> `--dart-define=FLUTTER_VERSION=...` (wired in `build.yml`; read in code
-> with `String.fromEnvironment('FLUTTER_VERSION')`). Dev runs without the
+> `--dart-define=TRUESTREAM_FLUTTER_VERSION=...` (wired in `build.yml`; read in code
+> with `String.fromEnvironment('TRUESTREAM_FLUTTER_VERSION')`). Dev runs without the
 > flag report `unknown` — expected, not a bug.
 
 ## Platform-Specific Notes
