@@ -1,58 +1,224 @@
-# TrueStream
+<div align="center">
 
-TrueStream downloads media from over 1,000 content platforms. It picks the best
-quality available and works without ads, accounts, or speed limits.
+# 🎬 TrueStream
 
-Built with **Flutter** and **yt-dlp**, TrueStream runs on Android, Windows, and
-Linux from a single Dart codebase.
+### Download from 1,000+ platforms. Best quality. No ads. No accounts. No speed limits.
 
-## Features
+Built with **Flutter** + **Python (yt-dlp)** — one Dart codebase for **Android**, **Windows** & **Linux**.
 
-- **8 core screens.** Onboarding, Home (download queue), Library (completed &
-  playlists), Settings, Format Picker, Profile Editor, Download Presets, and
-  About.
-- **Maximum quality downloads.** Tiered format selection picks the best stream
-  (AV1 → VP9 → H264) for each download.
-- **Batch & playlist support.** Download entire channels, ranges of videos, or
-  a list of URLs via the batch importer.
-- **Share intent (Android).** Share a URL from any app and TrueStream opens
-  with the link prefilled.
-- **Resume broken downloads.** Automatic scan and resume of incomplete
-  downloads on startup.
-- **SponsorBlock integration.** Skip sponsored segments, intros, outros, and
-  other marked sections automatically.
-- **aria2c download accelerator.** Parallel fragment downloading over 16
-  connections on WiFi for maximum throughput.
-- **Cookie & session auth.** WebView-based cookie capture and session
-  authentication for private/age-restricted content.
-- **PO Token support.** Bypass YouTube throttling with Proof of Origin tokens
-  generated via QuickJS (Android) or Deno (desktop).
-- **Download presets & profiles.** Save and reuse custom format combinations
-  and output templates.
-- **Subtitle management.** Download, embed, and customize subtitle tracks with
-  language selection and format preference.
-- **Classified error recovery.** Every error has a category and an actionable
-  recovery option instead of a raw string.
-- **Dynamic updates.** The extraction engine updates remotely — no app store
-  submission needed when platforms change their frontend code.
-- **Comprehensive accessibility.** WCAG 2.2 compliant with semantic labels,
-  48×48 touch targets, and full screen reader support.
-- **Anonymous by default.** No account, no telemetry, no ads. Cookies and
-  authentication are optional.
+[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3.11-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org)
+[![yt-dlp](https://img.shields.io/badge/yt--dlp-2025.11%2B-red)](https://github.com/yt-dlp/yt-dlp)
+[![Android](https://img.shields.io/badge/Android-8%2B_(API_26)-3DDC84?logo=android&logoColor=white)](https://developer.android.com)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+[![Linux](https://img.shields.io/badge/Linux-Ubuntu_%7C_Fedora_%7C_Debian-FCC624?logo=linux&logoColor=black)](https://www.linux.org)
+[![CI](https://img.shields.io/badge/CI-verify.ymlpassing-brightgreen?logo=githubactions&logoColor=white)](.github/workflows/verify.yml)
+[![Version](https://img.shields.io/badge/version-0.0.1--beta-blue)](pubspec.yaml)
 
-## Platform Support
+[✨ Features](#-features) · [🆕 What's New](#-whats-new--september-2026) · [🚀 Quick Start](#-quick-start) · [🏗 Architecture](#-architecture) · [📚 Docs](#-documentation) · [🤝 Contributing](#-contributing)
 
-| Platform | Status | Details |
+</div>
+
+---
+
+## 📖 What is TrueStream?
+
+TrueStream is a **privacy-first media downloader** that pulls video & audio from
+**1,000+ sites** (YouTube, Twitch, Twitter/X, Bilibili, podcasts & more) at the
+**maximum available quality**, then merges, tags and organizes it for you.
+
+| Principle | How we honor it |
+|---|---|
+| 🕵️ **Anonymous by default** | No account, no telemetry, no ads. Cookies & logins are 100% optional. |
+| ⚡ **Fast** | aria2c parallel fragments (up to 16×), native DASH handling, threaded engine. |
+| 🧠 **Smart** | Tiered codec ladder (AV1 → VP9 → H264), per-site profiles, presets, SponsorBlock. |
+| 🛡️ **Resilient** | Classified errors with one-tap recovery, resume broken downloads, auto engine updates. |
+| 📱 **Native** | Zero-install Android binaries, foreground keep-alive, share-intent, Kotlin callbacks. |
+
+---
+
+## ✨ Features
+
+### 📥 Downloading
+- 🎯 **Maximum-quality ladder** — AV1 → VP9 → H264 cascade with quality ceiling (up to 4K) and muxed-stream support for non-YouTube sites.
+- 📚 **Batch & playlists** — whole channels, ranges (`playlist_items`), reverse/shuffle, multi-URL batch importer with clipboard support.
+- ⏱️ **Section cutting** — FFmpeg-only `--download-sections` syntax (`*10:15-20:00`), no extra runtime needed. Invalid specs warn-and-skip, never fail.
+- 🔁 **Resume anything** — startup scan finds `.part` files, recovers URLs from `.info.json`, respects 24 h expiry.
+- 📦 **Download archive** — skip already-downloaded items, optional per-folder archives.
+- 🔔 **Scheduling & watchlists** — scheduled download windows + observed channels/sources.
+
+### 🎨 Media & metadata
+- 🖼️ **Thumbnails, chapters, metadata** — embed thumbnail (with `writethumbnail` fix), split chapters, add metadata in canonical yt-dlp PP order.
+- 💬 **Real subtitle embedding** — `FFmpegEmbedSubtitle` post-processor (`--embed-subs` equivalent) with language picker, auto-subs toggle, sidecar control.
+- ✂️ **SponsorBlock** — mark *and* cut sponsor/intro/outro/self-promo chapters (`ModifyChapters` after `EmbedSubtitle`, before `Metadata`).
+- 🎞️ **In-app preview** — thumbnail + metadata check before you commit.
+
+### 📱 Android-native (zero install prompts)
+- 📦 **Bundled `ffmpeg` + `deno` in jniLibs** — fetched at build time from pinned `ytdlnis-packages` APKs (SHA-256 verified), resolved via `BinaryPackageManager`. No helper APKs, no `REQUEST_INSTALL_PACKAGES`, manifest stays `INTERNET` + capped storage only.
+- 🔄 **Foreground keep-alive** — `dataSync`-type `DownloadService` with progress notification, `START_NOT_STICKY`, timeout handling. Survives screen-lock & activity death.
+- ⚡ **Callback event delivery** — Kotlin `EngineEventListener.onEvent` replaces queue polling: yt-dlp hooks push straight to Flutter, no polling overhead / GIL lag. Desktop keeps the queue path unchanged.
+- 📤 **Share intent** — share a URL from any app → TrueStream opens with the link prefilled (optional auto-start).
+
+### 🔓 Access & bypass
+- 🍪 **Cookie & session auth** — in-app WebView cookie capture (Netscape export) + per-site login flags for private/age-restricted content.
+- 🔑 **PO Tokens + JS runtimes** — YouTube SABR/`n`-sig challenges solved via **Deno → Node → QuickJS** priority, `ejs:github` remote components, `yt-dlp-ejs` solver scripts. Allowlisted JS only.
+- 🌍 **Geo & network controls** — geo-bypass, proxy, rate-limit, Wi-Fi-only, turbo mode, retries + fragment retries + sleep intervals.
+
+### 🧰 Reliability & diagnostics
+- 🩺 **Classified errors** — every failure maps to a typed code (`GEO_BLOCKED`, `RATE_LIMITED`, …) with `recoverable` + `suggests_vpn` flags and an **Error Recovery card** (one-tap fix, not a raw string).
+- 📝 **Aggressive persistent logging** — buffered `AppLogger` (30 s flush, `app_logs.txt` mirror, instant flush on ERROR/FATAL) + Python `RotatingFileHandler` (`server_logs.log`) + traced IPC middleware.
+- 🛰️ **GitHub auto-report** — search-based dedup reporter (Flutter + `github_notifier.py`) so duplicate crash issues aren't filed twice.
+- 📊 **Diagnostics & Logs screen** — troubleshooting flow, live log stream viewer (color-coded, filter by level/tag/search/source, tap-to-expand, export), engine/bootstrap status cards.
+
+### ♿ Accessibility & theming
+- ✅ **WCAG 2.2 AA** — semantic labels, 48×48 touch targets, full TalkBack/VoiceOver support.
+- 🎨 **Earth & Ethos theme** — `TrueStreamColors` tokens (no hex literals), Material 3 light/dark, Instrument Sans body + Iosevka Charon mono.
+
+---
+
+## 🆕 What's New — September 2026
+
+Based on the latest commits on `main`:
+
+| Area | Change |
+|---|---|
+| 📦 Android binaries | `ffmpeg`/`deno` ship **inside our own jniLibs** (`packages.gradle.kts`, SHA-256 pinned). `BinaryPackageManager` resolves + probes them; toolchain downloads **fail closed** on Android. Zero install prompts. |
+| 🔄 Keep-alive | New `DownloadService` (`dataSync` foreground service) — ongoing progress notification, explicit start/stop, `onTimeout` handling. DB resume is the tracked follow-up. |
+| ⚡ Event path | Replaced `startProgressPolling` with a **Kotlin `onEvent` callback** into Python (R8-safe `EngineEventListener`). Fixed the 7→8-arg `set_paths`/`deno_path` misalignment. |
+| 🟢 JS runtimes | Full **Deno/Node/QuickJS** support (`_configure_js_runtime`, `remote_components=ejs:github`). Research doc: [`docs/JS_RUNTIMES_ANDROID_RESEARCH.md`](docs/JS_RUNTIMES_ANDROID_RESEARCH.md). |
+| 💬 Subtitles | **Real embed fix** — `FFmpegEmbedSubtitle` PP in canonical order (EmbedSubtitle → ModifyChapters → Metadata). Plus FFmpeg-only `download_sections` cutting. |
+| 🔍 Re-audit fixes | `updatetime` (not ignored `no_mtime`), `writethumbnail` for `EmbedThumbnail`, SponsorBlock cutter ordering, `filesize_bytes` on terminal events, `suggests_vpn` on errors, desktop `ERROR_CANCELLED` → `cancelled`. |
+| 📝 Logging | Buffered persistent logs both sides + global error handlers + navigation/Riverpod/engine observers + GitHub dedup reporter + live viewer tab. |
+| 🔒 Security | **Zip-Slip/Tar-Slip hardened extraction**, `java.android` bridge detection (Termux-safe), allowlisted JS hashes, aria2c arg validation (1–16 chunks, speed regex), no DASH/HLS via aria2c (CVE-2026-50574), `0600/0700` temp dirs, aware-UTC datetimes, 99 % progress cap (terminal `finished` vs stream events). |
+| 📋 Playlists | Generator guards, expanded video IDs, storage sanitization. |
+| 🧪 CI | Fixed `flutter analyze` (181 cascading errors from `AppLogger` regex escapes) + Python `UnboundLocalError` (`deno_version=None` under pytest); `lintVital` disabled for AGP/Kotlin-script bug; `zip.so` stripping skipped. |
+| 🎬 SABR/PO-Token | YouTube format-block resolution + aria2c DASH hardening (July). |
+
+> Full history: `git log --oneline -30` · Planned: DB-driven resume across reboot/6 h cap, WorkManager scheduling.
+
+---
+
+## 📱 Screens
+
+| # | Screen | What it does |
 |---|---|---|
-| Android 8+ (API 26) | v1 | Primary target. Chaquopy embeds CPython 3.11. QuickJS via NDK for JS decryption. |
-| Windows 10/11 | v1 | Lazy-loaded Python + Deno. JSON over stdin/stdout IPC. |
-| Linux (Ubuntu 20.04+, Fedora 34+, Debian 11+) | v1 | Same architecture as Windows. Static binaries for maximum distro compatibility. |
+| 1 | **Onboarding** | First-run tour → routes to AppShell |
+| 2 | **Home** (queue) | URL input, active downloads, bootstrap status, error-recovery cards |
+| 3 | **Format Picker** | Stream list, quality/codec/container choice, muxed badges |
+| 4 | **Media Preview** | Thumbnail + metadata confirmation before download |
+| 5 | **Batch Download** | Multi-URL paste, list management, clipboard/file import dialog |
+| 6 | **Library** | Completed downloads, grid/list toggle, search & filters |
+| 7 | **Download History** | SQLite-backed history with search & filters |
+| 8 | **Playlist Details** | Entry list, add/remove, unavailable-entry marking |
+| 9 | **Settings** | Quality, network, aria2c, subtitles, SponsorBlock, schedule, archive, templates, observed sources, auth, updates |
+| 10 | **Download Presets** | 7 built-in + custom format/container/output-template presets |
+| 11 | **Profile Editor** | Per-site extraction profiles (YouTube 1080p/4K, Podcast, FLAC, Opus, X/Twitter) |
+| 12 | **Cookie WebView** | In-app browser → Netscape cookie export |
+| 13 | **Diagnostics & Logs** | Troubleshooting flow, live log stream, export, engine status |
+| 14 | **About** | Version, licenses, links |
 
-## Screenshots
+Navigation: **AppShell** (`IndexedStack`, 3 tabs) — `BottomNavigationBar` on narrow (<600 px), `NavigationRail` on wide screens. Share-intent URLs arrive via `EngineService.sharedUrlStream`.
 
-*Screenshots coming soon.*
+---
 
-## Quick Start
+## 🏗 Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│            Flutter UI (Riverpod)             │
+│  Onboarding · Home · Library · Settings · …  │
+└───────────────────┬──────────────────────────┘
+                    │  EngineService (abstract)
+      ┌─────────────┴──────────────┐
+      │ Android: Chaquopy +        │
+      │  MethodChannel/EventChannel│
+      │  + Kotlin onEvent callback │
+      │ Desktop: JSON-RPC stdio    │
+      └─────────────┬──────────────┘
+                    │
+┌───────────────────▼──────────────────────────┐
+│          Python Engine (yt-dlp API)          │
+│  opts · formats · downloader · hooks · errors │
+│  playlist · resume · bootstrap · po_token     │
+│  logger · persistent · github_notifier        │
+└──────────────────────────────────────────────┘
+```
+
+**Key design rules:** `YoutubeDL` class API only (never subprocess yt-dlp) ·
+downloads in `threading.Thread` + cancel event · Riverpod for shared state
+(never `setState`) · all binary paths via `set_paths()` · never combine
+`merge_output_format` + `remux_video`.
+
+### State (Riverpod)
+
+`sharedPreferencesProvider` → `settingsProvider` → `engineProvider` →
+`engineStatusProvider` · `downloadProvider` (subscribes `progressStream`) ·
+`resumeProvider` · `playlistProvider` · `presetsProvider` · `batchProvider` ·
+`downloadHistoryProvider` (SQLite) · `logBuffer/logEntries/logIngester` ·
+`sharedUrlProvider` (share intent).
+
+### IPC contract (v1.0)
+
+| Channel | Direction | Purpose |
+|---|---|---|
+| `engine/bootstrap` | F → P | Verify binaries, manifest, yt-dlp version |
+| `paths/set` | F → P | Inject data/output/cache dirs, binary paths, cookies (8 args incl. `deno_path`) |
+| `download/start` | F → P | Spawn thread, return immediately |
+| `download/cancel` | F → P | Set cancel `threading.Event` |
+| `progress/stream` | P → F | Progress / post-proc / finished / error / cancelled events |
+| `formats/get` | F → P | List streams for URL |
+| `playlist/info` | F → P | Flat-extract entries |
+| `resume/scan` | F → P | Scan cache for `.part` files |
+| `engine/update_check` | F → P | CDN re-check |
+| `engine/set_update_channel` | F → P | stable / nightly / master |
+
+Android transport: `MethodChannel com.theonly.truestream/engine` +
+`EventChannel com.theonly.truestream/progress` + `intent/shared_url`.
+Desktop transport: line-delimited JSON-RPC over stdin/stdout with UUID
+correlation, 30 s timeout, auto-restart (≤3).
+
+---
+
+## 🧩 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| UI | Flutter 3.x (Impeller, 120 fps) · Dart 3.11 · Riverpod · Material 3 |
+| Engine | Python 3.11 · yt-dlp (`YoutubeDL` API) · `yt-dlp-ejs` solver scripts |
+| Android bridge | Chaquopy · Kotlin `MainActivity` · `BinaryPackageManager` · `DownloadService` |
+| Desktop bridge | JSON-RPC over stdin/stdout (`DesktopEngineService`) |
+| JS runtimes | Deno (bundled `.so` on Android / bootstrapped on desktop) · Node fallback · QuickJS (`python-quickjs`) |
+| Media | FFmpeg (static / jniLibs) · aria2c (static, native only for DASH/HLS) |
+| Persistence | SharedPreferences (settings/presets/playlists) · SQLite (history) |
+| Fonts | Instrument Sans (body) · Iosevka Charon Mono |
+| Tests | `flutter_test` · `pytest` (181 engine tests) |
+
+### 🐍 Engine modules (16 + entry point)
+
+| Module | Role |
+|---|---|
+| `paths` | Path store, `set_paths()`/`get_paths()`, PATH + site-packages injection |
+| `config` | `DEFAULT_CFG` — format, subs, SponsorBlock, sections, network, playlist, auth, archive |
+| `opts_builder` | `build_ydl_opts()` — aria2c guard, PP chain, subtitles, JS runtime, sections |
+| `format_selector` | Tiered ladder AV1 → VP9 → H264 + ceilings + explicit IDs |
+| `site_profiles` | 6 built-in per-domain profiles + CDN overrides |
+| `downloader` | Threaded download, cancel event, `_active_downloads`, VPN hints, `filesize_bytes` |
+| `hooks` | Progress + post-processor hooks → queue **or** Kotlin callback |
+| `errors` | Typed hierarchy + `classify_error()` + `recoverable`/`suggests_vpn` |
+| `formats` | No-download extraction → structured codec/resolution/bitrate + recommendations |
+| `playlist` | Flat extraction, deleted-entry marking, generator guards, ID expansion |
+| `po_token` | Allowlisted JS, `detect_js_runtime()`, QuickJS/Deno generation |
+| `resume` | `.part` scan, 24 h expiry, `.info.json` URL recovery, sanitization |
+| `bootstrap` | CDN manifest, SHA-256 gate, parallel ffmpeg/aria2c/deno fetch, uv venv, JS detect, jniLibs-aware |
+| `logger` | 5-level structured logger, rotation, IPC queue, thread-local context |
+| `persistent` | `RotatingFileHandler` (`server_logs.log`), traced IPC middleware |
+| `github_notifier` | Crash dedup + auto-report pipeline |
+| `__main__` | Desktop JSON-RPC loop, queue drain thread, CLI one-shots, `ERROR_CANCELLED` mapping |
+
+---
+
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/OnlyXianzo/TrueStream.git
@@ -61,90 +227,119 @@ flutter pub get
 flutter run
 ```
 
-See [Building from Source](docs/building.md) for platform-specific build
-instructions and runtime dependencies.
+> 📖 Full per-platform instructions, runtime deps & signing: **[docs/building.md](docs/building.md)**
 
-## Architecture
+### Engine dev setup
 
-TrueStream uses a layered architecture with a Flutter frontend and a Python
-download engine.
-
-```
-┌─────────────────────────────────────────────┐
-│              Flutter UI (Riverpod)            │
-│  Onboarding · Home · Library · Settings · …  │
-└──────────────────┬──────────────────────────┘
-                   │
-           IPC Layer (varies by platform)
-     ┌─────────────┴─────────────┐
-     │ Android: Chaquopy +       │
-     │   MethodChannel           │
-     │ Desktop: JSON stdin/stdout│
-     └─────────────┬─────────────┘
-                   │
-┌──────────────────▼──────────────────────────┐
-│           Python Engine (yt-dlp)             │
-│  opts_builder · format_selector · downloader │
-│  hooks · errors · playlist · resume · config │
-└─────────────────────────────────────────────┘
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r engine/requirements.txt
+pip install -e engine/
+pytest engine/tests/ -v            # 181 tests
 ```
 
-### Frontend (Flutter)
+---
 
-- **State management:** Riverpod (`StateNotifier`/`AsyncNotifier`) across 6
-  providers — downloads, engine status, playlists, presets, resume, settings.
-- **Navigation:** Bottom navigation shell with Home, Library, and Settings tabs.
-  All state persisted to SharedPreferences.
-- **Typography:** Instrument Sans (body) via Google Fonts, Iosevka Charon (mono)
-  bundled as assets.
-- **Theming:** DESIGN.md color tokens via `TrueStreamColors` — no hex literals.
-- **Testing:** 3 widget tests covering onboarding, settings, and tab navigation.
+## 🔨 Building
 
-### Engine (Python)
+| Platform | Command | Output |
+|---|---|---|
+| Android | `flutter build apk --release` | `build/app/outputs/flutter-apk/app-release.apk` |
+| Windows | `flutter build windows --release` + copy `engine/truestream_engine` into bundle | `build/windows/x64/runner/Release/` |
+| Linux | `flutter build linux --release` + copy `engine/truestream_engine` into bundle | `build/linux/x64/release/bundle/` |
 
-13 modules with 91 unit tests passing:
+Android notes: `minSdk 24`, ABIs `arm64-v8a` + `x86_64`, Chaquopy bundles
+CPython 3.11 + engine + `yt-dlp`/`curl_cffi` via pip block; `ffmpeg`/`deno`
+arrive via `packages.gradle.kts` into jniLibs (pass `-PskipNativePackages` for
+contributor builds without them). Desktop: `.venv` auto-detect → system
+`python3` fallback; FFmpeg/aria2c/Deno bootstrapped at runtime (SHA-256 gated).
 
-| Module | Role |
+CI: [`verify.yml`](.github/workflows/verify.yml) runs `flutter analyze` +
+`flutter test` + `pytest` on every push/PR to `main`;
+[`build.yml`](.github/workflows/build.yml) builds all three platforms on manual dispatch.
+
+---
+
+## 🧪 Testing
+
+```bash
+flutter analyze        # must be zero-error
+flutter test           # widget + unit tests (test/)
+pytest engine/tests/ -v  # 181 engine tests
+```
+
+Coverage: config · errors · format ladder · opts (incl. subtitle-PP order,
+sections, aria2c validation, JS runtime) · paths · playlists (generators, IDs,
+sanitization) · downloader (cancel, VPN hints, filesize) · hooks (99 % cap,
+`pp_key` stages) · bootstrap extraction (Zip/Tar-Slip) · packages (bundled
+`.so` fallback) · structured logger.
+
+---
+
+## 🔒 Security & Privacy
+
+- ✅ Zip-Slip / Tar-Slip hardened extraction (absolute paths, `..`, null bytes, symlinks/devices rejected; `filter="data"` where available).
+- ✅ In-app Android detection via `java.android` bridge (Termux-safe, not `ANDROID_DATA` sniffing).
+- ✅ JS allowlist — only SHA-256-approved challenge stubs execute; Deno invoked without bogus permission flags.
+- ✅ aria2c args clamped (`-x1..16`, speed regex) and **never** used for DASH/HLS (native downloader instead).
+- ✅ Temp dirs `0700`, checksum-or-fail downloads, no silent unverified fetches, aware-UTC datetimes.
+- ✅ No account / telemetry / ads. Cookies & logins opt-in. Binaries auditable (pinned SHAs).
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Fix |
 |---|---|
-| `paths` | Binary path injection and validation |
-| `opts_builder` | yt-dlp option dictionary assembly |
-| `format_selector` | Tiered format cascade (AV1/VP9/H264) |
-| `site_profiles` | Per-domain extraction profiles |
-| `downloader` | Threaded download with cancel event |
-| `hooks` | Progress and post-processing callbacks |
-| `errors` | Classified error hierarchy |
-| `formats` | Format data models |
-| `playlist` | Multi-video playlist extraction |
-| `po_token` | PO Token generation and refresh |
-| `resume` | Incomplete download detection and recovery |
-| `bootstrap` | Runtime binary verification and update |
-| `config` | Engine-wide configuration |
+| YouTube fails / SABR / `n`-sig | Check **Diagnostics → engine status**: `js_runtime` should be `deno`/`quickjs`. Re-run bootstrap; desktop needs network for Deno fetch. |
+| FFmpeg missing on Android | Contributor build without `-PskipNativePackages`? Rebuild with packages, or set a custom FFmpeg path in Settings. |
+| Slow fragments | Enable **aria2c** in Settings (Wi-Fi), raise chunks (≤16). DASH/HLS always use native downloader by design. |
+| Stuck at 99 % | By design — 99 % cap reserves terminal `finished`. If stuck, check **Live Logs** for the PP stage (merge/embed/chapters). |
+| Resume not finding files | Only `.part` + `.info.json` < 24 h old in the cache dir are candidates. |
+| Needs logs | **Settings → Diagnostics & Logs → Export** (`app_logs.txt` + `server_logs.log`). |
 
-## Tech Stack
+Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
+[`docs/JS_RUNTIMES_ANDROID_RESEARCH.md`](docs/JS_RUNTIMES_ANDROID_RESEARCH.md)
 
-| Layer | Technology |
+---
+
+## 📚 Documentation
+
+| Doc | Contents |
 |---|---|
-| UI framework | Flutter (Impeller renderer) |
-| Language | Dart 3.x |
-| State management | Riverpod |
-| Download engine | Python + yt-dlp (YoutubeDL class API) |
-| Python bridge (Android) | Chaquopy (Gradle plugin) |
-| Python bridge (desktop) | JSON over stdin/stdout |
-| JS runtime (Android) | QuickJS (NDK) |
-| JS runtime (desktop) | Deno |
-| Media processing | FFmpeg (static binary) |
-| Download accelerator | aria2c (static binary) |
-| Testing | flutter_test, pytest |
+| [Architecture](docs/architecture.md) | Stack, layers, IPC contract, providers, data flow, performance |
+| [Building](docs/building.md) | Prerequisites, clone/setup, per-platform builds, tests, CI |
+| [Features](docs/features.md) | Full capability catalog with settings map |
+| [Troubleshooting](docs/troubleshooting.md) | Symptom → fix table, log locations, FAQ |
+| [JS Runtimes (Android)](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Deno/Node/QuickJS/bgutil research + recommendation |
+| [Contributing](docs/contributing.md) | Style, commits, branches, PRs, architecture rules |
+| [Changelog](docs/CHANGELOG.md) | Release notes distilled from commit history |
+| [Accessibility audit](docs/testing/ACCESSIBILITY_AUDIT.md) | WCAG 2.2 findings & remediation |
+| [Performance audit](docs/testing/PERFORMANCE_AUDIT.md) | Frame-rate methodology |
 
-## Documentation
+---
 
-- [Architecture Overview](docs/architecture.md) — Tech stack, platform bridge,
-  and design decisions.
-- [Building from Source](docs/building.md) — Prerequisites and build commands
-  for each platform.
-- [Contributing](docs/contributing.md) — Code style, workflow, and pull request
-  guidelines.
+## 🤝 Contributing
 
-## License
+1. Fork → branch from `main` (`feat/…`, `fix/…`).
+2. Follow [Effective Dart](https://dart.dev/effective-dart) + PEP 8, Riverpod for shared state, `TrueStreamColors` (no hex), 48×48 targets + semantics.
+3. One logical change per commit, [conventional commits](docs/contributing.md#commit-conventions).
+4. Verify: `flutter analyze` · `flutter test` · `pytest engine/tests/ -v`.
+5. PR to `main` with motivation + verification + platforms tested.
+
+See **[docs/contributing.md](docs/contributing.md)** for the full checklist.
+
+---
+
+## 📄 License
 
 This project is open source. See the [LICENSE](LICENSE) file for details.
+
+<div align="center">
+
+**TrueStream** — *your media, your device, your rules.* 🎬
+
+
+
+</div>

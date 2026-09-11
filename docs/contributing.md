@@ -1,5 +1,7 @@
 # Contributing
 
+> Last updated: **2026-09-11**.
+
 Thanks for contributing to TrueStream. Here's how the process works.
 
 ## Getting Started
@@ -20,30 +22,41 @@ Thanks for contributing to TrueStream. Here's how the process works.
 - All colors must reference DESIGN.md tokens via `TrueStreamColors`. Never hardcode hex values.
 - Use `const` constructors where possible. Avoid mutable state in widgets.
 - Aim for 48x48 minimum touch targets for interactive elements.
-- Add semantic labels (`Semantics` widget) for screen reader support.
+- Add semantic labels (`Semantics` widget) for screen reader support (WCAG 2.2 AA).
 - Use `flutter analyze` before committing — must pass with zero errors.
+- Regexes with backslashes: use **triple-quoted raw strings** (`r'''…'''`) — see `AppLogger._redact()` for the pattern that avoids Dart 3 escape-sequence errors.
 
 ### Python
 
 - Follow **PEP 8** formatting standards.
 - Use the `YoutubeDL` class API from yt-dlp. Never call `subprocess.run()` with the yt-dlp binary.
 - All blocking operations must run in `threading.Thread` with a cancel event.
-- Use structured JSON for Flutter communication. No `print()` statements for machine-readable output.
+- Use structured JSON for Flutter communication. No `print()` statements for machine-readable output (use `get_logger()` — logs go to file + IPC queue).
 - Keep functions focused on a single responsibility. Each module in `engine/truestream_engine/` owns one concern.
 - Use `set_paths()` to inject all binary paths. Never hardcode paths.
-- Run `pytest engine/tests/ -v` before committing — all tests must pass.
+- Extraction of zips/tars: always go through `_safe_extract_zip` / `_safe_extract_tar` (Zip-Slip/Tar-Slip guards). Never call `extractall()` directly.
+- JS execution: only SHA-256-allowlisted snippets via `verify_js_code()`. Never eval remote/fetched JS.
+- Time: always use timezone-aware UTC datetimes.
+- Run `pytest engine/tests/ -v` before committing — all **181 tests** must pass.
+
+### Kotlin (Android)
+
+- `EngineEventListener` must stay a **public interface** (R8 strips anonymous `Any()` callbacks in release builds).
+- `BinaryPackageManager`: bundled jniLibs paths win; never `chmod +x` app-private copies and try to execute them (blocked on targetSdk > 28 — execute in place).
+- `DownloadService` must stay `dataSync` type with `START_NOT_STICKY` + `onTimeout()` stop. Never use `mediaPlayback`/`specialUse` types or auto-restart flags.
+- Never add `REQUEST_INSTALL_PACKAGES` or helper-APK flows.
 
 ## Commit Conventions
 
 Use conventional commit format:
 
 ```
-type: scope: description in present tense
+type(scope): description in present tense
 ```
 
 Types: `init` (scaffold), `feat` (new feature/screen), `fix`, `chore` (config/deps), `docs`, `style` (formatting, no logic change), `refactor`, `test`, `perf`.
 
-Scope is optional but recommended (e.g., task ID like `P4-003`).
+Scope is optional but recommended (e.g. task ID like `P4-003`, or `android`, `engine`, `logging`, `ci`).
 
 **One logical change per commit.** Never bundle unrelated changes in a single commit. Each commit diff should be reviewable in under 2 minutes.
 
@@ -64,7 +77,7 @@ flutter analyze
 # Flutter widget & unit tests
 flutter test
 
-# Python engine tests
+# Python engine tests (needs yt-dlp installed: uv pip install --system yt-dlp pytest -e engine/)
 pytest engine/tests/ -v
 ```
 
@@ -74,6 +87,7 @@ The CI pipeline in `.github/workflows/verify.yml` enforces all three on every pu
 
 - **Flutter tests**: Write widget tests for screens via `WidgetTester`. Mock providers using `ProviderScope` overrides. Place tests in `test/`.
 - **Python tests**: Write pytest functions for each module in `engine/tests/test_<module>.py`. Use plain `assert` statements. One test class per module.
+- **Security tests**: extraction guards (`test_bootstrap_extract.py`), JS allowlist, aria2c validation, and Android-detection tests must stay hermetic (mock `shutil.which`, `java.android`, network).
 
 ## Pull Request Process
 
@@ -88,11 +102,15 @@ The CI pipeline in `.github/workflows/verify.yml` enforces all three on every pu
 
 - **yt-dlp**: `YoutubeDL` class API only. Never `subprocess.run()` with yt-dlp binary.
 - **Downloads**: Always in `threading.Thread` with a cancel event. Never block the main thread.
+- **Events**: Android progress goes through `event_callback.onEvent(json)` with queue fallback. Streaming progress capped at 99%; terminal `finished` carries 100% + `filesize_bytes`.
 - **State**: Riverpod `ConsumerWidget`/`Notifier`/`AsyncNotifier`. Never `setState()` for shared state.
 - **Fonts**: Body = `GoogleFonts.instrumentSans()`. Mono = `Theme.of(context).textTheme.mono` (IosevkaCharonMono). Never system fonts.
 - **Colors**: Always from DESIGN.md tokens via `TrueStreamColors`. Never hex literals.
-- **Config**: Never hardcode paths. All binary paths injected via `set_paths()`.
+- **Config**: Never hardcode paths. All binary paths injected via `set_paths()` (8 args — keep `deno_path` aligned!).
 - **Format options**: Never use both `merge_output_format` and `remux_video` simultaneously in yt-dlp options.
+- **Subtitles**: Embed via `FFmpegEmbedSubtitle` PP, ordered EmbedSubtitle → ModifyChapters → Metadata. Never rely on the (non-existent) `embedsubs` param.
+- **Sections**: Use `download_range_func` (FFmpeg-only). Invalid specs warn-and-skip.
+- **aria2c**: Clamp chunks 1–16, validate speed regex, native downloader for DASH/HLS.
 - **Layout structure**: Screens go in `lib/features/<feature>/screens/`. Providers go in `lib/providers/`. Theme and engine bridge go in `lib/core/`.
 
 ## How to Add a New Screen

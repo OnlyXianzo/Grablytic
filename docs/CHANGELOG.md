@@ -1,0 +1,32 @@
+# Changelog
+
+> Distilled from commit history (`git log --oneline`). Current version: `0.0.1-beta+1`.
+
+## Unreleased — September 2026
+
+### Added
+- Android: `ffmpeg` + `deno` bundled in our own jniLibs (SHA-256-pinned `packages.gradle.kts` fetch, `BinaryPackageManager` resolve/probe/extract).
+- Android: `DownloadService` (`dataSync` foreground service) with progress notification, explicit lifetime, timeout handling.
+- Engine: full JS-runtime support — Deno → Node → QuickJS priority, `ejs:github` remote components, `yt-dlp-ejs` dependency.
+- Logging: buffered persistent logs both layers (`app_logs.txt`, `server_logs.log`), global error handlers, navigation/Riverpod/engine observers, GitHub search-dedup auto-report, live log viewer tab.
+- Engine: FFmpeg-only `download_sections` cutting with warn-and-skip validation.
+- Docs: `JS_RUNTIMES_ANDROID_RESEARCH.md` (Deno/Node/QuickJS/bgutil investigation).
+
+### Fixed
+- Subtitles never embedded (`embedsubs` is not a real param) → real `FFmpegEmbedSubtitle` PP in canonical order (EmbedSubtitle → ModifyChapters → Metadata).
+- Re-audit items: `updatetime` (not ignored `no_mtime`), `writethumbnail` for `EmbedThumbnail`, SponsorBlock cutter ordering, `filesize_bytes` on terminal events, `suggests_vpn` on errors, desktop `ERROR_CANCELLED` → `cancelled`, R8-safe `EngineEventListener`.
+- Event delivery: replaced queue polling with Kotlin `onEvent` callback; fixed 7→8-arg `set_paths`/`deno_path` misalignment.
+- Playlists: generator guards, expanded video IDs, storage sanitization.
+- Security audit: Zip-Slip/Tar-Slip-hardened extraction, `java.android`-bridge detection (Termux-safe), terminal-vs-stream 99% contract, aria2c validation, Deno path resolution, aware-UTC datetimes.
+- CI: `flutter analyze` (AppLogger regex escapes), Python `deno_version` UnboundLocalError, `lintVital` disable, `zip.so` strip skip, `shutil.which` mocks.
+
+## July 2026
+- YouTube SABR format / PO-Token block resolution; aria2c DASH hardening.
+- Structured engine logger (rotation, IPC queue, thread-local context) + Dart log model/circular buffer/ingester + live viewer + `logStream` plumbing.
+
+## June 2026
+- Diagnostics & Logs screen with troubleshooting flow; `AppLogger`; home/format-picker instrumentation.
+- Android FFmpeg + checksum fallbacks; `setPaths`/bootstrap race fix.
+- Security audits: JS execution + tmpdir fixes, executable permissions, aria2c assets.
+- Format ladder: muxed streams for non-YouTube; platform-aware JS UI; duplicate-download guard; desktop IPC hardening (queueing, single startup, venv fixes, `sqflite_ffi`).
+- Sprint 4–5 features: history (SQLite), archive toggle, aria2c config, scheduler, media preview, SponsorBlock settings, templates, observed sources, batch import, cookie/WebView auth, share intent, resume UI, update channels, binary bootstrapper, error-recovery UI.
