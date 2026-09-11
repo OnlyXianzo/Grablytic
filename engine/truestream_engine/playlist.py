@@ -51,22 +51,33 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             log.warn(f"No data returned for playlist {url}")
             return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not fetch playlist"}
 
-        entries_raw = data.get("entries", []) if "entries" in data else [data]
+        entries_raw = data.get("entries") if "entries" in data and data.get("entries") is not None else [data]
         entries = []
-        for i, e in enumerate(entries_raw, 1):
+        idx = 1
+        for e in entries_raw:
+            if not e or not isinstance(e, dict):
+                continue
+
             title = e.get("title")
             if not title or title == "[Deleted video]":
                 title = "[Deleted video]"
 
+            raw_url = e.get("url") or e.get("webpage_url") or ""
+            if raw_url and not raw_url.startswith("http") and not raw_url.startswith("/"):
+                # Plain YouTube 11-char video ID from flat extraction
+                if re.match(r"^[a-zA-Z0-9_-]{11}$", raw_url):
+                    raw_url = f"https://www.youtube.com/watch?v={raw_url}"
+
             entries.append({
-                "index": i,
+                "index": idx,
                 "title": title,
-                "url": e.get("url") or e.get("webpage_url") or "",
+                "url": raw_url,
                 "duration_seconds": e.get("duration"),
                 "thumbnail_url": e.get("thumbnail"),
                 "uploader": e.get("uploader"),
                 "is_available": e.get("title") is not None and e.get("availability") != "private",
             })
+            idx += 1
 
         playlist_title = data.get("title", "Unknown Playlist")
         log.info(f"Playlist '{playlist_title}' has {len(entries)} entries")

@@ -47,8 +47,9 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         is_playlist = info.get("_type") == "playlist" or "entries" in info
         formats_raw = info.get("formats", [])
         if is_playlist and not formats_raw:
-            first = info.get("entries", [None])[0]
-            if first:
+            entries_val = info.get("entries")
+            first = next(iter(entries_val), None) if entries_val is not None else None
+            if first and isinstance(first, dict):
                 formats_raw = first.get("formats", [])
 
         parsed = []

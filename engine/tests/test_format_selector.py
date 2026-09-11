@@ -61,3 +61,38 @@ class TestBuildFormatString:
         }
         result = build_format_string(cfg)
         assert result == "137+140/137/best"
+
+
+class TestGetFormatsPlaylist:
+    def test_generator_entries_in_formats(self, monkeypatch):
+        from truestream_engine.formats import get_formats
+        import truestream_engine.formats as fmt_mod
+
+        def gen():
+            yield {
+                "formats": [
+                    {"format_id": "137", "vcodec": "avc1", "acodec": "none", "height": 1080},
+                    {"format_id": "140", "vcodec": "none", "acodec": "mp4a", "abr": 128},
+                ]
+            }
+
+        class MockYDL:
+            def __init__(self, opts):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download=False):
+                return {
+                    "_type": "playlist",
+                    "entries": gen(),
+                }
+
+        monkeypatch.setattr(fmt_mod, "YoutubeDL", MockYDL)
+
+        res = get_formats("https://youtube.com/playlist?list=test")
+        assert res["success"] is True
+        assert len(res["formats"]) == 2
+        assert res["recommended_video_format_id"] == "137"
+        assert res["recommended_audio_format_id"] == "140"

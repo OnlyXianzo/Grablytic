@@ -106,6 +106,8 @@ def build_ydl_opts(
         "updatetime": False,
         "retries": int(cfg["retries"]),
         "fragment_retries": int(cfg["fragment_retries"]),
+        "windowsfilenames": True,
+        "trim_file_name": 160,
     }
 
     opts = apply_aria2c_opts(opts, cfg)
@@ -288,20 +290,27 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
     import os
     from truestream_engine.po_token import detect_js_runtime
 
+    # Prioritize explicit deno_path first (e.g. bundled libdeno.so on Android)
+    deno_path = paths.get("deno_path") or os.environ.get("DENO_PATH") or shutil_which("deno")
+    if deno_path and os.path.isfile(deno_path):
+        opts["js_runtimes"] = {"deno": {"path": deno_path}}
+        opts["remote_components"] = ["ejs:github"]
+        return
+
     runtime_info = detect_js_runtime()
     runtime_name = runtime_info["name"]
 
     if runtime_name == "deno":
-        deno_path = paths.get("deno_path") or os.environ.get("DENO_PATH") or shutil_which("deno")
         if deno_path and os.path.isfile(deno_path):
             opts["js_runtimes"] = {"deno": {"path": deno_path}}
             opts["remote_components"] = ["ejs:github"]
             return
 
     if runtime_name == "quickjs":
-        opts["js_runtimes"] = {"quickjs": {}}
-        opts["remote_components"] = ["ejs:github"]
-        return
+        if shutil_which("qjs"):
+            opts["js_runtimes"] = {"quickjs": {}}
+            opts["remote_components"] = ["ejs:github"]
+            return
 
     node_path = paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
     if node_path and os.path.isfile(node_path):

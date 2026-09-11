@@ -297,3 +297,20 @@ def test_download_sections_defaults_off():
     opts = build_ydl_opts()
     assert "download_ranges" not in opts
     assert "force_keyframes_at_cuts" not in opts
+
+
+def test_storage_sanitization_options():
+    opts = build_ydl_opts()
+    assert opts.get("windowsfilenames") is True
+    assert opts.get("trim_file_name") == 160
+
+
+def test_js_runtime_configured_with_deno(tmp_path):
+    deno_file = tmp_path / "deno"
+    deno_file.touch()
+    _paths["deno_path"] = str(deno_file)
+    opts = build_ydl_opts()
+    assert "js_runtimes" in opts
+    assert opts["js_runtimes"]["deno"]["path"] == str(deno_file)
+    assert "remote_components" in opts
+    assert "ejs:github" in opts["remote_components"]
