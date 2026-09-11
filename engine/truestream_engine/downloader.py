@@ -2,7 +2,7 @@ import json
 import threading
 import os
 import queue as _queue
-from datetime import datetime
+from datetime import datetime, timezone
 
 from yt_dlp import YoutubeDL
 
@@ -22,7 +22,7 @@ def _cleanup_loop():
     import time
     while True:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             to_remove = []
             with _downloads_lock:
                 for did, info in list(_active_downloads.items()):
@@ -116,7 +116,7 @@ def download_thread(
             "progress_queue": prog_q,
             "result_queue": res_q,
             "url": url,
-            "started_at": datetime.utcnow(),
+            "started_at": datetime.now(timezone.utc),
         })
         _active_downloads[download_id] = existing
 
@@ -276,7 +276,7 @@ def download_thread(
         log.clear_context()
         with _downloads_lock:
             if download_id in _active_downloads:
-                _active_downloads[download_id]["finished_at"] = datetime.utcnow()
+                _active_downloads[download_id]["finished_at"] = datetime.now(timezone.utc)
 
 
 def start_download(
@@ -304,7 +304,7 @@ def start_download(
             "result_queue": result_queue,
             "url": url,
             "thread": t,
-            "started_at": datetime.utcnow(),
+            "started_at": datetime.now(timezone.utc),
         }
 
     return {

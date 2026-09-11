@@ -109,18 +109,32 @@ class TestBootstrap:
         assert result["success"] is False
         assert result["error_type"] == "ERROR_BOOTSTRAP_FAILED"
 
-    def test_returns_success_when_initialized(self):
-        set_paths(
-            data_dir="/tmp/data",
-            output_dir="/tmp/output",
-            ffmpeg_path="/usr/bin/ffmpeg",
-            cache_dir="/tmp/cache",
+    def test_returns_success_when_initialized(self, tmp_path, monkeypatch):
+        import shutil
+        import sys
+        from truestream_engine.paths import set_paths
+
+        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+        # Offline proof: any network attempt fails the test.
+        monkeypatch.setattr(
+            bootstrap_mod, "_resolve_latest_release",
+            lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
         )
-        result = bootstrap()
+        monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+        set_paths(
+            data_dir=str(tmp_path / "data"),
+            output_dir=str(tmp_path / "output"),
+            ffmpeg_path=None,
+            cache_dir=str(tmp_path / "cache"),
+        )
+        result = bootstrap_mod.bootstrap()
         assert result["success"] is True
         assert "yt_dlp_version" in result
         assert "js_runtime" in result
         assert result["contract_version"] == "1.0"
+        # Nothing bundled and no network: honestly reported missing.
+        assert result["ffmpeg_ok"] is False
+        assert "ffmpeg" in result["update_components"]
 
     def test_detect_js_runtime_default_none(self):
         result = _detect_js_runtime()
@@ -210,14 +224,21 @@ class TestBootstrap:
         assert res == {"success": True}
         assert get_paths()["update_channel"] == "nightly"
 
-    def test_update_check(self):
+    def test_update_check(self, tmp_path, monkeypatch):
+        import sys
         from truestream_engine.bootstrap import update_check
         from truestream_engine.paths import set_paths
+
+        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+        monkeypatch.setattr(
+            bootstrap_mod, "_resolve_latest_release",
+            lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
+        )
         set_paths(
-            data_dir="/tmp/data",
-            output_dir="/tmp/output",
-            ffmpeg_path="/usr/bin/ffmpeg",
-            cache_dir="/tmp/cache",
+            data_dir=str(tmp_path / "data"),
+            output_dir=str(tmp_path / "output"),
+            ffmpeg_path=None,
+            cache_dir=str(tmp_path / "cache"),
         )
         res = update_check()
         assert res["success"] is True
@@ -225,8 +246,10 @@ class TestBootstrap:
         assert "yt_dlp_latest" in res
         assert "binaries" in res
         assert "updates_queued" in res
+        # No manifest reachable and no local binaries: nothing queued.
+        assert res["updates_queued"] == []
 
-    def test_bootstrap_github_binary_missing_sha256(self, monkeypatch):
+    def test_bootstrap_github_binary_missing_sha256(self, tmp_path, monkeypatch):
         import shutil
         import sys
         import truestream_engine.bootstrap as bootstrap_dummy  # ensure module is loaded
@@ -248,7 +271,7 @@ class TestBootstrap:
         # Ensure dest_path does not exist and is not on system path
         monkeypatch.setattr(shutil, "which", lambda name: None)
 
-        dest_path = "/tmp/does_not_exist_ffmpeg"
+        dest_path = str(tmp_path / "does_not_exist_ffmpeg")
         if os.path.exists(dest_path):
             os.remove(dest_path)
 
@@ -257,11 +280,11 @@ class TestBootstrap:
             "foo/bar",
             "linux",
             dest_path,
-            "/tmp/cache"
+            str(tmp_path / "cache")
         )
         assert res == (False, None)
 
-    def test_bootstrap_github_binary_checksums_sha256_fallback(self, monkeypatch):
+    def test_bootstrap_github_binary_checksums_sha256_fallback(self, tmp_path, monkeypatch):
         import shutil
         import sys
         import urllib.request
@@ -303,7 +326,7 @@ class TestBootstrap:
         monkeypatch.setattr(bootstrap_mod, "_download_and_extract_binary", lambda url, sha, dest, cache: open(dest, "w").close())
         monkeypatch.setattr(shutil, "which", lambda name: None)
 
-        dest_path = "/tmp/test_checksum_fallback_ffmpeg"
+        dest_path = str(tmp_path / "test_checksum_fallback_ffmpeg")
         if os.path.exists(dest_path):
             os.remove(dest_path)
 
@@ -312,11 +335,11 @@ class TestBootstrap:
             "foo/bar",
             "linux",
             dest_path,
-            "/tmp/cache"
+            str(tmp_path / "cache")
         )
         assert res[0] is True
         assert res[1] == "1.0.0"
-        
+
         if os.path.exists(dest_path):
             os.remove(dest_path)
 

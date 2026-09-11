@@ -66,19 +66,23 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   void updateProgress(String id, double progress, int downloadedBytes) {
     state = state.map((d) {
       if (d.id != id) return d;
+      // Progress events (including per-stream completions) must never flip
+      // status to 'completed' — only the terminal 'finished' event does that
+      // (after FFmpeg merge + post-processing). Hold at 99% meanwhile.
+      final isActive = d.status == 'downloading' || d.status == 'pending';
       return DownloadItem(
         id: d.id,
         title: d.title,
         url: d.url,
-        status: progress >= 1.0 ? 'completed' : 'downloading',
-        progress: progress,
+        status: isActive ? 'downloading' : d.status,
+        progress: progress.clamp(0.0, 0.99),
         downloadedBytes: downloadedBytes,
         totalBytes: d.totalBytes,
         thumbnailUrl: d.thumbnailUrl,
         filePath: d.filePath,
         addedAt: d.addedAt,
         fileSize: d.fileSize,
-        completedDate: progress >= 1.0 ? 'Today' : null,
+        completedDate: d.completedDate,
         config: d.config,
         networkType: d.networkType,
       );
@@ -113,9 +117,32 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           title: d.title,
           url: d.url,
           status: 'downloading',
-          progress: progress,
+          progress: progress.clamp(0.0, 0.99),
           downloadedBytes: downloaded,
           totalBytes: total,
+          thumbnailUrl: d.thumbnailUrl,
+          filePath: d.filePath,
+          addedAt: d.addedAt,
+          config: d.config,
+          networkType: d.networkType,
+        );
+      }).toList();
+    } else if (eventType == 'stream_finished') {
+      // One stream (e.g. DASH video) landed; more may follow, then FFmpeg
+      // merge + post-processing. Record bytes, hold below 100%, stay
+      // 'downloading' — only terminal 'finished' completes the item.
+      final filesize = event['filesize_bytes'] as int? ?? 0;
+      state = state.map((d) {
+        if (d.id != downloadId) return d;
+        final known = filesize > d.totalBytes ? filesize : d.totalBytes;
+        return DownloadItem(
+          id: d.id,
+          title: d.title,
+          url: d.url,
+          status: 'downloading',
+          progress: d.progress.clamp(0.0, 0.99),
+          downloadedBytes: filesize > 0 ? filesize : d.downloadedBytes,
+          totalBytes: known,
           thumbnailUrl: d.thumbnailUrl,
           filePath: d.filePath,
           addedAt: d.addedAt,

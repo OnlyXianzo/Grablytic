@@ -23,7 +23,6 @@ def _boot():
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
-    monkeypatch.delenv("ANDROID_DATA", raising=False)
     paths_mod._paths.update({
         "data_dir": None, "output_dir": None, "ffmpeg_path": None,
         "ffmpeg_ld_path": None, "cache_dir": None, "cookies_path": None,
@@ -109,9 +108,10 @@ class TestProbe:
 class TestAndroidBootstrap:
     @pytest.mark.unit
     def test_android_never_downloads(self, tmp_path, monkeypatch):
-        """Fail closed on Android: no toolchain fetch, even unverified."""
+        """Fail closed in-app: no toolchain fetch, even unverified."""
         boot = _boot()
-        monkeypatch.setenv("ANDROID_DATA", "/data")
+        # Simulate the production Chaquopy app (java bridge present).
+        monkeypatch.setattr(boot, "_is_android_app", lambda: True)
         monkeypatch.setattr(
             boot, "_resolve_latest_release",
             lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
@@ -123,11 +123,17 @@ class TestAndroidBootstrap:
         assert (ok, ver) == (False, None)
 
     @pytest.mark.unit
+    def test_android_env_alone_does_not_trigger_app_branch(
+        self, tmp_path, monkeypatch
+    ):
+        """ANDROID_DATA without the java bridge (Termux/CI) is NOT the app."""
+        boot = _boot()
+        assert boot._is_android_app() is False
+
+    @pytest.mark.unit
     def test_android_bootstrap_uses_bundled_sos(self, tmp_path, monkeypatch):
         boot = _boot()
-        monkeypatch.setenv("ANDROID_DATA", "/data")
-        # Exercise the real flow, not the PYTEST_CURRENT_TEST mock branch.
-        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        monkeypatch.setattr(boot, "_is_android_app", lambda: True)
         monkeypatch.setattr(
             boot, "_resolve_latest_release",
             lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
@@ -153,8 +159,7 @@ class TestAndroidBootstrap:
     def test_android_bootstrap_missing_bins_reported(self, tmp_path, monkeypatch):
         import shutil
         boot = _boot()
-        monkeypatch.setenv("ANDROID_DATA", "/data")
-        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        monkeypatch.setattr(boot, "_is_android_app", lambda: True)
         # Hide system binaries: nothing bundled, nothing on PATH.
         monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
         set_paths(
@@ -182,3 +187,18 @@ class TestDenoJsRuntimeFromSo:
         _configure_js_runtime(opts, get_paths())
         assert opts["js_runtimes"] == {"deno": {"path": deno}}
         assert opts["remote_components"] == ["ejs:github"]
+
+    @pytest.mark.unit
+    def test_paths_store_wins_over_env_and_which(self, tmp_path, monkeypatch):
+        from truestream_engine import po_token as pot
+
+        deno = _fake_exe(tmp_path, "libdeno.so", '{"token": "T123"}')
+        set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=None, cache_dir=str(tmp_path),
+            deno_path=deno,
+        )
+        # Bogus env/which must not shadow the engine paths store.
+        monkeypatch.setenv("DENO_PATH", "/nonexistent/deno")
+        monkeypatch.setattr(pot.shutil, "which", lambda *a, **k: None)
+        assert pot.generate_po_token("https://youtube.com/watch?v=abc") == "T123"

@@ -86,6 +86,33 @@ def test_aria2c_max_speed_applied(tmp_path):
     assert "--max-download-limit=10M" in opts["external_downloader_args"]
 
 
+def _aria2c_args(tmp_path, **cfg):
+    dummy = tmp_path / "aria2c"
+    dummy.touch()
+    _paths["aria2c_path"] = str(dummy)
+    opts = build_ydl_opts(config={"aria2c_enabled": True, **cfg})
+    return opts["external_downloader_args"]
+
+
+def test_aria2c_chunks_clamped(tmp_path):
+    assert "-x16" in _aria2c_args(tmp_path, aria2c_chunks=99)
+    assert "-x1" in _aria2c_args(tmp_path, aria2c_chunks=-3)
+    assert "-x1" in _aria2c_args(tmp_path, aria2c_chunks=0)
+
+
+def test_aria2c_chunks_invalid_falls_back(tmp_path):
+    assert "-x5" in _aria2c_args(tmp_path, aria2c_chunks="abc")
+    assert "-x5" in _aria2c_args(tmp_path, aria2c_chunks=None)
+
+
+def test_aria2c_max_speed_validated(tmp_path):
+    assert "--max-download-limit=500k" in _aria2c_args(
+        tmp_path, aria2c_max_speed="500k")
+    for bad in ("10M; rm -rf", "-x9", "--dir=/", "abc", "10 MB"):
+        args = _aria2c_args(tmp_path, aria2c_max_speed=bad)
+        assert not any(a.startswith("--max-download-limit") for a in args), bad
+
+
 def test_rate_limit_applied():
     opts = build_ydl_opts(config={"rate_limit": "500K"})
     assert opts["ratelimit"] == "500K"

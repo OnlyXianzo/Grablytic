@@ -2,6 +2,11 @@ import os
 import shutil
 import hashlib
 
+from truestream_engine.logger import get_logger
+
+
+log = get_logger("truestream_engine.po_token")
+
 # Strict allowlist of SHA-256 hashes of approved JS scripts
 QUICKJS_STUB_SCRIPT = """
             // PO Token generation — YouTube's PoToken.generate()
@@ -94,8 +99,19 @@ def _generate_with_quickjs(url: str) -> str | None:
 
 def _generate_with_deno(url: str) -> str | None:
     """Generate PO Token via Deno subprocess."""
-    deno_path = os.environ.get("DENO_PATH") or shutil.which("deno")
-    if not deno_path:
+    # NOTE: intentionally plain `deno eval` with no permission flags.
+    # `--no-read/--no-write/--no-env` are not valid Deno flags (negation is
+    # `--deny-*`, and `deno eval` runs with implicit full permissions by
+    # design) — passing them would only break flag parsing. yt-dlp itself
+    # invokes `deno run -`, never `deno eval`; this harness executes our own
+    # allowlisted stub only.
+    from truestream_engine.paths import get_paths
+    deno_path = (
+        get_paths().get("deno_path")
+        or os.environ.get("DENO_PATH")
+        or shutil.which("deno")
+    )
+    if not deno_path or not os.path.isfile(deno_path):
         return None
     try:
         import subprocess, json
@@ -104,9 +120,10 @@ def _generate_with_deno(url: str) -> str | None:
             [deno_path, "eval", DENO_STUB_SCRIPT, "--", url],
             capture_output=True, text=True, timeout=10,
         )
-        if res.returncode == 0:
+        if res.returncode == 0 and res.stdout.strip():
             data = json.loads(res.stdout.strip())
             return data.get("token")
-    except Exception:
+    except Exception as exc:
+        log.warn(f"Deno PO token generation failed: {exc}")
         return None
     return None

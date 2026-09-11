@@ -42,14 +42,32 @@ def _parse_section_ranges(specs: list) -> list[tuple[float, float]]:
 
 def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     import os
+    import re
+    from truestream_engine.logger import get_logger
     from truestream_engine.paths import get_paths
+    log = get_logger("truestream_engine.opts_builder")
     aria_path = get_paths().get("aria2c_path")
     if config.get("aria2c_enabled") and aria_path and os.path.isfile(aria_path):
-        chunks = config.get("aria2c_chunks", 5)
+        # Defense in depth: external_downloader_args is passed verbatim to
+        # the child argv (no shell involved), so clamp/validate config values
+        # instead of trusting them blindly.
+        try:
+            chunks = max(1, min(16, int(config.get("aria2c_chunks", 5))))
+        except (ValueError, TypeError):
+            log.warn(
+                f"Ignoring invalid aria2c_chunks value: "
+                f"{config.get('aria2c_chunks')!r}"
+            )
+            chunks = 5
         args = [f"-x{chunks}", "-k1M", "--min-split-size=1M"]
-        max_speed = config.get("aria2c_max_speed")
+        max_speed = str(config.get("aria2c_max_speed") or "").strip()
         if max_speed:
-            args.append(f"--max-download-limit={max_speed}")
+            if re.match(r"^\d+[KkMmGg]?$", max_speed):
+                args.append(f"--max-download-limit={max_speed}")
+            else:
+                log.warn(
+                    f"Ignoring invalid aria2c_max_speed value: {max_speed!r}"
+                )
         # CVE-2026-50574: Avoid using aria2c for DASH/HLS fragmented manifests
         opts["external_downloader"] = {
             "default": "aria2c",

@@ -46,9 +46,34 @@ FFMPEG_PLATFORM_MAP = {
 }
 
 
+def _on_android_os() -> bool:
+    """True on any Android Bionic Python (app, Termux, CI runners)."""
+    return hasattr(sys, "getandroidapilevel")
+
+
+def _is_termux() -> bool:
+    """True inside a Termux user shell (behaves like Linux for toolchains)."""
+    return "TERMUX_VERSION" in os.environ or os.environ.get("PREFIX", "").startswith(
+        "/data/data/com.termux"
+    )
+
+
+def _is_android_app() -> bool:
+    """True only inside the production Chaquopy app process.
+
+    The `java.android` bridge exists solely in-app: Termux, desktop and CI
+    Pythons raise ImportError. This replaces the ANDROID_DATA env sniff,
+    which the OS sets for every app process including Termux shells.
+    """
+    try:
+        from java.android import context  # type: ignore[import-not-found]
+        return context is not None
+    except Exception:
+        return False
+
+
 def _get_platform_key() -> str:
-    is_android = "ANDROID_DATA" in os.environ
-    if is_android:
+    if _on_android_os() and not _is_termux():
         os_name = "android"
     elif sys.platform.startswith("win"):
         os_name = "windows"
@@ -174,6 +199,86 @@ def _extract_version_from_tag(tag: str) -> str:
     return v
 
 
+def _is_within_directory(base: str, target: str) -> bool:
+    """True iff realpath(target) stays inside realpath(base)."""
+    try:
+        return os.path.commonpath(
+            [os.path.realpath(base), os.path.realpath(target)]
+        ) == os.path.realpath(base)
+    except Exception:
+        return False
+
+
+def _reject_unsafe_name(name: str) -> str | None:
+    """Return a clean relative member name, or None to skip the member.
+
+    Rejects absolute paths (POSIX + Windows drive/UNC), null bytes, and
+    anything escaping via `..` after separator normalization. zipfile has no
+    `filter=` parameter, so this manual gate is mandatory.
+    """
+    if not name or "\x00" in name:
+        return None
+    text = name.replace("\\", "/")
+    # Absolute POSIX, Windows drive (C:/, C:), UNC/host shares.
+    if text.startswith(("/", "~")):
+        return None
+    if len(text) >= 2 and text[1] == ":":
+        return None
+    if text.startswith("//"):
+        return None
+    cleaned = os.path.normpath(text)
+    if cleaned in (".", "") or cleaned.startswith(".."):
+        return None
+    return cleaned
+
+
+def _safe_extract_zip(archive_path: str, extract_dir: str) -> None:
+    with zipfile.ZipFile(archive_path, "r") as z:
+        for member in z.infolist():
+            clean = _reject_unsafe_name(member.filename)
+            if clean is None:
+                raise ValueError(
+                    f"Security Violation: unsafe zip member {member.filename!r}"
+                )
+            target = os.path.join(extract_dir, clean)
+            if not _is_within_directory(extract_dir, target):
+                raise ValueError(
+                    f"Security Violation: Zip Slip detected in {member.filename!r}"
+                )
+            if member.is_dir():
+                os.makedirs(target, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(target) or extract_dir, exist_ok=True)
+                with z.open(member, "r") as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+
+
+def _safe_extract_tar(archive_path: str, extract_dir: str) -> None:
+    # Toolchain archives only ever need regular files and directories:
+    # symlinks, hardlinks, devices and fifos are rejected outright.
+    with tarfile.open(archive_path, "r:*") as t:
+        members = t.getmembers()
+        for m in members:
+            if m.issym() or m.islnk() or m.ischr() or m.isblk() or m.isfifo():
+                raise ValueError(
+                    f"Security Violation: non-regular tar member {m.name!r}"
+                )
+            clean = _reject_unsafe_name(m.name)
+            if clean is None or not _is_within_directory(
+                extract_dir, os.path.join(extract_dir, clean)
+            ):
+                raise ValueError(
+                    f"Security Violation: Tar Slip detected in {m.name!r}"
+                )
+        if hasattr(tarfile, "data_filter"):
+            t.extractall(extract_dir, filter="data")
+        else:
+            # Python < 3.11.4 has no extraction filter: the manual gate above
+            # already validated every member, so this is fail-closed, never
+            # silently trusted.
+            t.extractall(extract_dir)
+
+
 def _download_and_extract_binary(
     url: str, sha256_expected: str | None, dest_path: str, temp_dir_root: str
 ):
@@ -202,11 +307,9 @@ def _download_and_extract_binary(
         os.makedirs(extract_dir, exist_ok=True)
 
         if url.endswith(".zip"):
-            with zipfile.ZipFile(archive_path, "r") as z:
-                z.extractall(extract_dir)
+            _safe_extract_zip(archive_path, extract_dir)
         else:
-            with tarfile.open(archive_path, "r:*") as t:
-                t.extractall(extract_dir)
+            _safe_extract_tar(archive_path, extract_dir)
 
         binary_name = os.path.basename(dest_path).lower()
         found_binary = None
@@ -273,7 +376,7 @@ def _bootstrap_github_binary(
     if os.path.isfile(dest_path) and os.access(dest_path, os.X_OK):
         return True, None
 
-    is_android = "ANDROID_DATA" in os.environ
+    is_android = _is_android_app()
     if is_android:
         # Bundled jniLibs binaries (libffmpeg.so / libdeno.so) are the ONLY
         # files the OS will execute on targetSdk > 28. Toolchain binaries
@@ -398,7 +501,7 @@ def bootstrap() -> dict:
     data_dir = paths["data_dir"]
     cache_dir = paths["cache_dir"]
     platform_key = _get_platform_key()
-    is_android = "ANDROID_DATA" in os.environ
+    is_android = _is_android_app()
 
     bin_dir = os.path.join(data_dir, "bin")
     os.makedirs(bin_dir, exist_ok=True)
@@ -406,42 +509,6 @@ def bootstrap() -> dict:
         os.chmod(bin_dir, 0o700)
 
     js_runtime_info = _detect_js_runtime()
-
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        ffmpeg_ok = False
-        if paths.get("ffmpeg_path"):
-            ffmpeg_ok = os.path.isfile(paths["ffmpeg_path"]) and os.access(
-                paths["ffmpeg_path"], os.X_OK
-            )
-        aria2c_ok = False
-        if paths.get("aria2c_path"):
-            aria2c_ok = os.path.isfile(paths["aria2c_path"]) and os.access(
-                paths["aria2c_path"], os.X_OK
-            )
-        deno_ok = False
-        deno_version = None
-        if paths.get("deno_path"):
-            deno_ok = os.path.isfile(paths["deno_path"]) and os.access(
-                paths["deno_path"], os.X_OK
-            )
-
-        return {
-            "success": True,
-            "yt_dlp_version": _get_yt_dlp_version(),
-            "ffmpeg_ok": ffmpeg_ok,
-            "ffmpeg_version": "7.1.1" if ffmpeg_ok else None,
-            "aria2c_ok": aria2c_ok,
-            "aria2c_version": "1.37.0" if aria2c_ok else None,
-            "deno_ok": deno_ok,
-            "deno_version": deno_version,
-            "quickjs_ok": False,  # never available in test env
-            "js_runtime": js_runtime_info["name"],
-            "js_runtime_version": js_runtime_info["version"],
-            "needs_update": False,
-            "update_components": [],
-            "manifest_source": "cache",
-            "contract_version": "1.0",
-        }
 
     update_components = []
 
@@ -622,31 +689,7 @@ def update_check() -> dict:
 
     paths = get_paths()
     platform_key = _get_platform_key()
-    is_android = "ANDROID_DATA" in os.environ
-
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        return {
-            "success": True,
-            "checked_at": 1749254400,
-            "yt_dlp_current": _get_yt_dlp_version(),
-            "yt_dlp_latest": "2026.06.10",
-            "yt_dlp_update_available": True,
-            "binaries": [
-                {
-                    "name": "ffmpeg",
-                    "current_sha256": "mock_current_sha",
-                    "manifest_sha256": "mock_current_sha",
-                    "update_available": False,
-                },
-                {
-                    "name": "deno",
-                    "current_sha256": "mock_deno_current_sha",
-                    "manifest_sha256": "mock_deno_manifest_sha",
-                    "update_available": True,
-                },
-            ],
-            "updates_queued": ["yt_dlp", "deno"],
-        }
+    is_android = _is_android_app()
 
     yt_dlp_current = _get_yt_dlp_version()
     binaries_status = []

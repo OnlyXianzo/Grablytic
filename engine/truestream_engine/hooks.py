@@ -47,12 +47,16 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 queue.put(event_json)
 
         elif status == "finished":
-            # filesize_bytes is the contract download_provider.dart:127 reads;
-            # total_bytes kept alongside for backward compatibility (#4).
+            # Per-FILE completion (e.g. the video DASH stream landed while the
+            # audio stream is still downloading) -- NOT terminal. The UI must
+            # not mark the download completed here; only the downloader's
+            # terminal "finished" event (after merge + post-processing) does.
+            # filesize_bytes is the contract download_provider.dart reads;
+            # total_bytes kept alongside for backward compatibility.
             final_bytes = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
             event_json = json.dumps({
                 "type": "event",
-                "event": "finished",
+                "event": "stream_finished",
                 "download_id": download_id,
                 "filename": d.get("filename", ""),
                 "filesize_bytes": final_bytes,
