@@ -16,6 +16,12 @@ from truestream_engine import (
 )
 from truestream_engine.downloader import _active_downloads, _downloads_lock
 from truestream_engine.logger import get_logger, set_global_queue, set_global_log_dir
+from truestream_engine.persistent import (
+    init_persistent_logging,
+    get_std_logger,
+    traced_request,
+    flush_now as persistent_flush,
+)
 
 log = get_logger("truestream_engine.main")
 _log_queue: _queue_module.Queue | None = None
@@ -103,13 +109,21 @@ def main():
 
             log.info(f"Method: {method}", extra={"params": params})
 
+            # Sanitized copy for the rotating handler (never raw secrets).
+            try:
+                from truestream_engine.persistent import sanitize as _sanitize
+                get_std_logger().debug(">> %s params=%s",
+                                       method, _sanitize(params))
+            except Exception:
+                pass
+
             res = None
             if method == "paths/set":
                 set_paths(
                     data_dir=params["data_dir"],
                     output_dir=params["output_dir"],
                     ffmpeg_path=params.get("ffmpeg_path"),
-                    cache_dir=params["cache_dir"],
+                    cache_dir=params.get("cache_dir"),
                     cookies_path=params.get("cookies_path"),
                     aria2c_path=params.get("aria2c_path"),
                     deno_path=params.get("deno_path"),
@@ -121,34 +135,53 @@ def main():
                 log_queue = _queue_module.Queue()
                 set_global_queue(log_queue)
                 _log_queue = log_queue
+                # Persistent rotating log (STEP 3B): server_logs.log + 30s
+                # flush worker live alongside the legacy daily JSONL file.
+                try:
+                    init_persistent_logging(data_dir + "/logs")
+                except Exception:
+                    pass
                 res = {"success": True}
-            elif method == "engine/bootstrap":
-                res = bootstrap()
-            elif method == "download/start":
-                res = start_download(
-                    url=params["url"],
-                    download_id=params["download_id"],
-                    config=params.get("config"),
-                    network_type=params.get("network_type", "wifi")
-                )
-            elif method == "download/cancel":
-                res = cancel_download(params["download_id"])
-            elif method == "formats/get":
-                res = get_formats(params["url"], params.get("config"))
-            elif method == "playlist/info":
-                res = get_playlist_info(params["url"], params.get("config"))
-            elif method == "resume/scan":
-                res = scan_resume_candidates(params["cache_dir"])
-            elif method == "engine/update_check":
-                res = update_check()
-            elif method == "engine/set_update_channel":
-                res = set_update_channel(params["channel"])
             else:
-                res = {
-                    "success": False,
-                    "error_type": "ERROR_UNKNOWN_METHOD",
-                    "error_message": f"Method {method} not found"
-                }
+                # Request/response middleware boundary (STEP 3B): latency,
+                # sanitized payloads and full tracebacks via traced_request.
+                def _dispatch():
+                    if method == "engine/bootstrap":
+                        return bootstrap()
+                    elif method == "download/start":
+                        return start_download(
+                            url=params["url"],
+                            download_id=params["download_id"],
+                            config=params.get("config"),
+                            network_type=params.get("network_type", "wifi")
+                        )
+                    elif method == "download/cancel":
+                        return cancel_download(params["download_id"])
+                    elif method == "formats/get":
+                        return get_formats(params["url"], params.get("config"))
+                    elif method == "playlist/info":
+                        return get_playlist_info(params["url"], params.get("config"))
+                    elif method == "resume/scan":
+                        return scan_resume_candidates(params["cache_dir"])
+                    elif method == "engine/update_check":
+                        return update_check()
+                    elif method == "engine/set_update_channel":
+                        return set_update_channel(params["channel"])
+                    else:
+                        return {
+                            "success": False,
+                            "error_type": "ERROR_UNKNOWN_METHOD",
+                            "error_message": f"Method {method} not found"
+                        }
+
+                try:
+                    std_log = get_std_logger()
+                except Exception:
+                    std_log = None  # type: ignore[assignment]
+                res = traced_request(
+                    str(method), params if isinstance(params, dict) else {},
+                    _dispatch, logger=std_log, engine_log=log,
+                )
 
             response = {"id": req_id}
             if isinstance(res, dict) and res.get("success") is False:
@@ -160,6 +193,17 @@ def main():
 
         except Exception as e:
             log.log_exception(e, f"Error processing {method}")
+            try:
+                persistent_flush()
+            except Exception:
+                pass
+            # Opt-in auto-report (STEP 3C): gated by TRUESTREAM_AUTO_REPORT=1
+            # inside notify_exception; never blocks the error response.
+            try:
+                from truestream_engine.github_notifier import notify_exception
+                notify_exception(e, context={"method": str(method)})
+            except Exception:
+                pass
             err_res = {
                 "id": None,
                 "error": {

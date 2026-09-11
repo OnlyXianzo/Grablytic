@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
+import '../../utils/logging_observers.dart';
 import 'engine_service.dart';
 import 'platform_channel_engine_service.dart';
 import 'desktop_engine_service.dart';
@@ -50,7 +51,8 @@ final engineProvider = Provider<EngineService>((ref) {
   if (engine is MockEngineService) {
     ref.onDispose(() => engine.dispose());
   }
-  return engine;
+  // Inject API-layer logging hooks (latency + error tracing) on every branch.
+  return TracedEngineService(engine);
 });
 
 /// Future that completes when the initial setPaths call finishes.

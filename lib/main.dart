@@ -1,3 +1,4 @@
+import 'dart:async' show runZonedGuarded, unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -14,6 +15,11 @@ import 'package:shared_preferences/shared_preferences.dart' show SharedPreferenc
 import 'core/engine/engine_provider.dart' show setEngineDirs;
 import 'core/utils/app_logger.dart';
 import 'core/utils/log_buffer.dart';
+import 'core/utils/github_reporter.dart';
+import 'core/utils/logging_observers.dart';
+
+/// Route observer instance shared by [TrueStreamApp].
+final loggingNavigatorObserver = LoggingNavigatorObserver();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,14 +57,45 @@ void main() async {
     await prefs.setString('downloadPath', defaultPath);
   }
 
-  runApp(
-    ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(prefs),
-        logBufferProvider.overrideWithValue(logBuffer),
-      ],
-      child: const TrueStreamApp(),
-    ),
+  // Global error boundaries (STEP 3A). Anonymous by default: auto-report to
+  // GitHub only when the user explicitly opts in via settings.
+  AppLogger.installGlobalErrorHandlers(
+    onFatal: (error, stack) async {
+      try {
+        final autoReport = prefs.getBool('auto_crash_reporting') ?? false;
+        if (!autoReport) return;
+        final reporter = GithubReporter();
+        final result = await reporter.reportCrash(error, stack);
+        AppLogger.info(
+          'Auto-report finished: ${result.status.name}${result.url != null ? ' ${result.url}' : ''}',
+          tag: 'github-reporter',
+        );
+      } catch (_) {
+        // Reporting must never crash the crash handler.
+      }
+    },
+  );
+
+  runZonedGuarded(
+    () {
+      runApp(
+        ProviderScope(
+          observers: [LoggingProviderObserver()],
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            logBufferProvider.overrideWithValue(logBuffer),
+          ],
+          child: const TrueStreamApp(),
+        ),
+      );
+    },
+    (error, stack) {
+      try {
+        AppLogger.fatal('Uncaught zone error: $error',
+            tag: 'global', error: error, stackTrace: stack);
+        unawaited(AppLogger.flushNow());
+      } catch (_) {}
+    },
   );
 }
 
@@ -85,6 +122,7 @@ class TrueStreamApp extends ConsumerWidget {
       themeMode: _mapThemeMode(settings.themeMode),
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      navigatorObservers: [loggingNavigatorObserver],
       home: settings.onboardingCompleted
           ? const AppShell()
           : const OnboardingScreen(),

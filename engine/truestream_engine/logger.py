@@ -81,6 +81,20 @@ class EngineLogger:
             except Exception:
                 pass
 
+        # Bridge to the rotating server_logs.log handler (STEP 3B).
+        # Lazy import avoids a hard dependency cycle; failures are silent
+        # so unit tests without persistent init keep passing.
+        try:
+            from truestream_engine.persistent import bridge_event as _bridge
+            import logging as _stdlib_logging
+
+            _level_map = {10: 10, 20: 20, 30: 30, 40: 40, 50: 50}
+            _bridge(_level_map.get(level, 20),
+                    f"[{self.name}] {message}"
+                    + (f" :: {event['exception']}" if event.get("exception") else ""))
+        except Exception:
+            pass
+
     def debug(self, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
         self._log(DEBUG, message, extra=extra, exception=exception, duration_ms=duration_ms)
 
@@ -108,9 +122,22 @@ class EngineLogger:
             self._log(level, f"{label} OK", duration_ms=int((time.time() - start) * 1000))
 
     def log_exception(self, exc: BaseException, message: str = "", *, level: int = ERROR) -> None:
-        tb = traceback.format_exc()
+        try:
+            from truestream_engine.persistent import format_traceback as _fmt_tb
+            tb_text = _fmt_tb(exc)
+        except Exception:
+            try:
+                tb_text = traceback.format_exc()
+            except Exception:
+                tb_text = repr(exc)
         full_msg = f"{message}: {exc}" if message else str(exc)
-        self._log(level, full_msg, exception=exc)
+        # Keep `message` + `exception` repr stable for tests/IPC consumers;
+        # full frames ride in `extra.traceback` for disk + GitHub reports.
+        try:
+            self._log(level, full_msg, exception=exc,
+                      extra={"traceback": tb_text})
+        except Exception:
+            self._log(level, full_msg, exception=exc)
 
 
 _loggers: dict[str, EngineLogger] = {}

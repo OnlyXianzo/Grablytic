@@ -11,6 +11,13 @@ from truestream_engine.playlist import get_playlist_info
 from truestream_engine.po_token import generate_po_token
 from truestream_engine.resume import scan_resume_candidates
 from truestream_engine.bootstrap import bootstrap, update_check
+from truestream_engine.persistent import (
+    init_persistent_logging,
+    traced_request,
+    flush_now as persistent_flush,
+    read_log_tail as server_log_tail,
+)
+from truestream_engine.github_notifier import notify_exception, fingerprint as issue_fingerprint
 
 __all__ = [
     "set_paths",
@@ -32,4 +39,10 @@ __all__ = [
     "scan_resume_candidates",
     "bootstrap",
     "update_check",
+    "init_persistent_logging",
+    "traced_request",
+    "persistent_flush",
+    "server_log_tail",
+    "notify_exception",
+    "issue_fingerprint",
 ]

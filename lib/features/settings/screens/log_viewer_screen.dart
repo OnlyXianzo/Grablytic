@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/github_reporter.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../providers/log_provider.dart';
 import '../widgets/live_log_view.dart';
@@ -82,6 +83,60 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         content: Text('GitHub link copied! Open your browser and paste to create the issue.'),
       ),
     );
+  }
+
+  bool _reporting = false;
+
+  /// Manual GitHub report flow (STEP 3C): flushes logs, dedups, posts.
+  /// Falls back to copying the formatted body when no token is configured.
+  Future<void> _reportToGithub() async {
+    if (_reporting) return;
+    setState(() => _reporting = true);
+    try {
+      final reporter = GithubReporter();
+      final result = await reporter.reportManual(
+        userSummary: _selectedFile != null
+            ? 'Log report from ${_selectedFile!.path.split('/').last}'
+            : 'Manual log report from Diagnostics screen',
+        userSteps: 'Filed manually from Diagnostics & Logs screen.',
+      );
+      if (!mounted) return;
+      switch (result.status) {
+        case GithubReportStatus.created:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Issue filed: ${result.url}')),
+          );
+          break;
+        case GithubReportStatus.duplicate:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Duplicate exists: ${result.url}')),
+          );
+          break;
+        case GithubReportStatus.manualNeeded:
+          await Clipboard.setData(ClipboardData(
+              text: '${result.title}\n\n${result.body}'));
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/TrueStream/issues/new'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+          break;
+        case GithubReportStatus.failed:
+          await Clipboard.setData(ClipboardData(
+              text: '${result.title}\n\n${result.body}'));
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Upload failed — issue text copied for manual filing.')),
+          );
+          break;
+      }
+    } finally {
+      if (mounted) setState(() => _reporting = false);
+    }
   }
 
   void _confirmDeleteAll() {
@@ -366,31 +421,54 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _copyAiPrompt,
-                  icon: const Icon(Icons.psychology_outlined),
-                  label: const Text('Copy Prompt for AI'),
-                  style: OutlinedButton.styleFrom(
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _reporting ? null : _reportToGithub,
+                  icon: _reporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.bug_report_outlined),
+                  label: Text(_reporting ? 'Reporting…' : 'Report to GitHub'),
+                  style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _openGithubIssues,
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('Copy GitHub Link'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _copyAiPrompt,
+                      icon: const Icon(Icons.psychology_outlined),
+                      label: const Text('Copy Prompt for AI'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _openGithubIssues,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Copy GitHub Link'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
