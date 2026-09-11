@@ -66,6 +66,19 @@ def poll_queues():
                                 "type": "event",
                                 "event": "finished",
                                 "download_id": download_id,
+                                "filesize_bytes": res.get("filesize_bytes", 0),
+                                "total_bytes": res.get("filesize_bytes", 0),
+                            }
+                        elif res.get("error_type") == "ERROR_CANCELLED":
+                            # Parity with Android: user cancellation is a
+                            # distinct "cancelled" event, never an "error"
+                            # (re-audit #3; download_provider.dart:172).
+                            event = {
+                                "type": "event",
+                                "event": "cancelled",
+                                "download_id": download_id,
+                                "error_type": "ERROR_CANCELLED",
+                                "error_message": res.get("error_message", "Download cancelled by user"),
                             }
                         else:
                             event = {

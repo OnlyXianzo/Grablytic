@@ -47,7 +47,9 @@ def build_ydl_opts(
         "paths": {"home": paths["output_dir"] or "."},
         "outtmpl": {"default": cfg["output_tmpl"]},
         "ignoreerrors": True,
-        "no_mtime": True,
+        # yt-dlp CLI --no-mtime maps to `updatetime: False`; `no_mtime` is
+        # not a recognized YoutubeDL param and is silently ignored (#7).
+        "updatetime": False,
         "retries": int(cfg["retries"]),
         "fragment_retries": int(cfg["fragment_retries"]),
     }
@@ -102,12 +104,19 @@ def build_ydl_opts(
 
     sponsor_cats = cfg.get("sponsorblock_cats", [])
     if sponsor_cats:
+        # SponsorBlock only MARKS chapters; ModifyChapters actually cuts them
+        # (remove_sponsor_segments = category names; non-skippable ones are
+        # filtered internally). Runs in list order, after marking (#6).
         opts["postprocessors"] = opts.get("postprocessors", []) + [
             {
                 "key": "SponsorBlock",
                 "categories": sponsor_cats,
                 "when": "after_filter",
-            }
+            },
+            {
+                "key": "ModifyChapters",
+                "remove_sponsor_segments": list(sponsor_cats),
+            },
         ]
 
     # YouTube extractor args — never force player_client. yt-dlp's default
@@ -143,6 +152,10 @@ def build_ydl_opts(
         pp: list[dict] = opts.get("postprocessors", [])
 
         if cfg.get("embedthumbnail"):
+            # writethumbnail is the real YoutubeDL param (write_thumbnail does
+            # not exist) — the thumbnail file must exist for EmbedThumbnail
+            # to embed anything (#9).
+            opts["writethumbnail"] = True
             pp.append({"key": "FFmpegThumbnailsConvertor", "format": "jpg"})
             pp.append({"key": "EmbedThumbnail"})
 

@@ -12,6 +12,15 @@ import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.*
 import java.io.File
 
+/**
+ * Chaquopy callback contract for engine → Kotlin event delivery.
+ * A public interface (not an anonymous `object : Any()`) so R8/ProGuard
+ * cannot obfuscate or strip `onEvent` in release builds (re-audit #2).
+ */
+interface EngineEventListener {
+    fun onEvent(eventJson: String)
+}
+
 class MainActivity : FlutterActivity() {
     private val ENGINE_CHANNEL = "com.theonly.truestream/engine"
     private val PROGRESS_CHANNEL = "com.theonly.truestream/progress"
@@ -148,9 +157,8 @@ class MainActivity : FlutterActivity() {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
 
-                            val eventCallback = object : Any() {
-                                @Suppress("unused")
-                                fun onEvent(eventJson: String) {
+                            val eventCallback = object : EngineEventListener {
+                                override fun onEvent(eventJson: String) {
                                     scope.launch(Dispatchers.Main) {
                                         eventSink?.success(eventJson)
                                     }

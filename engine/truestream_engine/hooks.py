@@ -2,11 +2,20 @@ import json
 import queue as _queue
 
 
+# yt-dlp postprocessor hook payloads carry the PP key in `d["postprocessor"]`
+# (see PostProcessor._hook_progress: pp_key() values such as "Merger",
+# "ExtractAudio", "SponsorBlock"). `status` is only "started"/"finished",
+# so the stage lookup MUST key on pp_key — never on status (re-audit #8).
 _POSTPROCESSOR_STAGES = {
-    "after_move": ("merging", "Merging streams..."),
-    "after_thumbnail": ("embedding_thumbnail", "Embedding thumbnail..."),
-    "after_video": ("muxing", "Muxing video & audio..."),
-    "after_audio": ("extracting_audio", "Extracting audio..."),
+    "MoveFiles": ("moving", "Moving file into place..."),
+    "Merger": ("merging", "Merging streams..."),
+    "ExtractAudio": ("extracting_audio", "Extracting audio..."),
+    "ThumbnailsConvertor": ("converting_thumbnail", "Converting thumbnail..."),
+    "EmbedThumbnail": ("embedding_thumbnail", "Embedding thumbnail..."),
+    "Metadata": ("tagging", "Writing metadata..."),
+    "SplitChapters": ("splitting_chapters", "Splitting chapters..."),
+    "SponsorBlock": ("marking_sponsors", "Marking sponsor segments..."),
+    "ModifyChapters": ("cutting_sponsors", "Removing sponsor segments..."),
 }
 
 
@@ -38,11 +47,15 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 queue.put(event_json)
 
         elif status == "finished":
+            # filesize_bytes is the contract download_provider.dart:127 reads;
+            # total_bytes kept alongside for backward compatibility (#4).
+            final_bytes = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
             event_json = json.dumps({
                 "type": "event",
                 "event": "finished",
                 "download_id": download_id,
                 "filename": d.get("filename", ""),
+                "filesize_bytes": final_bytes,
                 "total_bytes": d.get("total_bytes", 0),
             })
             if event_callback is not None:
@@ -77,7 +90,7 @@ def build_postprocessor_hook(queue: _queue.Queue, download_id: str, event_callba
     def postprocessor_hook(d: dict):
         status = d.get("status", "")
         pp_key = d.get("postprocessor", "")
-        stage, label = _POSTPROCESSOR_STAGES.get(status, ("", "Processing..."))
+        stage, label = _POSTPROCESSOR_STAGES.get(pp_key, ("", "Processing..."))
 
         if status == "started":
             event_json = json.dumps({

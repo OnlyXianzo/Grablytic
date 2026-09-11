@@ -61,6 +61,37 @@ class YDLogger:
         log.error(msg)
 
 
+def _last_known_bytes(prog_q) -> int:
+    """Best-effort final size from buffered progress-hook events.
+
+    The progress hook already reported `total_bytes`/`filesize_bytes` during
+    the transfer; the terminal event re-attaches the largest seen value so
+    consumers of the `filesize_bytes` contract never see 0 after a good
+    download. Never raises — returns 0 when nothing was observed.
+    """
+    last = 0
+    try:
+        with prog_q.mutex:
+            items = list(prog_q.queue)
+    except Exception:
+        return 0
+    for raw in items:
+        try:
+            ev = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        for key in ("filesize_bytes", "total_bytes"):
+            try:
+                val = ev.get(key)
+            except Exception:
+                continue
+            if isinstance(val, int) and val > last:
+                last = val
+    return last
+
+
 def download_thread(
     url: str,
     download_id: str,
@@ -76,13 +107,18 @@ def download_thread(
     res_q = result_queue or _queue.Queue()
 
     with _downloads_lock:
-        _active_downloads[download_id] = {
+        # Update in place — start_download() already registered this id with
+        # its thread handle; a full reassignment would drop "thread" and any
+        # fields added by concurrent callers (re-audit #10).
+        existing = _active_downloads.get(download_id, {})
+        existing.update({
             "cancel_event": cancel,
             "progress_queue": prog_q,
             "result_queue": res_q,
             "url": url,
             "started_at": datetime.utcnow(),
-        }
+        })
+        _active_downloads[download_id] = existing
 
     log.set_context(download_id=download_id)
     try:
@@ -165,10 +201,16 @@ def download_thread(
                 })
         else:
             log.info("Download completed")
+            # Terminal finished event carries the last known byte count so the
+            # UI never zeroes out sizes delivered by the progress-hook
+            # "finished" event (re-audit #4: filesize_bytes contract).
+            final_bytes = _last_known_bytes(prog_q)
             terminal_event = json.dumps({
                 "type": "event",
                 "event": "finished",
                 "download_id": download_id,
+                "filesize_bytes": final_bytes,
+                "total_bytes": final_bytes,
             })
             if event_callback is not None:
                 try:
@@ -179,6 +221,7 @@ def download_thread(
                 res_q.put({
                     "success": True,
                     "download_id": download_id,
+                    "filesize_bytes": final_bytes,
                 })
 
     except KeyboardInterrupt:
@@ -212,6 +255,8 @@ def download_thread(
             "error_type": err.error_type,
             "error_message": err.message,
             "recoverable": err.recoverable,
+            # Drives ErrorRecoveryCard VPN recommendations (re-audit #5).
+            "suggests_vpn": err.suggests_vpn,
         })
         if event_callback is not None:
             try:
@@ -225,6 +270,7 @@ def download_thread(
                 "error_type": err.error_type,
                 "error_message": err.message,
                 "recoverable": err.recoverable,
+                "suggests_vpn": err.suggests_vpn,
             })
     finally:
         log.clear_context()
