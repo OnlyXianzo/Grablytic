@@ -4,6 +4,42 @@ from truestream_engine.format_selector import build_format_string
 from truestream_engine.hooks import build_progress_hook, build_postprocessor_hook
 
 
+def _parse_section_ranges(specs: list) -> list[tuple[float, float]]:
+    """Parse section specs into [(start, end)] seconds tuples.
+
+    Same syntax as yt-dlp --download-sections time ranges: optional "*"
+    prefix, START-END with H:M:S / seconds / inf (e.g. "*10:15-20:00").
+    Invalid specs are skipped with a warning — a typo must never fail the
+    whole download.
+    """
+    from yt_dlp.utils import parse_duration
+    from truestream_engine.logger import get_logger
+    log = get_logger("truestream_engine.opts_builder")
+    ranges: list[tuple[float, float]] = []
+    for spec in specs:
+        try:
+            text = str(spec).strip()
+            if text.startswith("*"):
+                text = text[1:]
+            if "-" not in text:
+                log.warn(f"Ignoring malformed download section (want START-END): {spec!r}")
+                continue
+            start_s, end_s = text.split("-", 1)
+            start = parse_duration(start_s.strip())
+            end_text = end_s.strip().lower()
+            end = float("inf") if end_text in ("inf", "", "none") else parse_duration(end_text)
+            if start is None or end is None:
+                log.warn(f"Ignoring unparseable download section: {spec!r}")
+                continue
+            if end != float("inf") and start >= end:
+                log.warn(f"Ignoring empty download section (start >= end): {spec!r}")
+                continue
+            ranges.append((start, end))
+        except Exception as e:
+            log.warn(f"Ignoring download section {spec!r}: {e}")
+    return ranges
+
+
 def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     import os
     from truestream_engine.paths import get_paths
@@ -102,20 +138,25 @@ def build_ydl_opts(
     if cfg.get("live_from_start"):
         opts["live_from_start"] = True
 
+    # Section cutting — FFmpeg only, no JS runtime or extra binary needed.
+    # Same syntax as yt-dlp --download-sections time ranges.
+    section_ranges = _parse_section_ranges(cfg.get("download_sections") or [])
+    if section_ranges:
+        from yt_dlp.utils import download_range_func
+        opts["download_ranges"] = download_range_func(None, section_ranges)
+        if cfg.get("force_keyframes_at_cuts"):
+            opts["force_keyframes_at_cuts"] = True
+
     sponsor_cats = cfg.get("sponsorblock_cats", [])
     if sponsor_cats:
-        # SponsorBlock only MARKS chapters; ModifyChapters actually cuts them
-        # (remove_sponsor_segments = category names; non-skippable ones are
-        # filtered internally). Runs in list order, after marking (#6).
+        # SponsorBlock only MARKS chapters here; the ModifyChapters cutter is
+        # inserted later in canonical yt-dlp order (after FFmpegEmbedSubtitle,
+        # before FFmpegMetadata). See ffmpeg PP block below (#6).
         opts["postprocessors"] = opts.get("postprocessors", []) + [
             {
                 "key": "SponsorBlock",
                 "categories": sponsor_cats,
                 "when": "after_filter",
-            },
-            {
-                "key": "ModifyChapters",
-                "remove_sponsor_segments": list(sponsor_cats),
             },
         ]
 
@@ -165,6 +206,29 @@ def build_ydl_opts(
         if cfg.get("embedthumbnail"):
             meta_pp.append("embed_thumbnail")
 
+        # Canonical yt-dlp PP order: ... -> EmbedSubtitle -> ModifyChapters
+        # -> Metadata. Subtitles must be in the container before chapters are
+        # cut, and chapter edits must land before tags are written.
+        subs_enabled = cfg.get("writesubtitles", False) or cfg.get("writeautomaticsub", False)
+        if subs_enabled and cfg.get("embedsubtitles"):
+            opts["writesubtitles"] = cfg.get("writesubtitles", False)
+            opts["writeautomaticsub"] = cfg.get("writeautomaticsub", False)
+            opts["subtitleslangs"] = cfg.get("subtitleslangs", ["en"])
+            # `embedsubs` is not a real YoutubeDL param (silently ignored).
+            # The CLI maps --embed-subs to the FFmpegEmbedSubtitle PP, so we
+            # append it explicitly. already_have_subtitle keeps the sidecar
+            # file when the user also asked to write subtitles.
+            pp.append({
+                "key": "FFmpegEmbedSubtitle",
+                "already_have_subtitle": bool(cfg.get("writesubtitles", False)),
+            })
+
+        if sponsor_cats:
+            pp.append({
+                "key": "ModifyChapters",
+                "remove_sponsor_segments": list(sponsor_cats),
+            })
+
         if meta_pp:
             if is_audio:
                 pass  # metadata handled by FFmpegExtractAudio
@@ -174,13 +238,6 @@ def build_ydl_opts(
                     "add_metadata": cfg.get("addmetadata", True),
                     "add_chapters": True,
                 })
-
-        subs_enabled = cfg.get("writesubtitles", False) or cfg.get("writeautomaticsub", False)
-        if subs_enabled and cfg.get("embedsubtitles"):
-            opts["writesubtitles"] = cfg.get("writesubtitles", False)
-            opts["writeautomaticsub"] = cfg.get("writeautomaticsub", False)
-            opts["subtitleslangs"] = cfg.get("subtitleslangs", ["en"])
-            opts["embedsubs"] = True
 
         if cfg.get("split_chapters"):
             pp.append({"key": "FFmpegSplitChapters"})

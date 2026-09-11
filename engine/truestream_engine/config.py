@@ -17,6 +17,10 @@ DEFAULT_CFG = {
     "embedsubtitles": True,
     # ── SponsorBlock ────────────────────────────────────────────────────
     "sponsorblock_cats": [],
+    # ── Section cutting (FFmpeg-only, no JS runtime needed) ─────────────
+    # e.g. ["*10:15-20:00", "0-60"] — same syntax as --download-sections.
+    "download_sections": [],
+    "force_keyframes_at_cuts": False,
     # ── Chapters ────────────────────────────────────────────────────────
     "split_chapters": False,
     # ── Network ─────────────────────────────────────────────────────────

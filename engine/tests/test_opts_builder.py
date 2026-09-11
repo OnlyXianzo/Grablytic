@@ -189,8 +189,12 @@ def test_subtitles_embedded():
         "subtitleslangs": ["en"],
         "embedsubtitles": True,
     })
-    assert opts.get("embedsubs") is True
+    # `embedsubs` is not a real YoutubeDL param — embedding is driven by the
+    # FFmpegEmbedSubtitle postprocessor (mirrors --embed-subs mapping).
+    assert "embedsubs" not in opts
     assert opts.get("writesubtitles") is True
+    keys = [pp.get("key") for pp in opts.get("postprocessors", [])]
+    assert "FFmpegEmbedSubtitle" in keys
 
 
 def test_merge_output_format_mp4():
@@ -204,3 +208,65 @@ def test_progress_queue_adds_hooks():
     opts = build_ydl_opts(progress_queue=q)
     assert "progress_hooks" in opts
     assert "postprocessor_hooks" in opts
+
+
+def test_embed_subtitles_uses_real_pp_key():
+    # Regression: `embedsubs` is not a YoutubeDL param (silently ignored).
+    # The CLI maps --embed-subs to the FFmpegEmbedSubtitle postprocessor.
+    opts = build_ydl_opts(config={
+        "writesubtitles": True,
+        "writeautomaticsub": False,
+        "subtitleslangs": ["en"],
+        "embedsubtitles": True,
+    })
+    assert "embedsubs" not in opts
+    pps = opts.get("postprocessors", [])
+    emb = [pp for pp in pps if pp.get("key") == "FFmpegEmbedSubtitle"]
+    assert len(emb) == 1
+    assert emb[0]["already_have_subtitle"] is True
+
+
+def test_canonical_pp_order_embed_modify_metadata():
+    opts = build_ydl_opts(config={
+        "writesubtitles": True,
+        "embedsubtitles": True,
+        "sponsorblock_cats": ["sponsor"],
+        "addmetadata": True,
+        "embedthumbnail": False,
+    })
+    keys = [pp.get("key") for pp in opts.get("postprocessors", [])]
+    assert keys.index("FFmpegEmbedSubtitle") < keys.index("ModifyChapters")
+    assert keys.index("ModifyChapters") < keys.index("FFmpegMetadata")
+
+
+def test_download_sections_build_ranges():
+    opts = build_ydl_opts(config={"download_sections": ["*10:15-20:00", "0-60"]})
+    cb = opts.get("download_ranges")
+    assert cb is not None
+    ranges = list(cb({"id": "x"}, None))
+    assert ranges[0]["start_time"] == 615
+    assert ranges[0]["end_time"] == 1200
+    assert ranges[1]["start_time"] == 0
+    assert ranges[1]["end_time"] == 60
+
+
+def test_download_sections_open_end_and_keyframes_flag():
+    opts = build_ydl_opts(config={
+        "download_sections": ["90-inf"],
+        "force_keyframes_at_cuts": True,
+    })
+    ranges = list(opts["download_ranges"]({"id": "x"}, None))
+    assert ranges[0]["start_time"] == 90
+    assert ranges[0]["end_time"] == float("inf")
+    assert opts["force_keyframes_at_cuts"] is True
+
+
+def test_download_sections_invalid_specs_ignored():
+    opts = build_ydl_opts(config={"download_sections": ["garbage", "60-10", ""]})
+    assert "download_ranges" not in opts
+
+
+def test_download_sections_defaults_off():
+    opts = build_ydl_opts()
+    assert "download_ranges" not in opts
+    assert "force_keyframes_at_cuts" not in opts
