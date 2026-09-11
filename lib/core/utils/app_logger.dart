@@ -507,7 +507,13 @@ class AppLogger {
       final stamp =
           '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
       final name = src.path.split('/').last;
-      final dest = File('${destDir.path}/truestream-$stamp-$name');
+      // 1s timestamp resolution → same-second exports must not overwrite.
+      var dest = File('${destDir.path}/truestream-$stamp-$name');
+      var n = 1;
+      while (await dest.exists()) {
+        n++;
+        dest = File('${destDir.path}/truestream-$stamp-$name-$n');
+      }
       await src.copy(dest.path);
       return dest.path;
     } catch (e) {

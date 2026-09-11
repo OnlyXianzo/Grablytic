@@ -314,3 +314,35 @@ def test_js_runtime_configured_with_deno(tmp_path):
     assert opts["js_runtimes"]["deno"]["path"] == str(deno_file)
     assert "remote_components" in opts
     assert "ejs:github" in opts["remote_components"]
+
+
+def test_fragment_and_socket_defaults_applied():
+    opts = build_ydl_opts()
+    assert opts["concurrent_fragment_downloads"] == 4
+    assert opts["socket_timeout"] == 30
+
+
+def test_fragment_and_socket_custom_values():
+    opts = build_ydl_opts(
+        config={"concurrent_fragments": 8, "socket_timeout": 60})
+    assert opts["concurrent_fragment_downloads"] == 8
+    assert opts["socket_timeout"] == 60
+
+
+def test_fragment_clamped_to_sane_range():
+    assert build_ydl_opts(
+        config={"concurrent_fragments": 99})["concurrent_fragment_downloads"] == 16
+    assert build_ydl_opts(
+        config={"concurrent_fragments": 0})["concurrent_fragment_downloads"] == 1
+
+
+def test_fragment_and_socket_invalid_fall_back():
+    opts = build_ydl_opts(
+        config={"concurrent_fragments": "lots", "socket_timeout": "soon"})
+    assert opts["concurrent_fragment_downloads"] == 4
+    assert "socket_timeout" not in opts
+
+
+def test_socket_non_positive_ignored():
+    opts = build_ydl_opts(config={"socket_timeout": -5})
+    assert "socket_timeout" not in opts

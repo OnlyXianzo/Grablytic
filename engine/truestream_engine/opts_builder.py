@@ -281,6 +281,36 @@ def build_ydl_opts(
 
     opts["continuedl"] = True
 
+    # Fragment + socket tuning. These config keys were accepted for months
+    # but never applied (dead settings — verified against yt-dlp's
+    # YoutubeDL params: concurrent_fragment_downloads [CLI -N] and
+    # socket_timeout). Clamp defensively, same style as aria2c above.
+    from truestream_engine.logger import get_logger as _get_logger
+    _log = _get_logger("truestream_engine.opts_builder")
+    try:
+        frags = max(1, min(16, int(cfg.get("concurrent_fragments", 4))))
+    except (ValueError, TypeError):
+        _log.warn(
+            "Ignoring invalid concurrent_fragments value: "
+            f"{cfg.get('concurrent_fragments')!r}"
+        )
+        frags = 4
+    opts["concurrent_fragment_downloads"] = frags
+    try:
+        timeout = int(cfg.get("socket_timeout", 30))
+        if timeout > 0:
+            opts["socket_timeout"] = timeout
+        else:
+            _log.warn(
+                "Ignoring non-positive socket_timeout value: "
+                f"{cfg.get('socket_timeout')!r}"
+            )
+    except (ValueError, TypeError):
+        _log.warn(
+            f"Ignoring invalid socket_timeout value: "
+            f"{cfg.get('socket_timeout')!r}"
+        )
+
     _configure_js_runtime(opts, paths)
 
     return opts

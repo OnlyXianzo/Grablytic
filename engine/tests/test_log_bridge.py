@@ -164,3 +164,90 @@ def test_start_download_without_callback_does_not_wire(monkeypatch):
     finally:
         dl_mod._active_downloads.pop("wire2", None)
     assert calls == []
+
+
+class _FakeYDL:
+    """Minimal YoutubeDL stand-in driving hooks + logger like the real one."""
+
+    def __init__(self, opts):
+        self.opts = opts
+        self.hooks = []
+
+    def add_progress_hook(self, h):
+        self.hooks.append(h)
+
+    def download(self, urls):
+        self.opts["logger"].info("fake extractor chatter")
+        for ph in self.opts.get("postprocessor_hooks", []):
+            ph({"status": "started", "postprocessor": "Merger"})
+        hooks = list(self.hooks) + list(self.opts.get("progress_hooks", []))
+        for h in hooks:
+            h({
+                "status": "downloading",
+                "downloaded_bytes": 50,
+                "total_bytes": 100,
+                "speed": 10,
+                "eta": 5,
+                "filename": "f.mp4",
+                "info_dict": {},
+            })
+            h({"status": "finished", "total_bytes": 100,
+               "filename": "f.mp4"})
+
+
+def _fake_ffmpeg(tmp_path):
+    import stat
+    exe = tmp_path / "ffmpeg"
+    exe.write_text("#!/bin/sh\necho hi\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return str(exe)
+
+
+class TestCallbackEndToEnd:
+    """Full download_thread run with a recording callback (Android path)."""
+
+    def test_events_logs_and_filesize_reach_callback(
+        self, tmp_path, monkeypatch, _clean_bridge
+    ):
+        import truestream_engine.downloader as dl_mod
+        import truestream_engine.paths as paths_mod
+
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        paths_mod.set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+        )
+        monkeypatch.setattr(dl_mod, "YoutubeDL", _FakeYDL)
+        sink = _Sink()
+        set_global_event_callback(sink)
+        prog_q: queue.Queue = queue.Queue()
+        res_q: queue.Queue = queue.Queue()
+        try:
+            dl_mod.download_thread(
+                url="https://x.test/v", download_id="e2e1",
+                progress_queue=prog_q, result_queue=res_q,
+                event_callback=sink,
+            )
+        finally:
+            dl_mod._active_downloads.pop("e2e1", None)
+
+        by_type = {}
+        for raw in sink.events:
+            ev = json.loads(raw)
+            by_type.setdefault((ev.get("type"), ev.get("event")), []).append(ev)
+
+        # Live progress + per-stream completion arrived via callback …
+        assert ("event", "downloading") in by_type
+        assert ("event", "stream_finished") in by_type
+        assert ("event", "postprocessing") in by_type
+        # … engine logger chatter (YDLogger) rode the same callback …
+        log_evs = [json.loads(r) for r in sink.events
+                   if json.loads(r).get("type") == "log"]
+        assert any("fake extractor chatter" in e["message"] for e in log_evs)
+        # … and the terminal finished honors the filesize contract
+        # (dual-write keeps _last_known_bytes fed on the callback path).
+        finished = by_type[("event", "finished")]
+        assert len(finished) == 1
+        assert finished[0]["filesize_bytes"] == 100
+        # Callback path leaves the result queue for desktop flows.
+        assert res_q.empty()

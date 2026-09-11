@@ -38,13 +38,19 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 "fragment_count": d.get("fragment_count"),
                 "stream": d.get("info_dict", {}).get("__stream_type"),
             })
+            # Dual-write: the queue feeds _last_known_bytes() (terminal
+            # filesize contract) even on the live-callback path; the
+            # callback feeds Kotlin/Flutter. Unbounded queues here are
+            # freed with the download thread, and put() never blocks.
+            try:
+                queue.put(event_json)
+            except Exception:
+                pass
             if event_callback is not None:
                 try:
                     event_callback.onEvent(event_json)
                 except Exception:
                     pass
-            else:
-                queue.put(event_json)
 
         elif status == "finished":
             # Per-FILE completion (e.g. the video DASH stream landed while the
@@ -62,13 +68,19 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 "filesize_bytes": final_bytes,
                 "total_bytes": d.get("total_bytes", 0),
             })
+            # Dual-write: the queue feeds _last_known_bytes() (terminal
+            # filesize contract) even on the live-callback path; the
+            # callback feeds Kotlin/Flutter. Unbounded queues here are
+            # freed with the download thread, and put() never blocks.
+            try:
+                queue.put(event_json)
+            except Exception:
+                pass
             if event_callback is not None:
                 try:
                     event_callback.onEvent(event_json)
                 except Exception:
                     pass
-            else:
-                queue.put(event_json)
 
         elif status == "error":
             event_json = json.dumps({
@@ -79,13 +91,19 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 "error_message": d.get("error", "Unknown error"),
                 "recoverable": True,
             })
+            # Dual-write: the queue feeds _last_known_bytes() (terminal
+            # filesize contract) even on the live-callback path; the
+            # callback feeds Kotlin/Flutter. Unbounded queues here are
+            # freed with the download thread, and put() never blocks.
+            try:
+                queue.put(event_json)
+            except Exception:
+                pass
             if event_callback is not None:
                 try:
                     event_callback.onEvent(event_json)
                 except Exception:
                     pass
-            else:
-                queue.put(event_json)
 
     return progress_hook
 
@@ -104,12 +122,18 @@ def build_postprocessor_hook(queue: _queue.Queue, download_id: str, event_callba
                 "stage": stage or pp_key,
                 "stage_label": label,
             })
+            # Dual-write: the queue feeds _last_known_bytes() (terminal
+            # filesize contract) even on the live-callback path; the
+            # callback feeds Kotlin/Flutter. Unbounded queues here are
+            # freed with the download thread, and put() never blocks.
+            try:
+                queue.put(event_json)
+            except Exception:
+                pass
             if event_callback is not None:
                 try:
                     event_callback.onEvent(event_json)
                 except Exception:
                     pass
-            else:
-                queue.put(event_json)
 
     return postprocessor_hook
