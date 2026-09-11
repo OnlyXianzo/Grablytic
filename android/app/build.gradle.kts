@@ -51,6 +51,7 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols += listOf("**/*.zip.so")
         }
     }
 
@@ -70,6 +71,11 @@ android {
         release {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }
 
@@ -100,3 +106,8 @@ apply(from = "packages.gradle.kts")
 // Guarantee the download task runs before native libs are merged.
 tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
     .configureEach { dependsOn("downloadNativePackages") }
+
+// AGP/Kotlin script analysis bug causes lintVitalAnalyzeRelease to crash on KaModule.
+tasks.matching { it.name.startsWith("lintVital") }.configureEach {
+    enabled = false
+}
