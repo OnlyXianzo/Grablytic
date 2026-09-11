@@ -39,10 +39,18 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
 
-        ndk {
-            abiFilters.clear()
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    // Per-ABI APKs come from `flutter build apk --split-per-abi` (build.yml).
+    // ndk.abiFilters MUST NOT coexist with ABI splits (AGP hard error:
+    // "abiFilters cannot be present when splits abi filters are set"), so
+    // this include-list is the single source of truth for shipped ABIs.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
         }
     }
 

@@ -92,7 +92,8 @@ Output: `build/app/outputs/flutter-apk/app-release.apk`
 **Platform notes:**
 - `minSdk = 24` (Chaquopy requirement; Android 7.0+ devices)
 - `targetSdk` / `compileSdk` managed by Flutter Gradle plugin
-- ABI filters: `arm64-v8a`, `x86_64`
+- ABI splits: `arm64-v8a`, `x86_64` (via `splits { abi { … } }`;
+  `ndk.abiFilters` must stay out — AGP errors when both are set)
 - Signing: place `key.properties` in `android/` with `storeFile`, `storePassword`, `keyPassword`, `keyAlias`
 - CMake 3.31+ required (install via Android SDK manager if needed)
 - `lintVital*` tasks are disabled (`android/app/build.gradle.kts`) — works around
