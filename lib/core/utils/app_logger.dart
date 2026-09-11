@@ -197,11 +197,11 @@ class AppLogger {
     var out = input;
     // Query-string / JSON tokens, cookies, auth headers, proxy creds.
     const patterns = [
-      r'(token\s*[:=]\s*["' "']?)([^"'"'\s,}]+)',
-      r'(api[_-]?key\s*[:=]\s*["' "']?)([^"'"'\s,}]+)',
-      r'(cookie\s*[:=]\s*["' "']?)([^"'"'\s,}]+)',
-      r'(password\s*[:=]\s*["' "']?)([^"'"'\s,}]+)',
-      r'(po[_-]?token\s*[:=]\s*["' "']?)([^"'"'\s,}]+)',
+      r"""(token\s*[:=]\s*["']?)([^"'\s,}]+)""",
+      r"""(api[_-]?key\s*[:=]\s*["']?)([^"'\s,}]+)""",
+      r"""(cookie\s*[:=]\s*["']?)([^"'\s,}]+)""",
+      r"""(password\s*[:=]\s*["']?)([^"'\s,}]+)""",
+      r"""(po[_-]?token\s*[:=]\s*["']?)([^"'\s,}]+)""",
     ];
     for (final p in patterns) {
       out = out.replaceAllMapped(RegExp(p, caseSensitive: false), (m) => '${m.group(1)}***REDACTED***');

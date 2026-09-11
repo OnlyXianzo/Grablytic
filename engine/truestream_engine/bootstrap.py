@@ -476,6 +476,7 @@ def bootstrap() -> dict:
                 paths["aria2c_path"], os.X_OK
             )
         deno_ok = False
+        deno_version = None
         if paths.get("deno_path"):
             deno_ok = os.path.isfile(paths["deno_path"]) and os.access(
                 paths["deno_path"], os.X_OK
