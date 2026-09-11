@@ -480,8 +480,8 @@ class AppLogger {
 
   /// Exports [src] to a user-visible folder and returns the destination path.
   ///
-  /// Android: app-specific external dir (`.../Android/data/<pkg>/files/
-  /// log-exports/`) — writable with NO storage permission on API 19+
+  /// Android: app-specific external dir, e.g.
+  /// `.../Android/data/APP_ID/files/log-exports/` — writable with NO
   /// (scoped storage forbids raw writes to public Download on API 30+).
   /// Desktop: `~/Downloads/TrueStream-logs/`. Never throws — returns an
   /// error description string starting with `ERROR:` on failure.
