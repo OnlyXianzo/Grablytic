@@ -132,8 +132,10 @@ class TestAndroidBootstrap:
 
     @pytest.mark.unit
     def test_android_bootstrap_uses_bundled_sos(self, tmp_path, monkeypatch):
+        import shutil
         boot = _boot()
         monkeypatch.setattr(boot, "_is_android_app", lambda: True)
+        monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
         monkeypatch.setattr(
             boot, "_resolve_latest_release",
             lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
