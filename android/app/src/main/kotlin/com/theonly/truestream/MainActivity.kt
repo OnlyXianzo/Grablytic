@@ -89,27 +89,39 @@ class MainActivity : FlutterActivity() {
                 "paths/set" -> {
                     this.dataDir = call.argument<String>("data_dir")
                     val outputDir = call.argument<String>("output_dir")
-                    this.ffmpegPath = call.argument<String>("ffmpeg_path")
+                    val dartFfmpegPath = call.argument<String>("ffmpeg_path")
                     val cacheDir = call.argument<String>("cache_dir")
                     val cookiesPath = call.argument<String>("cookies_path")
                     this.aria2cPath = call.argument<String>("aria2c_path")
-                    val denoPath = call.argument<String>("deno_path")
+                    val dartDenoPath = call.argument<String>("deno_path")
                     val poToken = call.argument<String>("po_token")
 
-                    ffmpegPath?.let { path ->
-                        val file = File(path)
-                        if (file.exists()) file.setExecutable(true, false)
-                    }
-                    aria2cPath?.let { path ->
-                        val file = File(path)
-                        if (file.exists()) file.setExecutable(true, false)
-                    }
-
+                    // Bundled jniLibs binaries win: only APK-origin files are
+                    // executable on targetSdk > 28. Dart-sent bin/ paths are
+                    // kept as fallback (desktop flows, -PskipNativePackages).
+                    // Resolution runs on Dispatchers.IO below (file I/O +
+                    // --version probes must stay off the main thread).
                     scope.launch(Dispatchers.IO) {
+                        val bins = try {
+                            BinaryPackageManager.init(applicationContext)
+                        } catch (_: Exception) {
+                            emptyMap()
+                        }
+                        val ffmpegBin = bins["ffmpeg"]?.takeIf { File(it.executable).canExecute() }
+                        val denoBin = bins["deno"]?.takeIf { File(it.executable).canExecute() }
+                        ffmpegPath = ffmpegBin?.executable ?: dartFfmpegPath
+                        val ffmpegLdPath = ffmpegBin?.ldLibDir
+                        val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
+                        for (s in BinaryPackageManager.status(bins)) {
+                            android.util.Log.i(
+                                "BinaryPackages",
+                                "${s.name}: ok=${s.ok} version=${s.version} ${s.detail}",
+                            )
+                        }
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
-                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, denoPath, poToken)
+                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath)
                             withContext(Dispatchers.Main) { result.success(mapOf("success" to true)) }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_INVALID_PATH", e.message, null) }

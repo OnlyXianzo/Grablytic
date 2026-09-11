@@ -4,6 +4,7 @@ _paths = {
     "data_dir": None,
     "output_dir": None,
     "ffmpeg_path": None,
+    "ffmpeg_ld_path": None,
     "cache_dir": None,
     "cookies_path": None,
     "aria2c_path": None,
@@ -22,6 +23,7 @@ def set_paths(
     aria2c_path: str | None = None,
     deno_path: str | None = None,
     po_token: str | None = None,
+    ffmpeg_ld_path: str | None = None,
 ) -> dict:
     import os
     import sys
@@ -68,6 +70,20 @@ def set_paths(
 
     _paths["cookies_path"] = cookies_path
     _paths["po_token"] = po_token
+
+    # Bundled jniLibs .so files ship no RUNPATH: their shared-library tree
+    # must be visible via LD_LIBRARY_PATH or every ffmpeg/deno child process
+    # fails to start. Applied process-wide here (Chaquopy runs in-process,
+    # so this covers the whole app); harmless on desktop when unset.
+    _paths["ffmpeg_ld_path"] = None
+    if ffmpeg_ld_path and os.path.isdir(ffmpeg_ld_path):
+        _paths["ffmpeg_ld_path"] = ffmpeg_ld_path
+        existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        parts = existing_ld.split(os.pathsep) if existing_ld else []
+        if ffmpeg_ld_path not in parts:
+            os.environ["LD_LIBRARY_PATH"] = (
+                ffmpeg_ld_path + (os.pathsep + existing_ld if existing_ld else "")
+            )
 
     # Inject binary directories into PATH
     path_dirs = [bin_dir]

@@ -46,6 +46,14 @@ android {
         }
     }
 
+    // Native-package .so files are executables + zips, not linked libraries:
+    // keep legacy extraction so they land as real files in nativeLibraryDir.
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     signingConfigs {
         val keystoreProps = loadKeystoreProperties()
         if (keystoreProps != null) {
@@ -84,3 +92,11 @@ chaquopy {
 flutter {
     source = "../.."
 }
+
+// Prebuilt Android binaries (ffmpeg/deno) bundled into our own jniLibs —
+// no helper APKs, no install prompts, no extra permissions. See file.
+apply(from = "packages.gradle.kts")
+
+// Guarantee the download task runs before native libs are merged.
+tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
+    .configureEach { dependsOn("downloadNativePackages") }

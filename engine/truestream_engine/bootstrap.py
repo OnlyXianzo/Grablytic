@@ -242,77 +242,22 @@ def _download_and_extract_binary(
             os.chmod(dest_path, 0o755)
 
 
-def _download_and_extract_no_sha(
-    url: str, dest_path: str, cache_dir: str
-) -> str:
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
-    )
+def _probe_bin_version(bin_path: str, timeout: int = 8) -> str | None:
+    """Best-effort `--version` probe. Returns the first line, else None.
 
-    with tempfile.TemporaryDirectory(dir=cache_dir) as tmpdir:
-        if os.name != "nt":
-            os.chmod(tmpdir, 0o700)
-        archive_path = os.path.join(tmpdir, "downloaded_asset")
-
-        with urllib.request.urlopen(req, timeout=15) as response, open(
-            archive_path, "wb"
-        ) as out_file:
-            shutil.copyfileobj(response, out_file)
-
-        sha256_actual = _calculate_sha256(archive_path)
-
-        extract_dir = os.path.join(tmpdir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
-
-        if url.endswith(".zip"):
-            with zipfile.ZipFile(archive_path, "r") as z:
-                z.extractall(extract_dir)
-        else:
-            with tarfile.open(archive_path, "r:*") as t:
-                t.extractall(extract_dir)
-
-        binary_name = os.path.basename(dest_path).lower()
-        found_binary = None
-        for root, _, files in os.walk(extract_dir):
-            for file in files:
-                if file.lower() == binary_name:
-                    found_binary = os.path.join(root, file)
-                    break
-            if found_binary:
-                break
-
-        if not found_binary:
-            base_bin_name = binary_name.split(".")[0]
-            for root, _, files in os.walk(extract_dir):
-                for file in files:
-                    if base_bin_name in file.lower():
-                        found_binary = os.path.join(root, file)
-                        break
-                if found_binary:
-                    break
-
-        if not found_binary:
-            raise FileNotFoundError(
-                f"Could not find binary {binary_name} in extracted archive"
-            )
-
-        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-        if os.path.exists(dest_path):
-            os.remove(dest_path)
-        shutil.move(found_binary, dest_path)
-
-        if os.name != "nt" and os.path.isfile(dest_path):
-            os.chmod(dest_path, 0o755)
-
-        sha_path = dest_path + ".sha256"
-        try:
-            with open(sha_path, "w") as f:
-                f.write(sha256_actual)
-        except Exception:
-            pass
-
-        return sha256_actual
+    Used on Android where binaries come from bundled jniLibs (no release tag
+    to read a version from). Never raises.
+    """
+    try:
+        proc = subprocess.run(
+            [bin_path, "--version"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout.splitlines()[0].strip()[:120] or None
+    except Exception:
+        pass
+    return None
 
 
 def _bootstrap_github_binary(
@@ -329,16 +274,14 @@ def _bootstrap_github_binary(
         return True, None
 
     is_android = "ANDROID_DATA" in os.environ
-    if name == "ffmpeg" and is_android:
-        arch = "arm64" if "arm64" in asset_substring or "aarch64" in asset_substring else "amd64"
-        download_url = f"https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-{arch}-static.tar.xz"
-        try:
-            _download_and_extract_no_sha(download_url, dest_path, cache_dir)
-            if os.path.isfile(dest_path):
-                os.chmod(dest_path, 0o755)
-                return True, "release"
-        except Exception:
-            return False, None
+    if is_android:
+        # Bundled jniLibs binaries (libffmpeg.so / libdeno.so) are the ONLY
+        # files the OS will execute on targetSdk > 28. Toolchain binaries
+        # downloaded here could never run — and fetching them unverified (the
+        # old John Van Sickle branch) was a security hole. Fail closed: the
+        # resolved-path fallback below reports bundled binaries as ok.
+        log.info(f"Bootstrap {name}: skipped download on Android (bundled jniLibs)")
+        return False, None
 
     # Check if binary is available on system PATH (e.g. /usr/bin/ffmpeg)
     system_bin = shutil.which(name)
@@ -532,7 +475,10 @@ def bootstrap() -> dict:
             ytdlp_ok = _install_yt_dlp_via_uv(uv_path, data_dir)
             log.info(f"Bootstrap yt-dlp: {'completed' if ytdlp_ok else 'failed'}")
 
-    # 2. Download ffmpeg, aria2c (all platforms) + deno (desktop) in parallel
+    # 2. Download ffmpeg, aria2c (all platforms) + deno (desktop) in parallel.
+    # On Android every download is skipped inside _bootstrap_github_binary:
+    # bundled jniLibs binaries are the only executable files on targetSdk > 28,
+    # so the resolved-path fallback below is the source of truth there.
     binary_tasks = [
         (
             "ffmpeg",
@@ -585,19 +531,33 @@ def bootstrap() -> dict:
     aria2c_ok, aria2c_version = binary_results.get("aria2c", (False, None))
     deno_ok, deno_version = binary_results.get("deno", (False, None))
 
-    # Also check resolved paths from set_paths (may point to system binaries)
+    # Also check resolved paths from set_paths (bundled jniLibs .so files on
+    # Android, system binaries elsewhere). Versions are probed live since
+    # bundled binaries carry no release tag.
     if not ffmpeg_ok and paths.get("ffmpeg_path"):
         p = paths["ffmpeg_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             ffmpeg_ok = True
+            ffmpeg_version = ffmpeg_version or _probe_bin_version(p)
     if not aria2c_ok and paths.get("aria2c_path"):
         p = paths["aria2c_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             aria2c_ok = True
+            aria2c_version = aria2c_version or _probe_bin_version(p)
     if not deno_ok and paths.get("deno_path"):
         p = paths["deno_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             deno_ok = True
+            deno_version = deno_version or _probe_bin_version(p)
+
+    # Pre-existing executables (bundled jniLibs .so files, system binaries)
+    # carry no release tag — probe live so version fields are never blank.
+    if ffmpeg_ok and not ffmpeg_version and paths.get("ffmpeg_path"):
+        ffmpeg_version = _probe_bin_version(paths["ffmpeg_path"])
+    if aria2c_ok and not aria2c_version and paths.get("aria2c_path"):
+        aria2c_version = _probe_bin_version(paths["aria2c_path"])
+    if deno_ok and not deno_version and paths.get("deno_path"):
+        deno_version = _probe_bin_version(paths["deno_path"])
 
     # QuickJS availability (Android JS runtime)
     quickjs_ok = False
