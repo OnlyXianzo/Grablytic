@@ -9,7 +9,7 @@ from yt_dlp import YoutubeDL
 from truestream_engine.opts_builder import build_ydl_opts
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.paths import get_paths
-from truestream_engine.logger import get_logger
+from truestream_engine.logger import get_logger, set_global_event_callback
 
 
 log = get_logger("truestream_engine.downloader")
@@ -289,6 +289,15 @@ def start_download(
     progress_queue: _queue.Queue = _queue.Queue()
     result_queue: _queue.Queue = _queue.Queue()
     cancel_event: threading.Event = threading.Event()
+
+    # Live engine-log delivery on Android/Chaquopy: push type:log events
+    # through the same Kotlin callback the progress hooks use. The desktop
+    # queue path is untouched (event_callback is None there).
+    if event_callback is not None:
+        try:
+            set_global_event_callback(event_callback)
+        except Exception:
+            pass
 
     t = threading.Thread(
         target=download_thread,

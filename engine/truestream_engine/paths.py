@@ -103,6 +103,21 @@ def set_paths(
     if os.path.isdir(site_packages) and site_packages not in sys.path:
         sys.path.insert(0, site_packages)
 
+    # Engine file logging must work on every platform — including Android,
+    # where Chaquopy calls set_paths directly and __main__ never runs.
+    # Both helpers are idempotent per directory and never raise, so a
+    # logging failure can never break path configuration.
+    try:
+        from truestream_engine.logger import set_global_log_dir
+        set_global_log_dir(os.path.join(data_dir, "logs"))
+    except Exception:
+        pass
+    try:
+        from truestream_engine.persistent import init_persistent_logging
+        init_persistent_logging(os.path.join(data_dir, "logs"))
+    except Exception:
+        pass
+
     return {"success": True}
 
 

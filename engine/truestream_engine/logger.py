@@ -23,6 +23,7 @@ class EngineLogger:
         self.name = name
         self._context = threading.local()
         self._queue: queue.Queue | None = None
+        self._event_callback = None
         self._log_dir: str | None = None
         self._min_level: int = DEBUG
 
@@ -37,6 +38,10 @@ class EngineLogger:
 
     def set_queue(self, q: queue.Queue | None) -> None:
         self._queue = q
+
+    def set_event_callback(self, cb) -> None:
+        """Direct push channel (Android/Chaquopy): ``cb.onEvent(json)``."""
+        self._event_callback = cb
 
     def set_log_dir(self, path: str) -> None:
         self._log_dir = path
@@ -78,6 +83,18 @@ class EngineLogger:
         if level >= self._min_level and self._queue is not None:
             try:
                 self._queue.put(event)
+            except Exception:
+                pass
+
+        # Direct push channel (Android/Chaquopy): the Kotlin
+        # EngineEventListener forwards every JSON blob to the Flutter
+        # EventChannel. Falls back to the module-global callback so loggers
+        # created before the setter ran still deliver. Never raises — a
+        # logging path must not break downloads (or tests without Chaquopy).
+        cb = self._event_callback if self._event_callback is not None else _global_event_callback
+        if cb is not None:
+            try:
+                cb.onEvent(json.dumps(event, default=str))
             except Exception:
                 pass
 
@@ -142,14 +159,28 @@ class EngineLogger:
 
 _loggers: dict[str, EngineLogger] = {}
 
+# Module-global push callback (Android/Chaquopy). Stored here so loggers
+# created AFTER the setter ran inherit it via get_logger().
+_global_event_callback = None
+
+# Module-global log dir. Same late-binding rationale: set_paths() may run
+# before some lazily-created loggers exist (Android calls it directly).
+_global_log_dir: str | None = None
+
 
 def get_logger(name: str) -> EngineLogger:
     if name not in _loggers:
         _loggers[name] = EngineLogger(name)
+        if _global_event_callback is not None:
+            _loggers[name].set_event_callback(_global_event_callback)
+        if _global_log_dir is not None:
+            _loggers[name].set_log_dir(_global_log_dir)
     return _loggers[name]
 
 
 def set_global_log_dir(path: str) -> None:
+    global _global_log_dir
+    _global_log_dir = path
     for logger in _loggers.values():
         logger.set_log_dir(path)
 
@@ -157,3 +188,18 @@ def set_global_log_dir(path: str) -> None:
 def set_global_queue(q: queue.Queue | None) -> None:
     for logger in _loggers.values():
         logger.set_queue(q)
+
+
+def set_global_event_callback(cb) -> None:
+    """Register the Android push callback on all loggers (present + future).
+
+    ``cb`` must expose ``onEvent(json_string)`` (Chaquopy Java proxy).
+    Pass ``None`` to detach. Never raises.
+    """
+    global _global_event_callback
+    _global_event_callback = cb
+    for logger in _loggers.values():
+        try:
+            logger.set_event_callback(cb)
+        except Exception:
+            pass

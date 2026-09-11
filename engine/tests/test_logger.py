@@ -512,6 +512,21 @@ class TestFileWriting:
 
 
 class TestGlobalPropagation:
+    @pytest.fixture(autouse=True)
+    def _clean_globals(self):
+        """Order-independent: late-binding globals may be set by other
+        modules' tests (e.g. set_paths arms logging)."""
+        import truestream_engine.logger as logger_mod
+        prev_cb, prev_dir = (
+            logger_mod._global_event_callback,
+            logger_mod._global_log_dir,
+        )
+        logger_mod._global_event_callback = None
+        logger_mod._global_log_dir = None
+        yield
+        logger_mod._global_event_callback = prev_cb
+        logger_mod._global_log_dir = prev_dir
+
     @pytest.mark.unit
     def test_set_global_log_dir_propagates(self, log_dir: str) -> None:
         a = get_logger("a")
