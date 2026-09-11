@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
-import '../../utils/logging_observers.dart';
+import '../utils/logging_observers.dart';
 import 'engine_service.dart';
 import 'platform_channel_engine_service.dart';
 import 'desktop_engine_service.dart';

@@ -39,7 +39,7 @@ class GithubReporter {
         _explicitToken = token;
 
   String? get _token {
-    if (_explicitToken != null && _explicitToken!.isNotEmpty) {
+    if (_explicitToken != null && _explicitToken.isNotEmpty) {
       return _explicitToken;
     }
     if (_envToken.isNotEmpty) return _envToken;
