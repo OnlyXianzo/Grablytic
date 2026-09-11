@@ -90,14 +90,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void handleProgressEvent(Map<String, dynamic> event) {
+    // NOTE: `type:log` engine maps are intentionally NOT handled here.
+    // LogIngester (subscribed to engine.logStream) is the single ingestion
+    // point — handling them here too double-logged every engine line on
+    // desktop. Log maps carry no top-level download_id, so they fall
+    // through to the guard below and are ignored here.
     final type = event['type'] as String?;
-    if (type == 'log') {
-      final level = event['level'] as String? ?? 'INFO';
-      final message = event['message'] as String? ?? '';
-      final downloadId = event['download_id'] as String? ?? '';
-      AppLogger.log(level, '[$downloadId] $message', tag: 'yt-dlp');
-      return;
-    }
+    if (type == 'log') return;
 
     final downloadId = event['download_id'] as String?;
     if (downloadId == null) return;
@@ -153,6 +152,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     } else if (eventType == 'finished') {
       final filesize = event['filesize_bytes'] as int? ?? 0;
       final sizeStr = _formatFilesize(filesize);
+      // Terminal outcome — one line per download (never per-progress) so
+      // diagnostics reports always show what happened. ID + outcome only,
+      // never the URL (may carry auth query params).
+      AppLogger.info('Download finished: $downloadId ($sizeStr)',
+          tag: 'download');
 
       state = state.map((d) {
         if (d.id != downloadId) return d;
@@ -176,6 +180,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       final errorType = event['error_type'] as String?;
       final errorMessage = event['error_message'] as String?;
       final suggestsVpn = event['suggests_vpn'] as bool? ?? false;
+      AppLogger.warn(
+          'Download failed: $downloadId [$errorType]${suggestsVpn ? ' (VPN may help)' : ''}',
+          tag: 'download');
 
       state = state.map((d) {
         if (d.id != downloadId) return d;
@@ -197,6 +204,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         );
       }).toList();
     } else if (eventType == 'cancelled') {
+      AppLogger.info('Download cancelled: $downloadId', tag: 'download');
       state = state.map((d) {
         if (d.id != downloadId) return d;
         return DownloadItem(

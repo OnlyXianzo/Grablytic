@@ -30,6 +30,15 @@ class GithubReporter {
     defaultValue: 'OnlyXianzo/TrueStream',
   );
 
+  /// Flutter SDK version, stamped at build time:
+  /// `flutter build apk --dart-define=FLUTTER_VERSION=$(flutter --version | head -1)`
+  /// (wired in .github/workflows/build.yml). `const` is required — AOT
+  /// builds drop non-const environment lookups. Empty (dev runs) → 'unknown'.
+  static const String _envFlutter = String.fromEnvironment(
+    'FLUTTER_VERSION',
+    defaultValue: '',
+  );
+
   GithubReporter({
     String? owner,
     String? repo,
@@ -208,13 +217,23 @@ class GithubReporter {
   }
 
   /// Manual flow for the LogViewer "Report to GitHub" button.
+  ///
+  /// [fullLog] attaches the full rolling log (capped) instead of the tail.
+  /// The fingerprint mixes in the filing minute so unrelated manual reports
+  /// never dedup-collapse into one issue (crash reports keep pure
+  /// content-based fingerprints for grouping).
   Future<GithubReportResult> reportManual({
     required String userSummary,
     String userSteps = '',
     String appVersion = '0.0.1-beta+1',
+    bool fullLog = false,
+    Map<String, dynamic> context = const {},
   }) async {
-    final logTail = await AppLogger.readLogTail();
-    final fp = fingerprint(userSummary, null);
+    final logTail =
+        fullLog ? await AppLogger.readFullLog() : await AppLogger.readLogTail();
+    final minute =
+        DateTime.now().toUtc().toIso8601String().substring(0, 16);
+    final fp = fingerprint('$userSummary\n$minute', null);
     final title = '[Manual $fp] ${userSummary.length > 100 ? '${userSummary.substring(0, 100)}…' : userSummary}';
     final body = _buildBody(
       summary: userSummary,
@@ -224,8 +243,9 @@ class GithubReporter {
       fp: fp,
       logTail: logTail,
       stack: '',
-      context: const {},
+      context: context,
       appVersion: appVersion,
+      logLabel: fullLog ? 'full' : 'tail',
     );
     if (!canPost) {
       return GithubReportResult(
@@ -265,6 +285,7 @@ class GithubReporter {
     required String stack,
     required Map<String, dynamic> context,
     required String appVersion,
+    String logLabel = 'tail',
   }) {
     final env = _envSpecs(appVersion);
     final ctxStr = context.isEmpty
@@ -295,7 +316,7 @@ $ctxStr
 ### Stack trace
 ${stack.isEmpty ? '_None captured._' : '```\n$stack\n```'}
 
-### Logs (tail, redacted)
+### Logs ($logLabel, redacted)
 ```text
 $logTail
 ```
@@ -310,7 +331,7 @@ $logTail
       'os': Platform.operatingSystem,
       'osVersion': Platform.operatingSystemVersion,
       'dart': Platform.version.split(' ').first,
-      'flutter': 'n/a',
+      'flutter': _envFlutter.isEmpty ? 'unknown' : _envFlutter,
       'debug': kDebugMode.toString(),
     };
   }

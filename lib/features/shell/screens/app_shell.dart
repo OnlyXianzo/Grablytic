@@ -21,6 +21,11 @@ class _AppShellState extends ConsumerState<AppShell> {
   int _currentIndex = 0;
   late final PageController _pageController;
   StreamSubscription<String>? _intentSubscription;
+  // Target of a programmatic tab animation. PageView fires onPageChanged
+  // for every fly-through page (0→2 emits 1, then 2) — non-target pages
+  // are ignored so logs/state update exactly once. User drags leave this
+  // null and behave as before.
+  int? _animTarget;
 
   @override
   void initState() {
@@ -110,11 +115,27 @@ class _AppShellState extends ConsumerState<AppShell> {
   ];
 
   void _onPageChanged(int index) {
+    if (_animTarget != null) {
+      if (index != _animTarget) return; // fly-through page: ignore
+      _animTarget = null; // settled; _currentIndex already equals target
+      return;
+    }
     if (index == _currentIndex) return;
     AppLogger.info('User swiped to tab: $index (${_screens[index].runtimeType})');
     setState(() {
       _currentIndex = index;
     });
+  }
+
+  /// User grabbed the pager mid-animation → the programmatic target is
+  /// void; subsequent onPageChanged calls are genuine user swipes again.
+  /// (Programmatic animateToPage emits ScrollStartNotification with null
+  /// dragDetails, so only real touches clear the flag.)
+  bool _onScrollNotify(ScrollNotification n) {
+    if (n is ScrollStartNotification && n.dragDetails != null) {
+      _animTarget = null;
+    }
+    return false;
   }
 
   void _onDestinationSelected(int index) {
@@ -123,6 +144,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     setState(() {
       _currentIndex = index;
     });
+    _animTarget = index;
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 300),
@@ -175,10 +197,13 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
             const VerticalDivider(thickness: 1, width: 1),
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: _onPageChanged,
-                children: _screens,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScrollNotify,
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: _onPageChanged,
+                  children: _screens,
+                ),
               ),
             ),
           ],
@@ -187,10 +212,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
 
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: _onPageChanged,
-        children: _screens,
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _onScrollNotify,
+        child: PageView(
+          controller: _pageController,
+          onPageChanged: _onPageChanged,
+          children: _screens,
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(

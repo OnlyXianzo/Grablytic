@@ -55,8 +55,11 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Stamp Flutter version
+        run: echo "FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
+
       - name: Build APKs (Split per ABI)
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --dart-define=FLUTTER_VERSION="${{ env.FLUTTER_VERSION }}"
 
       - name: Upload arm64-v8a APK Artifact
         uses: actions/upload-artifact@v4
@@ -93,8 +96,11 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Stamp Flutter version
+        run: echo "FLUTTER_VERSION=$(flutter --version | head -n 1)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build Windows App
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define="FLUTTER_VERSION=${{ env.FLUTTER_VERSION }}"
 
       - name: Copy Python Engine to Bundle
         run: xcopy /E /I engine\truestream_engine build\windows\x64\runner\Release\truestream_engine
@@ -133,8 +139,11 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Stamp Flutter version
+        run: echo "FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
+
       - name: Build Linux App
-        run: flutter build linux --release
+        run: flutter build linux --release --dart-define="FLUTTER_VERSION=${{ env.FLUTTER_VERSION }}"
 
       - name: Copy Python Engine to Bundle
         run: cp -r engine/truestream_engine build/linux/x64/release/bundle/

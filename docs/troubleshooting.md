@@ -37,6 +37,8 @@ GitHub auto-reporter may already have filed a deduped issue.
 | Python | `server_logs.log` (data dir) | `RotatingFileHandler` |
 | Bootstrap | `bootstrap_progress.jsonl` (data dir) | Per-step statuses |
 | Live view | Settings → Diagnostics & Logs → Live Stream | Filter + export |
+| Export | **Export log file** button (File Logs tab) | Android: app external `log-exports/` (no permission needed); desktop: `~/Downloads/TrueStream-logs/` |
+| Full log | **Include full log** switch above the report button | Attaches up to 512 KB instead of the 100 KB tail |
 
 ## FAQ
 

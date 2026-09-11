@@ -8,6 +8,12 @@ class PlatformChannelEngineService implements EngineService {
   final EventChannel _eventChannel = const EventChannel('com.theonly.truestream/progress');
   final _intentController = StreamController<String>.broadcast();
 
+  /// SINGLE native subscription, shared by progressStream + logStream.
+  /// (Each receiveBroadcastStream() call re-triggers native onListen and
+  /// would orphan the previous sink — so both views derive from this one
+  /// cached broadcast stream. .map/.where preserve broadcast semantics.)
+  Stream<Map<String, dynamic>>? _progressCache;
+
   PlatformChannelEngineService() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'intent/shared_url') {
@@ -65,7 +71,7 @@ class PlatformChannelEngineService implements EngineService {
 
   @override
   Stream<Map<String, dynamic>> get progressStream =>
-      _eventChannel.receiveBroadcastStream().map((event) {
+      _progressCache ??= _eventChannel.receiveBroadcastStream().map((event) {
         if (event is String) {
           return Map<String, dynamic>.from(jsonDecode(event));
         }
@@ -141,7 +147,13 @@ class PlatformChannelEngineService implements EngineService {
     }
   }
 
+  /// Engine `type:log` maps ride the same EventChannel as progress events
+  /// (Kotlin forwards every JSON blob). Filtered view — broadcast-safe, so
+  /// downloadProvider (progress) and LogIngester (logs) coexist. Single
+  /// ingestion point for logs is LogIngester; downloadProvider ignores
+  /// `type:log` maps (they carry no top-level download_id).
   @override
-  Stream<Map<String, dynamic>> get logStream => const Stream.empty();
+  Stream<Map<String, dynamic>> get logStream =>
+      progressStream.where((event) => event['type'] == 'log');
 }
 

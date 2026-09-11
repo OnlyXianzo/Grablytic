@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'log_buffer.dart';
 import 'log_entry.dart';
@@ -416,6 +417,18 @@ class AppLogger {
     }
   }
 
+  /// Append a pre-formatted line to the disk batch WITHOUT touching the
+  /// in-memory buffer or console. Single-owner ingestion (LogIngester) uses
+  /// this so engine logs persist to `app_logs.txt` exactly once — the buffer
+  /// entry is created separately from the structured event.
+  static void appendFileLine(String line) {
+    if (!_loggingEnabled || _logsDirPath == null) return;
+    _pending.add(line.endsWith('\n') ? line : '$line\n');
+    if (_pending.length > 10000) {
+      _pending.removeRange(0, _pending.length - 10000);
+    }
+  }
+
   /// Delete all log files.
   static Future<void> deleteAllLogs() async {
     if (_logsDirPath == null) return;
@@ -431,6 +444,74 @@ class AppLogger {
     } catch (e) {
       // ignore: avoid_print
       print('Failed deleting logs: $e');
+    }
+  }
+
+  /// Reads the FULL `app_logs.txt` (or newest daily log as fallback),
+  /// capped at [maxBytes] (default 512KB). Used when the user opts into
+  /// "full log" reports/exports — the default tail stays small for AI
+  /// context limits and GitHub body limits.
+  static Future<String> readFullLog({int maxBytes = 512 * 1024}) async {
+    try {
+      await flushNow();
+      File? target = appLogsFile;
+      if (target == null || !await target.exists()) {
+        final files = await getLogFiles();
+        if (files.isEmpty) return 'No logs recorded yet.';
+        target = files.first;
+      }
+      final len = await target.length();
+      if (len <= maxBytes) return await target.readAsString();
+      final raf = await target.open(mode: FileMode.read);
+      try {
+        await raf.setPosition(len - maxBytes);
+        final bytes = await raf.read(maxBytes);
+        var text = String.fromCharCodes(bytes);
+        final nl = text.indexOf('\n');
+        if (nl >= 0 && nl < 4096) text = text.substring(nl + 1);
+        return '... [TRUNCATED — showing last ${maxBytes ~/ 1024}KB of ${len ~/ 1024}KB] ...\n$text';
+      } finally {
+        await raf.close();
+      }
+    } catch (e) {
+      return 'Failed to read full log: $e';
+    }
+  }
+
+  /// Exports [src] to a user-visible folder and returns the destination path.
+  ///
+  /// Android: app-specific external dir (`.../Android/data/<pkg>/files/
+  /// log-exports/`) — writable with NO storage permission on API 19+
+  /// (scoped storage forbids raw writes to public Download on API 30+).
+  /// Desktop: `~/Downloads/TrueStream-logs/`. Never throws — returns an
+  /// error description string starting with `ERROR:` on failure.
+  static Future<String> exportLogFile(File src) async {
+    try {
+      if (!await src.exists()) return 'ERROR: log file no longer exists.';
+      Directory base;
+      String sub;
+      if (Platform.isAndroid) {
+        final ext = await getExternalStorageDirectory();
+        if (ext == null) return 'ERROR: external storage unavailable.';
+        base = ext;
+        sub = 'log-exports';
+      } else {
+        final dl = await getDownloadsDirectory();
+        base = dl ?? Directory(_logsDirPath ?? '.');
+        sub = 'TrueStream-logs';
+      }
+      final destDir = Directory('${base.path}/$sub');
+      await destDir.create(recursive: true);
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final stamp =
+          '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
+      final name = src.path.split('/').last;
+      final dest = File('${destDir.path}/truestream-$stamp-$name');
+      await src.copy(dest.path);
+      return dest.path;
+    } catch (e) {
+      return 'ERROR: export failed: $e';
     }
   }
 

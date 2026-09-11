@@ -23,6 +23,8 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   bool _loggingEnabled = AppLogger.isEnabled;
   int _retentionDays = AppLogger.retentionDays;
   int _selectedTab = 0;
+  bool _includeFullLog = false;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -94,11 +96,18 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     setState(() => _reporting = true);
     try {
       final reporter = GithubReporter();
+      final fileName =
+          _selectedFile != null ? _selectedFile!.path.split('/').last : 'none';
       final result = await reporter.reportManual(
         userSummary: _selectedFile != null
-            ? 'Log report from ${_selectedFile!.path.split('/').last}'
+            ? 'Log report from $fileName'
             : 'Manual log report from Diagnostics screen',
         userSteps: 'Filed manually from Diagnostics & Logs screen.',
+        fullLog: _includeFullLog,
+        context: {
+          'log_file': fileName,
+          'full_log': _includeFullLog,
+        },
       );
       if (!mounted) return;
       switch (result.status) {
@@ -136,6 +145,28 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
       }
     } finally {
       if (mounted) setState(() => _reporting = false);
+    }
+  }
+
+  /// Copies the selected log file to a user-visible folder
+  /// (external app dir on Android — no permission needed; Downloads on
+  /// desktop) and shows the destination path.
+  Future<void> _exportLogFile() async {
+    if (_exporting || _selectedFile == null) return;
+    setState(() => _exporting = true);
+    try {
+      final dest = await AppLogger.exportLogFile(_selectedFile!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(dest.startsWith('ERROR:')
+              ? dest
+              : 'Log exported to:\n$dest'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 
@@ -296,10 +327,20 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                 max: 30,
                 divisions: 29,
                 label: '$_retentionDays days',
+                // onChanged = live label only (cheap setState). Persisting
+                // here would write prefs + rescan the log dir on every drag
+                // tick — persistence happens once in onChangeEnd.
                 onChanged: _loggingEnabled
+                    ? (val) {
+                        setState(() => _retentionDays = val.toInt());
+                      }
+                    : null,
+                onChangeEnd: _loggingEnabled
                     ? (val) async {
                         final days = val.toInt();
+                        if (days == AppLogger.retentionDays) return;
                         await AppLogger.setRetentionDays(days);
+                        if (!mounted) return;
                         setState(() => _retentionDays = days);
                       }
                     : null,
@@ -424,6 +465,48 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
             children: [
+              Row(
+                children: [
+                  Icon(Icons.description_outlined,
+                      size: 18, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Include full log in report (default: tail only)',
+                      style: tt.bodySmall,
+                    ),
+                  ),
+                  Switch(
+                    value: _includeFullLog,
+                    onChanged: (val) =>
+                        setState(() => _includeFullLog = val),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: (_exporting || _selectedFile == null)
+                      ? null
+                      : _exportLogFile,
+                  icon: _exporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.file_download_outlined),
+                  label: Text(
+                      _exporting ? 'Exporting…' : 'Export log file'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
