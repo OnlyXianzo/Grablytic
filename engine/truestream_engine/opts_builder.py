@@ -47,7 +47,9 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     from truestream_engine.paths import get_paths
     log = get_logger("truestream_engine.opts_builder")
     aria_path = get_paths().get("aria2c_path")
-    if config.get("aria2c_enabled") and aria_path and os.path.isfile(aria_path):
+    # use_aria2 is the legacy alias — honor either flag.
+    aria_on = config.get("aria2c_enabled") or config.get("use_aria2")
+    if aria_on and aria_path and os.path.isfile(aria_path):
         # Defense in depth: external_downloader_args is passed verbatim to
         # the child argv (no shell involved), so clamp/validate config values
         # instead of trusting them blindly.
@@ -268,6 +270,11 @@ def build_ydl_opts(
 
         if pp:
             opts["postprocessors"] = pp
+
+    if cfg.get("write_description"):
+        opts["writedescription"] = True
+    if cfg.get("write_info_json"):
+        opts["writeinfojson"] = True
 
     if cfg.get("verbose"):
         opts["verbose"] = True

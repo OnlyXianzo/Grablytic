@@ -7,6 +7,14 @@ def build_format_string(cfg: dict) -> str:
     if explicit_vid:
         return f"{explicit_vid}/best"
 
+    # Raw yt-dlp format string override (site profiles, power users).
+    # DEFAULT_CFG leaves this None so the ladder below stays the default;
+    # any non-empty value wins over audio_only/ceiling but NOT over the
+    # Format Picker's explicit IDs above.
+    custom = cfg.get("format_code")
+    if custom:
+        return custom
+
     if cfg.get("audio_only"):
         audio_fmt = cfg.get("audio_format", "opus")
         fmt_map = {

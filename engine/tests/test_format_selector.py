@@ -62,6 +62,22 @@ class TestBuildFormatString:
         result = build_format_string(cfg)
         assert result == "137+140/137/best"
 
+    def test_format_code_override_wins_over_ladder(self):
+        cfg = {"audio_only": False, "quality_ceiling": "720p",
+               "format_code": "bestvideo[height<=1080]+bestaudio/best"}
+        assert build_format_string(cfg) == \
+            "bestvideo[height<=1080]+bestaudio/best"
+
+    def test_format_code_none_falls_back_to_ladder(self):
+        cfg = {"audio_only": False, "quality_ceiling": "720p",
+               "format_code": None}
+        assert "height<=720" in build_format_string(cfg)
+
+    def test_explicit_id_beats_format_code(self):
+        cfg = {"explicit_format_id": "137",
+               "format_code": "bestvideo+bestaudio/best"}
+        assert build_format_string(cfg) == "137/best"
+
 
 class TestGetFormatsPlaylist:
     def test_generator_entries_in_formats(self, monkeypatch):

@@ -2,7 +2,9 @@ DEFAULT_CFG = {
     # ── Update ────────────────────────────────────────────────────────────
     "update_channel": "stable",
     # ── Format ──────────────────────────────────────────────────────────
-    "format_code": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+    # None = auto ladder (AV1 → VP9 → H264 + ceiling). Any non-empty string
+    # is passed to yt-dlp verbatim (site profiles, power users).
+    "format_code": None,
     "audio_only": False,
     "container": "mkv",
     "audio_format": "opus",

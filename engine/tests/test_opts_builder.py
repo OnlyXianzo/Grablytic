@@ -346,3 +346,24 @@ def test_fragment_and_socket_invalid_fall_back():
 def test_socket_non_positive_ignored():
     opts = build_ydl_opts(config={"socket_timeout": -5})
     assert "socket_timeout" not in opts
+
+
+def test_write_flags_default_off():
+    opts = build_ydl_opts()
+    assert "writedescription" not in opts
+    assert "writeinfojson" not in opts
+
+
+def test_write_flags_enabled():
+    opts = build_ydl_opts(
+        config={"write_description": True, "write_info_json": True})
+    assert opts["writedescription"] is True
+    assert opts["writeinfojson"] is True
+
+
+def test_legacy_use_aria2_alias(tmp_path):
+    dummy = tmp_path / "aria2c"
+    dummy.touch()
+    _paths["aria2c_path"] = str(dummy)
+    opts = build_ydl_opts(config={"use_aria2": True})
+    assert opts["external_downloader"]["default"] == "aria2c"
