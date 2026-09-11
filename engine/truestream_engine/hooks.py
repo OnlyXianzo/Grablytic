@@ -10,12 +10,12 @@ _POSTPROCESSOR_STAGES = {
 }
 
 
-def build_progress_hook(queue: _queue.Queue, download_id: str):
+def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=None):
     def progress_hook(d: dict):
         status = d.get("status", "")
 
         if status == "downloading":
-            queue.put(json.dumps({
+            event_json = json.dumps({
                 "type": "event",
                 "event": "downloading",
                 "download_id": download_id,
@@ -28,43 +28,71 @@ def build_progress_hook(queue: _queue.Queue, download_id: str):
                 "fragment_index": d.get("fragment_index"),
                 "fragment_count": d.get("fragment_count"),
                 "stream": d.get("info_dict", {}).get("__stream_type"),
-            }))
+            })
+            if event_callback is not None:
+                try:
+                    event_callback.onEvent(event_json)
+                except Exception:
+                    pass
+            else:
+                queue.put(event_json)
 
         elif status == "finished":
-            queue.put(json.dumps({
+            event_json = json.dumps({
                 "type": "event",
                 "event": "finished",
                 "download_id": download_id,
                 "filename": d.get("filename", ""),
                 "total_bytes": d.get("total_bytes", 0),
-            }))
+            })
+            if event_callback is not None:
+                try:
+                    event_callback.onEvent(event_json)
+                except Exception:
+                    pass
+            else:
+                queue.put(event_json)
 
         elif status == "error":
-            queue.put(json.dumps({
+            event_json = json.dumps({
                 "type": "event",
                 "event": "error",
                 "download_id": download_id,
                 "error_type": "ERROR_DOWNLOAD",
                 "error_message": d.get("error", "Unknown error"),
                 "recoverable": True,
-            }))
+            })
+            if event_callback is not None:
+                try:
+                    event_callback.onEvent(event_json)
+                except Exception:
+                    pass
+            else:
+                queue.put(event_json)
 
     return progress_hook
 
 
-def build_postprocessor_hook(queue: _queue.Queue, download_id: str):
+def build_postprocessor_hook(queue: _queue.Queue, download_id: str, event_callback=None):
     def postprocessor_hook(d: dict):
         status = d.get("status", "")
         pp_key = d.get("postprocessor", "")
         stage, label = _POSTPROCESSOR_STAGES.get(status, ("", "Processing..."))
 
         if status == "started":
-            queue.put(json.dumps({
+            event_json = json.dumps({
                 "type": "event",
                 "event": "postprocessing",
                 "download_id": download_id,
                 "stage": stage or pp_key,
                 "stage_label": label,
-            }))
+            })
+            if event_callback is not None:
+                try:
+                    event_callback.onEvent(event_json)
+                except Exception:
+                    pass
+            else:
+                queue.put(event_json)
 
     return postprocessor_hook

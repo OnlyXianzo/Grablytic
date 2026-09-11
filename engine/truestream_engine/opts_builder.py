@@ -33,6 +33,7 @@ def build_ydl_opts(
     override_container: str | None = None,
     download_id: str | None = None,
     url: str | None = None,
+    event_callback=None,
 ) -> dict:
     cfg = {**DEFAULT_CFG, **(config or {})}
     paths = get_paths()
@@ -185,8 +186,8 @@ def build_ydl_opts(
         opts["compat_opts"] = [cfg["compat_options"]]
 
     if progress_queue is not None:
-        opts["progress_hooks"] = [build_progress_hook(progress_queue, download_id or "")]
-        opts["postprocessor_hooks"] = [build_postprocessor_hook(progress_queue, download_id or "")]
+        opts["progress_hooks"] = [build_progress_hook(progress_queue, download_id or "", event_callback)]
+        opts["postprocessor_hooks"] = [build_postprocessor_hook(progress_queue, download_id or "", event_callback)]
 
     opts["continuedl"] = True
 

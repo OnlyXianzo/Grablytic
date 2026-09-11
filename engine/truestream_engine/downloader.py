@@ -69,6 +69,7 @@ def download_thread(
     progress_queue: _queue.Queue | None = None,
     result_queue: _queue.Queue | None = None,
     cancel_event: threading.Event | None = None,
+    event_callback=None,
 ):
     cancel = cancel_event or threading.Event()
     prog_q = progress_queue or _queue.Queue()
@@ -92,12 +93,26 @@ def download_thread(
         if not ffmpeg_path or not os.path.isfile(ffmpeg_path) or not os.access(ffmpeg_path, os.X_OK):
             import shutil
             if not shutil.which("ffmpeg"):
-                res_q.put({
-                    "success": False,
+                err_event = json.dumps({
+                    "type": "event",
+                    "event": "error",
                     "download_id": download_id,
                     "error_type": "ERROR_FFMPEG_MISSING",
                     "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
+                    "recoverable": True,
                 })
+                if event_callback is not None:
+                    try:
+                        event_callback.onEvent(err_event)
+                    except Exception:
+                        pass
+                else:
+                    res_q.put({
+                        "success": False,
+                        "download_id": download_id,
+                        "error_type": "ERROR_FFMPEG_MISSING",
+                        "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
+                    })
                 return
 
         opts = build_ydl_opts(
@@ -106,6 +121,7 @@ def download_thread(
             progress_queue=prog_q,
             download_id=download_id,
             url=url,
+            event_callback=event_callback,
         )
 
         if get_paths().get("cache_dir"):
@@ -128,37 +144,88 @@ def download_thread(
 
         if cancel.is_set():
             log.warn(f"Download cancelled: {download_id}")
+            terminal_event = json.dumps({
+                "type": "event",
+                "event": "cancelled",
+                "download_id": download_id,
+                "error_type": "ERROR_CANCELLED",
+                "error_message": "Download cancelled by user",
+            })
+            if event_callback is not None:
+                try:
+                    event_callback.onEvent(terminal_event)
+                except Exception:
+                    pass
+            else:
+                res_q.put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_CANCELLED",
+                    "error_message": "Download cancelled by user",
+                })
+        else:
+            log.info("Download completed")
+            terminal_event = json.dumps({
+                "type": "event",
+                "event": "finished",
+                "download_id": download_id,
+            })
+            if event_callback is not None:
+                try:
+                    event_callback.onEvent(terminal_event)
+                except Exception:
+                    pass
+            else:
+                res_q.put({
+                    "success": True,
+                    "download_id": download_id,
+                })
+
+    except KeyboardInterrupt:
+        log.warn(f"Download cancelled: {download_id}")
+        terminal_event = json.dumps({
+            "type": "event",
+            "event": "cancelled",
+            "download_id": download_id,
+            "error_type": "ERROR_CANCELLED",
+            "error_message": "Download cancelled by user",
+        })
+        if event_callback is not None:
+            try:
+                event_callback.onEvent(terminal_event)
+            except Exception:
+                pass
+        else:
             res_q.put({
                 "success": False,
                 "download_id": download_id,
                 "error_type": "ERROR_CANCELLED",
                 "error_message": "Download cancelled by user",
             })
-        else:
-            log.info("Download completed")
-            res_q.put({
-                "success": True,
-                "download_id": download_id,
-            })
-
-    except KeyboardInterrupt:
-        log.warn(f"Download cancelled: {download_id}")
-        res_q.put({
-            "success": False,
-            "download_id": download_id,
-            "error_type": "ERROR_CANCELLED",
-            "error_message": "Download cancelled by user",
-        })
     except Exception as exc:
         log.log_exception(exc, f"Download failed: {url}")
         err = classify_error(exc)
-        res_q.put({
-            "success": False,
+        terminal_event = json.dumps({
+            "type": "event",
+            "event": "error",
             "download_id": download_id,
             "error_type": err.error_type,
             "error_message": err.message,
             "recoverable": err.recoverable,
         })
+        if event_callback is not None:
+            try:
+                event_callback.onEvent(terminal_event)
+            except Exception:
+                pass
+        else:
+            res_q.put({
+                "success": False,
+                "download_id": download_id,
+                "error_type": err.error_type,
+                "error_message": err.message,
+                "recoverable": err.recoverable,
+            })
     finally:
         log.clear_context()
         with _downloads_lock:
@@ -171,6 +238,7 @@ def start_download(
     download_id: str,
     config: dict | None = None,
     network_type: str = "wifi",
+    event_callback=None,
 ) -> dict:
     progress_queue: _queue.Queue = _queue.Queue()
     result_queue: _queue.Queue = _queue.Queue()
@@ -178,7 +246,7 @@ def start_download(
 
     t = threading.Thread(
         target=download_thread,
-        args=(url, download_id, config, network_type, progress_queue, result_queue, cancel_event),
+        args=(url, download_id, config, network_type, progress_queue, result_queue, cancel_event, event_callback),
         daemon=True,
     )
     t.start()

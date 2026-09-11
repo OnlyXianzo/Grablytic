@@ -84,6 +84,7 @@ class MainActivity : FlutterActivity() {
                     val cacheDir = call.argument<String>("cache_dir")
                     val cookiesPath = call.argument<String>("cookies_path")
                     this.aria2cPath = call.argument<String>("aria2c_path")
+                    val denoPath = call.argument<String>("deno_path")
                     val poToken = call.argument<String>("po_token")
 
                     ffmpegPath?.let { path ->
@@ -99,7 +100,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
-                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, poToken)
+                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, denoPath, poToken)
                             withContext(Dispatchers.Main) { result.success(mapOf("success" to true)) }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_INVALID_PATH", e.message, null) }
@@ -146,9 +147,18 @@ class MainActivity : FlutterActivity() {
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
-                            val startResult = engine.callAttr("start_download", url, downloadId, config, networkType)
+
+                            val eventCallback = object : Any() {
+                                @Suppress("unused")
+                                fun onEvent(eventJson: String) {
+                                    scope.launch(Dispatchers.Main) {
+                                        eventSink?.success(eventJson)
+                                    }
+                                }
+                            }
+
+                            val startResult = engine.callAttr("start_download", url, downloadId, config, networkType, eventCallback)
                             val jsonStr = pyJson(startResult)
-                            startProgressPolling(downloadId!!)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_START_FAILED", e.message, null) }
@@ -254,58 +264,6 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun startProgressPolling(downloadId: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val python = py ?: return@launch
-                val downloader = python.getModule("truestream_engine.downloader")
-                val rawDownloadsMap = downloader.get("_active_downloads")?.asMap() as? Map<Any?, Any?>
-                val downloadInfo = rawDownloadsMap?.get(downloadId) as? Map<Any?, Any?>
-                val progressQueue = downloadInfo?.get("progress_queue") as? PyObject
-                val resultQueue = downloadInfo?.get("result_queue") as? PyObject
-
-                if (progressQueue == null || resultQueue == null) return@launch
-
-                var isDone = false
-                while (!isDone && coroutineContext.isActive) {
-                    if (!(progressQueue.callAttr("empty").toJava(Boolean::class.java) as Boolean)) {
-                        try {
-                            val item = progressQueue.callAttr("get_nowait")
-                            withContext(Dispatchers.Main) { eventSink?.success(item.toString()) }
-                        } catch (_: Exception) { }
-                    }
-
-                    if (!(resultQueue.callAttr("empty").toJava(Boolean::class.java) as Boolean)) {
-                        try {
-                            val resultVal = resultQueue.callAttr("get_nowait")
-                            @Suppress("UNCHECKED_CAST")
-                            val resultMap = resultVal.asMap() as Map<String, PyObject>
-                            val isSuccess = try {
-                                resultMap["success"]?.toBoolean() ?: false
-                            } catch (_: Exception) { false }
-                            val eventJson = if (isSuccess) {
-                                "{\"type\":\"event\",\"event\":\"finished\",\"download_id\":\"$downloadId\"}"
-                            } else {
-                                val errType = try {
-                                    resultMap["error_type"]?.toString() ?: "ERROR_UNKNOWN"
-                                } catch (_: Exception) { "ERROR_UNKNOWN" }
-                                val errMsg = try {
-                                    resultMap["error_message"]?.toString() ?: "Unknown error"
-                                } catch (_: Exception) { "Unknown error" }
-                                "{\"type\":\"event\",\"event\":\"error\",\"download_id\":\"$downloadId\",\"error_type\":\"$errType\",\"error_message\":\"$errMsg\",\"recoverable\":true}"
-                            }
-                            withContext(Dispatchers.Main) { eventSink?.success(eventJson) }
-                            isDone = true
-                        } catch (_: Exception) { }
-                    }
-
-                    if (!isDone) delay(100)
-                }
-            } catch (_: Exception) { }
-        }
     }
 
     override fun onDestroy() {
