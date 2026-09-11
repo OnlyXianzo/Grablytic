@@ -488,8 +488,8 @@ def bootstrap() -> dict:
             "ffmpeg_version": "7.1.1" if ffmpeg_ok else None,
             "aria2c_ok": aria2c_ok,
             "aria2c_version": "1.37.0" if aria2c_ok else None,
-            "deno_ok": deno_ok if not is_android else False,
-            "deno_version": "2.2.0" if (deno_ok and not is_android) else None,
+            "deno_ok": deno_ok,
+            "deno_version": deno_version,
             "quickjs_ok": False,  # never available in test env
             "js_runtime": js_runtime_info["name"],
             "js_runtime_version": js_runtime_info["version"],
@@ -546,15 +546,14 @@ def bootstrap() -> dict:
             paths.get("aria2c_path"),
         ),
     ]
-    if not is_android:
-        binary_tasks.append(
-            (
-                "deno",
-                GITHUB_REPOS["deno"],
-                _get_asset_substring("deno", platform_key),
-                paths.get("deno_path"),
-            )
+    binary_tasks.append(
+        (
+            "deno",
+            GITHUB_REPOS["deno"],
+            _get_asset_substring("deno", platform_key),
+            paths.get("deno_path"),
         )
+    )
 
     binary_results = {}
     threads = []
@@ -594,8 +593,7 @@ def bootstrap() -> dict:
         p = paths["aria2c_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             aria2c_ok = True
-    # Deno is desktop-only — never check deno_path on Android
-    if not is_android and not deno_ok and paths.get("deno_path"):
+    if not deno_ok and paths.get("deno_path"):
         p = paths["deno_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             deno_ok = True
@@ -613,21 +611,14 @@ def bootstrap() -> dict:
         update_components.append("ffmpeg")
     if not aria2c_ok:
         update_components.append("aria2c")
-    # Deno is desktop-only — never flag as missing on Android
-    if not is_android and not deno_ok:
+    if not deno_ok:
         update_components.append("deno")
 
     yt_dlp_ver = _get_yt_dlp_version()
     js_name = js_runtime_info["name"]
     js_ver = js_runtime_info["version"]
 
-    if is_android:
-        # On Android: QuickJS is the JS runtime; Deno is never used
-        js_runtime = js_name  # "quickjs" or "none"
-        js_runtime_version = js_ver
-        deno_ok = False
-        deno_version = None
-    elif deno_ok and deno_version:
+    if deno_ok and deno_version:
         js_runtime = "deno"
         js_runtime_version = deno_version
     else:

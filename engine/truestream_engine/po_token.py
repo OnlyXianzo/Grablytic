@@ -38,8 +38,15 @@ def detect_js_runtime() -> dict:
     except ImportError:
         pass
 
-    # 2. Deno (preferred on desktop)
-    deno_path = os.environ.get("DENO_PATH") or shutil.which("deno")
+    # 2. Deno (preferred — check paths module first, then env/PATH)
+    deno_path = None
+    try:
+        from truestream_engine.paths import get_paths
+        deno_path = get_paths().get("deno_path")
+    except Exception:
+        pass
+    if not deno_path:
+        deno_path = os.environ.get("DENO_PATH") or shutil.which("deno")
     if deno_path:
         import subprocess
         try:
