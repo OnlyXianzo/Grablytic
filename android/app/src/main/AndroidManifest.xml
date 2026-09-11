@@ -2,11 +2,20 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
+    <!-- Keep-alive for active downloads. Both are install-time (normal)
+         permissions: no runtime prompt. FGS notifications are exempt from
+         POST_NOTIFICATIONS, so that permission is deliberately absent. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
     <application
         android:label="truestream"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <service
+            android:name=".DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

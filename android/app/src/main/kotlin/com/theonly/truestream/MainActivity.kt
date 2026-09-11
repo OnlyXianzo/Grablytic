@@ -171,10 +171,54 @@ class MainActivity : FlutterActivity() {
 
                             val eventCallback = object : EngineEventListener {
                                 override fun onEvent(eventJson: String) {
+                                    // Drive the keep-alive service from the same
+                                    // event stream (progress + terminal events).
+                                    try {
+                                        val obj = org.json.JSONObject(eventJson)
+                                        if (obj.optString("type") == "event") {
+                                            val id = obj.optString("download_id")
+                                            if (id.isNotEmpty()) {
+                                                when (obj.optString("event")) {
+                                                    "downloading" -> {
+                                                        val dl = obj.optLong("downloaded_bytes", 0)
+                                                        val total = obj.optLong("total_bytes", 0)
+                                                        val pct = if (total > 0) {
+                                                            ((dl * 100) / total).toInt().coerceIn(0, 99)
+                                                        } else -1
+                                                        DownloadService.update(
+                                                            this@MainActivity, id, pct,
+                                                        )
+                                                    }
+                                                    "finished", "error", "cancelled" -> {
+                                                        val cancelled = obj.optString("event") == "cancelled"
+                                                        DownloadService.done(
+                                                            this@MainActivity, id, cancelled,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (_: Exception) {
+                                    }
                                     scope.launch(Dispatchers.Main) {
                                         eventSink?.success(eventJson)
                                     }
                                 }
+                            }
+
+                            // Keep-alive: user gesture (foreground) → dataSync FGS.
+                            try {
+                                val title = try {
+                                    android.net.Uri.parse(url).host ?: url
+                                } catch (_: Exception) {
+                                    downloadId
+                                }
+                                DownloadService.start(
+                                    this@MainActivity,
+                                    downloadId ?: "unknown",
+                                    title ?: "Download",
+                                )
+                            } catch (_: Exception) {
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, config, networkType, eventCallback)
