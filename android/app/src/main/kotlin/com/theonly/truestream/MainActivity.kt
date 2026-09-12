@@ -37,6 +37,7 @@ class MainActivity : FlutterActivity() {
     private val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, EngineEventListener>()
 
     private var dataDir: String? = null
+    private var outputDir: String? = null
     private var ffmpegPath: String? = null
     private var aria2cPath: String? = null
 
@@ -113,6 +114,7 @@ class MainActivity : FlutterActivity() {
                 "paths/set" -> {
                     this.dataDir = call.argument<String>("data_dir")
                     val outputDir = call.argument<String>("output_dir")
+                    this.outputDir = outputDir
                     val dartFfmpegPath = call.argument<String>("ffmpeg_path")
                     val cacheDir = call.argument<String>("cache_dir")
                     val cookiesPath = call.argument<String>("cookies_path")
@@ -240,7 +242,9 @@ class MainActivity : FlutterActivity() {
                                                         DownloadService.done(
                                                             this@MainActivity, id, cancelled,
                                                         )
-                                                        activeCallbacks.remove(id)
+                                                        if (obj.optString("event") == "finished") {
+                                                            scanRecentMedia()
+                                                        }
                                                     }
                                                 }
                                             }
@@ -426,6 +430,33 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
+    }
+
+    /**
+     * Makes freshly moved downloads visible to Gallery/Files apps.
+     * Files land via raw rename (yt-dlp MoveFiles), which never notifies
+     * MediaStore — without this scan they exist on disk but are invisible
+     * in every media browser (the "video don't get saved" report).
+     * Scans media files modified in the last 2h (cheap, idempotent,
+     * self-healing for older files on the next finish). Never throws.
+     */
+    private fun scanRecentMedia() {
+        try {
+            val dir = outputDir?.let(::File)?.takeIf { it.isDirectory } ?: return
+            val cutoff = System.currentTimeMillis() - 2 * 60 * 60 * 1000
+            val exts = setOf("mkv", "mp4", "webm", "m4a", "mp3", "opus", "flac", "ogg", "jpg")
+            dir.listFiles { f ->
+                f.isFile && f.extension.lowercase() in exts && f.lastModified() >= cutoff
+            }?.forEach { f ->
+                try {
+                    android.media.MediaScannerConnection.scanFile(
+                        applicationContext, arrayOf(f.absolutePath), null, null,
+                    )
+                } catch (_: Exception) {
+                }
+            }
+        } catch (_: Exception) {
+        }
     }
 
     override fun onDestroy() {
