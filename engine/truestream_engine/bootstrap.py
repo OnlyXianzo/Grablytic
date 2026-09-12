@@ -374,22 +374,40 @@ def _download_and_extract_binary(
             os.chmod(dest_path, 0o755)
 
 
+def _probe_report(bin_path: str, timeout: int = 8) -> dict:
+    """Best-effort `--version` probe with full diagnostics.
+
+    Returns {"ok", "version", "returncode", "output"} where output is the
+    first 300 chars of stdout+stderr. The output is the decisive artifact
+    when a bundled binary refuses to run on-device (linker errors,
+    permission denials) — version alone ("None") says nothing. Never raises.
+    """
+    report: dict = {"ok": False, "version": None, "returncode": None,
+                    "output": ""}
+    try:
+        proc = subprocess.run(
+            [bin_path, "--version"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        report["returncode"] = proc.returncode
+        out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        report["output"] = out[:300]
+        if proc.returncode == 0 and proc.stdout:
+            first = proc.stdout.splitlines()[0].strip()[:120] or None
+            report["version"] = first
+            report["ok"] = first is not None
+    except Exception as exc:
+        report["output"] = f"probe raised {type(exc).__name__}: {exc}"[:300]
+    return report
+
+
 def _probe_bin_version(bin_path: str, timeout: int = 8) -> str | None:
     """Best-effort `--version` probe. Returns the first line, else None.
 
     Used on Android where binaries come from bundled jniLibs (no release tag
     to read a version from). Never raises.
     """
-    try:
-        proc = subprocess.run(
-            [bin_path, "--version"],
-            capture_output=True, text=True, timeout=timeout,
-        )
-        if proc.returncode == 0 and proc.stdout:
-            return proc.stdout.splitlines()[0].strip()[:120] or None
-    except Exception:
-        pass
-    return None
+    return _probe_report(bin_path, timeout=timeout)["version"]
 
 
 def _bootstrap_github_binary(
@@ -629,31 +647,55 @@ def bootstrap() -> dict:
 
     # Also check resolved paths from set_paths (bundled jniLibs .so files on
     # Android, system binaries elsewhere). Versions are probed live since
-    # bundled binaries carry no release tag.
+    # bundled binaries carry no release tag. Probe REPORTS (not just
+    # versions) are kept: when a bundled binary refuses to run on-device,
+    # the returncode/output below is the entire diagnosis.
+    probe_reports: dict[str, dict] = {}
+
+    def _probe_if_needed(name: str, path: str | None) -> str | None:
+        if not path or not os.path.isfile(path):
+            return None
+        rep = _probe_report(path)
+        probe_reports[name] = rep
+        if not rep["ok"]:
+            log.warn(
+                f"Probe {name} ({path}) failed "
+                f"rc={rep['returncode']}: {rep['output'][:160]}"
+            )
+        return rep["version"]
+
     if not ffmpeg_ok and paths.get("ffmpeg_path"):
         p = paths["ffmpeg_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             ffmpeg_ok = True
-            ffmpeg_version = ffmpeg_version or _probe_bin_version(p)
+            ffmpeg_version = ffmpeg_version or _probe_if_needed("ffmpeg", p)
     if not aria2c_ok and paths.get("aria2c_path"):
         p = paths["aria2c_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             aria2c_ok = True
-            aria2c_version = aria2c_version or _probe_bin_version(p)
+            aria2c_version = aria2c_version or _probe_if_needed("aria2c", p)
     if not deno_ok and paths.get("deno_path"):
         p = paths["deno_path"]
         if os.path.isfile(p) and os.access(p, os.X_OK):
             deno_ok = True
-            deno_version = deno_version or _probe_bin_version(p)
+            deno_version = deno_version or _probe_if_needed("deno", p)
 
     # Pre-existing executables (bundled jniLibs .so files, system binaries)
     # carry no release tag — probe live so version fields are never blank.
     if ffmpeg_ok and not ffmpeg_version and paths.get("ffmpeg_path"):
-        ffmpeg_version = _probe_bin_version(paths["ffmpeg_path"])
+        ffmpeg_version = _probe_if_needed("ffmpeg", paths["ffmpeg_path"])
     if aria2c_ok and not aria2c_version and paths.get("aria2c_path"):
-        aria2c_version = _probe_bin_version(paths["aria2c_path"])
+        aria2c_version = _probe_if_needed("aria2c", paths["aria2c_path"])
     if deno_ok and not deno_version and paths.get("deno_path"):
-        deno_version = _probe_bin_version(paths["deno_path"])
+        deno_version = _probe_if_needed("deno", paths["deno_path"])
+
+    # One line proving the child-process environment yt-dlp will inherit.
+    # If a bundled .so later fails to spawn, compare: missing/wrong
+    # LD_LIBRARY_PATH here means the usr/lib tree never arrived.
+    log.info(
+        f"Exec env: LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH')} "
+        f"ffmpeg_ld_path={paths.get('ffmpeg_ld_path')}"
+    )
 
     # QuickJS availability (Android JS runtime)
     quickjs_ok = False
@@ -704,6 +746,14 @@ def bootstrap() -> dict:
             pass
         return "resolved"
 
+    def _probe_detail(name: str, path: str | None) -> str | None:
+        """Path plus failed-probe diagnostics (the on-device exec verdict)."""
+        rep = probe_reports.get(name)
+        if rep is not None and not rep["ok"]:
+            return (f"{path} :: probe rc={rep['returncode']}: "
+                    f"{rep['output'][:160]}")
+        return path
+
     binaries = [
         {
             "name": "yt-dlp",
@@ -717,7 +767,7 @@ def bootstrap() -> dict:
             "ok": ffmpeg_ok,
             "source": _source("ffmpeg", ffmpeg_ok, paths.get("ffmpeg_path")),
             "version": ffmpeg_version,
-            "detail": paths.get("ffmpeg_path"),
+            "detail": _probe_detail("ffmpeg", paths.get("ffmpeg_path")),
         },
         {
             "name": "aria2c",
@@ -748,7 +798,7 @@ def bootstrap() -> dict:
             "ok": deno_ok,
             "source": _source("deno", deno_ok, paths.get("deno_path")),
             "version": deno_version,
-            "detail": paths.get("deno_path"),
+            "detail": _probe_detail("deno", paths.get("deno_path")),
         },
     ]
 

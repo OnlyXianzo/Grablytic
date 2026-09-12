@@ -352,3 +352,85 @@ class TestDownloaderCrashGuard:
         assert not any("SECRET999" in m for m in logs)
         assert not any("sig=" in m for m in logs)
         assert any(m.startswith("Download config: format=") for m in logs)
+
+
+class _FailingPPYDL(_FakeYDL):
+    """Mimics ignoreerrors swallowing a post-processing failure: the
+    extractor phase succeeds, a PP logs an error, download() returns."""
+
+    def download(self, urls):
+        for h in list(self.hooks) + list(self.opts.get("progress_hooks", [])):
+            h({"status": "downloading", "downloaded_bytes": 10,
+               "total_bytes": 10, "filename": "f.mp4", "info_dict": {}})
+        self.opts["logger"].error("ERROR: ffmpeg not found")
+
+
+class TestPostprocessFailure:
+    def _run(self, tmp_path, monkeypatch, url):
+        import truestream_engine.downloader as dl_mod
+        import truestream_engine.paths as paths_mod
+
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        paths_mod.set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+        )
+        monkeypatch.setattr(dl_mod, "YoutubeDL", _FailingPPYDL)
+        sink = _Sink()
+        set_global_event_callback(sink)
+        prog_q: queue.Queue = queue.Queue()
+        res_q: queue.Queue = queue.Queue()
+        try:
+            dl_mod.download_thread(
+                url=url, download_id="ppfail",
+                progress_queue=prog_q, result_queue=res_q,
+                event_callback=sink,
+            )
+        finally:
+            dl_mod._active_downloads.pop("ppfail", None)
+        return sink
+
+    def test_single_video_pp_error_becomes_terminal_error(
+        self, tmp_path, monkeypatch, _clean_bridge
+    ):
+        sink = self._run(tmp_path, monkeypatch, "https://x.test/watch?v=abc")
+        kinds = [json.loads(r).get("event") for r in sink.events
+                 if json.loads(r).get("type") == "event"]
+        assert "finished" not in kinds
+        errs = [json.loads(r) for r in sink.events
+                if json.loads(r).get("event") == "error"]
+        assert len(errs) == 1
+        assert errs[0]["error_type"] == "ERROR_POSTPROCESS_FAILED"
+        assert errs[0]["recoverable"] is True
+
+    def test_playlist_keeps_lenient_finished(
+        self, tmp_path, monkeypatch, _clean_bridge
+    ):
+        sink = self._run(
+            tmp_path, monkeypatch, "https://x.test/playlist?list=PL123")
+        kinds = [json.loads(r).get("event") for r in sink.events
+                 if json.loads(r).get("type") == "event"]
+        assert "finished" in kinds
+        assert "error" not in kinds
+
+
+class TestProbeReport:
+    @pytest.mark.unit
+    def test_missing_binary_report(self):
+        from truestream_engine.bootstrap import _probe_report
+        rep = _probe_report("/nonexistent/bin/xyz")
+        assert rep["ok"] is False
+        assert rep["version"] is None
+        assert rep["output"] != ""
+
+    @pytest.mark.unit
+    def test_working_binary_report(self, tmp_path):
+        import stat
+        from truestream_engine.bootstrap import _probe_report
+        exe = tmp_path / "ffmpeg"
+        exe.write_text("#!/bin/sh\necho 'ffmpeg version n7.1-test'\n")
+        exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+        rep = _probe_report(str(exe))
+        assert rep["ok"] is True
+        assert rep["version"] == "ffmpeg version n7.1-test"
+        assert rep["returncode"] == 0

@@ -9,6 +9,7 @@ from yt_dlp import YoutubeDL
 from truestream_engine.opts_builder import build_ydl_opts
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.paths import get_paths
+from truestream_engine.playlist import detect_playlist
 from truestream_engine.config import coerce_config
 from truestream_engine.logger import get_logger, set_global_event_callback
 
@@ -49,6 +50,14 @@ threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
 class YDLogger:
+    """yt-dlp logger bridge. Collects error lines so single-video downloads
+    can refuse a false 'finished' when post-processing failed but
+    ignoreerrors swallowed it (playlists keep the old lenient behavior —
+    per-item errors there are normal)."""
+
+    def __init__(self):
+        self.errors: list[str] = []
+
     def debug(self, msg):
         log.debug(msg)
 
@@ -59,6 +68,7 @@ class YDLogger:
         log.warn(msg)
 
     def error(self, msg):
+        self.errors.append(str(msg)[:500])
         log.error(msg)
 
 
@@ -172,9 +182,9 @@ def download_thread(
             opts["paths"] = opts.get("paths", {})
             opts["paths"]["temp"] = get_paths()["cache_dir"]
 
-        opts["logger"] = YDLogger()
+        ydl_logger = YDLogger()
+        opts["logger"] = ydl_logger
         opts["verbose"] = True
-
         # One-line effective config: future "it just sat there" reports can
         # be triaged from this alone (wrong format? no aria2c? no JS?).
         try:
@@ -223,6 +233,51 @@ def download_thread(
                     "error_message": "Download cancelled by user",
                 })
         else:
+            # ignoreerrors=True lets post-processing failures return
+            # normally — but for a SINGLE video any logger.error means the
+            # output is broken (missing merge, failed embed), while the UI
+            # would otherwise celebrate a 'finished' with no file.
+            # Playlists keep lenient behavior: per-item errors there are
+            # normal (deleted/private entries) and must not fail the batch.
+            # Single = URL is not a playlist AND caller didn't request a
+            # multi-item pull (playlist_items other than "1").
+            try:
+                is_playlist_url = detect_playlist(url) if isinstance(url, str) else False
+            except Exception:
+                is_playlist_url = False
+            if opts.get("noplaylist") or config.get("no_playlist") or opts.get("playlist_items") == "1":
+                single = True
+            elif is_playlist_url:
+                single = False
+            else:
+                single = opts.get("playlist_items") in (None, "1")
+            if single and ydl_logger.errors:
+                last = ydl_logger.errors[-1]
+                log.error(f"Post-processing failed, failing item: {last[:200]}")
+                terminal_event = json.dumps({
+                    "type": "event",
+                    "event": "error",
+                    "download_id": download_id,
+                    "error_type": "ERROR_POSTPROCESS_FAILED",
+                    "error_message": f"Processing failed: {last[:200]}",
+                    "recoverable": True,
+                    "suggests_vpn": False,
+                })
+                if event_callback is not None:
+                    try:
+                        event_callback.onEvent(terminal_event)
+                    except Exception:
+                        pass
+                else:
+                    res_q.put({
+                        "success": False,
+                        "download_id": download_id,
+                        "error_type": "ERROR_POSTPROCESS_FAILED",
+                        "error_message": f"Processing failed: {last[:200]}",
+                        "recoverable": True,
+                        "suggests_vpn": False,
+                    })
+                return
             log.info("Download completed")
             # Terminal finished event carries the last known byte count so the
             # UI never zeroes out sizes delivered by the progress-hook

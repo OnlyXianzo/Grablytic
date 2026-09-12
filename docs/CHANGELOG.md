@@ -24,6 +24,10 @@
 - Download threads survive `BaseException` with a terminal error event
   (no more silent ghosts); per-download config summary + query-stripped
   URLs in engine logs; build-SHA in every log and report.
+- Bootstrap probe now records returncode/output (linker/permission verdict
+  for bundled binaries) + exec-environment line; single-video downloads
+  with swallowed post-processing failures report `ERROR_POSTPROCESS_FAILED`
+  instead of a false `finished` (playlists stay lenient).
 
 ### Fixed
 - Engine logs now reach Android: `logger.set_global_event_callback()` push
