@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/brand/truestream_logo.png" alt="TrueStream Logo" width="160" style="border-radius: 50%;" />
+<img src="assets/brand/truestream_logo_circle.png" alt="TrueStream Logo" width="160" />
 
 # 🎬 TrueStream
 
