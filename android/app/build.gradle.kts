@@ -113,9 +113,9 @@ flutter {
 // no helper APKs, no install prompts, no extra permissions. See file.
 apply(from = "packages.gradle.kts")
 
-// Guarantee the download task runs before native libs are merged.
+// Guarantee the download tasks run before native libs are merged.
 tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
-    .configureEach { dependsOn("downloadNativePackages") }
+    .configureEach { dependsOn("downloadNativePackages", "downloadNativeShims") }
 
 // AGP/Kotlin script analysis bug causes lintVitalAnalyzeRelease to crash on KaModule.
 tasks.matching { it.name.startsWith("lintVital") }.configureEach {

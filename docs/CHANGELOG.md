@@ -30,11 +30,13 @@
   instead of a false `finished` (playlists stay lenient).
 - `LD_LIBRARY_PATH` carries EVERY support tree (ffmpeg + deno + native
   dir); `set_paths` accepts colon-joined dirs.
-- Linker fix, for real this time: support-tree extraction recreates Unix
-  symlinks (`commons-compress`, mirroring ytdlnis). `java.util.zip` had
-  been writing link targets as text files, so EVERY versioned `.so`
-  lookup failed (`CANNOT LINK EXECUTABLE`). Marker bump forces one clean
-  re-extract on existing installs.
+- Linker fix: support-tree extraction recreates Unix symlinks
+  (`commons-compress`, mirroring ytdlnis) — `java.util.zip` had been
+  writing link targets as text files. Marker bump re-extracts once.
+- Linker, endgame: `libexpat.so.1` (proven missing on-device via the
+  linker's own verdict) ships from Termux apt at build time
+  (SHA-256-pinned `.deb`, extracted to jniLibs; MIT-licensed, Bionic
+  API 24+). Same fail-closed fetch policy as the other binaries.
 - Live per-download engine-log overlay on download cards (ytdlnis-style).
 - Extreme-but-sane logging: settings-change diffs (masked secrets),
   disk snapshots at bootstrap + download start, 25/50/75% stall
