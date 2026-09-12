@@ -34,6 +34,7 @@ class MainActivity : FlutterActivity() {
     private var methodChannel: MethodChannel? = null
     private var sharedUrl: String? = null
     private var py: Python? = null
+    private val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, EngineEventListener>()
 
     private var dataDir: String? = null
     private var ffmpegPath: String? = null
@@ -228,11 +229,18 @@ class MainActivity : FlutterActivity() {
                                                             this@MainActivity, id, pct,
                                                         )
                                                     }
+                                                    "postprocessing" -> {
+                                                        val stageLabel = obj.optString("stage_label", "Processing...")
+                                                        DownloadService.updateStage(
+                                                            this@MainActivity, id, stageLabel,
+                                                        )
+                                                    }
                                                     "finished", "error", "cancelled" -> {
                                                         val cancelled = obj.optString("event") == "cancelled"
                                                         DownloadService.done(
                                                             this@MainActivity, id, cancelled,
                                                         )
+                                                        activeCallbacks.remove(id)
                                                     }
                                                 }
                                             }
@@ -267,6 +275,10 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
 
+                            if (downloadId != null) {
+                                activeCallbacks[downloadId] = eventCallback
+                            }
+
                             // Keep-alive: user gesture (foreground) → dataSync FGS.
                             try {
                                 val title = try {
@@ -286,12 +298,18 @@ class MainActivity : FlutterActivity() {
                             val jsonStr = pyJson(startResult)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
+                            if (downloadId != null) {
+                                activeCallbacks.remove(downloadId)
+                            }
                             withContext(Dispatchers.Main) { result.error("ERROR_START_FAILED", e.message, null) }
                         }
                     }
                 }
                 "download/cancel" -> {
                     val downloadId = call.argument<String>("download_id")
+                    if (downloadId != null) {
+                        activeCallbacks.remove(downloadId)
+                    }
                     scope.launch(Dispatchers.IO) {
                         try {
                             val python = py ?: return@launch

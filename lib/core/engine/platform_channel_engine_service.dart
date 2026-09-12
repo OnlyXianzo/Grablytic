@@ -71,12 +71,29 @@ class PlatformChannelEngineService implements EngineService {
 
   @override
   Stream<Map<String, dynamic>> get progressStream =>
-      _progressCache ??= _eventChannel.receiveBroadcastStream().map((event) {
-        if (event is String) {
-          return Map<String, dynamic>.from(jsonDecode(event));
-        }
-        return Map<String, dynamic>.from(event);
-      });
+      _progressCache ??= _eventChannel
+          .receiveBroadcastStream()
+          .transform<Map<String, dynamic>>(
+            StreamTransformer.fromHandlers(
+              handleData: (event, sink) {
+                try {
+                  if (event is String) {
+                    final decoded = jsonDecode(event);
+                    if (decoded is Map) {
+                      sink.add(Map<String, dynamic>.from(decoded));
+                    }
+                  } else if (event is Map) {
+                    sink.add(Map<String, dynamic>.from(event));
+                  }
+                } catch (_) {
+                  // Malformed payload ignored safely
+                }
+              },
+              handleError: (error, stackTrace, sink) {
+                // Keep stream alive on transient platform errors
+              },
+            ),
+          );
 
   @override
   Future<Map<String, dynamic>> getFormats({

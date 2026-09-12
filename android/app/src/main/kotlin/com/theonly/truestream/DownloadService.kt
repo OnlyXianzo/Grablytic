@@ -37,6 +37,7 @@ class DownloadService : Service() {
 
     private val active = linkedMapOf<String, String>() // downloadId -> title
     private var lastPercent = -1
+    private var lastStage: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -56,12 +57,23 @@ class DownloadService : Service() {
                 val id = intent.getStringExtra(EXTRA_ID) ?: return START_NOT_STICKY
                 if (active.containsKey(id)) {
                     lastPercent = intent.getIntExtra(EXTRA_PERCENT, lastPercent)
+                    val stage = intent.getStringExtra(EXTRA_STAGE)
+                    if (stage != null) {
+                        lastStage = stage
+                    } else if (lastPercent in 0..99) {
+                        lastStage = null
+                    }
                     promote()
                 }
             }
             ACTION_DONE, ACTION_CANCEL -> {
                 active.remove(intent?.getStringExtra(EXTRA_ID))
-                if (active.isEmpty()) stopSelf() else promote()
+                if (active.isEmpty()) {
+                    lastStage = null
+                    stopSelf()
+                } else {
+                    promote()
+                }
             }
             ACTION_STOP -> stopSelf()
         }
@@ -106,9 +118,14 @@ class DownloadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val title = if (active.size == 1) active.values.first() else "${active.size} downloads"
+        val contentText = when {
+            lastStage != null -> lastStage
+            lastPercent in 0..99 -> "$lastPercent%"
+            else -> "Downloading…"
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText(if (lastPercent in 0..99) "$lastPercent%" else "Downloading…")
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(openApp)
             .setOngoing(true)
@@ -142,6 +159,7 @@ class DownloadService : Service() {
         const val EXTRA_ID = "download_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_PERCENT = "percent"
+        const val EXTRA_STAGE = "stage"
         private const val CHANNEL_ID = "truestream_downloads"
         private const val NOTIF_ID = 1001
 
@@ -159,6 +177,16 @@ class DownloadService : Service() {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_ID, downloadId)
                 putExtra(EXTRA_PERCENT, percent)
+            }
+            start(ctx, intent)
+        }
+
+        fun updateStage(ctx: Context, downloadId: String, stageLabel: String) {
+            val intent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_UPDATE
+                putExtra(EXTRA_ID, downloadId)
+                putExtra(EXTRA_STAGE, stageLabel)
+                putExtra(EXTRA_PERCENT, 99)
             }
             start(ctx, intent)
         }

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
@@ -121,6 +122,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
   void addDownload(DownloadItem item) {
     state = [...state, item];
+    _persistRecord(item);
   }
 
   void updateProgress(String id, double progress, int downloadedBytes) {
@@ -160,8 +162,6 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       final downloaded = event['downloaded_bytes'] as int? ?? 0;
       final total = event['total_bytes'] as int? ?? 0;
       final progress = total > 0 ? downloaded / total : 0.0;
-      updateProgress(downloadId, progress, downloaded);
-
       final speed = (event['speed'] as num?)?.toDouble() ?? 0;
       final eta = event['eta'] as int? ?? -1;
       state = [
@@ -211,6 +211,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ];
     } else if (eventType == 'finished') {
       final filesize = event['filesize_bytes'] as int? ?? 0;
+      final filePath = event['file_path'] as String?;
       final sizeStr = _formatFilesize(filesize);
       // Terminal outcome — one line per download (never per-progress) so
       // diagnostics reports always show what happened. ID + outcome only,
@@ -228,6 +229,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               progress: 1.0,
               downloadedBytes: filesize,
               totalBytes: filesize,
+              filePath: filePath ?? d.filePath,
               speed: 0,
               eta: -1,
               clearStage: true,
@@ -236,6 +238,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               completedDate: 'Today',
             ),
       ];
+      final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
+      _persistRecord(item);
     } else if (eventType == 'error') {
       final errorType = event['error_type'] as String?;
       final errorMessage = event['error_message'] as String?;
@@ -260,6 +264,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               suggestsVpn: suggestsVpn,
             ),
       ];
+      final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
+      _persistRecord(item);
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
       state = [
@@ -278,7 +284,42 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               recoveryAction: 'none',
             ),
       ];
+      final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
+      _persistRecord(item);
     }
+  }
+
+  void _persistRecord(DownloadItem item) {
+    try {
+      final record = DownloadRecord(
+        id: item.id,
+        url: item.url,
+        title: item.title,
+        platform: _derivePlatform(item.url),
+        format: item.config?['format']?.toString(),
+        quality: item.config?['quality']?.toString(),
+        fileSize: item.totalBytes > 0
+            ? item.totalBytes
+            : (item.downloadedBytes > 0 ? item.downloadedBytes : null),
+        filePath: item.filePath,
+        status: item.status,
+        progress: item.progress,
+        timestamp: item.addedAt.toIso8601String(),
+        thumbnailUrl: item.thumbnailUrl,
+      );
+      DownloadHistoryDb.instance.insert(record).catchError((_) => 0);
+    } catch (_) {}
+  }
+
+  static String _derivePlatform(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('youtu')) return 'youtube';
+    if (lower.contains('tiktok')) return 'tiktok';
+    if (lower.contains('instagram')) return 'instagram';
+    if (lower.contains('twitter') || lower.contains('x.com')) return 'twitter';
+    if (lower.contains('facebook') || lower.contains('fb.com')) return 'facebook';
+    if (lower.contains('reddit')) return 'reddit';
+    return 'web';
   }
 
   void retryDownload(String id) {
@@ -344,9 +385,14 @@ final downloadProvider =
     StateNotifierProvider<DownloadNotifier, List<DownloadItem>>((ref) {
   final engine = ref.watch(engineProvider);
   final notifier = DownloadNotifier(engine);
-  final subscription = engine.progressStream.listen((event) {
-    notifier.handleProgressEvent(event);
-  });
+  final subscription = engine.progressStream.listen(
+    (event) {
+      notifier.handleProgressEvent(event);
+    },
+    onError: (err, stack) {
+      AppLogger.warn('Progress stream error: $err', tag: 'download');
+    },
+  );
   ref.onDispose(() {
     subscription.cancel();
   });

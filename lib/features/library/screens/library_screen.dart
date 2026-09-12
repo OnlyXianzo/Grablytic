@@ -540,6 +540,33 @@ class _LibraryGridCard extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                  ] else if (isDownloading) ...[
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              item.stageLabel != null
+                                  ? item.stageLabel!
+                                  : (item.totalBytes > 0
+                                      ? '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}'
+                                      : '${(item.progress * 100).toInt()}% downloading'),
+                              style: textTheme.mono.copyWith(
+                                fontSize: 10,
+                                color: colorScheme.onPrimaryContainer,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ] else ...[
                     Row(
                       children: [
@@ -550,7 +577,7 @@ class _LibraryGridCard extends ConsumerWidget {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            item.fileSize ?? 'N/A',
+                            item.fileSize ?? 'Completed',
                             style: textTheme.mono.copyWith(
                               fontSize: 10,
                               color: colorScheme.onPrimaryContainer,
@@ -736,6 +763,37 @@ class _LibraryItem extends ConsumerWidget {
                         minHeight: 4,
                       ),
                     ),
+                    if (item.stageLabel != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.hourglass_top,
+                                    size: 11,
+                                    color: colorScheme.onPrimaryContainer),
+                                const SizedBox(width: 4),
+                                Text(
+                                  item.stageLabel!,
+                                  style: textTheme.labelSmall?.copyWith(
+                                    fontSize: 10,
+                                    color: colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -747,7 +805,9 @@ class _LibraryItem extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          '${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}',
+                          item.speed > 0
+                              ? '${_formatSpeed(item.speed)} · ${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}'
+                              : '${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -819,10 +879,18 @@ class _LibraryItem extends ConsumerWidget {
       ),
     );
   }
+}
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+}
+
+String _formatSpeed(double bytesPerSecond) {
+  if (bytesPerSecond <= 0) return '—';
+  if (bytesPerSecond < 1048576) {
+    return '${(bytesPerSecond / 1024).toStringAsFixed(0)} KB/s';
   }
+  return '${(bytesPerSecond / 1048576).toStringAsFixed(1)} MB/s';
 }

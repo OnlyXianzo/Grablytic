@@ -103,5 +103,22 @@ void main() {
       });
       expect(n.state.single.progress, 0);
     });
+
+    test('finished event captures file_path and updates state', () {
+      final n = _notifier();
+      _seed(n);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'finished',
+        'download_id': 'dl-1',
+        'filesize_bytes': 10240,
+        'file_path': '/storage/emulated/0/Download/TrueStream/video.mkv',
+      });
+      final item = n.state.single;
+      expect(item.status, 'completed');
+      expect(item.filePath, '/storage/emulated/0/Download/TrueStream/video.mkv');
+      expect(item.downloadedBytes, 10240);
+      expect(item.totalBytes, 10240);
+    });
   });
 }

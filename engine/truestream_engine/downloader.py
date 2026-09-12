@@ -50,19 +50,43 @@ threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
 
+import re
+
+_PATH_PATTERNS = [
+    re.compile(r'\[download\]\s+(.*?)\s+has already been downloaded'),
+    re.compile(r'\[download\]\s+Destination:\s+(.*)'),
+    re.compile(r'\[Merger\]\s+Merging formats into\s+"([^"]+)"'),
+    re.compile(r'\[MoveFiles\]\s+Moving file.*?\s+to\s+"?([^"]+)"?'),
+    re.compile(r'\[EmbedThumbnail\]\s+ffmpeg:\s+Adding thumbnail to\s+"([^"]+)"'),
+    re.compile(r'\[Metadata\]\s+Adding metadata to\s+"([^"]+)"'),
+    re.compile(r'\[FixupM3u8\]\s+Fixing code of\s+"([^"]+)"'),
+]
+
+
 class YDLogger:
-    """yt-dlp logger bridge. Collects error lines so single-video downloads
-    can refuse a false 'finished' when post-processing failed but
-    ignoreerrors swallowed it (playlists keep the old lenient behavior —
-    per-item errors there are normal)."""
+    """yt-dlp logger bridge. Collects error lines and tracks output file paths."""
 
     def __init__(self):
         self.errors: list[str] = []
+        self.output_files: list[str] = []
+
+    def _extract_path(self, msg):
+        if not isinstance(msg, str):
+            return
+        for pat in _PATH_PATTERNS:
+            m = pat.search(msg)
+            if m:
+                candidate = m.group(1).strip().strip('"').strip("'")
+                if candidate and candidate not in self.output_files:
+                    self.output_files.append(candidate)
+                break
 
     def debug(self, msg):
+        self._extract_path(msg)
         log.debug(msg)
 
     def info(self, msg):
+        self._extract_path(msg)
         log.info(msg)
 
     def warning(self, msg):
@@ -73,20 +97,15 @@ class YDLogger:
         log.error(msg)
 
 
-def _last_known_bytes(prog_q) -> int:
-    """Best-effort final size from buffered progress-hook events.
-
-    The progress hook already reported `total_bytes`/`filesize_bytes` during
-    the transfer; the terminal event re-attaches the largest seen value so
-    consumers of the `filesize_bytes` contract never see 0 after a good
-    download. Never raises — returns 0 when nothing was observed.
-    """
-    last = 0
+def _last_known_file_info(prog_q) -> tuple[int, str | None]:
+    """Best-effort final size and file path from buffered progress-hook events."""
+    last_bytes = 0
+    last_file = None
     try:
         with prog_q.mutex:
             items = list(prog_q.queue)
     except Exception:
-        return 0
+        return 0, None
     for raw in items:
         try:
             ev = json.loads(raw) if isinstance(raw, str) else raw
@@ -99,9 +118,18 @@ def _last_known_bytes(prog_q) -> int:
                 val = ev.get(key)
             except Exception:
                 continue
-            if isinstance(val, int) and val > last:
-                last = val
-    return last
+            if isinstance(val, int) and val > last_bytes:
+                last_bytes = val
+        fn = ev.get("filename")
+        if isinstance(fn, str) and fn:
+            last_file = fn
+    return last_bytes, last_file
+
+
+def _last_known_bytes(prog_q) -> int:
+    """Best-effort final size from buffered progress-hook events."""
+    bytes_val, _ = _last_known_file_info(prog_q)
+    return bytes_val
 
 
 def download_thread(
@@ -292,16 +320,33 @@ def download_thread(
                     })
                 return
             log.info("Download completed")
-            # Terminal finished event carries the last known byte count so the
-            # UI never zeroes out sizes delivered by the progress-hook
-            # "finished" event (re-audit #4: filesize_bytes contract).
-            final_bytes = _last_known_bytes(prog_q)
+            # Terminal finished event carries the last known byte count and file path
+            # so the UI never zeroes out sizes or file paths (filesize_bytes contract).
+            final_bytes, prog_file = _last_known_file_info(prog_q)
+
+            final_path = None
+            for p in reversed(ydl_logger.output_files):
+                if os.path.isfile(p):
+                    final_path = p
+                    break
+            if not final_path and prog_file and os.path.isfile(prog_file):
+                final_path = prog_file
+
+            if final_path and os.path.isfile(final_path):
+                try:
+                    disk_size = os.path.getsize(final_path)
+                    if disk_size > 0 and (final_bytes <= 0 or disk_size > final_bytes):
+                        final_bytes = disk_size
+                except Exception:
+                    pass
+
             terminal_event = json.dumps({
                 "type": "event",
                 "event": "finished",
                 "download_id": download_id,
                 "filesize_bytes": final_bytes,
                 "total_bytes": final_bytes,
+                "file_path": final_path,
             })
             if event_callback is not None:
                 _emit_event(event_callback, terminal_event)
@@ -310,6 +355,7 @@ def download_thread(
                     "success": True,
                     "download_id": download_id,
                     "filesize_bytes": final_bytes,
+                    "file_path": final_path,
                 })
 
     except KeyboardInterrupt:

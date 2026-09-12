@@ -116,6 +116,8 @@ class TrueStreamApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Eagerly activate log ingestion so engine logs stream into LogBuffer
+    ref.watch(logIngesterProvider);
     final settings = ref.watch(settingsProvider);
     return MaterialApp(
       title: 'TrueStream',
