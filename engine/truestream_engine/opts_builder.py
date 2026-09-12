@@ -130,6 +130,16 @@ def build_ydl_opts(
     is_audio = override_audio if override_audio is not None else cfg["audio_only"]
     container = override_container or cfg["container"]
 
+    if cfg.get("organize_by_folder"):
+        # Video/ vs Audio/ split. Relative subdir keeps the template
+        # inside the output dir (passes _is_safe_outtmpl); yt-dlp
+        # creates the subdirectories automatically.
+        subdir = "Audio" if is_audio else "Video"
+        tmpl = f"{subdir}/{tmpl}"
+        if not _is_safe_outtmpl(tmpl):
+            _tmpl_log.warn("Organize-by-folder template rejected, using default")
+            tmpl = DEFAULT_CFG["output_tmpl"]
+
     opts: dict = {
         "format": fmt,
         "paths": {"home": paths["output_dir"] or "."},
@@ -172,8 +182,13 @@ def build_ydl_opts(
     if cfg.get("geo_bypass"):
         opts["geo_bypass"] = True
 
-    if cfg.get("use_archive") and cfg.get("archive_path"):
-        opts["download_archive"] = cfg["archive_path"]
+    if cfg.get("use_archive"):
+        import os as _os
+
+        archive = cfg.get("archive_path") or _os.path.join(
+            paths.get("data_dir") or ".", "download_archive.txt"
+        )
+        opts["download_archive"] = archive
 
     sleep = cfg.get("sleep_interval", "0")
     if sleep != "0":

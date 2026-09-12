@@ -239,6 +239,24 @@ def test_subtitles_sidecar_without_embed():
     assert "FFmpegEmbedSubtitle" not in keys
 
 
+def test_organize_by_folder_splits_audio_video():
+    v = build_ydl_opts(config={"organize_by_folder": True, "audio_only": False})
+    assert v["outtmpl"]["default"].startswith("Video/")
+    a = build_ydl_opts(config={"organize_by_folder": True, "audio_only": True})
+    assert a["outtmpl"]["default"].startswith("Audio/")
+    plain = build_ydl_opts(config={"organize_by_folder": False})
+    assert "/" not in plain["outtmpl"]["default"].split("%")[0]
+
+
+def test_use_archive_defaults_to_data_dir():
+    opts = build_ydl_opts(config={"use_archive": True})
+    assert opts.get("download_archive") == "/tmp/data/download_archive.txt"
+    opts2 = build_ydl_opts(config={"use_archive": True, "archive_path": "/tmp/x.txt"})
+    assert opts2.get("download_archive") == "/tmp/x.txt"
+    opts3 = build_ydl_opts(config={"use_archive": False})
+    assert "download_archive" not in opts3
+
+
 def test_merge_output_format_mp4():
     opts = build_ydl_opts(config={"container": "mp4"})
     assert opts["merge_output_format"] == "mp4"

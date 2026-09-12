@@ -76,6 +76,8 @@ DEFAULT_CFG = {
     # ── Archive ─────────────────────────────────────────────────────────
     "use_archive": False,
     "archive_path": None,
+    # Subfolder split: Video/<name> vs Audio/<name> under output_dir.
+    "organize_by_folder": False,
     # ── Live ────────────────────────────────────────────────────────────
     "live_from_start": False,
     # ── Auth / bypass ───────────────────────────────────────────────────

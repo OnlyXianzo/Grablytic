@@ -28,6 +28,17 @@ void main() {
       expect(cfg['write_description'], isTrue);
     });
 
+    test('forwards organize-by-folder and archive flags', () {
+      const s = AppSettings(archiveByFolder: true, downloadArchive: true);
+      final cfg = settingsDownloadConfig(s);
+      expect(cfg['organize_by_folder'], isTrue);
+      expect(cfg['use_archive'], isTrue);
+      const off = AppSettings();
+      final cfgOff = settingsDownloadConfig(off);
+      expect(cfgOff['organize_by_folder'], isTrue); // default-on
+      expect(cfgOff['use_archive'], isFalse);
+    });
+
     test('drops null/empty proxy and speed so engine defaults survive', () {
       const s = AppSettings();
       final cfg = settingsDownloadConfig(s);

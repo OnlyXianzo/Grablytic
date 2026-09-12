@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/database/download_history_db.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/format_selector.dart';
+import '../../../core/utils/history_guard.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/preset_provider.dart';
@@ -197,12 +199,41 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  String _formatSize(int? bytes) {    if (bytes == null) return 'Unknown size';
+  String _formatSize(int? bytes) {
+    if (bytes == null) return 'Unknown size';
     final double mb = bytes / (1024 * 1024);
     if (mb > 1024) {
       return '${(mb / 1024).toStringAsFixed(1)} GB';
     }
     return '${mb.toStringAsFixed(0)} MB';
+  }
+
+  /// Confirm dialog when the video is already in history. Returns true
+  /// when the user explicitly chooses to download again.
+  Future<bool> _confirmRedownload(DownloadRecord dup) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Already downloaded'),
+        content: Text(
+          '“${dup.title}” is already in your library'
+          '${dup.format != null ? ' (${dup.format})' : ''}.\n\n'
+          'Downloading again will replace the existing file.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Download again'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<void> _startDownload() async {
@@ -215,6 +246,20 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         const SnackBar(content: Text('Download already in progress for this link')),
       );
       return;
+    }
+
+    // Already-downloaded / duplicate guard: warn instead of silently
+    // replacing. Matches by exact URL or YouTube video id, so a video
+    // previously saved as audio (or vice versa) still warns.
+    try {
+      final completed = await DownloadHistoryDb.instance.getCompleted();
+      final dup = findDuplicate(completed, widget.url);
+      if (dup != null && mounted) {
+        final again = await _confirmRedownload(dup);
+        if (!mounted || !again) return;
+      }
+    } catch (_) {
+      // History unavailable — proceed without the guard, never block.
     }
 
     AppLogger.info('User initiated download for url: ${widget.url}', tag: 'FormatPickerScreen');

@@ -160,6 +160,20 @@ class DownloadHistoryDb {
     return DownloadRecord.fromMap(rows.first);
   }
 
+  /// Completed records for pre-flight duplicate / overwrite checks.
+  /// Video-id matching happens in Dart (history_guard) — no migration.
+  Future<List<DownloadRecord>> getCompleted({int limit = 500}) async {
+    final db = await database;
+    final rows = await db.query(
+      'downloads',
+      where: 'status = ?',
+      whereArgs: ['completed'],
+      orderBy: 'timestamp DESC',
+      limit: limit,
+    );
+    return rows.map((r) => DownloadRecord.fromMap(r)).toList();
+  }
+
   Future<int> clearAll() async {
     final db = await database;
     return db.delete('downloads');

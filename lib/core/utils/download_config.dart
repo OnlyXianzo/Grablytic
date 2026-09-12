@@ -19,6 +19,8 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
     'aria2c_chunks': settings.aria2cChunks,
     'split_chapters': settings.splitChapters,
     'write_description': settings.saveDescription,
+    'organize_by_folder': settings.archiveByFolder,
+    'use_archive': settings.downloadArchive,
   };
   final maxSpeed = settings.aria2cMaxSpeed;
   if (maxSpeed != null && maxSpeed.trim().isNotEmpty) {
