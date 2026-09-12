@@ -496,6 +496,49 @@ class _DownloadCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            '${_formatSpeed(item.speed)} · ETA ${_formatEta(item.eta)}',
+                            style: textTheme.mono.copyWith(
+                              color: colorScheme.outline,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (item.stageLabel != null) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer.withValues(
+                                alpha: 0.5),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.hourglass_top,
+                                  size: 12,
+                                  color: colorScheme.onPrimaryContainer),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  item.stageLabel!,
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colorScheme.onPrimaryContainer,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
@@ -593,6 +636,22 @@ class _DownloadCard extends StatelessWidget {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
     return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+  }
+
+  String _formatSpeed(double bytesPerSecond) {
+    if (bytesPerSecond <= 0) return '—';
+    if (bytesPerSecond < 1048576) {
+      return '${(bytesPerSecond / 1024).toStringAsFixed(0)} KB/s';
+    }
+    return '${(bytesPerSecond / 1048576).toStringAsFixed(1)} MB/s';
+  }
+
+  String _formatEta(int seconds) {
+    if (seconds < 0) return '--:--';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    if (m >= 60) return '${m ~/ 60}h ${m % 60}m';
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 }
 

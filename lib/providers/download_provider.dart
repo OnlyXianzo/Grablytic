@@ -11,6 +11,14 @@ class DownloadItem {
   final double progress;
   final int downloadedBytes;
   final int totalBytes;
+  /// Current transfer speed in bytes/second (0 when unknown/stalled).
+  final double speed;
+  /// Estimated seconds remaining (-1 when unknown).
+  final int eta;
+  /// Post-processing stage key (merging, embedding_thumbnail, …) or null
+  /// while plain downloading.
+  final String? stage;
+  final String? stageLabel;
   final String? thumbnailUrl;
   final String? filePath;
   final DateTime addedAt;
@@ -31,6 +39,10 @@ class DownloadItem {
     this.progress = 0,
     this.downloadedBytes = 0,
     this.totalBytes = 0,
+    this.speed = 0,
+    this.eta = -1,
+    this.stage,
+    this.stageLabel,
     this.thumbnailUrl,
     this.filePath,
     DateTime? addedAt,
@@ -43,6 +55,54 @@ class DownloadItem {
     this.config,
     this.networkType,
   }) : addedAt = addedAt ?? DateTime.now();
+
+  DownloadItem copyWith({
+    String? status,
+    double? progress,
+    int? downloadedBytes,
+    int? totalBytes,
+    double? speed,
+    int? eta,
+    String? stage,
+    bool clearStage = false,
+    String? stageLabel,
+    bool clearStageLabel = false,
+    String? thumbnailUrl,
+    String? filePath,
+    String? fileSize,
+    String? completedDate,
+    String? errorType,
+    String? errorMessage,
+    String? recoveryAction,
+    bool? suggestsVpn,
+    Map<String, dynamic>? config,
+    String? networkType,
+  }) {
+    return DownloadItem(
+      id: id,
+      title: title,
+      url: url,
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      totalBytes: totalBytes ?? this.totalBytes,
+      speed: speed ?? this.speed,
+      eta: eta ?? this.eta,
+      stage: clearStage ? null : (stage ?? this.stage),
+      stageLabel: clearStageLabel ? null : (stageLabel ?? this.stageLabel),
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      filePath: filePath ?? this.filePath,
+      addedAt: addedAt,
+      fileSize: fileSize ?? this.fileSize,
+      completedDate: completedDate ?? this.completedDate,
+      errorType: errorType ?? this.errorType,
+      errorMessage: errorMessage ?? this.errorMessage,
+      recoveryAction: recoveryAction ?? this.recoveryAction,
+      suggestsVpn: suggestsVpn ?? this.suggestsVpn,
+      config: config ?? this.config,
+      networkType: networkType ?? this.networkType,
+    );
+  }
 }
 
 class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
@@ -64,29 +124,22 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void updateProgress(String id, double progress, int downloadedBytes) {
-    state = state.map((d) {
-      if (d.id != id) return d;
-      // Progress events (including per-stream completions) must never flip
-      // status to 'completed' — only the terminal 'finished' event does that
-      // (after FFmpeg merge + post-processing). Hold at 99% meanwhile.
-      final isActive = d.status == 'downloading' || d.status == 'pending';
-      return DownloadItem(
-        id: d.id,
-        title: d.title,
-        url: d.url,
-        status: isActive ? 'downloading' : d.status,
-        progress: progress.clamp(0.0, 0.99),
-        downloadedBytes: downloadedBytes,
-        totalBytes: d.totalBytes,
-        thumbnailUrl: d.thumbnailUrl,
-        filePath: d.filePath,
-        addedAt: d.addedAt,
-        fileSize: d.fileSize,
-        completedDate: d.completedDate,
-        config: d.config,
-        networkType: d.networkType,
-      );
-    }).toList();
+    state = [
+      for (final d in state)
+        if (d.id != id)
+          d
+        else
+          // Progress events (including per-stream completions) must never
+          // flip status to 'completed' — only the terminal 'finished' event
+          // does that (after FFmpeg merge + post-processing). Hold at 99%.
+          d.copyWith(
+            status: (d.status == 'downloading' || d.status == 'pending')
+                ? 'downloading'
+                : d.status,
+            progress: progress.clamp(0.0, 0.99),
+            downloadedBytes: downloadedBytes,
+          ),
+    ];
   }
 
   void handleProgressEvent(Map<String, dynamic> event) {
@@ -109,46 +162,53 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       final progress = total > 0 ? downloaded / total : 0.0;
       updateProgress(downloadId, progress, downloaded);
 
-      state = state.map((d) {
-        if (d.id != downloadId) return d;
-        return DownloadItem(
-          id: d.id,
-          title: d.title,
-          url: d.url,
-          status: 'downloading',
-          progress: progress.clamp(0.0, 0.99),
-          downloadedBytes: downloaded,
-          totalBytes: total,
-          thumbnailUrl: d.thumbnailUrl,
-          filePath: d.filePath,
-          addedAt: d.addedAt,
-          config: d.config,
-          networkType: d.networkType,
-        );
-      }).toList();
+      final speed = (event['speed'] as num?)?.toDouble() ?? 0;
+      final eta = event['eta'] as int? ?? -1;
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(
+              status: 'downloading',
+              progress: progress.clamp(0.0, 0.99),
+              downloadedBytes: downloaded,
+              totalBytes: total,
+              speed: speed,
+              eta: eta,
+              clearStage: true,
+              clearStageLabel: true,
+            ),
+      ];
+    } else if (eventType == 'postprocessing') {
+      // yt-dlp entered a post-processing stage (merging, embedding, …).
+      // Surfaced on the card so a 99% item visibly keeps working.
+      final stage = event['stage'] as String?;
+      final stageLabel = event['stage_label'] as String?;
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(stage: stage, stageLabel: stageLabel),
+      ];
     } else if (eventType == 'stream_finished') {
       // One stream (e.g. DASH video) landed; more may follow, then FFmpeg
       // merge + post-processing. Record bytes, hold below 100%, stay
       // 'downloading' — only terminal 'finished' completes the item.
       final filesize = event['filesize_bytes'] as int? ?? 0;
-      state = state.map((d) {
-        if (d.id != downloadId) return d;
-        final known = filesize > d.totalBytes ? filesize : d.totalBytes;
-        return DownloadItem(
-          id: d.id,
-          title: d.title,
-          url: d.url,
-          status: 'downloading',
-          progress: d.progress.clamp(0.0, 0.99),
-          downloadedBytes: filesize > 0 ? filesize : d.downloadedBytes,
-          totalBytes: known,
-          thumbnailUrl: d.thumbnailUrl,
-          filePath: d.filePath,
-          addedAt: d.addedAt,
-          config: d.config,
-          networkType: d.networkType,
-        );
-      }).toList();
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(
+              status: 'downloading',
+              progress: d.progress.clamp(0.0, 0.99),
+              downloadedBytes: filesize > 0 ? filesize : d.downloadedBytes,
+              totalBytes: filesize > d.totalBytes ? filesize : d.totalBytes,
+            ),
+      ];
     } else if (eventType == 'finished') {
       final filesize = event['filesize_bytes'] as int? ?? 0;
       final sizeStr = _formatFilesize(filesize);
@@ -158,24 +218,24 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       AppLogger.info('Download finished: $downloadId ($sizeStr)',
           tag: 'download');
 
-      state = state.map((d) {
-        if (d.id != downloadId) return d;
-        return DownloadItem(
-          id: d.id,
-          title: d.title,
-          url: d.url,
-          status: 'completed',
-          progress: 1.0,
-          downloadedBytes: filesize,
-          totalBytes: filesize,
-          thumbnailUrl: d.thumbnailUrl,
-          addedAt: d.addedAt,
-          fileSize: sizeStr,
-          completedDate: 'Today',
-          config: d.config,
-          networkType: d.networkType,
-        );
-      }).toList();
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(
+              status: 'completed',
+              progress: 1.0,
+              downloadedBytes: filesize,
+              totalBytes: filesize,
+              speed: 0,
+              eta: -1,
+              clearStage: true,
+              clearStageLabel: true,
+              fileSize: sizeStr,
+              completedDate: 'Today',
+            ),
+      ];
     } else if (eventType == 'error') {
       final errorType = event['error_type'] as String?;
       final errorMessage = event['error_message'] as String?;
@@ -184,46 +244,40 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           'Download failed: $downloadId [$errorType]${suggestsVpn ? ' (VPN may help)' : ''}',
           tag: 'download');
 
-      state = state.map((d) {
-        if (d.id != downloadId) return d;
-        return DownloadItem(
-          id: d.id,
-          title: d.title,
-          url: d.url,
-          status: 'error',
-          progress: d.progress,
-          downloadedBytes: d.downloadedBytes,
-          totalBytes: d.totalBytes,
-          thumbnailUrl: d.thumbnailUrl,
-          addedAt: d.addedAt,
-          errorType: errorType,
-          errorMessage: errorMessage,
-          suggestsVpn: suggestsVpn,
-          config: d.config,
-          networkType: d.networkType,
-        );
-      }).toList();
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(
+              status: 'error',
+              speed: 0,
+              eta: -1,
+              clearStage: true,
+              clearStageLabel: true,
+              errorType: errorType,
+              errorMessage: errorMessage,
+              suggestsVpn: suggestsVpn,
+            ),
+      ];
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
-      state = state.map((d) {
-        if (d.id != downloadId) return d;
-        return DownloadItem(
-          id: d.id,
-          title: d.title,
-          url: d.url,
-          status: 'cancelled',
-          progress: d.progress,
-          downloadedBytes: d.downloadedBytes,
-          totalBytes: d.totalBytes,
-          thumbnailUrl: d.thumbnailUrl,
-          addedAt: d.addedAt,
-          errorType: 'ERROR_CANCELLED',
-          errorMessage: 'Download cancelled',
-          recoveryAction: 'none',
-          config: d.config,
-          networkType: d.networkType,
-        );
-      }).toList();
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(
+              status: 'cancelled',
+              speed: 0,
+              eta: -1,
+              clearStage: true,
+              clearStageLabel: true,
+              errorType: 'ERROR_CANCELLED',
+              errorMessage: 'Download cancelled',
+              recoveryAction: 'none',
+            ),
+      ];
     }
   }
 
@@ -233,22 +287,22 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
     final item = state[index];
 
-    state = state.map((d) {
-      if (d.id != id) return d;
-      return DownloadItem(
-        id: d.id,
-        title: d.title,
-        url: d.url,
-        status: 'downloading',
-        progress: 0,
-        downloadedBytes: 0,
-        totalBytes: 0,
-        thumbnailUrl: d.thumbnailUrl,
-        addedAt: d.addedAt,
-        config: d.config,
-        networkType: d.networkType,
-      );
-    }).toList();
+    state = [
+      for (final d in state)
+        if (d.id != id)
+          d
+        else
+          d.copyWith(
+            status: 'downloading',
+            progress: 0,
+            downloadedBytes: 0,
+            totalBytes: 0,
+            speed: 0,
+            eta: -1,
+            clearStage: true,
+            clearStageLabel: true,
+          ),
+    ];
 
     _engine.startDownload(
       url: item.url,
@@ -260,25 +314,22 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
   void cancelDownload(String id) {
     _engine.cancelDownload(id);
-    state = state.map((d) {
-      if (d.id != id) return d;
-      return DownloadItem(
-        id: d.id,
-        title: d.title,
-        url: d.url,
-        status: 'cancelled',
-        progress: d.progress,
-        downloadedBytes: d.downloadedBytes,
-        totalBytes: d.totalBytes,
-        thumbnailUrl: d.thumbnailUrl,
-        addedAt: d.addedAt,
-        errorType: 'ERROR_CANCELLED',
-        errorMessage: 'Download cancelled',
-        recoveryAction: 'none',
-        config: d.config,
-        networkType: d.networkType,
-      );
-    }).toList();
+    state = [
+      for (final d in state)
+        if (d.id != id)
+          d
+        else
+          d.copyWith(
+            status: 'cancelled',
+            speed: 0,
+            eta: -1,
+            clearStage: true,
+            clearStageLabel: true,
+            errorType: 'ERROR_CANCELLED',
+            errorMessage: 'Download cancelled',
+            recoveryAction: 'none',
+          ),
+    ];
   }
 
   String _formatFilesize(int bytes) {
