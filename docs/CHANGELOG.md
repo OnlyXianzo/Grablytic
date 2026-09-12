@@ -4,6 +4,13 @@
 
 ## Unreleased — night loop 2026-09-11
 
+### Security (applied)
+- SEC-01: backups locked down (`allowBackup=false` + extraction/backup
+  rules excluding prefs, databases, cookies, logs).
+- SEC-02: `sig=`/`lsig=`/`signature` redaction in Dart logs (disk + buffer
+  entries) and engine `bridge_event` before disk.
+- SEC-03: 8 KB cap on inbound SEND-intent text.
+
 ### Fixed
 - Engine logs now reach Android: `logger.set_global_event_callback()` push
   bridge + wiring in `start_download`; file logging (`server_logs.log`,

@@ -251,3 +251,49 @@ class TestCallbackEndToEnd:
         assert finished[0]["filesize_bytes"] == 100
         # Callback path leaves the result queue for desktop flows.
         assert res_q.empty()
+
+
+class TestBridgeSanitization:
+    """SEC-02 (engine side): signed URL params never hit server_logs.log."""
+
+    def test_bridge_event_masks_sig_before_disk(self, tmp_path):
+        from truestream_engine import persistent as persist_mod
+        from truestream_engine.persistent import (
+            init_persistent_logging,
+            bridge_event,
+            server_log_path,
+            flush_now,
+        )
+        import logging
+
+        prev_dir = persist_mod._configured_dir
+        try:
+            init_persistent_logging(str(tmp_path))
+            bridge_event(
+                logging.INFO,
+                "fetch https://x.test/watch?v=abc&sig=SECRET123&lsig=HUNTER2",
+            )
+            flush_now()
+            content = open(server_log_path()).read()
+            assert "SECRET123" not in content
+            assert "HUNTER2" not in content
+            assert "***REDACTED***" in content
+            assert "v=abc" in content
+        finally:
+            persist_mod._configured_dir = prev_dir
+
+    def test_bridge_event_uninitialized_is_silent(self):
+        from truestream_engine import persistent as persist_mod
+        from truestream_engine.persistent import bridge_event
+        import logging
+
+        prev = (persist_mod._configured_dir, persist_mod._std_logger,
+                persist_mod._handler)
+        persist_mod._configured_dir = None
+        persist_mod._std_logger = None
+        persist_mod._handler = None
+        try:
+            bridge_event(logging.ERROR, "no handler configured")
+        finally:
+            (persist_mod._configured_dir, persist_mod._std_logger,
+             persist_mod._handler) = prev

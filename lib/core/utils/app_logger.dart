@@ -196,12 +196,16 @@ class AppLogger {
   static String _redact(String input) {
     var out = input;
     // Query-string / JSON tokens, cookies, auth headers, proxy creds.
+    // The sig family covers signed-URL params (?sig=, &lsig=, signature=)
+    // that YouTube and other hosts embed in share/clipboard URLs — without
+    // these, pasted URLs leak signing secrets into logs and reports.
     const patterns = [
       r"""(token\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(api[_-]?key\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(cookie\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(password\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(po[_-]?token\s*[:=]\s*["']?)([^"'\s,}]+)""",
+      r"""((?:lsig|sig|signature)\s*[:=]\s*["']?)([^"'\s,};&]+)""",
     ];
     for (final p in patterns) {
       out = out.replaceAllMapped(RegExp(p, caseSensitive: false), (m) => '${m.group(1)}***REDACTED***');
@@ -250,12 +254,15 @@ class AppLogger {
 
   static LogEntry _buildEntry(String level, String message,
       {String? tag, Object? error}) {
+    // Buffer entries feed the live viewer + clipboard/file exports, so they
+    // get the same redaction as disk lines (SEC-02). Search still matches
+    // the non-secret remainder of the message.
     return LogEntry(
       timestamp: DateTime.now(),
       level: _parseLogLevel(level),
       logger: tag ?? 'app',
-      message: message,
-      exception: error?.toString(),
+      message: _redact(message),
+      exception: error != null ? _redact(error.toString()) : null,
       source: 'ui',
     );
   }

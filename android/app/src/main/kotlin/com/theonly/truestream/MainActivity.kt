@@ -38,14 +38,17 @@ class MainActivity : FlutterActivity() {
     private fun handleSendText(intent: Intent?) {
         if (intent == null) return
         if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedText ->
-                val urlRegex = "(https?://[\\w\\d:#@%/;$~()'*&+-=\\?\\.\\!\\[\\]]+)".toRegex()
-                val match = urlRegex.find(sharedText)
-                if (match != null) {
-                    sharedUrl = match.value
-                    scope.launch(Dispatchers.Main) {
-                        methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to sharedUrl))
-                    }
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+            // SEC-03: cap inbound share text — a multi-MB EXTRA_TEXT from a
+            // malicious app would otherwise ride into regex + UI state.
+            // 8 KB still fits any real URL several times over.
+            if (sharedText.length > 8192) return
+            val urlRegex = "(https?://[\\w\\d:#@%/;$~()'*&+-=\\?\\.\\!\\[\\]]+)".toRegex()
+            val match = urlRegex.find(sharedText)
+            if (match != null) {
+                sharedUrl = match.value
+                scope.launch(Dispatchers.Main) {
+                    methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to sharedUrl))
                 }
             }
         }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy backup rules for API 30 and lower (SEC-01). Mirrors
+     data_extraction_rules.xml: no cookies, prefs, databases or logs
+     in backups. See https://developer.android.com/identity/data/autobackup -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="cookies.txt" />
+    <exclude domain="file" path="logs/" />
+</full-backup-content>

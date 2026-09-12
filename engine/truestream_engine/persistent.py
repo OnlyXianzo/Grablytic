@@ -147,13 +147,19 @@ def get_std_logger(name: str = "truestream.server") -> logging.Logger:
 
 
 def bridge_event(level: int, message: str) -> None:
-    """Forward an EngineLogger event line to the rotating handler (if any)."""
+    """Forward an EngineLogger event line to the rotating handler (if any).
+
+    Sanitized first (SEC-02): engine lines routinely embed signed URLs
+    (sig/lsig) from extractor chatter, and server_logs.log is an
+    exfil-adjacent surface (diagnostics exports). Never raises.
+    """
     with _lock:
         logger = _std_logger
     if logger is None:
         return
     try:
-        logger.log(level, message)
+        safe = sanitize(message)
+        logger.log(level, safe if isinstance(safe, str) else message)
         if level >= logging.ERROR:
             flush_now()
     except Exception:
