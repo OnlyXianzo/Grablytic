@@ -2,7 +2,26 @@
 
 > Distilled from commit history (`git log --oneline`). Current version: `0.0.1-beta+1`.
 
-## Unreleased — night loop 2026-09-11
+## Unreleased — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
+
+### Fixed
+- **FFmpeg Bionic Linker Gap (`CANNOT LINK EXECUTABLE: library "libexpat.so.1" not found`)**:
+  - Replaced flawed `ytdlnis-packages` FFmpeg bundle with official, production-proven `io.github.junkfood02.youtubedl-android:ffmpeg:0.17.2` from Maven Central (used in Seal & upstream ytdlnis).
+  - Clean `DT_NEEDED` closure verified across all bundled libraries (0 missing symbols).
+  - Dropped flawed build-time native shim tasks that attempted to package `.so.1` files (rejected by Android Gradle Plugin and AOSP `NativeLibraryHelper`).
+  - Gated binary assignments in `MainActivity.kt` with live `binStatuses[name].ok` checks.
+- **Engine Binary Health-Check Fail-Closed Gating**:
+  - Fixed `bootstrap.py` marking broken executables as `ok=True` based purely on file existence.
+  - Binaries are now evaluated strictly fail-closed: an executable path is only marked `ok=True` if the live `--version` probe returns exit code 0.
+  - On probe failure (e.g. linker crashes, missing libs, permission errors), `ok` is set to `False`, the binary is scheduled for update, and the exact diagnostic probe output is recorded.
+  - Added unit tests in `engine/tests/test_binstatus.py` simulating linker failure to prevent regressions.
+- **Library Screen Vanishing Card & Redraw Glitch**:
+  - Fixed bug where downloads transitioning to `status: 'error'` vanished completely from the Library screen.
+  - `LibraryScreen` now categorizes items into `pending`, `failed`, and `completed` buckets.
+  - Added dedicated `FAILED` section in list view and failed cards in grid view with error styling, error details, and an inline `Retry` button.
+  - Eliminates the UX failure where a blank screen caused users to frantically toggle `useGridView`.
+
+## Night loop 2026-09-11
 
 ### Security (applied)
 - SEC-01: backups locked down (`allowBackup=false` + extraction/backup
