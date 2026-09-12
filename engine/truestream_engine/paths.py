@@ -75,15 +75,23 @@ def set_paths(
     # must be visible via LD_LIBRARY_PATH or every ffmpeg/deno child process
     # fails to start. Applied process-wide here (Chaquopy runs in-process,
     # so this covers the whole app); harmless on desktop when unset.
+    # The value may carry SEVERAL dirs (ffmpeg tree + deno tree +
+    # nativeLibraryDir, colon-joined by the caller) — every bundled binary
+    # needs every tree (CANNOT LINK EXECUTABLE otherwise). Order preserved.
     _paths["ffmpeg_ld_path"] = None
-    if ffmpeg_ld_path and os.path.isdir(ffmpeg_ld_path):
-        _paths["ffmpeg_ld_path"] = ffmpeg_ld_path
-        existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-        parts = existing_ld.split(os.pathsep) if existing_ld else []
-        if ffmpeg_ld_path not in parts:
-            os.environ["LD_LIBRARY_PATH"] = (
-                ffmpeg_ld_path + (os.pathsep + existing_ld if existing_ld else "")
-            )
+    if ffmpeg_ld_path:
+        valid = [p.strip() for p in str(ffmpeg_ld_path).split(os.pathsep)]
+        valid = [d for d in valid if d and os.path.isdir(d)]
+        if valid:
+            _paths["ffmpeg_ld_path"] = valid[0]
+            # Prepend in reverse so final PATH order matches input order.
+            for d in reversed(valid):
+                existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+                parts = existing_ld.split(os.pathsep) if existing_ld else []
+                if d not in parts:
+                    os.environ["LD_LIBRARY_PATH"] = (
+                        d + (os.pathsep + existing_ld if existing_ld else "")
+                    )
 
     # Inject binary directories into PATH
     path_dirs = [bin_dir]

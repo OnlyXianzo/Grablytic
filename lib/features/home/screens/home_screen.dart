@@ -11,6 +11,7 @@ import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
 import '../widgets/error_recovery_card.dart';
 import '../widgets/bootstrap_status_card.dart';
+import '../widgets/download_log_overlay.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
 
@@ -505,6 +506,11 @@ class _DownloadCard extends StatelessWidget {
                           minHeight: 4,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      DownloadLogOverlay(
+                        downloadId: item.id,
+                        visible: isDownloading,
+                      ),
                     ] else if (isError) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -515,6 +521,11 @@ class _DownloadCard extends StatelessWidget {
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      DownloadLogOverlay(
+                        downloadId: item.id,
+                        visible: isError,
                       ),
                       if (item.suggestsVpn) ...[
                         const SizedBox(height: 6),

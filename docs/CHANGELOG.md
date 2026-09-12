@@ -28,6 +28,10 @@
   for bundled binaries) + exec-environment line; single-video downloads
   with swallowed post-processing failures report `ERROR_POSTPROCESS_FAILED`
   instead of a false `finished` (playlists stay lenient).
+- Linker fix: `LD_LIBRARY_PATH` now carries EVERY support tree (ffmpeg +
+  deno + native dir), fixing `CANNOT LINK EXECUTABLE` for bundled
+  binaries; `set_paths` accepts colon-joined dirs.
+- Live per-download engine-log overlay on download cards (ytdlnis-style).
 
 ### Fixed
 - Engine logs now reach Android: `logger.set_global_event_callback()` push

@@ -129,7 +129,19 @@ class MainActivity : FlutterActivity() {
                         val ffmpegBin = bins["ffmpeg"]?.takeIf { File(it.executable).canExecute() }
                         val denoBin = bins["deno"]?.takeIf { File(it.executable).canExecute() }
                         ffmpegPath = ffmpegBin?.executable ?: dartFfmpegPath
-                        val ffmpegLdPath = ffmpegBin?.ldLibDir
+                        // EVERY bundled binary needs EVERY support tree: the
+                        // linker resolves ffmpeg's AND deno's deps from these
+                        // dirs (a ffmpeg-only path leaves libsqlite3.so etc.
+                        // unreachable → CANNOT LINK EXECUTABLE). Mirrors
+                        // ytdlnis RuntimeManager (all usr/lib + native dir).
+                        val ldDirs = listOfNotNull(
+                            ffmpegBin?.ldLibDir,
+                            denoBin?.ldLibDir,
+                            applicationContext.applicationInfo.nativeLibraryDir,
+                        ).distinct()
+                        val combinedLdPath =
+                            ldDirs.joinToString(":").takeIf { it.isNotEmpty() }
+                        val ffmpegLdPath = combinedLdPath
                         val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
                         for (s in BinaryPackageManager.status(bins)) {
                             android.util.Log.i(

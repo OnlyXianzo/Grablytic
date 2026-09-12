@@ -51,6 +51,36 @@ def _ld_dir(tmp_path):
 
 class TestLdPath:
     @pytest.mark.unit
+    def test_multi_dir_ld_path_preserves_order(self, tmp_path, monkeypatch):
+        import os
+        a = tmp_path / "a" / "usr" / "lib"
+        b = tmp_path / "b" / "usr" / "lib"
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=None, cache_dir=str(tmp_path),
+            ffmpeg_ld_path=f"{a}{os.pathsep}{b}",
+        )
+        assert get_paths()["ffmpeg_ld_path"] == str(a)
+        head = os.environ["LD_LIBRARY_PATH"].split(os.pathsep)[:2]
+        assert head == [str(a), str(b)]
+
+    def test_multi_dir_skips_missing(self, tmp_path, monkeypatch):
+        import os
+        good = tmp_path / "good"
+        good.mkdir()
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=None, cache_dir=str(tmp_path),
+            ffmpeg_ld_path=f"{tmp_path}/nope{os.pathsep}{good}",
+        )
+        assert get_paths()["ffmpeg_ld_path"] == str(good)
+        assert str(good) in os.environ["LD_LIBRARY_PATH"].split(os.pathsep)
+        assert f"{tmp_path}/nope" not in os.environ["LD_LIBRARY_PATH"]
+
     def test_stores_ld_path_and_prepends_env(self, tmp_path):
         ld = _ld_dir(tmp_path)
         set_paths(
