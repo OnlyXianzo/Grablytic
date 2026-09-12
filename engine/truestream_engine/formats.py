@@ -1,6 +1,7 @@
 from yt_dlp import YoutubeDL
 
 from truestream_engine.paths import get_paths
+from truestream_engine.config import coerce_config
 from truestream_engine.format_selector import build_format_string
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.logger import get_logger
@@ -9,11 +10,15 @@ from truestream_engine.logger import get_logger
 log = get_logger("truestream_engine.formats")
 
 
+def _safe_url(url: str) -> str:
+    return url.split("?", 1)[0] if isinstance(url, str) else "<url>"
+
+
 def get_formats(url: str, config: dict | None = None) -> dict:
-    log.info(f"Fetching formats for {url}")
+    log.info(f"Fetching formats for {_safe_url(url)}")
 
     paths = get_paths()
-    cfg = config or {}
+    cfg = coerce_config(config)
 
     opts = {
         "quiet": True,

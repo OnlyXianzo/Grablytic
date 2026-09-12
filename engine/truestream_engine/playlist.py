@@ -2,6 +2,7 @@ import re
 from yt_dlp import YoutubeDL
 
 from truestream_engine.paths import get_paths
+from truestream_engine.config import coerce_config
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.logger import get_logger
 
@@ -25,10 +26,10 @@ def detect_playlist(url: str) -> bool:
 
 
 def get_playlist_info(url: str, config: dict | None = None) -> dict:
-    log.info(f"Fetching playlist info for {url}")
+    log.info(f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}")
 
     paths = get_paths()
-    cfg = config or {}
+    cfg = coerce_config(config)
 
     opts = {
         "quiet": True,

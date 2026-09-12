@@ -9,6 +9,7 @@ from yt_dlp import YoutubeDL
 from truestream_engine.opts_builder import build_ydl_opts
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.paths import get_paths
+from truestream_engine.config import coerce_config
 from truestream_engine.logger import get_logger, set_global_event_callback
 
 
@@ -102,6 +103,9 @@ def download_thread(
     cancel_event: threading.Event | None = None,
     event_callback=None,
 ):
+    # Android bridge delivers config as a JSON string (Chaquopy Maps are
+    # live HashMap proxies, not mappings). Coerce before any use.
+    config = coerce_config(config)
     cancel = cancel_event or threading.Event()
     prog_q = progress_queue or _queue.Queue()
     res_q = result_queue or _queue.Queue()

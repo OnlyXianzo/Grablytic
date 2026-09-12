@@ -1,4 +1,4 @@
-from truestream_engine.config import DEFAULT_CFG
+from truestream_engine.config import DEFAULT_CFG, coerce_config
 from truestream_engine.paths import get_paths
 from truestream_engine.format_selector import build_format_string
 from truestream_engine.hooks import build_progress_hook, build_postprocessor_hook
@@ -109,7 +109,9 @@ def build_ydl_opts(
     url: str | None = None,
     event_callback=None,
 ) -> dict:
-    cfg = {**DEFAULT_CFG, **(config or {})}
+    # Belt-and-braces: callers coerce, but a raw Chaquopy HashMap proxy
+    # dies on `{**...}` below — normalize first, never crash here.
+    cfg = {**DEFAULT_CFG, **coerce_config(config)}
     paths = get_paths()
 
     # SEC-04: confine the output template. yt-dlp honors absolute-path

@@ -17,6 +17,13 @@
   actionable Redownload gating.
 - SEC-04: template-arg validator (blocks `-o`/`--paths` escapes), `--exec`
   warning, engine `output_tmpl` confinement.
+- Fixed all Android downloads crashing in `<1s` with
+  `TypeError: 'HashMap' object is not a mapping`: Chaquopy delivers Kotlin
+  Maps as live proxies, killing `{**config}`. Kotlin now sends config as
+  JSON; Python `coerce_config()` normalizes (None/dict/str/proxy-safe).
+- Download threads survive `BaseException` with a terminal error event
+  (no more silent ghosts); per-download config summary + query-stripped
+  URLs in engine logs; build-SHA in every log and report.
 
 ### Fixed
 - Engine logs now reach Android: `logger.set_global_event_callback()` push

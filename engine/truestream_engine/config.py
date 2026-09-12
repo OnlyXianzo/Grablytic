@@ -1,3 +1,32 @@
+"""Engine-wide default configuration + cross-bridge config coercion."""
+
+import json
+
+
+def coerce_config(config) -> dict:
+    """Normalize an IPC-supplied config into a plain dict (never raises).
+
+    - None → {}
+    - dict → as-is (desktop JSON-RPC, unit tests)
+    - str → json.loads (Android bridge: Kotlin pre-serializes Maps because
+      Chaquopy delivers them as live java.util.HashMap proxies, which are
+      NOT real mappings — ``{**proxy}`` dies with
+      ``TypeError: 'HashMap' object is not a mapping``)
+    - anything else → {} (fail closed, never crash the caller)
+    """
+    if config is None:
+        return {}
+    if isinstance(config, dict):
+        return config
+    if isinstance(config, str):
+        try:
+            parsed = json.loads(config)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 DEFAULT_CFG = {
     # ── Update ────────────────────────────────────────────────────────────
     "update_channel": "stable",

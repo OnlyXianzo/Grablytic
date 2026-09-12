@@ -80,6 +80,22 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Serializes a config Map to a JSON string for Python. Chaquopy delivers
+     * Kotlin/Java Maps as live java.util.HashMap proxies — NOT real Python
+     * mappings — so `{**config}` in Python dies with
+     * "TypeError: 'HashMap' object is not a mapping". JSON crosses cleanly
+     * (recursive, null-safe) and Python coerces it back via coerce_config().
+     */
+    private fun configJson(config: Map<String, Any>?): String {
+        if (config == null) return "{}"
+        return try {
+            org.json.JSONObject(config as Map<*, *>).toString()
+        } catch (_: Exception) {
+            "{}"
+        }
+    }
+
     private fun setupChannels(flutterEngine: FlutterEngine) {
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)
         methodChannel = channel
@@ -224,7 +240,7 @@ class MainActivity : FlutterActivity() {
                             } catch (_: Exception) {
                             }
 
-                            val startResult = engine.callAttr("start_download", url, downloadId, config, networkType, eventCallback)
+                            val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
                             val jsonStr = pyJson(startResult)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
@@ -253,7 +269,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
-                            val formatsResult = engine.callAttr("get_formats", url, config)
+                            val formatsResult = engine.callAttr("get_formats", url, configJson(config))
                             val jsonStr = pyJson(formatsResult)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
@@ -268,7 +284,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
-                            val playlistResult = engine.callAttr("get_playlist_info", url, config)
+                            val playlistResult = engine.callAttr("get_playlist_info", url, configJson(config))
                             val jsonStr = pyJson(playlistResult)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
