@@ -248,6 +248,22 @@ class TracedEngineService implements EngineService {
       );
 
   @override
+  Future<Map<String, dynamic>> batteryExemptionStatus() =>
+      _traced('system/battery_status', () => _inner.batteryExemptionStatus());
+
+  @override
+  Future<Map<String, dynamic>> requestBatteryExemption() =>
+      _traced('system/battery_request', () => _inner.requestBatteryExemption());
+
+  @override
+  Future<Map<String, dynamic>> notificationPermissionStatus() =>
+      _traced('system/notification_status', () => _inner.notificationPermissionStatus());
+
+  @override
+  Future<Map<String, dynamic>> requestNotificationPermission() =>
+      _traced('system/notification_request', () => _inner.requestNotificationPermission());
+
+  @override
   Future<Map<String, dynamic>> getFormats({
     required String url,
     required Map<String, dynamic> config,

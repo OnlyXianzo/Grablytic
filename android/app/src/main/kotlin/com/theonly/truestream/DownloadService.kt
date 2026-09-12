@@ -18,8 +18,9 @@ import androidx.core.app.ServiceCompat
  * Verified design notes (see team-review research, Sept 2026):
  * - Type is `dataSync` (downloads), NOT mediaPlayback/specialUse — using the
  *   wrong type risks Play rejection / InvalidForegroundServiceTypeException.
- * - No new runtime permissions: FOREGROUND_SERVICE + DATA_SYNC are
- *   install-time. FGS notifications are exempt from POST_NOTIFICATIONS.
+ * - Runtime permissions: POST_NOTIFICATIONS is requested on API 33+ for
+ *   completion/failure alerts (the FGS progress notification itself is
+ *   exempt). Battery exemption is user-initiated from Settings.
  * - START_NOT_STICKY + explicit start/stop: the starter (MainActivity)
  *   owns lifetime via an active-download counter, so no zombie notification.
  * - onTimeout() stops the service: dataSync FGS is limited (~6h/24h in
@@ -35,9 +36,18 @@ import androidx.core.app.ServiceCompat
  */
 class DownloadService : Service() {
 
+    private data class Prog(
+        var percent: Int = -1,
+        var stage: String? = null,
+        var speedBps: Long = 0,
+        var downloadedBytes: Long = 0,
+        var totalBytes: Long = 0,
+    )
+
     private val active = linkedMapOf<String, String>() // downloadId -> title
-    private var lastPercent = -1
-    private var lastStage: String? = null
+    private val prog = linkedMapOf<String, Prog>() // downloadId -> progress
+    private var lastShownId: String? = null
+    private var lastPromoteMs: Long = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -56,20 +66,42 @@ class DownloadService : Service() {
             ACTION_UPDATE -> {
                 val id = intent.getStringExtra(EXTRA_ID) ?: return START_NOT_STICKY
                 if (active.containsKey(id)) {
-                    lastPercent = intent.getIntExtra(EXTRA_PERCENT, lastPercent)
+                    val p = prog.getOrPut(id) { Prog() }
+                    if (intent.hasExtra(EXTRA_PERCENT)) {
+                        p.percent = intent.getIntExtra(EXTRA_PERCENT, p.percent)
+                    }
                     val stage = intent.getStringExtra(EXTRA_STAGE)
                     if (stage != null) {
-                        lastStage = stage
-                    } else if (lastPercent in 0..99) {
-                        lastStage = null
+                        p.stage = stage
+                    } else if (p.percent in 0..99) {
+                        p.stage = null
                     }
-                    promote()
+                    if (intent.hasExtra(EXTRA_SPEED)) {
+                        p.speedBps = intent.getLongExtra(EXTRA_SPEED, p.speedBps)
+                    }
+                    if (intent.hasExtra(EXTRA_DOWNLOADED)) {
+                        p.downloadedBytes = intent.getLongExtra(EXTRA_DOWNLOADED, p.downloadedBytes)
+                    }
+                    if (intent.hasExtra(EXTRA_TOTAL)) {
+                        p.totalBytes = intent.getLongExtra(EXTRA_TOTAL, p.totalBytes)
+                    }
+                    lastShownId = id
+                    // Coalesce rebuilds: engine `downloading` events arrive
+                    // far faster than the OS can usefully re-render.
+                    // Always refresh on stage change or near-completion.
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    val force = stage != null || p.percent >= 99 || p.percent < 0
+                    if (force || now - lastPromoteMs >= 500) {
+                        lastPromoteMs = now
+                        promote()
+                    }
                 }
             }
             ACTION_DONE, ACTION_CANCEL -> {
                 active.remove(intent?.getStringExtra(EXTRA_ID))
+                prog.remove(intent?.getStringExtra(EXTRA_ID))
                 if (active.isEmpty()) {
-                    lastStage = null
+                    lastShownId = null
                     stopSelf()
                 } else {
                     promote()
@@ -117,24 +149,55 @@ class DownloadService : Service() {
             this, 1, Intent(this, DownloadService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // Show the most recently updated download; title collapses under
+        // concurrency (unchanged behavior).
+        val shownId = lastShownId?.takeIf { active.containsKey(it) }
+            ?: active.keys.lastOrNull()
         val title = if (active.size == 1) active.values.first() else "${active.size} downloads"
+        val p = shownId?.let { prog[it] }
+        val pct = p?.percent ?: -1
         val contentText = when {
-            lastStage != null -> lastStage
-            lastPercent in 0..99 -> "$lastPercent%"
+            p?.stage != null -> p.stage
+            pct in 0..99 -> buildProgressLine(pct, p)
             else -> "Downloading…"
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(openApp)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setProgress(100, lastPercent.coerceIn(0, 100), lastPercent !in 0..100)
+            .setProgress(100, pct.coerceIn(0, 100), pct !in 0..100)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", cancelAll)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .build()
     }
+
+    private fun buildProgressLine(pct: Int, p: Prog?): String {
+        if (p == null) return "$pct%"
+        val parts = ArrayList<String>(3)
+        parts.add("$pct%")
+        if (p.speedBps > 0) parts.add(formatSpeed(p.speedBps))
+        if (p.totalBytes > 0) {
+            parts.add("${formatBytes(p.downloadedBytes)} / ${formatBytes(p.totalBytes)}")
+        } else if (p.downloadedBytes > 0) {
+            parts.add(formatBytes(p.downloadedBytes))
+        }
+        return parts.joinToString(" · ")
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return String.format(java.util.Locale.US, "%.1f KB", kb)
+        val mb = kb / 1024.0
+        if (mb < 1024) return String.format(java.util.Locale.US, "%.1f MB", mb)
+        return String.format(java.util.Locale.US, "%.2f GB", mb / 1024.0)
+    }
+
+    private fun formatSpeed(bps: Long): String = "${formatBytes(bps)}/s"
 
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -160,6 +223,9 @@ class DownloadService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_PERCENT = "percent"
         const val EXTRA_STAGE = "stage"
+        const val EXTRA_SPEED = "speed_bps"
+        const val EXTRA_DOWNLOADED = "downloaded_bytes"
+        const val EXTRA_TOTAL = "total_bytes"
         private const val CHANNEL_ID = "truestream_downloads"
         private const val NOTIF_ID = 1001
 
@@ -172,11 +238,21 @@ class DownloadService : Service() {
             start(ctx, intent)
         }
 
-        fun update(ctx: Context, downloadId: String, percent: Int) {
+        fun update(
+            ctx: Context,
+            downloadId: String,
+            percent: Int,
+            speedBps: Long = 0,
+            downloadedBytes: Long = 0,
+            totalBytes: Long = 0,
+        ) {
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_ID, downloadId)
                 putExtra(EXTRA_PERCENT, percent)
+                putExtra(EXTRA_SPEED, speedBps)
+                putExtra(EXTRA_DOWNLOADED, downloadedBytes)
+                putExtra(EXTRA_TOTAL, totalBytes)
             }
             start(ctx, intent)
         }

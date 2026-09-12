@@ -4,9 +4,14 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
     <!-- Keep-alive for active downloads. Both are install-time (normal)
          permissions: no runtime prompt. FGS notifications are exempt from
-         POST_NOTIFICATIONS, so that permission is deliberately absent. -->
+         POST_NOTIFICATIONS, but completion/failure alerts are not, so it
+         is declared and requested at runtime on API 33+. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Lets the user exempt the app from Doze/App Standby on request
+         (Settings toggle) so background downloads survive. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
         android:label="truestream"

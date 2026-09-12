@@ -189,5 +189,49 @@ class PlatformChannelEngineService implements EngineService {
       return {'success': false};
     }
   }
+
+  @override
+  Future<Map<String, dynamic>> batteryExemptionStatus() async {
+    try {
+      final result = await _channel.invokeMethod<Map>('system/battery_status');
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false, 'supported': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestBatteryExemption() async {
+    try {
+      final result = await _channel.invokeMethod<Map>('system/battery_request');
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> notificationPermissionStatus() async {
+    try {
+      final result = await _channel.invokeMethod<Map>('system/notification_status');
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false, 'supported': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestNotificationPermission() async {
+    try {
+      final result = await _channel.invokeMethod<Map>('system/notification_request');
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
 }
 

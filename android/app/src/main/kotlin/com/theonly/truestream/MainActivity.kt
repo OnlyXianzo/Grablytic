@@ -1,7 +1,11 @@
 package com.theonly.truestream
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -40,6 +44,12 @@ class MainActivity : FlutterActivity() {
     private var outputDir: String? = null
     private var ffmpegPath: String? = null
     private var aria2cPath: String? = null
+    private var pendingNotifResult: MethodChannel.Result? = null
+    private var notifPromptShown = false
+
+    companion object {
+        private const val REQ_POST_NOTIFICATIONS = 4101
+    }
 
     private fun handleSendText(intent: Intent?) {
         if (intent == null) return
@@ -64,6 +74,39 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSendText(intent)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_POST_NOTIFICATIONS) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            try {
+                pendingNotifResult?.success(mapOf("success" to true, "granted" to granted))
+            } catch (_: Exception) {
+            }
+            pendingNotifResult = null
+        }
+    }
+
+    private fun notificationsGranted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun batteryExempt(): Boolean {
+        return try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } catch (_: Exception) {
+            false
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -224,11 +267,15 @@ class MainActivity : FlutterActivity() {
                                                     "downloading" -> {
                                                         val dl = obj.optLong("downloaded_bytes", 0)
                                                         val total = obj.optLong("total_bytes", 0)
+                                                        val speed = obj.optLong("speed", 0)
                                                         val pct = if (total > 0) {
                                                             ((dl * 100) / total).toInt().coerceIn(0, 99)
                                                         } else -1
                                                         DownloadService.update(
                                                             this@MainActivity, id, pct,
+                                                            speedBps = speed,
+                                                            downloadedBytes = dl,
+                                                            totalBytes = total,
                                                         )
                                                     }
                                                     "postprocessing" -> {
@@ -284,6 +331,21 @@ class MainActivity : FlutterActivity() {
                             }
 
                             // Keep-alive: user gesture (foreground) → dataSync FGS.
+                            // Completion/failure alerts are NOT FGS-exempt, so
+                            // make sure POST_NOTIFICATIONS is granted while we
+                            // still have a foreground moment to ask in (once —
+                            // repeat prompts nag and the OS auto-denies them).
+                            if (!notifPromptShown && !notificationsGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                notifPromptShown = true
+                                try {
+                                    androidx.core.app.ActivityCompat.requestPermissions(
+                                        this@MainActivity,
+                                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                                        REQ_POST_NOTIFICATIONS,
+                                    )
+                                } catch (_: Exception) {
+                                }
+                            }
                             try {
                                 val title = try {
                                     android.net.Uri.parse(url).host ?: url
@@ -368,6 +430,52 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_RESUME_FAILED", e.message, null) }
                         }
+                    }
+                }
+                "system/battery_status" -> {
+                    result.success(mapOf("success" to true, "supported" to true, "exempt" to batteryExempt()))
+                }
+                "system/battery_request" -> {
+                    // Play policy: exemption prompts must be user-initiated
+                    // with rationale — this handler only runs from the
+                    // Settings toggle. Direct request first, system screen
+                    // fallback (e.g. permission missing on some ROMs).
+                    var launched = false
+                    try {
+                        val intent = Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:$packageName"),
+                        )
+                        startActivity(intent)
+                        launched = true
+                    } catch (_: Exception) {
+                        try {
+                            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                            launched = true
+                        } catch (_: Exception) {
+                        }
+                    }
+                    result.success(mapOf("success" to launched))
+                }
+                "system/notification_status" -> {
+                    val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    result.success(mapOf("success" to true, "supported" to supported, "granted" to notificationsGranted()))
+                }
+                "system/notification_request" -> {
+                    if (notificationsGranted()) {
+                        result.success(mapOf("success" to true, "granted" to true))
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        pendingNotifResult?.let {
+                            try { it.success(mapOf("success" to false)) } catch (_: Exception) {}
+                        }
+                        pendingNotifResult = result
+                        androidx.core.app.ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                            REQ_POST_NOTIFICATIONS,
+                        )
+                    } else {
+                        result.success(mapOf("success" to true, "granted" to true))
                     }
                 }
                 "engine/update_check" -> {

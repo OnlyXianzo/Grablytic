@@ -263,6 +263,22 @@ class MockEngineService implements EngineService {
     return {'success': true, 'path': 'mock/Downloads/$displayName'};
   }
 
+  @override
+  Future<Map<String, dynamic>> batteryExemptionStatus() async =>
+      {'success': false, 'supported': false};
+
+  @override
+  Future<Map<String, dynamic>> requestBatteryExemption() async =>
+      {'success': false, 'supported': false};
+
+  @override
+  Future<Map<String, dynamic>> notificationPermissionStatus() async =>
+      {'success': false, 'supported': false};
+
+  @override
+  Future<Map<String, dynamic>> requestNotificationPermission() async =>
+      {'success': false, 'supported': false};
+
   void dispose() {
     _progressController.close();
   }

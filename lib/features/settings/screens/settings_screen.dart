@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/engine_status_provider.dart';
+import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../home/widgets/bootstrap_status_card.dart';
 import 'command_templates_screen.dart';
@@ -269,6 +270,7 @@ class SettingsScreen extends ConsumerWidget {
                 onChanged: () => ref.read(settingsProvider.notifier).toggleCompletionAlerts(),
                 colorScheme: colorScheme,
               ).animate().fadeIn(delay: 260.ms, duration: 300.ms).slideX(begin: 0.1),
+              const _BackgroundPermissionsSection(),
               _SettingThemeSelector(
                 currentTheme: settings.themeMode,
                 onChanged: (mode) => ref.read(settingsProvider.notifier).setThemeMode(mode),
@@ -413,6 +415,7 @@ class _SettingNavItem extends StatelessWidget {
   final String subtitle;
   final ColorScheme colorScheme;
   final VoidCallback? onTap;
+  final Widget? trailing;
 
   const _SettingNavItem({
     required this.icon,
@@ -420,6 +423,7 @@ class _SettingNavItem extends StatelessWidget {
     required this.subtitle,
     required this.colorScheme,
     this.onTap,
+    this.trailing,
   });
 
   @override
@@ -466,7 +470,8 @@ class _SettingNavItem extends StatelessWidget {
               ),
               Semantics(
                 label: 'Navigate',
-                child: Icon(Icons.chevron_right, color: colorScheme.outline, size: 20),
+                child: trailing ??
+                    Icon(Icons.chevron_right, color: colorScheme.outline, size: 20),
               ),
             ],
           ),
@@ -743,8 +748,95 @@ class _SettingThemeSelector extends StatelessWidget {
   }
 }
 
-class _BinaryDownloadsSection extends ConsumerWidget {
-  final ColorScheme colorScheme;
+/// Background-download permissions (Android): battery exemption so Doze
+/// doesn't kill downloads, and notification permission for completion
+/// alerts. Desktop builds report unsupported and hide the actions.
+class _BackgroundPermissionsSection extends ConsumerStatefulWidget {
+  const _BackgroundPermissionsSection();
+
+  @override
+  ConsumerState<_BackgroundPermissionsSection> createState() =>
+      _BackgroundPermissionsSectionState();
+}
+
+class _BackgroundPermissionsSectionState
+    extends ConsumerState<_BackgroundPermissionsSection> {
+  bool? _exempt;
+  bool? _notifGranted;
+  bool _working = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final engine = ref.read(engineProvider);
+    final bat = await engine.batteryExemptionStatus();
+    final notif = await engine.notificationPermissionStatus();
+    if (!mounted) return;
+    setState(() {
+      final b = bat['exempt'];
+      _exempt = b is bool ? b : null;
+      final g = notif['granted'];
+      _notifGranted = g is bool ? g : null;
+    });
+  }
+
+  Future<void> _run(Future<Map<String, dynamic>> Function() call) async {
+    setState(() => _working = true);
+    try {
+      await call();
+    } catch (_) {}
+    await _refresh();
+    if (mounted) setState(() => _working = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // Desktop/mock report unsupported (null states) — hide the section.
+    if (_exempt == null && _notifGranted == null && !_working) {
+      return const SizedBox.shrink();
+    }
+    final engine = ref.read(engineProvider);
+    return Column(
+      children: [
+        _SettingNavItem(
+          icon: Icons.battery_charging_full_outlined,
+          title: 'Unrestricted background',
+          subtitle: _exempt == true
+              ? 'Allowed — downloads survive in background'
+              : 'Needed so Android doesn\'t pause downloads',
+          colorScheme: colorScheme,
+          trailing: _exempt == true
+              ? Icon(Icons.check_circle, color: colorScheme.tertiary)
+              : null,
+          onTap: _working
+              ? () {}
+              : () => _run(engine.requestBatteryExemption),
+        ),
+        _SettingNavItem(
+          icon: Icons.notifications_outlined,
+          title: 'Notifications',
+          subtitle: _notifGranted == true
+              ? 'Allowed'
+              : 'Needed for download and completion alerts',
+          colorScheme: colorScheme,
+          trailing: _notifGranted == true
+              ? Icon(Icons.check_circle, color: colorScheme.tertiary)
+              : null,
+          onTap: _working
+              ? () {}
+              : () => _run(engine.requestNotificationPermission),
+        ),
+      ],
+    );
+  }
+}
+
+class _BinaryDownloadsSection extends ConsumerWidget {  final ColorScheme colorScheme;
   final TextTheme textTheme;
 
   const _BinaryDownloadsSection({

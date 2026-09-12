@@ -33,4 +33,19 @@ abstract class EngineService {
     required String sourcePath,
     required String displayName,
   });
+
+  /// Background-execution permissions (Android only; other platforms
+  /// return `{'success': false, 'supported': false}`).
+  /// `batteryExemptionStatus` → `{'success', 'supported', 'exempt'}`.
+  /// `requestBatteryExemption` opens the system exemption screen and
+  /// returns `{'success': <launched>}` — never throws.
+  Future<Map<String, dynamic>> batteryExemptionStatus();
+  Future<Map<String, dynamic>> requestBatteryExemption();
+
+  /// Notification permission (Android 13+; older Android is always
+  /// granted, other platforms unsupported). `requestNotificationPermission`
+  /// shows the system prompt once and completes with the verdict —
+  /// never throws.
+  Future<Map<String, dynamic>> notificationPermissionStatus();
+  Future<Map<String, dynamic>> requestNotificationPermission();
 }
