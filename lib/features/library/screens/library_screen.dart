@@ -156,8 +156,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     TextTheme textTheme,
     bool useGridView,
   ) {
-    final pending = downloads.where((d) => d.status == 'downloading').toList();
-    final completed = downloads.where((d) => d.status == 'completed').toList();
+    final pending = downloads
+        .where((d) =>
+            d.status == 'downloading' ||
+            d.status == 'pending' ||
+            d.status == 'paused')
+        .toList();
+    final failed = downloads
+        .where((d) => d.status == 'error' || d.status == 'cancelled')
+        .toList();
+    final completed =
+        downloads.where((d) => d.status == 'completed').toList();
 
     if (downloads.isEmpty) {
       return Center(
@@ -176,14 +185,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: useGridView
-          ? _buildGridView(completed, pending, colorScheme, textTheme)
-          : _buildListView(completed, pending, colorScheme, textTheme),
+          ? _buildGridView(completed, pending, failed, colorScheme, textTheme)
+          : _buildListView(completed, pending, failed, colorScheme, textTheme),
     );
   }
 
   Widget _buildListView(
     List<DownloadItem> completed,
     List<DownloadItem> pending,
+    List<DownloadItem> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
@@ -205,6 +215,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 item: item,
                 colorScheme: colorScheme,
                 isDownloading: true,
+              )),
+          const SizedBox(height: 32),
+        ],
+        if (failed.isNotEmpty) ...[
+          Text(
+            'FAILED',
+            style: textTheme.labelSmall?.copyWith(
+              color: colorScheme.error,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...failed.map((item) => _LibraryItem(
+                item: item,
+                colorScheme: colorScheme,
+                isError: true,
               )),
           const SizedBox(height: 32),
         ],
@@ -231,14 +258,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   Widget _buildGridView(
     List<DownloadItem> completed,
     List<DownloadItem> pending,
+    List<DownloadItem> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
-    final all = [...pending, ...completed];
+    final all = [...pending, ...failed, ...completed];
     return GridView.builder(
       key: const ValueKey('grid'),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
@@ -247,11 +275,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       itemCount: all.length,
       itemBuilder: (context, index) {
         final item = all[index];
+        final isDownloading = item.status == 'downloading' || item.status == 'pending';
+        final isError = item.status == 'error' || item.status == 'cancelled';
         return _LibraryGridCard(
           item: item,
           colorScheme: colorScheme,
           textTheme: textTheme,
-          isDownloading: item.status == 'downloading',
+          isDownloading: isDownloading,
+          isError: isError,
         );
       },
     );
@@ -346,30 +377,38 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   }
 }
 
-class _LibraryGridCard extends StatelessWidget {
+class _LibraryGridCard extends ConsumerWidget {
   final DownloadItem item;
   final ColorScheme colorScheme;
   final TextTheme textTheme;
   final bool isDownloading;
+  final bool isError;
 
   const _LibraryGridCard({
     required this.item,
     required this.colorScheme,
     required this.textTheme,
-    required this.isDownloading,
+    this.isDownloading = false,
+    this.isError = false,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final label = isError
+        ? '${item.title}, failed'
+        : '${item.title}, ${isDownloading ? 'downloading' : 'completed'}';
+
     return Semantics(
-      label: '${item.title}, ${isDownloading ? 'downloading' : 'completed'}',
+      label: label,
       child: Card(
         elevation: 0,
         color: colorScheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: isError
+                ? colorScheme.error.withValues(alpha: 0.4)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -380,14 +419,23 @@ class _LibraryGridCard extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.primary.withValues(alpha: 0.3),
-                      colorScheme.tertiary.withValues(alpha: 0.3),
-                    ],
-                  ),
+                  gradient: isError
+                      ? LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            colorScheme.errorContainer.withValues(alpha: 0.4),
+                            colorScheme.error.withValues(alpha: 0.15),
+                          ],
+                        )
+                      : LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            colorScheme.primary.withValues(alpha: 0.3),
+                            colorScheme.tertiary.withValues(alpha: 0.3),
+                          ],
+                        ),
                 ),
                 child: Center(
                   child: isDownloading
@@ -414,11 +462,17 @@ class _LibraryGridCard extends StatelessWidget {
                             ],
                           ),
                         )
-                      : Icon(
-                          Icons.movie_outlined,
-                          size: 40,
-                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                        ),
+                      : isError
+                          ? Icon(
+                              Icons.error_outline,
+                              size: 40,
+                              color: colorScheme.error,
+                            )
+                          : Icon(
+                              Icons.movie_outlined,
+                              size: 40,
+                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                            ),
                 ),
               ),
             ),
@@ -436,24 +490,76 @@ class _LibraryGridCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          item.fileSize ?? 'N/A',
-                          style: textTheme.mono.copyWith(
-                            fontSize: 10,
-                            color: colorScheme.onPrimaryContainer,
+                  if (isError) ...[
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Failed',
+                            style: textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onErrorContainer,
+                            ),
                           ),
                         ),
+                        const Spacer(),
+                        Semantics(
+                          label: 'Retry download',
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.refresh,
+                              size: 18,
+                              color: colorScheme.error,
+                            ),
+                            onPressed: () {
+                              ref.read(downloadProvider.notifier).retryDownload(item.id);
+                            },
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Retry',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (item.errorMessage != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        item.errorMessage!,
+                        style: textTheme.mono.copyWith(
+                          fontSize: 10,
+                          color: colorScheme.error,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.fileSize ?? 'N/A',
+                            style: textTheme.mono.copyWith(
+                              fontSize: 10,
+                              color: colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -464,34 +570,49 @@ class _LibraryGridCard extends StatelessWidget {
   }
 }
 
-class _LibraryItem extends StatelessWidget {
+class _LibraryItem extends ConsumerWidget {
   final DownloadItem item;
   final ColorScheme colorScheme;
   final bool isDownloading;
+  final bool isError;
 
   const _LibraryItem({
     required this.item,
     required this.colorScheme,
-    required this.isDownloading,
+    this.isDownloading = false,
+    this.isError = false,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
 
+    final label = isError
+        ? '${item.title}, failed'
+        : '${item.title}, ${isDownloading ? 'downloading' : 'completed'}';
+
     return Semantics(
-      label: '${item.title}, ${isDownloading ? 'downloading' : 'completed'}',
+      label: label,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Row(
-          crossAxisAlignment: isDownloading ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+          crossAxisAlignment: (isDownloading || isError)
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
           children: [
             Container(
               width: 128,
               height: 72,
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
+                color: isError
+                    ? colorScheme.errorContainer.withValues(alpha: 0.2)
+                    : colorScheme.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(12),
+                border: isError
+                    ? Border.all(
+                        color: colorScheme.error.withValues(alpha: 0.3),
+                      )
+                    : null,
               ),
               child: isDownloading
                   ? Stack(
@@ -515,14 +636,23 @@ class _LibraryItem extends StatelessWidget {
                         ),
                       ],
                     )
-                  : Semantics(
-                      label: 'Completed',
-                      child: Icon(
-                          Icons.image_outlined,
-                          color: colorScheme.outline.withValues(alpha: 0.4),
-                          size: 32,
+                  : isError
+                      ? Semantics(
+                          label: 'Failed',
+                          child: Icon(
+                            Icons.error_outline,
+                            color: colorScheme.error,
+                            size: 32,
+                          ),
+                        )
+                      : Semantics(
+                          label: 'Completed',
+                          child: Icon(
+                            Icons.image_outlined,
+                            color: colorScheme.outline.withValues(alpha: 0.4),
+                            size: 32,
+                          ),
                         ),
-                    ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -542,7 +672,25 @@ class _LibraryItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (!isDownloading)
+                      if (isError)
+                        Semantics(
+                          label: 'Retry download',
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.refresh,
+                              size: 20,
+                              color: colorScheme.error,
+                            ),
+                            onPressed: () {
+                              ref
+                                  .read(downloadProvider.notifier)
+                                  .retryDownload(item.id);
+                            },
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Retry',
+                          ),
+                        )
+                      else if (!isDownloading)
                         Semantics(
                           label: 'Preview',
                           child: IconButton(
@@ -576,72 +724,100 @@ class _LibraryItem extends StatelessWidget {
                       ),
                     ],
                   ),
-                if (isDownloading) ...[
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: item.progress,
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      valueColor:
-                          AlwaysStoppedAnimation(colorScheme.primary),
-                      minHeight: 4,
+                  if (isDownloading) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: item.progress,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        valueColor:
+                            AlwaysStoppedAnimation(colorScheme.primary),
+                        minHeight: 4,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '${(item.progress * 100).toInt()} % downloading',
-                        style: textTheme.mono.copyWith(
-                          color: colorScheme.primary,
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${(item.progress * 100).toInt()} % downloading',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.primary,
+                          ),
                         ),
+                        Text(
+                          '${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (isError) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      item.errorMessage ?? 'Download failed',
+                      style: textTheme.mono.copyWith(
+                        color: colorScheme.error,
+                        fontSize: 11,
                       ),
-                      Text(
-                        '${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}',
-                        style: textTheme.mono.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (item.suggestsVpn) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.vpn_lock,
+                              size: 14, color: colorScheme.error),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Try VPN or proxy',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.error,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ] else ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        item.completedDate ?? 'Unknown',
-                        style: textTheme.mono.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          item.completedDate ?? 'Unknown',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: colorScheme.outlineVariant,
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: colorScheme.outlineVariant,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        item.fileSize ?? '',
-                        style: textTheme.mono.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        const SizedBox(width: 8),
+                        Text(
+                          item.fileSize ?? '',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 
   String _formatBytes(int bytes) {
