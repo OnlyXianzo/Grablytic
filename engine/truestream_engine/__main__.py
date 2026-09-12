@@ -114,6 +114,11 @@ def main():
         line = line.strip()
         if not line:
             continue
+        # Bound before parsing: a malformed line must produce an error
+        # envelope, never an UnboundLocalError that kills the whole loop.
+        req_id = None
+        method = "<unparsed>"
+        params = {}
         try:
             req = json.loads(line)
             req_id = req.get("id")

@@ -241,8 +241,6 @@ class TestThreadLocalContext:
         logger.set_queue(q)
         logger.set_min_level(DEBUG)
 
-        results: list[dict[str, Any]] = []
-
         def worker(thread_id: str) -> None:
             logger.set_context(thread=thread_id)
             logger.info("from thread")

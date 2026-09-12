@@ -1,3 +1,20 @@
+# Verification matrix — every push/PR to main.
+#
+# Layers (each fails the run independently):
+#   flutter_verify  analyze (fatal) + unit/widget tests + coverage artifact
+#   python_verify   pytest + coverage ratchet (>=70%) + ruff correctness gate
+#   docs_links      relative Markdown links resolve (allowlist documented)
+#   secrets_scan    gitleaks (no committed credentials)
+#
+# Deliberately NOT gated (documented, revisit quarterly):
+#   - dart format: 55 files predate formatting; normalizing mid-flight
+#     would churn every concurrent branch. Enforce after one cleanup PR.
+#   - flutter coverage floor: 24% today (widget tests are young); ratcheting
+#     a low number enshrines it. Artifact uploaded for visibility instead.
+#   - ruff style rules (BLE/SIM/etc.): the engine uses defensive
+#     try/except-by-design; only correctness rules (F, minus F401 import
+#     audit backlog) are gated.
+
 name: Verification
 
 on:
@@ -23,8 +40,14 @@ jobs:
       - name: Run static analysis
         run: flutter analyze
 
-      - name: Run widget & unit tests
-        run: flutter test
+      - name: Run widget & unit tests with coverage
+        run: flutter test --coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: coverage/lcov.info
 
   python_verify:
     name: Python Engine Tests
@@ -41,7 +64,38 @@ jobs:
         run: pip install uv
 
       - name: Install dependencies & engine
-        run: uv pip install --system yt-dlp pytest -e engine/
+        # ruff pinned: new releases add rules that would otherwise
+        # break this gate without any repo change.
+        run: uv pip install --system yt-dlp pytest pytest-cov "ruff==0.16.7" -e engine/
 
-      - name: Run engine tests
-        run: pytest engine/tests/ -v
+      - name: Run engine tests with coverage ratchet
+        run: pytest engine/tests/ -q --cov=engine/truestream_engine --cov-report=term --cov-fail-under=75
+
+      - name: Ruff correctness gate (F rules, F401 import audit backlog excluded)
+        run: ruff check engine/ --select F --ignore F401
+
+  docs_links:
+    name: Docs Link Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check relative Markdown links resolve
+        run: python3 tool/check_doc_links.py
+
+  secrets_scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

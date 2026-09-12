@@ -112,7 +112,6 @@ class TestBootstrap:
     def test_returns_success_when_initialized(self, tmp_path, monkeypatch):
         import shutil
         import sys
-        from truestream_engine.paths import set_paths
 
         bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
         # Offline proof: any network attempt fails the test.

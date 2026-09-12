@@ -454,7 +454,6 @@ class TestMilestones:
         q = self._drive(100, [10, 30, 55, 80, 100])
         # Hook events flow; milestones go through the hooks logger.
         assert q.qsize() == 5
-        logged = []
         hlog = hooks_mod._log
         captured = []
         orig = hlog.info
