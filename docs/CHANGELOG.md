@@ -5,6 +5,9 @@
 ## Unreleased — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
 
 ### Fixed
+- **Silent event-channel death** (completed files, 0% UI): `@Keep` on the
+  Chaquopy callback contract, Kotlin sink-null/closed warnings, Python
+  first-failure WARN — a dead delivery hop can never be silent again.
 - **FFmpeg Bionic Linker Gap (`CANNOT LINK EXECUTABLE: library "libexpat.so.1" not found`)**:
   - Replaced flawed `ytdlnis-packages` FFmpeg bundle with official, production-proven `io.github.junkfood02.youtubedl-android:ffmpeg:0.17.2` from Maven Central (used in Seal & upstream ytdlnis).
   - Clean `DT_NEEDED` closure verified across all bundled libraries (0 missing symbols).

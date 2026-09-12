@@ -8,6 +8,7 @@ from yt_dlp import YoutubeDL
 
 from truestream_engine.opts_builder import build_ydl_opts
 from truestream_engine.errors import classify_error, TrueStreamError
+from truestream_engine.hooks import _emit_event
 from truestream_engine.paths import get_paths
 from truestream_engine.playlist import detect_playlist
 from truestream_engine.config import coerce_config
@@ -170,10 +171,7 @@ def download_thread(
                     "recoverable": True,
                 })
                 if event_callback is not None:
-                    try:
-                        event_callback.onEvent(err_event)
-                    except Exception:
-                        pass
+                    _emit_event(event_callback, err_event)
                 else:
                     res_q.put({
                         "success": False,
@@ -242,10 +240,7 @@ def download_thread(
                 "error_message": "Download cancelled by user",
             })
             if event_callback is not None:
-                try:
-                    event_callback.onEvent(terminal_event)
-                except Exception:
-                    pass
+                _emit_event(event_callback, terminal_event)
             else:
                 res_q.put({
                     "success": False,
@@ -285,10 +280,7 @@ def download_thread(
                     "suggests_vpn": False,
                 })
                 if event_callback is not None:
-                    try:
-                        event_callback.onEvent(terminal_event)
-                    except Exception:
-                        pass
+                    _emit_event(event_callback, terminal_event)
                 else:
                     res_q.put({
                         "success": False,
@@ -312,10 +304,7 @@ def download_thread(
                 "total_bytes": final_bytes,
             })
             if event_callback is not None:
-                try:
-                    event_callback.onEvent(terminal_event)
-                except Exception:
-                    pass
+                _emit_event(event_callback, terminal_event)
             else:
                 res_q.put({
                     "success": True,
@@ -333,10 +322,7 @@ def download_thread(
             "error_message": "Download cancelled by user",
         })
         if event_callback is not None:
-            try:
-                event_callback.onEvent(terminal_event)
-            except Exception:
-                pass
+            _emit_event(event_callback, terminal_event)
         else:
             res_q.put({
                 "success": False,
@@ -358,10 +344,7 @@ def download_thread(
             "suggests_vpn": err.suggests_vpn,
         })
         if event_callback is not None:
-            try:
-                event_callback.onEvent(terminal_event)
-            except Exception:
-                pass
+            _emit_event(event_callback, terminal_event)
         else:
             res_q.put({
                 "success": False,
@@ -390,10 +373,7 @@ def download_thread(
             "suggests_vpn": False,
         })
         if event_callback is not None:
-            try:
-                event_callback.onEvent(terminal_event)
-            except Exception:
-                pass
+            _emit_event(event_callback, terminal_event)
         else:
             res_q.put({
                 "success": False,

@@ -16,8 +16,12 @@ import java.io.File
  * Chaquopy callback contract for engine → Kotlin event delivery.
  * A public interface (not an anonymous `object : Any()`) so R8/ProGuard
  * cannot obfuscate or strip `onEvent` in release builds (re-audit #2).
+ * Belt and braces: @Keep annotations (release builds run R8 full mode,
+ * which has silently eaten proxied callbacks before).
  */
+@androidx.annotation.Keep
 interface EngineEventListener {
+    @androidx.annotation.Keep
     fun onEvent(eventJson: String)
 }
 
@@ -198,6 +202,13 @@ class MainActivity : FlutterActivity() {
                             val engine = python.getModule("truestream_engine")
 
                             val eventCallback = object : EngineEventListener {
+                                // First-failure diagnostics: every delivery
+                                // fault below is silent by design (a logging
+                                // path must never break downloads), so the
+                                // FIRST one warns loudly — it tells the next
+                                // diagnostics bundle exactly which hop died.
+                                var noSinkWarned = false
+                                var sinkFailedWarned = false
                                 override fun onEvent(eventJson: String) {
                                     // Drive the keep-alive service from the same
                                     // event stream (progress + terminal events).
@@ -229,7 +240,29 @@ class MainActivity : FlutterActivity() {
                                     } catch (_: Exception) {
                                     }
                                     scope.launch(Dispatchers.Main) {
-                                        eventSink?.success(eventJson)
+                                        val sink = eventSink
+                                        if (sink == null) {
+                                            if (!noSinkWarned) {
+                                                noSinkWarned = true
+                                                android.util.Log.w(
+                                                    "TrueStreamEngine",
+                                                    "EventChannel sink null — Flutter is not listening; " +
+                                                        "progress UI will stall while the download continues",
+                                                )
+                                            }
+                                            return@launch
+                                        }
+                                        try {
+                                            sink.success(eventJson)
+                                        } catch (e: Exception) {
+                                            if (!sinkFailedWarned) {
+                                                sinkFailedWarned = true
+                                                android.util.Log.w(
+                                                    "TrueStreamEngine",
+                                                    "EventChannel sink failed: ${e.message}",
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

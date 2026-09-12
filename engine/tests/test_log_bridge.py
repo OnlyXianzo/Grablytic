@@ -537,3 +537,39 @@ class TestVerboseOpts:
         assert len(dumped) == 1
         assert "user:pass" not in dumped[0]
         assert "***REDACTED***" in dumped[0]
+
+
+class _DeadSink:
+    def onEvent(self, payload):
+        raise RuntimeError("sink gone")
+
+
+class TestEmitDiagnostics:
+    """A dead callback must warn once (diagnosable) then stay silent."""
+
+    def test_first_failure_warns_once(self, _clean_bridge):
+        import queue as _queue
+        from truestream_engine import hooks as hooks_mod
+
+        q: queue.Queue = queue.Queue()
+        log_q: queue.Queue = queue.Queue()
+        hooks_mod._log.set_queue(log_q)
+        hooks_mod._callback_failed_once = False
+        try:
+            # Drive through _emit_event via the hook with a dead callback.
+            hook2 = hooks_mod.build_progress_hook(
+                q, "dead1", event_callback=_DeadSink())
+            payload = {"status": "downloading", "downloaded_bytes": 1,
+                       "total_bytes": 2, "info_dict": {}}
+            hook2(dict(payload))
+            hook2(dict(payload))
+            warns = []
+            while not log_q.empty():
+                ev = log_q.get_nowait()
+                if ev.get("level") == "WARN" and "callback failing" in ev.get("message", ""):
+                    warns.append(ev)
+            assert len(warns) == 1
+        finally:
+            hooks_mod._log.set_queue(None)
+            hooks_mod._callback_failed_once = False
+            hooks_mod._log.clear_context()

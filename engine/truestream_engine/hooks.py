@@ -6,6 +6,32 @@ from truestream_engine.logger import get_logger
 
 _log = get_logger("truestream_engine.hooks")
 
+# Set on the first failed callback delivery per process. Every delivery
+# fault is otherwise silent by design — but total silence is exactly how
+# "0% forever with a finished file on disk" happens, so the first one
+# warns loudly (method + error), implicating either the Chaquopy proxy
+# (R8-stripped?) or the Kotlin sink.
+_callback_failed_once = False
+
+
+def _emit_event(event_callback, event_json: str) -> None:
+    """Deliver one event via the Chaquopy callback. Never raises."""
+    if event_callback is None:
+        return
+    try:
+        event_callback.onEvent(event_json)
+    except Exception as exc:
+        global _callback_failed_once
+        if not _callback_failed_once:
+            _callback_failed_once = True
+            try:
+                _log.warn(
+                    f"Engine event callback failing ({type(exc).__name__}: "
+                    f"{exc}); progress UI will stall while downloads continue"
+                )
+            except Exception:
+                pass
+
 
 # yt-dlp postprocessor hook payloads carry the PP key in `d["postprocessor"]`
 # (see PostProcessor._hook_progress: pp_key() values such as "Merger",
@@ -70,11 +96,7 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 queue.put(event_json)
             except Exception:
                 pass
-            if event_callback is not None:
-                try:
-                    event_callback.onEvent(event_json)
-                except Exception:
-                    pass
+            _emit_event(event_callback, event_json)
 
         elif status == "finished":
             # Per-FILE completion (e.g. the video DASH stream landed while the
@@ -100,11 +122,7 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 queue.put(event_json)
             except Exception:
                 pass
-            if event_callback is not None:
-                try:
-                    event_callback.onEvent(event_json)
-                except Exception:
-                    pass
+            _emit_event(event_callback, event_json)
 
         elif status == "error":
             event_json = json.dumps({
@@ -123,11 +141,7 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 queue.put(event_json)
             except Exception:
                 pass
-            if event_callback is not None:
-                try:
-                    event_callback.onEvent(event_json)
-                except Exception:
-                    pass
+            _emit_event(event_callback, event_json)
 
     return progress_hook
 
@@ -154,10 +168,6 @@ def build_postprocessor_hook(queue: _queue.Queue, download_id: str, event_callba
                 queue.put(event_json)
             except Exception:
                 pass
-            if event_callback is not None:
-                try:
-                    event_callback.onEvent(event_json)
-                except Exception:
-                    pass
+            _emit_event(event_callback, event_json)
 
     return postprocessor_hook
