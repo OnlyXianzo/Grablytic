@@ -55,6 +55,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   List<Map<String, dynamic>> _muxedFormats = [];
   String? _selectedMuxedFormat;
   String _fetchedTitle = '';
+  String _thumbnailUrl = '';
+  int? _durationSeconds;
+  String _filterQuery = '';
   Playlist? _selectedPlaylist;
   bool _isStarting = false; // guard against duplicate download taps
 
@@ -120,6 +123,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         _audioFormats = formats.where((f) => f['stream_type'] == 'audio').toList();
         _muxedFormats = formats.where((f) => f['stream_type'] == 'muxed').toList();
         _fetchedTitle = result['title'] as String? ?? widget.title;
+        _thumbnailUrl = result['thumbnail_url'] as String? ?? '';
+        _durationSeconds = (result['duration_seconds'] as num?)?.toInt();
         
         final activePreset = ref.read(presetsProvider).activePreset;
         _selectedContainer = activePreset.preferredContainer;
@@ -161,8 +166,38 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  String _formatSize(int? bytes) {
-    if (bytes == null) return 'Unknown size';
+  /// True when [fmt] matches every whitespace-separated token of the
+  /// search query against height/format id/codec/container (e.g. "1080p",
+  /// "vp9 1080", "251"). Empty query matches everything.
+  bool _matchesFilter(Map<String, dynamic> fmt, bool isVideo) {
+    final q = _filterQuery.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final height = fmt['height'];
+    final haystack = StringBuffer()
+      ..write(fmt['format_id'])
+      ..write(' ')
+      ..write(isVideo && height != null ? '${height}p' : '')
+      ..write(' ')
+      ..write(isVideo ? (fmt['vcodec'] ?? '') : (fmt['acodec'] ?? ''))
+      ..write(' ')
+      ..write(fmt['ext'] ?? '')
+      ..write(' ')
+      ..write(fmt['abr'] ?? '')
+      ..write(' ')
+      ..write(fmt['format_note'] ?? '');
+    final hay = haystack.toString().toLowerCase();
+    return q.split(RegExp(r'\s+')).every(hay.contains);
+  }
+
+  String _formatDuration(int? seconds) {
+    if (seconds == null || seconds < 0) return '';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    if (m >= 60) return '${m ~/ 60}h ${m % 60}m';
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  String _formatSize(int? bytes) {    if (bytes == null) return 'Unknown size';
     final double mb = bytes / (1024 * 1024);
     if (mb > 1024) {
       return '${(mb / 1024).toStringAsFixed(1)} GB';
@@ -247,6 +282,14 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.primary,
         elevation: 0,
+        actions: [
+          if (!_isLoading && _error == null)
+            IconButton(
+              icon: const Icon(Icons.preview_outlined),
+              tooltip: 'Preview selection',
+              onPressed: () => _showPreview(colorScheme, textTheme),
+            ),
+        ],
       ),
       body: SafeArea(
         child: _isLoading
@@ -325,45 +368,71 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 24),
-                        if (_videoFormats.isNotEmpty) ...[
-                          Text(
-                            'VIDEO STREAMS',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.5,
+                        const SizedBox(height: 16),
+                        TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Filter formats (e.g. 1080p, vp9 1080, 251)',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _filterQuery.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () => setState(() => _filterQuery = ''),
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
                           ),
-                          const SizedBox(height: 8),
-                          ..._videoFormats.map((fmt) => _buildFormatRow(fmt, true, colorScheme, textTheme)),
-                        ],
-                        if (_muxedFormats.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          Text(
-                            'COMBINED STREAMS',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.5,
-                            ),
+                          onChanged: (v) => setState(() => _filterQuery = v),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_videoFormats.isNotEmpty)
+                          _buildSectionTile(
+                            title: 'VIDEO STREAMS',
+                            count: _videoFormats.length,
+                            selectedLabel: _selectedVideoFormat == null
+                                ? null
+                                : 'Selected: $_selectedVideoFormat',
+                            initiallyExpanded: false,
+                            colorScheme: colorScheme,
+                            textTheme: textTheme,
+                            children: [
+                              for (final fmt in _videoFormats.where((f) => _matchesFilter(f, true)))
+                                _buildFormatRow(fmt, true, colorScheme, textTheme),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          ..._muxedFormats.map((fmt) => _buildMuxedFormatRow(fmt, colorScheme, textTheme)),
-                        ],
-                        if (_audioFormats.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          Text(
-                            'AUDIO STREAMS',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.5,
-                            ),
+                        if (_muxedFormats.isNotEmpty)
+                          _buildSectionTile(
+                            title: 'COMBINED STREAMS',
+                            count: _muxedFormats.length,
+                            selectedLabel: _selectedMuxedFormat == null
+                                ? null
+                                : 'Selected: $_selectedMuxedFormat',
+                            initiallyExpanded: false,
+                            colorScheme: colorScheme,
+                            textTheme: textTheme,
+                            children: [
+                              for (final fmt in _muxedFormats.where((f) => _matchesFilter(f, false)))
+                                _buildMuxedFormatRow(fmt, colorScheme, textTheme),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          ..._audioFormats.map((fmt) => _buildFormatRow(fmt, false, colorScheme, textTheme)),
-                        ],
+                        if (_audioFormats.isNotEmpty)
+                          _buildSectionTile(
+                            title: 'AUDIO STREAMS',
+                            count: _audioFormats.length,
+                            selectedLabel: _selectedAudioFormat == null
+                                ? null
+                                : 'Selected: $_selectedAudioFormat',
+                            initiallyExpanded: false,
+                            colorScheme: colorScheme,
+                            textTheme: textTheme,
+                            children: [
+                              for (final fmt in _audioFormats.where((f) => _matchesFilter(f, false)))
+                                _buildFormatRow(fmt, false, colorScheme, textTheme),
+                            ],
+                          ),
                         const SizedBox(height: 24),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -435,6 +504,113 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                       ],
                     ),
                   ),
+      ),
+    );
+  }
+
+  /// Preview dialog: thumbnail + title + current selection summary with
+  /// a Download CTA. (Streaming playback needs a player dependency —
+  /// tracked as follow-up; this covers "see what I'm getting".)
+  void _showPreview(ColorScheme colorScheme, TextTheme textTheme) {
+    final dur = _formatDuration(_durationSeconds);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: colorScheme.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_thumbnailUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    _thumbnailUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        const Icon(Icons.broken_image_outlined, size: 48),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Text(
+                _fetchedTitle.isNotEmpty ? _fetchedTitle : widget.title,
+                style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              if (dur.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Duration: $dur', style: textTheme.labelSmall),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                'Video: ${_selectedMuxedFormat ?? _selectedVideoFormat ?? '—'}\n'
+                'Audio: ${_selectedMuxedFormat != null ? '(in combined)' : (_selectedAudioFormat ?? '—')}\n'
+                'Container: $_selectedContainer',
+                style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _startDownload();
+            },
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTile({
+    required String title,
+    required int count,
+    required String? selectedLabel,
+    required bool initiallyExpanded,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+    required List<Widget> children,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+        title: Text(
+          '$title ($count)',
+          style: textTheme.labelSmall?.copyWith(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.5,
+          ),
+        ),
+        subtitle: selectedLabel == null
+            ? null
+            : Text(selectedLabel, style: textTheme.labelSmall),
+        childrenPadding: const EdgeInsets.only(top: 8),
+        children: children.isEmpty
+            ? [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text('No formats match the filter.',
+                      style: textTheme.labelSmall),
+                ),
+              ]
+            : children,
       ),
     );
   }

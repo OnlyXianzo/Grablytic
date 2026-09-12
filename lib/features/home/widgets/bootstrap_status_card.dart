@@ -387,7 +387,7 @@ class _BinaryRow extends StatelessWidget {
             )
           else
             Text(
-              binary.ok ? 'installed' : (isOptionalMissing ? 'pending' : 'missing'),
+              binary.ok ? 'Installed' : (isOptionalMissing ? 'Not installed' : 'Not available on this device'),
               style: textTheme.mono.copyWith(
                 color: binary.ok
                     ? colorScheme.tertiary

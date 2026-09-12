@@ -915,8 +915,8 @@ class _BinaryDownloadsSection extends ConsumerWidget {
                             else
                               Text(
                                 binary.ok
-                                    ? 'installed'
-                                    : (binary.optional ? 'pending' : 'missing'),
+                                    ? 'Installed'
+                                    : (binary.optional ? 'Not installed' : 'Not available on this device'),
                                 style: textTheme.mono.copyWith(
                                   color: binary.ok
                                       ? colorScheme.tertiary

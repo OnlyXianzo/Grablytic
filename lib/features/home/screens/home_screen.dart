@@ -10,7 +10,6 @@ import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
 import '../widgets/error_recovery_card.dart';
-import '../widgets/bootstrap_status_card.dart';
 import '../widgets/download_log_overlay.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
@@ -666,7 +665,9 @@ class _EngineStatusBanner extends ConsumerWidget {
     final statusAsync = ref.watch(engineStatusProvider);
 
     return statusAsync.when(
-      loading: () => const BootstrapStatusCard(),
+      // Bootstrap card removed from Home (binaries live in Settings).
+      // Only genuine engine errors and status messages surface here.
+      loading: () => const SizedBox.shrink(),
       error: (err, _) {
         AppLogger.error('Engine status provider error', error: err);
         return _buildErrorPlaceholder(context, colorScheme, textTheme);
@@ -678,40 +679,33 @@ class _EngineStatusBanner extends ConsumerWidget {
         }
 
         final message = status.statusMessage;
-        return Column(
-          children: [
-            const BootstrapStatusCard(),
-            if (message != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: colorScheme.tertiaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Semantics(
-                  label: 'Engine status: $message',
-                  child: Row(
-                    children: [
-                      Icon(Icons.system_update,
-                          size: 16, color: colorScheme.onTertiaryContainer),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          message,
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onTertiaryContainer,
-                          ),
-                        ),
-                      ),
-                    ],
+        if (message == null) return const SizedBox.shrink();
+        return Container(
+          width: double.infinity,
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.tertiaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Semantics(
+            label: 'Engine status: $message',
+            child: Row(
+              children: [
+                Icon(Icons.system_update,
+                    size: 16, color: colorScheme.onTertiaryContainer),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onTertiaryContainer,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         );
       },
     );
