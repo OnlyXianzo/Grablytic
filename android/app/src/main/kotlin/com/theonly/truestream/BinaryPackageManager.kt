@@ -119,7 +119,7 @@ object BinaryPackageManager {
         // and the linker failed every bundled binary (CANNOT LINK
         // EXECUTABLE). Symlinks are recreated with Os.symlink instead.
         org.apache.commons.compress.archivers.zip.ZipFile(zipSo).use { zip ->
-            val entries = zip.entries()
+            val entries = zip.entries
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
                 val out = File(target, entry.name)
