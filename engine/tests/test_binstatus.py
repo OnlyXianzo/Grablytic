@@ -110,8 +110,9 @@ class TestBinariesList:
 
     @pytest.mark.unit
     def test_ffmpeg_probe_uses_single_dash_version(self, tmp_path, monkeypatch):
-        """FFmpeg CLI requires '-version' (single hyphen). Passing GNU-style '--version'
-        fails with exit code 8 (Unrecognized option '-version'). Probe must use '-version'."""
+        """Probe invokes single-dash '-version' (yt-dlp's own convention).
+        Both dash forms work on real FFmpeg (verified empirically); the
+        single-dash form is kept for consistency, and this test pins it."""
         import shutil
         boot = _boot()
         monkeypatch.setattr(boot, "_is_android_app", lambda: True)

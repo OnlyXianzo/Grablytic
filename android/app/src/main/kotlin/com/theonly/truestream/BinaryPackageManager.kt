@@ -79,8 +79,10 @@ object BinaryPackageManager {
     fun status(paths: Map<String, NativeBinPaths>, extraLdDirs: List<String> = emptyList()): List<NativeBinStatus> =
         paths.map { (name, bin) ->
             try {
-                // FFmpeg and FFprobe CLI syntax requires '-version' (single hyphen).
-                // Passing GNU-style '--version' causes unrecognized option and exit code 8.
+                // Single-dash form, matching yt-dlp's own probe style
+                // (`-bsfs`). Both forms work on real FFmpeg builds
+                // (verified: `ffmpeg --version` exits 0); single-dash is
+                // kept for consistency, not necessity.
                 val versionArg = if (name.startsWith("ffmpeg") || name.startsWith("ffprobe")) "-version" else "--version"
                 val proc = ProcessBuilder(bin.executable, versionArg)
                     .redirectErrorStream(true)
