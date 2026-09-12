@@ -576,6 +576,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                       ),
                     ),
                   ),
+              ],
               ),
               const SizedBox(height: 12),
               Row(

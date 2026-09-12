@@ -124,6 +124,19 @@ class TracedEngineService implements EngineService {
   Stream<Map<String, dynamic>> get progressStream => _inner.progressStream;
 
   @override
+  Future<Map<String, dynamic>> exportLogToDownloads({
+    required String sourcePath,
+    required String displayName,
+  }) =>
+      _traced(
+        'log/export_to_downloads',
+        () => _inner.exportLogToDownloads(
+          sourcePath: sourcePath,
+          displayName: displayName,
+        ),
+      );
+
+  @override
   Future<Map<String, dynamic>> getFormats({
     required String url,
     required Map<String, dynamic> config,
