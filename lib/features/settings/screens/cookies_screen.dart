@@ -14,6 +14,21 @@ import 'cookie_webview_screen.dart';
 /// Enabled profiles are merged into the single app-private `cookies.txt`
 /// the engine reads — no special Android permission needed (same model as
 /// ytdlnis/Seal: private dir + `0600`, backup-excluded).
+/// One-tap login shortcuts (no typing). URLs are the sites themselves so
+/// session cookies land on the right domain. The WebView screen detects
+/// logged-in sessions per site and falls back to the manual Done button
+/// where no session marker is known.
+const List<Map<String, String>> kQuickCookieSites = [
+  {'name': 'YouTube', 'url': 'https://www.youtube.com'},
+  {'name': 'Instagram', 'url': 'https://www.instagram.com'},
+  {'name': 'X', 'url': 'https://x.com'},
+  {'name': 'Facebook', 'url': 'https://www.facebook.com'},
+  {'name': 'TikTok', 'url': 'https://www.tiktok.com'},
+  {'name': 'Reddit', 'url': 'https://www.reddit.com'},
+  {'name': 'Twitch', 'url': 'https://www.twitch.tv'},
+  {'name': 'Bilibili', 'url': 'https://www.bilibili.com'},
+];
+
 class CookiesScreen extends ConsumerStatefulWidget {
   const CookiesScreen({super.key});
 
@@ -125,8 +140,10 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
       ),
     );
     if (spec == null || !mounted) return;
-    final url = spec['url']!;
-    final name = spec['name']!;
+    await _openWebLogin(spec['url']!, spec['name']!);
+  }
+
+  Future<void> _openWebLogin(String url, String name) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CookieWebViewScreen(
@@ -291,6 +308,35 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
               ),
               onChanged: (v) =>
                   ref.read(settingsProvider.notifier).setUseCookies(v),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'QUICK SITES',
+              style: textTheme.labelSmall?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final site in kQuickCookieSites)
+                  ActionChip(
+                    avatar: profiles.any((p) =>
+                            (p['url'] as String? ?? '').toLowerCase() ==
+                            site['url']!.toLowerCase())
+                        ? Icon(Icons.check_circle,
+                            size: 18, color: colorScheme.tertiary)
+                        : const Icon(Icons.login_outlined, size: 18),
+                    label: Text(site['name']!),
+                    onPressed: _working
+                        ? null
+                        : () => _openWebLogin(site['url']!, site['name']!),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             if (profiles.isEmpty)
