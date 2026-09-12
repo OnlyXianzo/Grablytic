@@ -652,53 +652,48 @@ def bootstrap() -> dict:
     # the returncode/output below is the entire diagnosis.
     probe_reports: dict[str, dict] = {}
 
-    def _probe_if_needed(name: str, path: str | None) -> str | None:
+    def _probe_if_needed(name: str, path: str | None) -> tuple[bool, str | None]:
         if not path or not os.path.isfile(path):
-            return None
-        rep = _probe_report(path)
-        probe_reports[name] = rep
-        if not rep["ok"]:
-            log.warn(
-                f"Probe {name} ({path}) failed "
-                f"rc={rep['returncode']}: {rep['output']}"
-            )
-        return rep["version"]
+            return False, None
+        if name in probe_reports:
+            rep = probe_reports[name]
+        else:
+            rep = _probe_report(path)
+            probe_reports[name] = rep
+            if not rep["ok"]:
+                log.warn(
+                    f"Probe {name} ({path}) failed "
+                    f"rc={rep['returncode']}: {rep['output']}"
+                )
+        return rep["ok"], rep["version"]
 
-    if not ffmpeg_ok and paths.get("ffmpeg_path"):
-        p = paths["ffmpeg_path"]
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            ffmpeg_ok = True
-            ffmpeg_version = ffmpeg_version or _probe_if_needed("ffmpeg", p)
-    if not aria2c_ok and paths.get("aria2c_path"):
-        p = paths["aria2c_path"]
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            aria2c_ok = True
-            aria2c_version = aria2c_version or _probe_if_needed("aria2c", p)
-    if not deno_ok and paths.get("deno_path"):
-        p = paths["deno_path"]
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            deno_ok = True
-            deno_version = deno_version or _probe_if_needed("deno", p)
+    def _eval_binary(
+        name: str,
+        path: str | None,
+        current_ok: bool,
+        current_ver: str | None,
+    ) -> tuple[bool, str | None]:
+        if not path or not os.path.isfile(path) or not os.access(path, os.X_OK):
+            return False, None
+        # Always probe live: file presence does not guarantee dynamic linker
+        # resolution or ABI compatibility. Fail closed on probe failure.
+        probe_ok, probe_ver = _probe_if_needed(name, path)
+        if not probe_ok:
+            return False, None
+        return True, probe_ver or current_ver
 
-    # Node: no download channel (desktop relies on system node; Android on
-    # the bundled jniLibs .so resolved via set_paths). Probe like the rest.
-    node_ok, node_version = False, None
-    if paths.get("nodejs_path"):
-        p = paths["nodejs_path"]
-        if os.path.isfile(p) and os.access(p, os.X_OK):
-            node_ok = True
-            node_version = _probe_if_needed("node", p)
-
-    # Pre-existing executables (bundled jniLibs .so files, system binaries)
-    # carry no release tag — probe live so version fields are never blank.
-    if ffmpeg_ok and not ffmpeg_version and paths.get("ffmpeg_path"):
-        ffmpeg_version = _probe_if_needed("ffmpeg", paths["ffmpeg_path"])
-    if aria2c_ok and not aria2c_version and paths.get("aria2c_path"):
-        aria2c_version = _probe_if_needed("aria2c", paths["aria2c_path"])
-    if deno_ok and not deno_version and paths.get("deno_path"):
-        deno_version = _probe_if_needed("deno", paths["deno_path"])
-    if node_ok and not node_version and paths.get("nodejs_path"):
-        node_version = _probe_if_needed("node", paths["nodejs_path"])
+    ffmpeg_ok, ffmpeg_version = _eval_binary(
+        "ffmpeg", paths.get("ffmpeg_path"), ffmpeg_ok, ffmpeg_version
+    )
+    aria2c_ok, aria2c_version = _eval_binary(
+        "aria2c", paths.get("aria2c_path"), aria2c_ok, aria2c_version
+    )
+    deno_ok, deno_version = _eval_binary(
+        "deno", paths.get("deno_path"), deno_ok, deno_version
+    )
+    node_ok, node_version = _eval_binary(
+        "node", paths.get("nodejs_path"), False, None
+    )
 
     # One line proving the child-process environment yt-dlp will inherit.
     # If a bundled .so later fails to spawn, compare: missing/wrong

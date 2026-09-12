@@ -75,6 +75,40 @@ class TestBinariesList:
         assert "Deno" in qjs["detail"]
 
     @pytest.mark.unit
+    def test_broken_binary_fails_closed(self, tmp_path, monkeypatch):
+        """When an executable fails probe (e.g. missing DT_NEEDED library / rc!=0),
+        bootstrap must report ok=False, missing source, and log diagnostic detail."""
+        import shutil
+        boot = _boot()
+        monkeypatch.setattr(boot, "_is_android_app", lambda: True)
+        monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
+        monkeypatch.setattr(
+            boot, "_resolve_latest_release",
+            lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
+        )
+        broken_path = tmp_path / "libffmpeg.so"
+        broken_path.write_text(
+            "#!/bin/sh\n"
+            "echo 'CANNOT LINK EXECUTABLE: library \"libexpat.so.1\" not found' >&2\n"
+            "exit 1\n"
+        )
+        broken_path.chmod(broken_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=str(broken_path), cache_dir=str(tmp_path),
+        )
+        res = boot.bootstrap()
+        assert res["success"] is True
+        assert res["ffmpeg_ok"] is False
+        assert "ffmpeg" in res["update_components"]
+        ffmpeg = _by_name(res, "ffmpeg")
+        assert ffmpeg["ok"] is False
+        assert ffmpeg["source"] == "missing"
+        assert ffmpeg["version"] is None
+        assert "probe rc=1" in ffmpeg["detail"]
+        assert "libexpat.so.1" in ffmpeg["detail"]
+
+    @pytest.mark.unit
     def test_downloaded_and_system_sources(self, tmp_path, monkeypatch):
         import shutil
         boot = _boot()
