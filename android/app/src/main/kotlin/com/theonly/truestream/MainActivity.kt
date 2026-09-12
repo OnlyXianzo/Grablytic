@@ -126,33 +126,26 @@ class MainActivity : FlutterActivity() {
                         } catch (_: Exception) {
                             emptyMap()
                         }
-                        val ffmpegBin = bins["ffmpeg"]?.takeIf { File(it.executable).canExecute() }
-                        val denoBin = bins["deno"]?.takeIf { File(it.executable).canExecute() }
-                        val nodeBin = bins["node"]?.takeIf { File(it.executable).canExecute() }
-                        ffmpegPath = ffmpegBin?.executable ?: dartFfmpegPath
-                        // EVERY bundled binary needs EVERY support tree: the
-                        // linker resolves ffmpeg's AND deno's AND node's deps
-                        // from these dirs (a ffmpeg-only path leaves
-                        // libsqlite3.so etc. unreachable → CANNOT LINK
-                        // EXECUTABLE). Mirrors ytdlnis RuntimeManager
-                        // (all usr/lib + native dir).
-                        val ldDirs = listOfNotNull(
-                            ffmpegBin?.ldLibDir,
-                            denoBin?.ldLibDir,
-                            nodeBin?.ldLibDir,
+                        val allLdDirs = listOfNotNull(
+                            bins["ffmpeg"]?.ldLibDir,
+                            bins["deno"]?.ldLibDir,
+                            bins["node"]?.ldLibDir,
                             applicationContext.applicationInfo.nativeLibraryDir,
                         ).distinct()
-                        val combinedLdPath =
-                            ldDirs.joinToString(":").takeIf { it.isNotEmpty() }
-                        val ffmpegLdPath = combinedLdPath
-                        val resolvedNodePath = nodeBin?.executable
-                        val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
-                        for (s in BinaryPackageManager.status(bins)) {
+                        val binStatuses = BinaryPackageManager.status(bins, allLdDirs).associateBy { it.name }
+                        for (s in binStatuses.values) {
                             android.util.Log.i(
                                 "BinaryPackages",
                                 "${s.name}: ok=${s.ok} version=${s.version} ${s.detail}",
                             )
                         }
+                        val ffmpegBin = bins["ffmpeg"]?.takeIf { binStatuses["ffmpeg"]?.ok == true }
+                        val denoBin = bins["deno"]?.takeIf { binStatuses["deno"]?.ok == true }
+                        val nodeBin = bins["node"]?.takeIf { binStatuses["node"]?.ok == true }
+                        ffmpegPath = ffmpegBin?.executable ?: dartFfmpegPath
+                        val ffmpegLdPath = allLdDirs.joinToString(":").takeIf { it.isNotEmpty() }
+                        val resolvedNodePath = nodeBin?.executable
+                        val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")

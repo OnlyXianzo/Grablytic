@@ -115,7 +115,7 @@ apply(from = "packages.gradle.kts")
 
 // Guarantee the download tasks run before native libs are merged.
 tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
-    .configureEach { dependsOn("downloadNativePackages", "downloadNativeShims") }
+    .configureEach { dependsOn("downloadNativePackages") }
 
 // AGP/Kotlin script analysis bug causes lintVitalAnalyzeRelease to crash on KaModule.
 tasks.matching { it.name.startsWith("lintVital") }.configureEach {

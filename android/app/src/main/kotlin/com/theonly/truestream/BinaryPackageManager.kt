@@ -76,7 +76,7 @@ object BinaryPackageManager {
     }
 
     /** Probe `--version` for diagnostics. Never throws. */
-    fun status(paths: Map<String, NativeBinPaths>): List<NativeBinStatus> =
+    fun status(paths: Map<String, NativeBinPaths>, extraLdDirs: List<String> = emptyList()): List<NativeBinStatus> =
         paths.map { (name, bin) ->
             try {
                 val proc = ProcessBuilder(bin.executable, "--version")
@@ -84,8 +84,12 @@ object BinaryPackageManager {
                     .apply {
                         // The bundled .so files have no RUNPATH; without this
                         // the probe fails even though the binary is healthy.
-                        if (bin.ldLibDir != null) {
-                            environment()["LD_LIBRARY_PATH"] = bin.ldLibDir
+                        val ldParts = listOfNotNull(
+                            bin.ldLibDir,
+                            *extraLdDirs.toTypedArray(),
+                        ).filter { it.isNotBlank() }.distinct()
+                        if (ldParts.isNotEmpty()) {
+                            environment()["LD_LIBRARY_PATH"] = ldParts.joinToString(":")
                         }
                     }
                     .start()
