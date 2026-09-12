@@ -82,6 +82,13 @@ android {
     }
 }
 
+dependencies {
+    // Symlink-aware zip extraction for the bundled support trees
+    // (mirrors ytdlnis ZipUtils — java.util.zip cannot see Unix symlink
+    // entries and extracts them as text files, breaking the linker).
+    implementation("org.apache.commons:commons-compress:1.26.2")
+}
+
 chaquopy {
     defaultConfig {
         version = "3.11"

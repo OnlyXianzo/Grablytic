@@ -3,7 +3,6 @@ package com.theonly.truestream
 import android.content.Context
 import android.util.Log
 import java.io.File
-import java.util.zip.ZipFile
 
 /**
  * Resolved paths for one bundled native binary.
@@ -106,13 +105,23 @@ object BinaryPackageManager {
     private fun extractTree(zipSo: File, target: File) {
         if (!zipSo.isFile) return // packages without a support tree (none today)
         val marker = File(target, ".zipsize")
-        val size = zipSo.length().toString()
-        if (target.isDirectory && marker.isFile && marker.readText().trim() == size) return
+        // v2: symlink-aware extraction (see below). Old size-only markers
+        // never match, forcing one clean re-extract that replaces the
+        // broken text-stub trees on already-installed devices.
+        val stamp = zipSo.length().toString() + "\nv2-symlinks"
+        if (target.isDirectory && marker.isFile && marker.readText().trim() == stamp.trim()) return
 
         deleteQuietly(target)
         target.mkdirs()
-        ZipFile(zipSo).use { zip ->
-            for (entry in zip.entries()) {
+        // Apache commons-compress, mirroring ytdlnis ZipUtils: java.util.zip
+        // cannot see Unix symlink entries, so versioned libs (libswscale.so
+        // -> libswscale.so.8.3.100, ...) were extracted as tiny TEXT files
+        // and the linker failed every bundled binary (CANNOT LINK
+        // EXECUTABLE). Symlinks are recreated with Os.symlink instead.
+        org.apache.commons.compress.archivers.zip.ZipFile(zipSo).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
                 val out = File(target, entry.name)
                 // Zip-slip guard (entries come from our own APK, belt and braces).
                 check(out.canonicalPath.startsWith(target.canonicalPath + File.separator)) {
@@ -120,6 +129,12 @@ object BinaryPackageManager {
                 }
                 if (entry.isDirectory) {
                     out.mkdirs()
+                } else if (entry.isUnixSymlink) {
+                    out.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { input ->
+                        val linkTarget = input.bufferedReader().readText()
+                        android.system.Os.symlink(linkTarget, out.absolutePath)
+                    }
                 } else {
                     out.parentFile?.mkdirs()
                     zip.getInputStream(entry).use { input ->
@@ -129,9 +144,10 @@ object BinaryPackageManager {
             }
         }
         // .so deps need read access; keep everything executable-safe.
+        // (setExecutable follows symlinks to their targets — harmless.)
         target.walkTopDown().forEach { it.setExecutable(true, false) }
         try {
-            marker.writeText(size)
+            marker.writeText(stamp)
         } catch (_: Exception) {
         }
         Log.i(TAG, "extracted ${zipSo.name} -> ${target.absolutePath}")

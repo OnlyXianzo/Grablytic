@@ -28,9 +28,13 @@
   for bundled binaries) + exec-environment line; single-video downloads
   with swallowed post-processing failures report `ERROR_POSTPROCESS_FAILED`
   instead of a false `finished` (playlists stay lenient).
-- Linker fix: `LD_LIBRARY_PATH` now carries EVERY support tree (ffmpeg +
-  deno + native dir), fixing `CANNOT LINK EXECUTABLE` for bundled
-  binaries; `set_paths` accepts colon-joined dirs.
+- `LD_LIBRARY_PATH` carries EVERY support tree (ffmpeg + deno + native
+  dir); `set_paths` accepts colon-joined dirs.
+- Linker fix, for real this time: support-tree extraction recreates Unix
+  symlinks (`commons-compress`, mirroring ytdlnis). `java.util.zip` had
+  been writing link targets as text files, so EVERY versioned `.so`
+  lookup failed (`CANNOT LINK EXECUTABLE`). Marker bump forces one clean
+  re-extract on existing installs.
 - Live per-download engine-log overlay on download cards (ytdlnis-style).
 - Android JS runtime is now bundled Node.js (`nodejs-25.3.0` jniLibs;
   Deno's `libsqlite3.so` doesn't ship) with node-first priority on
