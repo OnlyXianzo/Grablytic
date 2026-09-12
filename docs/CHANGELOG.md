@@ -33,10 +33,10 @@
 - Linker fix: support-tree extraction recreates Unix symlinks
   (`commons-compress`, mirroring ytdlnis) — `java.util.zip` had been
   writing link targets as text files. Marker bump re-extracts once.
-- Linker, endgame: `libexpat.so.1` (proven missing on-device via the
-  linker's own verdict) ships from Termux apt at build time
-  (SHA-256-pinned `.deb`, extracted to jniLibs; MIT-licensed, Bionic
-  API 24+). Same fail-closed fetch policy as the other binaries.
+- Linker, endgame: FFmpeg now comes self-contained from
+  `youtubedl-android:ffmpeg` (Maven Central, production-proven in Seal —
+  zero missing libs, so no expat shim needed; a same-night shim attempt
+  was correctly dropped: the OS only extracts `*.so` from APKs).
 - Live per-download engine-log overlay on download cards (ytdlnis-style).
 - Extreme-but-sane logging: settings-change diffs (masked secrets),
   disk snapshots at bootstrap + download start, 25/50/75% stall
