@@ -155,5 +155,22 @@ class PlatformChannelEngineService implements EngineService {
   @override
   Stream<Map<String, dynamic>> get logStream =>
       progressStream.where((event) => event['type'] == 'log');
+
+  @override
+  Future<Map<String, dynamic>> exportLogToDownloads({
+    required String sourcePath,
+    required String displayName,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>(
+        'log/export_to_downloads',
+        {'source_path': sourcePath, 'display_name': displayName},
+      );
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
 }
 

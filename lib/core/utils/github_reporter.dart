@@ -39,6 +39,14 @@ class GithubReporter {
     defaultValue: '',
   );
 
+  /// Short git SHA stamped at build time (`--dart-define=TRUESTREAM_GIT_SHA`,
+  /// wired in .github/workflows/build.yml). Lets any pasted log be pinned to
+  /// the exact commit that produced it. Empty (dev runs) → 'unknown'.
+  static const String _envGitSha = String.fromEnvironment(
+    'TRUESTREAM_GIT_SHA',
+    defaultValue: '',
+  );
+
   GithubReporter({
     String? owner,
     String? repo,
@@ -306,7 +314,7 @@ $actual
 
 ### Platform
 - OS: ${env['os']} (${env['osVersion']})
-- App version: $appVersion
+- App version: $appVersion (build ${env['build']})
 - Dart: ${env['dart']} · Flutter: ${env['flutter'] ?? 'n/a'}
 - Debug build: ${env['debug']}
 
@@ -332,6 +340,7 @@ $logTail
       'osVersion': Platform.operatingSystemVersion,
       'dart': Platform.version.split(' ').first,
       'flutter': _envFlutter.isEmpty ? 'unknown' : _envFlutter,
+      'build': _envGitSha.isEmpty ? 'unknown' : _envGitSha,
       'debug': kDebugMode.toString(),
     };
   }

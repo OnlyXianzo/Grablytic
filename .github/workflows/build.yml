@@ -58,8 +58,11 @@ jobs:
       - name: Stamp Flutter version
         run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
 
+      - name: Stamp git commit
+        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
       - name: Build APK (universal, both ABIs)
-        run: flutter build apk --release --dart-define=TRUESTREAM_FLUTTER_VERSION="${{ env.FLUTTER_VERSION }}"
+        run: flutter build apk --release --dart-define=TRUESTREAM_FLUTTER_VERSION="${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define=TRUESTREAM_GIT_SHA="${{ env.TRUESTREAM_GIT_SHA }}"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -93,8 +96,11 @@ jobs:
       - name: Stamp Flutter version
         run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Stamp git commit
+        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build Windows App
-        run: flutter build windows --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}"
+        run: flutter build windows --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
 
       - name: Copy Python Engine to Bundle
         run: xcopy /E /I engine\truestream_engine build\windows\x64\runner\Release\truestream_engine
@@ -136,8 +142,11 @@ jobs:
       - name: Stamp Flutter version
         run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
 
+      - name: Stamp git commit
+        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
       - name: Build Linux App
-        run: flutter build linux --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}"
+        run: flutter build linux --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
 
       - name: Copy Python Engine to Bundle
         run: cp -r engine/truestream_engine build/linux/x64/release/bundle/

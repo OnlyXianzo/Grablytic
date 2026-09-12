@@ -122,7 +122,11 @@ def download_thread(
 
     log.set_context(download_id=download_id)
     try:
-        log.info(f"Download started: {url}", extra={"download_id": download_id})
+        # Never log raw URLs: share/clipboard links routinely carry
+        # signed query params (sig/lsig). Host + path is enough to
+        # identify the item in diagnostics.
+        safe_url = url.split("?", 1)[0] if isinstance(url, str) else "<url>"
+        log.info(f"Download started: {safe_url}", extra={"download_id": download_id})
 
         paths = get_paths()
         ffmpeg_path = paths.get("ffmpeg_path")
@@ -166,6 +170,21 @@ def download_thread(
 
         opts["logger"] = YDLogger()
         opts["verbose"] = True
+
+        # One-line effective config: future "it just sat there" reports can
+        # be triaged from this alone (wrong format? no aria2c? no JS?).
+        try:
+            js_map = opts.get("js_runtimes")
+            js_name = next(iter(js_map), None) if isinstance(js_map, dict) else None
+            log.info(
+                f"Download config: format={opts.get('format')} "
+                f"container={opts.get('merge_output_format')} "
+                f"aria2c={'yes' if 'external_downloader' in opts else 'no'} "
+                f"js={js_name or 'none'}",
+                extra={"download_id": download_id},
+            )
+        except Exception:
+            pass
 
         ydl = YoutubeDL(opts)
 
@@ -246,7 +265,7 @@ def download_thread(
                 "error_message": "Download cancelled by user",
             })
     except Exception as exc:
-        log.log_exception(exc, f"Download failed: {url}")
+        log.log_exception(exc, f"Download failed: {safe_url}")
         err = classify_error(exc)
         terminal_event = json.dumps({
             "type": "event",
@@ -271,6 +290,38 @@ def download_thread(
                 "error_message": err.message,
                 "recoverable": err.recoverable,
                 "suggests_vpn": err.suggests_vpn,
+            })
+    except BaseException as exc:
+        # SystemExit / GeneratorExit / KeyboardInterrupt-outside-cancel and
+        # friends bypass `except Exception`. Without this the item rotted as
+        # "downloading" forever with zero diagnostics (ghost downloads).
+        kind = type(exc).__name__
+        try:
+            log.error(f"Download aborted ({kind}): {download_id}")
+        except Exception:
+            pass
+        terminal_event = json.dumps({
+            "type": "event",
+            "event": "error",
+            "download_id": download_id,
+            "error_type": "ERROR_DOWNLOADER_CRASH",
+            "error_message": f"Downloader stopped unexpectedly ({kind})",
+            "recoverable": True,
+            "suggests_vpn": False,
+        })
+        if event_callback is not None:
+            try:
+                event_callback.onEvent(terminal_event)
+            except Exception:
+                pass
+        else:
+            res_q.put({
+                "success": False,
+                "download_id": download_id,
+                "error_type": "ERROR_DOWNLOADER_CRASH",
+                "error_message": f"Downloader stopped unexpectedly ({kind})",
+                "recoverable": True,
+                "suggests_vpn": False,
             })
     finally:
         log.clear_context()

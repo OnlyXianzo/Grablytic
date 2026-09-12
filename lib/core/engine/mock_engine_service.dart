@@ -255,6 +255,14 @@ class MockEngineService implements EngineService {
   @override
   Stream<Map<String, dynamic>> get logStream => const Stream.empty();
 
+  @override
+  Future<Map<String, dynamic>> exportLogToDownloads({
+    required String sourcePath,
+    required String displayName,
+  }) async {
+    return {'success': true, 'path': 'mock/Downloads/$displayName'};
+  }
+
   void dispose() {
     _progressController.close();
   }

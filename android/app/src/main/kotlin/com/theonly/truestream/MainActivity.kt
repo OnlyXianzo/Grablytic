@@ -317,6 +317,25 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "log/export_to_downloads" -> {
+                    val sourcePath = call.argument<String>("source_path")
+                    val displayName = call.argument<String>("display_name")
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            if (sourcePath.isNullOrEmpty() || displayName.isNullOrEmpty()) {
+                                throw IllegalArgumentException("missing args")
+                            }
+                            val dest = exportFileToDownloads(File(sourcePath), displayName)
+                            withContext(Dispatchers.Main) {
+                                result.success(mapOf("success" to true, "path" to dest))
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                result.success(mapOf("success" to false, "error" to (e.message ?: "export failed")))
+                            }
+                        }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -336,5 +355,58 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    /**
+     * Copies an app-private file (log) to the public Download folder so the
+     * user can reach it with any file manager — app-private dirs are not
+     * browsable on Android 12+. API 29+: MediaStore (no permission needed
+     * for our own entries). API 24-28: legacy public path (covered by the
+     * manifest's maxSdkVersion-29 WRITE_EXTERNAL_STORAGE). Files capped at
+     * 5 MB to keep the copy instant.
+     */
+    private fun exportFileToDownloads(src: File, displayName: String): String {
+        if (!src.isFile) throw IllegalArgumentException("log file missing")
+        if (src.length() > 5 * 1024 * 1024) throw IllegalArgumentException("log too large")
+        val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                put(
+                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DOWNLOADS + "/TrueStream-logs",
+                )
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(
+                android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values,
+            ) ?: throw java.io.IOException("MediaStore insert failed")
+            try {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    src.inputStream().use { it.copyTo(out) }
+                } ?: throw java.io.IOException("MediaStore open failed")
+            } catch (e: Exception) {
+                try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+                throw e
+            }
+            val done = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            contentResolver.update(uri, done, null, null)
+            return "Download/TrueStream-logs/$safeName"
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(
+                android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS,
+                ),
+                "TrueStream-logs",
+            )
+            dir.mkdirs()
+            val dest = File(dir, safeName)
+            src.copyTo(dest, overwrite = true)
+            return dest.absolutePath
+        }
     }
 }

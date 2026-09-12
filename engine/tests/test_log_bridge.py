@@ -297,3 +297,58 @@ class TestBridgeSanitization:
         finally:
             (persist_mod._configured_dir, persist_mod._std_logger,
              persist_mod._handler) = prev
+
+
+class _SystemExitYDL(_FakeYDL):
+    def download(self, urls):
+        raise SystemExit(3)
+
+
+class TestDownloaderCrashGuard:
+    """BaseException (SystemExit/GeneratorExit) must still emit terminal."""
+
+    def _run(self, tmp_path, monkeypatch, ydl_cls, did):
+        import truestream_engine.downloader as dl_mod
+        import truestream_engine.paths as paths_mod
+
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        paths_mod.set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+        )
+        monkeypatch.setattr(dl_mod, "YoutubeDL", ydl_cls)
+        sink = _Sink()
+        set_global_event_callback(sink)
+        prog_q: queue.Queue = queue.Queue()
+        res_q: queue.Queue = queue.Queue()
+        try:
+            dl_mod.download_thread(
+                url="https://x.test/watch?v=abc&sig=SECRET999",
+                download_id=did,
+                progress_queue=prog_q, result_queue=res_q,
+                event_callback=sink,
+            )
+        finally:
+            dl_mod._active_downloads.pop(did, None)
+        return sink
+
+    def test_system_exit_becomes_error_event(
+        self, tmp_path, monkeypatch, _clean_bridge
+    ):
+        sink = self._run(tmp_path, monkeypatch, _SystemExitYDL, "crasher1")
+        errs = [json.loads(r) for r in sink.events
+                if json.loads(r).get("event") == "error"]
+        assert len(errs) == 1
+        assert errs[0]["error_type"] == "ERROR_DOWNLOADER_CRASH"
+        assert errs[0]["recoverable"] is True
+
+    def test_started_and_config_lines_hide_query(
+        self, tmp_path, monkeypatch, _clean_bridge
+    ):
+        sink = self._run(tmp_path, monkeypatch, _FakeYDL, "leakcheck1")
+        logs = [json.loads(r)["message"] for r in sink.events
+                if json.loads(r).get("type") == "log"]
+        assert any("Download started: https://x.test/watch" in m for m in logs)
+        assert not any("SECRET999" in m for m in logs)
+        assert not any("sig=" in m for m in logs)
+        assert any(m.startswith("Download config: format=") for m in logs)

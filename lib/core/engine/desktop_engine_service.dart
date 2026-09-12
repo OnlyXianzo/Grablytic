@@ -436,4 +436,39 @@ class DesktopEngineService implements EngineService {
       'channel': channel,
     });
   }
+
+  @override
+  Future<Map<String, dynamic>> exportLogToDownloads({
+    required String sourcePath,
+    required String displayName,
+  }) async {
+    // Desktop has direct filesystem access: plain copy into
+    // ~/Downloads/TrueStream-logs/. Never throws (contract).
+    try {
+      final src = File(sourcePath);
+      if (!await src.exists()) return {'success': false};
+      Directory base;
+      try {
+        // path_provider is intentionally NOT imported here to keep the
+        // engine layer free of plugin channels; resolve Downloads manually.
+        final home = Platform.environment['HOME'] ??
+            Platform.environment['USERPROFILE'] ??
+            '.';
+        base = Directory('$home/Downloads/TrueStream-logs');
+      } catch (_) {
+        return {'success': false};
+      }
+      await base.create(recursive: true);
+      var dest = File('${base.path}/$displayName');
+      var n = 1;
+      while (await dest.exists()) {
+        n++;
+        dest = File('${base.path}/$displayName-$n');
+      }
+      await src.copy(dest.path);
+      return {'success': true, 'path': dest.path};
+    } catch (_) {
+      return {'success': false};
+    }
+  }
 }

@@ -23,4 +23,14 @@ abstract class EngineService {
   Future<Map<String, dynamic>> updateCheck();
   Future<Map<String, dynamic>> setUpdateChannel(String channel);
   Stream<Map<String, dynamic>> get logStream;
+
+  /// Copies an app-private log file to the public Downloads folder so the
+  /// user can reach it without root/PC (scoped storage blocks browsing
+  /// app-private dirs on Android 12+). Returns
+  /// `{'success': true, 'path': <human-readable location>}` or
+  /// `{'success': false, ...}` — never throws.
+  Future<Map<String, dynamic>> exportLogToDownloads({
+    required String sourcePath,
+    required String displayName,
+  });
 }

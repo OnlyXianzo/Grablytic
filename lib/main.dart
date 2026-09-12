@@ -34,7 +34,8 @@ void main() async {
   // Initialize in-memory log buffer and wire to AppLogger
   final logBuffer = LogBuffer(maxEntries: 5000);
   AppLogger.initBuffer(logBuffer);
-  AppLogger.info('App opened/started');
+  AppLogger.info(
+      'App opened/started (build ${const String.fromEnvironment('TRUESTREAM_GIT_SHA', defaultValue: 'dev')})');
 
   final cacheDir = await getTemporaryDirectory();
 
