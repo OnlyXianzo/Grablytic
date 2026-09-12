@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/utils/download_config.dart';
+import '../core/utils/schedule_guard.dart';
 import 'download_provider.dart';
 import 'playlist_provider.dart';
 import 'preset_provider.dart';
@@ -115,6 +116,12 @@ class BatchNotifier extends StateNotifier<BatchState> {
     state = state.copyWith(items: updated, currentIndex: pendingIndex);
 
     final item = state.items[pendingIndex];
+    // Schedule gate (headless runner has no dialog): pause the batch and
+    // leave remaining items pending instead of starting silently.
+    if (!isWithinScheduleWindow(_ref.read(settingsProvider), DateTime.now())) {
+      state = state.copyWith(isRunning: false);
+      return;
+    }
     if (_ref.read(downloadProvider.notifier).isDownloading(item.url)) {
       _updateItem(pendingIndex, status: BatchItemStatus.completed, progress: 1.0);
       processNext();

@@ -10,6 +10,7 @@ import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/download_config.dart';
+import '../../../core/utils/schedule_guard.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -56,11 +57,39 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
   }
 
-  void _handleSharedUrl(String url) {
+  Future<void> _handleSharedUrl(String url) async {
     if (url.isEmpty) return;
 
     final settings = ref.read(settingsProvider);
     if (settings.autoStartDownloadOnShare) {
+      if (!isWithinScheduleWindow(settings, DateTime.now()) && mounted) {
+        final go = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Outside scheduled window'),
+            content: Text(
+              'Your download schedule is ${scheduleSummary(settings)}.\n\n'
+              'Auto-start this shared download now anyway?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Wait'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Start anyway'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || !(go ?? false)) {
+          _currentIndex = 0;
+          _pageController.jumpToPage(0);
+          return;
+        }
+      }
       final notifier = ref.read(downloadProvider.notifier);
       if (notifier.isDownloading(url)) {
         ScaffoldMessenger.of(context).showSnackBar(

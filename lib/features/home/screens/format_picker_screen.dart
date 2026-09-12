@@ -5,9 +5,11 @@ import '../../../core/database/download_history_db.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/command_template.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/format_selector.dart';
 import '../../../core/utils/history_guard.dart';
+import '../../../core/utils/schedule_guard.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/preset_provider.dart';
@@ -60,6 +62,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   String _thumbnailUrl = '';
   int? _durationSeconds;
   String _filterQuery = '';
+  String? _selectedTemplate;
   Playlist? _selectedPlaylist;
   bool _isStarting = false; // guard against duplicate download taps
 
@@ -208,6 +211,32 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     return '${mb.toStringAsFixed(0)} MB';
   }
 
+  /// Confirm dialog when starting outside the scheduled window.
+  Future<bool> _confirmOutsideSchedule(AppSettings settings) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Outside scheduled window'),
+        content: Text(
+          'Your download schedule is ${scheduleSummary(settings)}.\n\n'
+          'Start this download now anyway?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Wait'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Start anyway'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   /// Confirm dialog when the video is already in history. Returns true
   /// when the user explicitly chooses to download again.
   Future<bool> _confirmRedownload(DownloadRecord dup) async {
@@ -248,6 +277,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       return;
     }
 
+    // Schedule gate: outside the window confirm instead of starting silently.
+    final settings = ref.read(settingsProvider);
+    if (!isWithinScheduleWindow(settings, DateTime.now()) && mounted) {
+      final go = await _confirmOutsideSchedule(settings);
+      if (!mounted || !go) return;
+    }
+
     // Already-downloaded / duplicate guard: warn instead of silently
     // replacing. Matches by exact URL or YouTube video id, so a video
     // previously saved as audio (or vice versa) still warns.
@@ -270,12 +306,16 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
     final config = <String, dynamic>{
       'container': _selectedContainer,
-      'explicit_format_id': _selectedMuxedFormat ?? _selectedVideoFormat,
-      'explicit_audio_format_id': _selectedMuxedFormat != null ? null : _selectedAudioFormat,
       // P1: forward user settings under exact engine contract keys
       // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
-      ...settingsDownloadConfig(ref.read(settingsProvider)),
+      ...settingsDownloadConfig(settings),
+      // Opt-in command template wins over settings (explicit format ids
+      // below always win over everything — templates never touch them).
+      if (_selectedTemplate != null && _selectedTemplate!.isNotEmpty)
+        ...parseTemplateConfig(_selectedTemplate!).config,
+      'explicit_format_id': _selectedMuxedFormat ?? _selectedVideoFormat,
+      'explicit_audio_format_id': _selectedMuxedFormat != null ? null : _selectedAudioFormat,
     };
 
     final result = await AppLogger.trace<Map<String, dynamic>>(
@@ -523,6 +563,37 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 ],
                                 onChanged: (val) {
                                   setState(() => _selectedPlaylist = val);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Command Template:', style: textTheme.bodyMedium),
+                            Semantics(
+                              label: 'Command Template, ${_selectedTemplate ?? "none"} selected',
+                              child: DropdownButton<String?>(
+                                value: _selectedTemplate,
+                                dropdownColor: colorScheme.surfaceContainerHigh,
+                                hint: const Text('None'),
+                                items: [
+                                  const DropdownMenuItem<String?>(
+                                    value: null,
+                                    child: Text('None'),
+                                  ),
+                                  ...ref.watch(settingsProvider).customTemplates.map((t) => DropdownMenuItem<String?>(
+                                        value: t,
+                                        child: Text(
+                                          t.length > 24 ? '${t.substring(0, 24)}…' : t,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      )),
+                                ],
+                                onChanged: (val) {
+                                  setState(() => _selectedTemplate = val);
                                 },
                               ),
                             ),
