@@ -141,6 +141,15 @@ def download_thread(
         # identify the item in diagnostics.
         safe_url = url.split("?", 1)[0] if isinstance(url, str) else "<url>"
         log.info(f"Download started: {safe_url}", extra={"download_id": download_id})
+        try:
+            out_dir = (get_paths().get("output_dir")
+                       or get_paths().get("data_dir") or ".")
+            import shutil as _shutil
+            free_mb = _shutil.disk_usage(out_dir).free // (1024 * 1024)
+            log.info(f"Disk output ({out_dir}): {free_mb}MB free",
+                     extra={"download_id": download_id})
+        except Exception:
+            pass
 
         paths = get_paths()
         ffmpeg_path = paths.get("ffmpeg_path")
@@ -197,6 +206,13 @@ def download_thread(
                 f"js={js_name or 'none'}",
                 extra={"download_id": download_id},
             )
+            # Full effective opts (sanitized) at DEBUG, only when the user
+            # enabled verbose: the complete triage picture without spamming
+            # default installs.
+            if config.get("verbose"):
+                from truestream_engine.persistent import sanitize
+                log.debug(f"Effective opts: {sanitize(opts)}",
+                          extra={"download_id": download_id})
         except Exception:
             pass
 

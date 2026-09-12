@@ -434,3 +434,107 @@ class TestProbeReport:
         assert rep["ok"] is True
         assert rep["version"] == "ffmpeg version n7.1-test"
         assert rep["returncode"] == 0
+
+
+class TestMilestones:
+    """Bounded stall visibility: 25/50/75% lines, never per-fragment."""
+
+    def _drive(self, total, steps):
+        import queue as _queue
+        from truestream_engine import hooks as hooks_mod
+        q: queue.Queue = queue.Queue()
+        hook = hooks_mod.build_progress_hook(q, "mile1")
+        for dl in steps:
+            hook({"status": "downloading", "downloaded_bytes": dl,
+                  "total_bytes": total, "info_dict": {}})
+        return q
+
+    def test_milestones_fire_once_each(self, _clean_bridge):
+        from truestream_engine import hooks as hooks_mod
+        q = self._drive(100, [10, 30, 55, 80, 100])
+        # Hook events flow; milestones go through the hooks logger.
+        assert q.qsize() == 5
+        logged = []
+        hlog = hooks_mod._log
+        captured = []
+        orig = hlog.info
+        try:
+            hlog.info = lambda msg, **kw: captured.append(msg)
+            self._drive(100, [10, 30, 55, 80, 100])
+        finally:
+            hlog.info = orig
+        assert captured == [
+            "reached 25% (30/100 bytes)",
+            "reached 50% (55/100 bytes)",
+            "reached 75% (80/100 bytes)",
+        ]
+
+    def test_milestone_carries_download_context(self, _clean_bridge):
+        import queue as _queue
+        from truestream_engine import hooks as hooks_mod
+        got = []
+        hlog = hooks_mod._log
+        orig = hlog._log
+        try:
+            def spy(level, message, **kw):
+                import truestream_engine.logger as lm
+                got.append(getattr(hlog._context, "data", {}).get("download_id"))
+                return orig(level, message, **kw)
+            hlog._log = spy
+            hook = hooks_mod.build_progress_hook(_queue.Queue(), "ctx9")
+            hook({"status": "downloading", "downloaded_bytes": 90,
+                  "total_bytes": 100, "info_dict": {}})
+        finally:
+            hlog._log = orig
+            hlog.clear_context()
+        assert got and got[0] == "ctx9"
+
+    def test_unknown_total_no_milestones(self, _clean_bridge):
+        from truestream_engine import hooks as hooks_mod
+        captured = []
+        hlog = hooks_mod._log
+        orig = hlog.info
+        try:
+            hlog.info = lambda msg, **kw: captured.append(msg)
+            hook = hooks_mod.build_progress_hook(queue.Queue(), "m2")
+            hook({"status": "downloading", "downloaded_bytes": 50,
+                  "total_bytes": 0, "info_dict": {}})
+        finally:
+            hlog.info = orig
+            hlog.clear_context()
+        assert captured == []
+
+
+class TestVerboseOpts:
+    @pytest.mark.unit
+    def test_verbose_dumps_sanitized_opts(
+        self, tmp_path, monkeypatch, _clean_bridge
+    ):
+        import truestream_engine.downloader as dl_mod
+        import truestream_engine.paths as paths_mod
+
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        paths_mod.set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+        )
+        monkeypatch.setattr(dl_mod, "YoutubeDL", _FakeYDL)
+        sink = _Sink()
+        set_global_event_callback(sink)
+        try:
+            dl_mod.download_thread(
+                url="https://x.test/v", download_id="verb1",
+                config={"verbose": True,
+                        "proxy": "http://user:pass@h:8080"},
+                progress_queue=queue.Queue(),
+                result_queue=queue.Queue(),
+                event_callback=sink,
+            )
+        finally:
+            dl_mod._active_downloads.pop("verb1", None)
+        logs = [json.loads(r) for r in sink.events
+                if json.loads(r).get("type") == "log"]
+        dumped = [e["message"] for e in logs if "Effective opts:" in e["message"]]
+        assert len(dumped) == 1
+        assert "user:pass" not in dumped[0]
+        assert "***REDACTED***" in dumped[0]

@@ -707,6 +707,19 @@ def bootstrap() -> dict:
         f"Exec env: LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH')} "
         f"ffmpeg_ld_path={paths.get('ffmpeg_ld_path')}"
     )
+    # Disk snapshot: ENOSPC is a top-3 download failure cause and is
+    # otherwise invisible until a write fails mid-transfer.
+    for label, d in (("data", data_dir), ("cache", cache_dir),
+                     ("output", paths.get("output_dir") or data_dir)):
+        try:
+            usage = shutil.disk_usage(d)
+            log.info(
+                f"Disk {label} ({d}): "
+                f"{usage.free // (1024 * 1024)}MB free of "
+                f"{usage.total // (1024 * 1024)}MB"
+            )
+        except Exception:
+            pass
 
     # QuickJS availability (Android JS runtime)
     quickjs_ok = False

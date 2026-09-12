@@ -36,6 +36,10 @@
   lookup failed (`CANNOT LINK EXECUTABLE`). Marker bump forces one clean
   re-extract on existing installs.
 - Live per-download engine-log overlay on download cards (ytdlnis-style).
+- Extreme-but-sane logging: settings-change diffs (masked secrets),
+  disk snapshots at bootstrap + download start, 25/50/75% stall
+  milestones (bounded), slow-call WARNs over 10 s, sanitized full-opts
+  dump on verbose.
 - Android JS runtime is now bundled Node.js (`nodejs-25.3.0` jniLibs;
   Deno's `libsqlite3.so` doesn't ship) with node-first priority on
   Android; bot-check errors map to cookie guidance; probe output uncapped

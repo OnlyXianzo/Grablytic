@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/settings_provider.dart';
 import '../engine/engine_service.dart';
 import 'app_logger.dart';
 
@@ -68,6 +69,98 @@ class LoggingProviderObserver extends ProviderObserver {
     );
     super.didDisposeProvider(provider, container);
   }
+
+  @override
+  void didUpdateProvider(
+    ProviderBase<Object?> provider,
+    Object? previousValue,
+    Object? newValue,
+    ProviderContainer container,
+  ) {
+    // Settings transitions are the highest-value UI logs: every download
+    // bug report starts with "what changed". Diffed centrally here so the
+    // 30+ setters stay untouched.
+    if (previousValue is AppSettings && newValue is AppSettings) {
+      final changes = diffAppSettings(previousValue, newValue);
+      for (final c in changes) {
+        AppLogger.debug('Setting changed: $c', tag: 'settings');
+      }
+    }
+    super.didUpdateProvider(provider, previousValue, newValue, container);
+  }
+}
+
+/// Field-by-field AppSettings diff for [LoggingProviderObserver].
+/// Secrets never hit the log: proxy credentials collapse to the host part.
+List<String> diffAppSettings(AppSettings previous, AppSettings next) {
+  final changes = <String>[];
+  void field(String name, Object? a, Object? b, {bool sensitive = false}) {
+    final sa = sensitive && a is String ? _maskSecret(a) : '$a';
+    final sb = sensitive && b is String ? _maskSecret(b) : '$b';
+    if ('$a' != '$b') changes.add('$name: $sa → $sb');
+  }
+
+  bool listEq(List a, List b) =>
+      a.length == b.length &&
+      Iterable.generate(a.length).every((i) => '${a[i]}' == '${b[i]}');
+
+  void listField(String name, List a, List b) {
+    if (!listEq(a, b)) changes.add('$name: ${a.length} → ${b.length} items');
+  }
+
+  field('wifiOnly', previous.wifiOnly, next.wifiOnly);
+  field('turboMode', previous.turboMode, next.turboMode);
+  field('completionAlerts', previous.completionAlerts, next.completionAlerts);
+  field('downloadPath', previous.downloadPath, next.downloadPath);
+  field('themeMode', previous.themeMode, next.themeMode);
+  field('onboardingCompleted', previous.onboardingCompleted,
+      next.onboardingCompleted);
+  field('qualityCeiling', previous.qualityCeiling, next.qualityCeiling);
+  field('audioOnly', previous.audioOnly, next.audioOnly);
+  field('proxy', previous.proxy, next.proxy, sensitive: true);
+  field('verbose', previous.verbose, next.verbose);
+  field('autoStartDownloadOnShare', previous.autoStartDownloadOnShare,
+      next.autoStartDownloadOnShare);
+  field('cookiesPath', previous.cookiesPath, next.cookiesPath);
+  field('youtubeLoggedIn', previous.youtubeLoggedIn, next.youtubeLoggedIn);
+  field('instagramLoggedIn', previous.instagramLoggedIn,
+      next.instagramLoggedIn);
+  field('twitterLoggedIn', previous.twitterLoggedIn, next.twitterLoggedIn);
+  field('bilibiliLoggedIn', previous.bilibiliLoggedIn,
+      next.bilibiliLoggedIn);
+  field('twitchLoggedIn', previous.twitchLoggedIn, next.twitchLoggedIn);
+  field('splitChapters', previous.splitChapters, next.splitChapters);
+  field('updateChannel', previous.updateChannel, next.updateChannel);
+  field('downloadSubtitles', previous.downloadSubtitles,
+      next.downloadSubtitles);
+  listField('subtitleLanguages', previous.subtitleLanguages,
+      next.subtitleLanguages);
+  field('downloadAutoSubtitles', previous.downloadAutoSubtitles,
+      next.downloadAutoSubtitles);
+  field('embedSubtitles', previous.embedSubtitles, next.embedSubtitles);
+  field('aria2cEnabled', previous.aria2cEnabled, next.aria2cEnabled);
+  field('aria2cChunks', previous.aria2cChunks, next.aria2cChunks);
+  field('aria2cMaxSpeed', previous.aria2cMaxSpeed, next.aria2cMaxSpeed);
+  field('useGridView', previous.useGridView, next.useGridView);
+  listField('customTemplates', previous.customTemplates,
+      next.customTemplates);
+  listField('observedSources', previous.observedSources,
+      next.observedSources);
+  field('scheduleEnabled', previous.scheduleEnabled, next.scheduleEnabled);
+  field('scheduleTime', previous.scheduleTime, next.scheduleTime);
+  listField('scheduleDays', previous.scheduleDays, next.scheduleDays);
+  listField('sponsorBlockCats', previous.sponsorBlockCats,
+      next.sponsorBlockCats);
+  field('downloadArchive', previous.downloadArchive, next.downloadArchive);
+  field('archiveByFolder', previous.archiveByFolder, next.archiveByFolder);
+  return changes;
+}
+
+String _maskSecret(String? value) {
+  if (value == null || value.isEmpty) return '$value';
+  final at = value.lastIndexOf('@');
+  if (at >= 0) return '***${value.substring(at)}';
+  return value.length <= 4 ? '***' : '***${value.substring(value.length - 4)}';
 }
 
 /// Thin tracing decorator over any [EngineService] — injects logging hooks
@@ -80,8 +173,26 @@ class TracedEngineService implements EngineService {
   final EngineService _inner;
   const TracedEngineService(this._inner);
 
-  Future<T> _traced<T>(String method, Future<T> Function() call) {
-    return AppLogger.trace<T>(method, call, tag: 'engine-api');
+  /// Calls slower than [_slowCallThreshold] get an extra WARN so hangs
+  /// stand out in reports without reading latency math.
+  static const Duration _slowCallThreshold = Duration(seconds: 10);
+
+  Future<T> _traced<T>(String method, Future<T> Function() call) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final result = await AppLogger.trace<T>(method, call, tag: 'engine-api');
+      stopwatch.stop();
+      if (stopwatch.elapsed >= _slowCallThreshold) {
+        AppLogger.warn(
+          'Slow engine call: $method took ${stopwatch.elapsed.inMilliseconds}ms',
+          tag: 'engine-api',
+        );
+      }
+      return result;
+    } catch (e) {
+      stopwatch.stop();
+      rethrow;
+    }
   }
 
   @override

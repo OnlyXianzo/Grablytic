@@ -1,6 +1,11 @@
 import json
 import queue as _queue
 
+from truestream_engine.logger import get_logger
+
+
+_log = get_logger("truestream_engine.hooks")
+
 
 # yt-dlp postprocessor hook payloads carry the PP key in `d["postprocessor"]`
 # (see PostProcessor._hook_progress: pp_key() values such as "Merger",
@@ -20,10 +25,29 @@ _POSTPROCESSOR_STAGES = {
 
 
 def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=None):
+    # Thread-local context so hook lines (milestones) carry the download id
+    # in `context` — the live overlay filters on it. Built on the download
+    # thread, which is where hooks fire.
+    _log.set_context(download_id=download_id)
+    # Milestone state: bounded stall visibility (25/50/75% INFO lines) at a
+    # fixed cost of ≤3 log lines per download — never per-fragment spam.
+    # Closure-local: yt-dlp invokes hooks on the download thread.
+    _milestones = [25, 50, 75]
+
     def progress_hook(d: dict):
         status = d.get("status", "")
 
         if status == "downloading":
+            downloaded = d.get("downloaded_bytes", 0) or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate", 0) or 0
+            if total > 0 and _milestones:
+                pct = (downloaded * 100) // total
+                while _milestones and pct >= _milestones[0]:
+                    hit = _milestones.pop(0)
+                    try:
+                        _log.info(f"reached {hit}% ({downloaded}/{total} bytes)")
+                    except Exception:
+                        pass
             event_json = json.dumps({
                 "type": "event",
                 "event": "downloading",
