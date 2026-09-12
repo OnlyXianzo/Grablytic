@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/brand/truestream_logo.png" alt="TrueStream Logo" width="160" />
+
 # 🎬 TrueStream
 
 ### Download from 1,000+ platforms. Best quality. No ads. No accounts. No speed limits.

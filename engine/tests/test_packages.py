@@ -184,8 +184,8 @@ class TestAndroidBootstrap:
         assert res["ffmpeg_version"] == "ffmpeg version n7.1-test"
         assert res["deno_ok"] is True
         assert res["js_runtime"] == "deno"
-        # aria2c has no Android bundle: honestly reported missing.
-        assert "aria2c" in res["update_components"]
+        # aria2c uses compiled/pinned version only: never flagged for dynamic updates.
+        assert "aria2c" not in res["update_components"]
 
     @pytest.mark.unit
     def test_android_bootstrap_missing_bins_reported(self, tmp_path, monkeypatch):

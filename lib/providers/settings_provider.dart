@@ -77,6 +77,7 @@ class AppSettings {
   final List<String> sponsorBlockCats;
   final bool downloadArchive;
   final bool archiveByFolder;
+  final bool hasSeenBatteryPrompt;
 
   const AppSettings({
     this.wifiOnly = false,
@@ -85,6 +86,7 @@ class AppSettings {
     this.downloadPath = '/Internal/Videos',
     this.themeMode = AppThemeMode.light,
     this.onboardingCompleted = false,
+    this.hasSeenBatteryPrompt = false,
     this.qualityCeiling = '4k',
     this.audioOnly = false,
     this.proxy,
@@ -129,6 +131,7 @@ class AppSettings {
     String? downloadPath,
     AppThemeMode? themeMode,
     bool? onboardingCompleted,
+    bool? hasSeenBatteryPrompt,
     String? qualityCeiling,
     bool? audioOnly,
     String? proxy,
@@ -170,6 +173,7 @@ class AppSettings {
       downloadPath: downloadPath ?? this.downloadPath,
       themeMode: themeMode ?? this.themeMode,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      hasSeenBatteryPrompt: hasSeenBatteryPrompt ?? this.hasSeenBatteryPrompt,
       qualityCeiling: qualityCeiling ?? this.qualityCeiling,
       audioOnly: audioOnly ?? this.audioOnly,
       proxy: proxy ?? this.proxy,
@@ -225,6 +229,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final downloadPath = _prefs.getString('downloadPath') ?? '/Internal/Videos';
     final themeIndex = _prefs.getInt('themeMode') ?? AppThemeMode.light.index;
     final onboardingCompleted = _prefs.getBool('onboardingCompleted') ?? false;
+    final hasSeenBatteryPrompt = _prefs.getBool('hasSeenBatteryPrompt') ?? false;
     final qualityCeiling = _prefs.getString('qualityCeiling') ?? '4k';
     final audioOnly = _prefs.getBool('audioOnly') ?? false;
     final proxy = _prefs.getString('proxy');
@@ -281,6 +286,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       downloadPath: downloadPath,
       themeMode: AppThemeMode.values[themeIndex],
       onboardingCompleted: onboardingCompleted,
+      hasSeenBatteryPrompt: hasSeenBatteryPrompt,
       qualityCeiling: qualityCeiling,
       audioOnly: audioOnly,
       proxy: proxy,
@@ -348,6 +354,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void completeOnboarding() {
     _prefs.setBool('onboardingCompleted', true);
     state = state.copyWith(onboardingCompleted: true);
+  }
+
+  void setHasSeenBatteryPrompt(bool seen) {
+    _prefs.setBool('hasSeenBatteryPrompt', seen);
+    state = state.copyWith(hasSeenBatteryPrompt: seen);
   }
 
   void setQualityCeiling(String value) {
@@ -522,6 +533,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setUseGridView(bool value) {
     _prefs.setBool('useGridView', value);
     state = state.copyWith(useGridView: value);
+  }
+
+  void toggleGridView() {
+    setUseGridView(!state.useGridView);
   }
 
   void setAria2cEnabled(bool value) {

@@ -126,9 +126,6 @@ class EngineStatus {
     if (!Platform.isAndroid && updateComponents.contains('deno')) {
       return 'Deno update available';
     }
-    if (updateComponents.contains('aria2c')) {
-      return 'aria2c update available';
-    }
     return null;
   }
 }

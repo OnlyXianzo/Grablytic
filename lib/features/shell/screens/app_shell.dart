@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -54,7 +55,49 @@ class _AppShellState extends ConsumerState<AppShell> {
       if (sharedUrl != null && sharedUrl.isNotEmpty) {
         _handleSharedUrl(sharedUrl);
       }
+      _checkBatteryPrompt();
     });
+  }
+
+  Future<void> _checkBatteryPrompt() async {
+    if (!Platform.isAndroid || !mounted) return;
+    final settings = ref.read(settingsProvider);
+    if (settings.hasSeenBatteryPrompt) return;
+
+    final engine = ref.read(engineProvider);
+    final status = await engine.batteryExemptionStatus();
+    if (status['exempt'] == true) {
+      ref.read(settingsProvider.notifier).setHasSeenBatteryPrompt(true);
+      return;
+    }
+
+    if (!mounted) return;
+    final res = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Background Downloads'),
+        content: const Text(
+          'Allow TrueStream to run unrestricted in the background so downloads do not pause or fail when your screen is turned off.\n\nYou can also configure this later in Settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Skip'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enable'),
+          ),
+        ],
+      ),
+    );
+
+    ref.read(settingsProvider.notifier).setHasSeenBatteryPrompt(true);
+    if (res == true && mounted) {
+      await engine.requestBatteryExemption();
+    }
   }
 
   Future<void> _handleSharedUrl(String url) async {
@@ -316,29 +359,43 @@ class _NavItem extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     final child = isActive
-        ? Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Semantics(
-                  label: label,
-                  child: Icon(icon, color: colorScheme.onPrimaryContainer, size: 20),
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onPrimaryContainer,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      label: label,
+                      child: Icon(icon, color: colorScheme.onPrimaryContainer, size: 20),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 3),
+              Container(
+                width: 16,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              ),
+            ],
           )
         : Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

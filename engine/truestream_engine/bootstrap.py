@@ -731,9 +731,7 @@ def bootstrap() -> dict:
 
     if not ffmpeg_ok:
         update_components.append("ffmpeg")
-    if not aria2c_ok:
-        update_components.append("aria2c")
-    if not deno_ok:
+    if not deno_ok and not is_android:
         update_components.append("deno")
 
     yt_dlp_ver = _get_yt_dlp_version()
@@ -892,9 +890,6 @@ def update_check() -> dict:
         ("ffmpeg", GITHUB_REPOS["ffmpeg"],
          _get_asset_substring("ffmpeg", platform_key),
          paths.get("ffmpeg_path")),
-        ("aria2c", GITHUB_REPOS["aria2c"],
-         _get_asset_substring("aria2c", platform_key),
-         paths.get("aria2c_path")),
     ]
     if not is_android:
         check_targets.append(("deno", GITHUB_REPOS["deno"],

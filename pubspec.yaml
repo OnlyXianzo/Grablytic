@@ -74,6 +74,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    - assets/brand/truestream_logo.png
+    - assets/branding/Truestream-logo.png
+
   fonts:
     - family: IosevkaCharon
       fonts:

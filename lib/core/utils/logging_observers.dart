@@ -115,6 +115,8 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
   field('themeMode', previous.themeMode, next.themeMode);
   field('onboardingCompleted', previous.onboardingCompleted,
       next.onboardingCompleted);
+  field('hasSeenBatteryPrompt', previous.hasSeenBatteryPrompt,
+      next.hasSeenBatteryPrompt);
   field('qualityCeiling', previous.qualityCeiling, next.qualityCeiling);
   field('audioOnly', previous.audioOnly, next.audioOnly);
   field('proxy', previous.proxy, next.proxy, sensitive: true);

@@ -116,6 +116,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           key: const ValueKey(1),
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: Image.asset(
+                'assets/brand/truestream_logo.png',
+                width: 96,
+                height: 96,
+                fit: BoxFit.cover,
+              ),
+            )
+                .animate()
+                .scale(begin: const Offset(0.8, 0.8), curve: Curves.easeOutBack, duration: 800.ms)
+                .fadeIn(duration: 800.ms),
+            const SizedBox(height: 24),
             Text(
               'TrueStream',
               style: textTheme.displayLarge?.copyWith(

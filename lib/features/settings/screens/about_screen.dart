@@ -24,17 +24,13 @@ class AboutScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Icon(
-                      Icons.cloud_download,
-                      size: 48,
-                      color: colorScheme.primary,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.asset(
+                      'assets/brand/truestream_logo.png',
+                      width: 96,
+                      height: 96,
+                      fit: BoxFit.cover,
                     ),
                   ),
                   const SizedBox(height: 16),
