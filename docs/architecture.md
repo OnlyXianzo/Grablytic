@@ -266,8 +266,7 @@ Selection is automatic via `engineProvider`:
 
 ## IPC Contract
 
-The IPC payload shapes are defined below and are identical across platforms — only the transport differs. The payload
-shapes are identical across platforms — only the transport differs.
+The IPC payload shapes are defined below and are identical across platforms — only the transport differs.
 
 ### Android (MethodChannel + EventChannel + callback)
 
