@@ -156,6 +156,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     if (_exporting || _selectedFile == null) return;
     setState(() => _exporting = true);
     try {
+      await AppLogger.flushNow();
       final dest = await AppLogger.exportLogFile(_selectedFile!);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -179,6 +180,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     if (_exporting || _selectedFile == null) return;
     setState(() => _exporting = true);
     try {
+      await AppLogger.flushNow();
       final file = _selectedFile!;
       final name = file.path.split('/').last;
       final engine = ref.read(engineProvider);

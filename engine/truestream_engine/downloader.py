@@ -156,6 +156,11 @@ def download_thread(
         if not ffmpeg_path or not os.path.isfile(ffmpeg_path) or not os.access(ffmpeg_path, os.X_OK):
             import shutil
             if not shutil.which("ffmpeg"):
+                log.error(
+                    f"Cannot start download: FFmpeg binary is missing or not executable ({ffmpeg_path}). "
+                    "Please run bootstrap first.",
+                    extra={"download_id": download_id},
+                )
                 err_event = json.dumps({
                     "type": "event",
                     "event": "error",

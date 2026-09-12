@@ -385,8 +385,12 @@ def _probe_report(bin_path: str, timeout: int = 8) -> dict:
     report: dict = {"ok": False, "version": None, "returncode": None,
                     "output": ""}
     try:
+        bin_name = os.path.basename(bin_path).lower()
+        # FFmpeg and FFprobe CLI syntax requires '-version' (single hyphen).
+        # Passing GNU-style '--version' causes unrecognized option and exit code 8.
+        version_arg = "-version" if ("ffmpeg" in bin_name or "ffprobe" in bin_name) else "--version"
         proc = subprocess.run(
-            [bin_path, "--version"],
+            [bin_path, version_arg],
             capture_output=True, text=True, timeout=timeout,
         )
         report["returncode"] = proc.returncode

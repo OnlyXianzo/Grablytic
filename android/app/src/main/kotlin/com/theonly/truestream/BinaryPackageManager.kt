@@ -75,11 +75,14 @@ object BinaryPackageManager {
         return out
     }
 
-    /** Probe `--version` for diagnostics. Never throws. */
+    /** Probe version for diagnostics. Never throws. */
     fun status(paths: Map<String, NativeBinPaths>, extraLdDirs: List<String> = emptyList()): List<NativeBinStatus> =
         paths.map { (name, bin) ->
             try {
-                val proc = ProcessBuilder(bin.executable, "--version")
+                // FFmpeg and FFprobe CLI syntax requires '-version' (single hyphen).
+                // Passing GNU-style '--version' causes unrecognized option and exit code 8.
+                val versionArg = if (name.startsWith("ffmpeg") || name.startsWith("ffprobe")) "-version" else "--version"
+                val proc = ProcessBuilder(bin.executable, versionArg)
                     .redirectErrorStream(true)
                     .apply {
                         // The bundled .so files have no RUNPATH; without this

@@ -109,6 +109,44 @@ class TestBinariesList:
         assert "libexpat.so.1" in ffmpeg["detail"]
 
     @pytest.mark.unit
+    def test_ffmpeg_probe_uses_single_dash_version(self, tmp_path, monkeypatch):
+        """FFmpeg CLI requires '-version' (single hyphen). Passing GNU-style '--version'
+        fails with exit code 8 (Unrecognized option '-version'). Probe must use '-version'."""
+        import shutil
+        boot = _boot()
+        monkeypatch.setattr(boot, "_is_android_app", lambda: True)
+        monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
+        monkeypatch.setattr(
+            boot, "_resolve_latest_release",
+            lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
+        )
+        ffmpeg_script = tmp_path / "libffmpeg.so"
+        ffmpeg_script.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"-version\" ]; then\n"
+            "  echo 'ffmpeg version 7.0.1 Copyright (c) 2000-2024'\n"
+            "  exit 0\n"
+            "else\n"
+            "  echo \"Unrecognized option '$1'\" >&2\n"
+            "  exit 8\n"
+            "fi\n"
+        )
+        ffmpeg_script.chmod(ffmpeg_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=str(ffmpeg_script), cache_dir=str(tmp_path),
+        )
+        res = boot.bootstrap()
+        assert res["success"] is True
+        assert res["ffmpeg_ok"] is True
+        assert "ffmpeg" not in res["update_components"]
+        ffmpeg = _by_name(res, "ffmpeg")
+        assert ffmpeg["ok"] is True
+        assert ffmpeg["source"] == "bundled"
+        assert "7.0.1" in (ffmpeg["version"] or "")
+
+    @pytest.mark.unit
+
     def test_downloaded_and_system_sources(self, tmp_path, monkeypatch):
         import shutil
         boot = _boot()
