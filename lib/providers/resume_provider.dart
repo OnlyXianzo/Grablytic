@@ -95,6 +95,20 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
     final currentList = state.value ?? [];
     state = AsyncValue.data(currentList.where((c) => c.filepath != candidate.filepath).toList());
   }
+
+  /// Claim a resume candidate for restart (P2).
+  ///
+  /// Returns the [ResumeCandidate.likelyUrl] to re-open in the format flow
+  /// and drops the candidate from the list, or null when there is nothing
+  /// resumable (missing URL or expired stream URLs). Keeping the
+  /// engine restart in the format flow preserves yt-dlp `continuedl`
+  /// resume-by-filename without inventing Range logic here.
+  Future<String?> resumeDownload(ResumeCandidate candidate) async {
+    final url = candidate.likelyUrl;
+    if (url == null || url.isEmpty || candidate.expired) return null;
+    removeCandidateFromList(candidate);
+    return url;
+  }
 }
 
 final resumeProvider = StateNotifierProvider<ResumeNotifier, AsyncValue<List<ResumeCandidate>>>((ref) {

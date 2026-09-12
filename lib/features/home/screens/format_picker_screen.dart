@@ -4,9 +4,11 @@ import 'package:uuid/uuid.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/format_selector.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/preset_provider.dart';
+import '../../../providers/settings_provider.dart';
 
 const _uuid = Uuid();
 
@@ -38,6 +40,34 @@ const _vpnKeywords = [
 bool _isVpnSuggested(String error) {
   final lower = error.toLowerCase();
   return _vpnKeywords.any((kw) => lower.contains(kw));
+}
+
+/// Build the P1 settings overlay for the engine download config.
+///
+/// Keys match `engine/truestream_engine/config.py` DEFAULT_CFG exactly
+/// (Dart `downloadSubtitles` → yt-dlp `writesubtitles`, etc.). Null/empty
+/// values are omitted so engine defaults survive the merge. Only keys with
+/// a real user setting on the Dart side are sent — thumbnail/metadata have
+/// no toggles (engine defaults already on) and are intentionally absent.
+Map<String, dynamic> _settingsConfig(AppSettings settings) {
+  final config = <String, dynamic>{
+    'writesubtitles': settings.downloadSubtitles,
+    'writeautomaticsub': settings.downloadAutoSubtitles,
+    'subtitleslangs': List<String>.from(settings.subtitleLanguages),
+    'embedsubtitles': settings.embedSubtitles,
+    'sponsorblock_cats': List<String>.from(settings.sponsorBlockCats),
+    'aria2c_enabled': settings.aria2cEnabled,
+    'aria2c_chunks': settings.aria2cChunks,
+  };
+  final maxSpeed = settings.aria2cMaxSpeed;
+  if (maxSpeed != null && maxSpeed.trim().isNotEmpty) {
+    config['aria2c_max_speed'] = maxSpeed.trim();
+  }
+  final proxy = settings.proxy;
+  if (proxy != null && proxy.trim().isNotEmpty) {
+    config['proxy'] = proxy.trim();
+  }
+  return config;
 }
 
 class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
@@ -120,40 +150,25 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         
         final activePreset = ref.read(presetsProvider).activePreset;
         _selectedContainer = activePreset.preferredContainer;
-        
-        if (_audioFormats.isNotEmpty) {
-          _selectedAudioFormat = _audioFormats.first['format_id'] as String?;
-        }
-        
+
+        // P0: sort-then-first (never unsorted .first). Audio = max bitrate.
+        _selectedAudioFormat = selectBestAudioFormat(_audioFormats);
+
         if (activePreset.audioOnly) {
           _selectedVideoFormat = null;
         } else {
-          int targetHeight = 1080;
-          if (activePreset.qualityCeiling == '4k') {
-            targetHeight = 2160;
-          } else if (activePreset.qualityCeiling == '1080p') {
-            targetHeight = 1080;
-          } else if (activePreset.qualityCeiling == '720p') {
-            targetHeight = 720;
-          } else if (activePreset.qualityCeiling == '480p' || activePreset.id == 'preset_480p') {
-            targetHeight = 480;
-          } else {
-            targetHeight = 99999;
-          }
-          
-          var matchingFormats = _videoFormats.where((f) => (f['height'] as num? ?? 0) <= targetHeight).toList();
-          if (matchingFormats.isEmpty) {
-            matchingFormats = _videoFormats;
-          }
-          
-          var codecFormats = matchingFormats.where((f) => (f['vcodec'] as String? ?? '').toLowerCase().contains(activePreset.preferredCodec.toLowerCase())).toList();
-          if (codecFormats.isNotEmpty) {
-            _selectedVideoFormat = codecFormats.first['format_id'] as String?;
-          } else if (matchingFormats.isNotEmpty) {
-            _selectedVideoFormat = matchingFormats.first['format_id'] as String?;
-          } else {
-            _selectedVideoFormat = result['recommended_video_format_id'] as String?;
-          }
+          final targetHeight = targetHeightForCeiling(
+            activePreset.qualityCeiling,
+            activePreset.id,
+          );
+
+          _selectedVideoFormat = selectBestVideoFormat(
+            _videoFormats,
+            targetHeight: targetHeight,
+            preferredCodec: activePreset.preferredCodec,
+            fallbackRecommendedId:
+                result['recommended_video_format_id'] as String?,
+          );
 
           // For platforms with only muxed formats (Twitter, Instagram, etc.)
           if (_videoFormats.isEmpty && _muxedFormats.isNotEmpty) {
@@ -204,6 +219,10 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       'container': _selectedContainer,
       'explicit_format_id': _selectedMuxedFormat ?? _selectedVideoFormat,
       'explicit_audio_format_id': _selectedMuxedFormat != null ? null : _selectedAudioFormat,
+      // P1: forward user settings under exact engine contract keys
+      // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
+      // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
+      ..._settingsConfig(ref.read(settingsProvider)),
     };
 
     final result = await AppLogger.trace<Map<String, dynamic>>(

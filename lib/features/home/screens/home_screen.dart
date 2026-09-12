@@ -923,10 +923,12 @@ class _ResumeScanSection extends ConsumerWidget {
                         const SizedBox(width: 8),
                         if (candidate.likelyUrl != null && !candidate.expired) ...[
                           ElevatedButton(
-                            onPressed: () {
+                            onPressed: () async {
                               AppLogger.info('User clicked resume candidate: ${candidate.filename}', tag: 'HomeScreen');
-                              ref.read(sharedUrlProvider.notifier).state = candidate.likelyUrl;
-                              ref.read(resumeProvider.notifier).removeCandidateFromList(candidate);
+                              final url = await ref.read(resumeProvider.notifier).resumeDownload(candidate);
+                              if (url != null) {
+                                ref.read(sharedUrlProvider.notifier).state = url;
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colorScheme.primary,
