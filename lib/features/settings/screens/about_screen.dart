@@ -24,8 +24,7 @@ class AboutScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
+                  ClipOval(
                     child: Image.asset(
                       'assets/brand/truestream_logo.png',
                       width: 96,

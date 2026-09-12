@@ -116,8 +116,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           key: const ValueKey(1),
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(28),
+            ClipOval(
               child: Image.asset(
                 'assets/brand/truestream_logo.png',
                 width: 96,
