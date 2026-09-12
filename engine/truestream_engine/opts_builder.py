@@ -4,6 +4,24 @@ from truestream_engine.format_selector import build_format_string
 from truestream_engine.hooks import build_progress_hook, build_postprocessor_hook
 
 
+def _is_safe_outtmpl(tmpl) -> bool:
+    """True iff an output template cannot escape the output directory."""
+    if not isinstance(tmpl, str) or not tmpl or len(tmpl) > 256:
+        return False
+    if "\x00" in tmpl:
+        return False
+    text = tmpl.replace("\\", "/")
+    if text.startswith("/") or text.startswith("~"):
+        return False
+    if len(text) >= 2 and text[1] == ":":
+        return False
+    if text.startswith("//"):
+        return False
+    if any(seg == ".." for seg in text.split("/")):
+        return False
+    return True
+
+
 def _parse_section_ranges(specs: list) -> list[tuple[float, float]]:
     """Parse section specs into [(start, end)] seconds tuples.
 
@@ -94,6 +112,18 @@ def build_ydl_opts(
     cfg = {**DEFAULT_CFG, **(config or {})}
     paths = get_paths()
 
+    # SEC-04: confine the output template. yt-dlp honors absolute-path
+    # templates and interpolates metadata fields (upstream CVE-2024-38519
+    # class), so a template smuggled in via config must never escape the
+    # output dir. Reject: absolute paths (posix + drive/UNC), `..`
+    # segments, NUL bytes, overlong strings. Fail closed to the default.
+    from truestream_engine.logger import get_logger as _get_tmpl_logger
+    _tmpl_log = _get_tmpl_logger("truestream_engine.opts_builder")
+    tmpl = cfg.get("output_tmpl") or DEFAULT_CFG["output_tmpl"]
+    if not _is_safe_outtmpl(tmpl):
+        _tmpl_log.warn(f"Rejecting unsafe output template, using default: {tmpl!r:.80}")
+        tmpl = DEFAULT_CFG["output_tmpl"]
+
     fmt = override_format or build_format_string(cfg)
     is_audio = override_audio if override_audio is not None else cfg["audio_only"]
     container = override_container or cfg["container"]
@@ -101,7 +131,7 @@ def build_ydl_opts(
     opts: dict = {
         "format": fmt,
         "paths": {"home": paths["output_dir"] or "."},
-        "outtmpl": {"default": cfg["output_tmpl"]},
+        "outtmpl": {"default": tmpl},
         "ignoreerrors": True,
         # yt-dlp CLI --no-mtime maps to `updatetime: False`; `no_mtime` is
         # not a recognized YoutubeDL param and is silently ignored (#7).

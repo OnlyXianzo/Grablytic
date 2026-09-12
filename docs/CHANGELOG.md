@@ -10,6 +10,13 @@
 - SEC-02: `sig=`/`lsig=`/`signature` redaction in Dart logs (disk + buffer
   entries) and engine `bridge_event` before disk.
 - SEC-03: 8 KB cap on inbound SEND-intent text.
+- Binaries: additive `binaries[]` provenance in bootstrap (bundled /
+  downloaded / system / runtime / unsupported / missing) + `yt_dlp_outdated`
+  advisory; UI shows effective JS runtime (no more phantom QuickJS pending)
+  and honest aria2c-unavailable state; per-row sources, details, and
+  actionable Redownload gating.
+- SEC-04: template-arg validator (blocks `-o`/`--paths` escapes), `--exec`
+  warning, engine `output_tmpl` confinement.
 
 ### Fixed
 - Engine logs now reach Android: `logger.set_global_event_callback()` push

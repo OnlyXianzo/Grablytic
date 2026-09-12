@@ -124,6 +124,15 @@ class CommandTemplatesScreen extends ConsumerWidget {
               final args = argsController.text.trim();
               if (name.isEmpty || args.isEmpty) return;
 
+              // SEC-04: gate path escapes at input (engine confines too).
+              final problem = validateTemplateArgs(args);
+              if (problem != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(problem)),
+                );
+                return;
+              }
+
               final entry = jsonEncode({'name': name, 'args': args});
               final updated = [...templates];
               if (index != null && index < updated.length) {
@@ -132,6 +141,15 @@ class CommandTemplatesScreen extends ConsumerWidget {
                 updated.add(entry);
               }
               ref.read(settingsProvider.notifier).setCustomTemplates(updated);
+              if (templateWantsExec(args)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.'),
+                    duration: Duration(seconds: 5),
+                  ),
+                );
+              }
               Navigator.of(ctx).pop();
             },
             child: const Text('Save'),

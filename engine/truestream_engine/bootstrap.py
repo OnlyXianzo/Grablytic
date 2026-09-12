@@ -199,6 +199,35 @@ def _extract_version_from_tag(tag: str) -> str:
     return v
 
 
+def _is_version_below(have: str | None, floor: str) -> bool:
+    """True when dotted version *have* is older than *floor*.
+
+    Non-parseable values ("unknown", dates, suffixed builds) return False —
+    an advisory must never brick on a version string it cannot read.
+    """
+    def _parts(v: str) -> list[int] | None:
+        try:
+            chunks = []
+            for piece in v.strip().split("."):
+                digits = "".join(c for c in piece if c.isdigit())
+                if not digits:
+                    return None
+                chunks.append(int(digits))
+            return chunks or None
+        except Exception:
+            return None
+
+    if not have:
+        return False
+    hp, fp = _parts(have), _parts(floor)
+    if hp is None or fp is None:
+        return False
+    width = max(len(hp), len(fp))
+    hp += [0] * (width - len(hp))
+    fp += [0] * (width - len(fp))
+    return hp < fp
+
+
 def _is_within_directory(base: str, target: str) -> bool:
     """True iff realpath(target) stays inside realpath(base)."""
     try:
@@ -653,6 +682,81 @@ def bootstrap() -> dict:
         js_runtime = js_name
         js_runtime_version = js_ver
 
+    # Stronger installed-state mechanism (SEC sweep): per-binary records
+    # with provenance instead of scattered booleans. Sources are inferred
+    # locally — no IPC change: `.so` executables only exist as bundled
+    # jniLibs; data_dir/bin holds our downloads; a shutil.which match means
+    # system. Additive: legacy keys below are untouched.
+    def _source(name: str, ok: bool, path: str | None) -> str:
+        if not ok or not path:
+            if name == "aria2c" and is_android:
+                return "unsupported"
+            return "missing"
+        if path.endswith(".so"):
+            return "bundled"
+        bin_dir = os.path.join(data_dir, "bin")
+        if path == bin_dir or path.startswith(bin_dir + os.sep):
+            return "downloaded"
+        try:
+            if shutil.which(os.path.basename(path)) == path:
+                return "system"
+        except Exception:
+            pass
+        return "resolved"
+
+    binaries = [
+        {
+            "name": "yt-dlp",
+            "ok": yt_dlp_ver != "unknown",
+            "source": "runtime",
+            "version": yt_dlp_ver,
+            "detail": "Python package",
+        },
+        {
+            "name": "ffmpeg",
+            "ok": ffmpeg_ok,
+            "source": _source("ffmpeg", ffmpeg_ok, paths.get("ffmpeg_path")),
+            "version": ffmpeg_version,
+            "detail": paths.get("ffmpeg_path"),
+        },
+        {
+            "name": "aria2c",
+            "ok": aria2c_ok,
+            "source": _source("aria2c", aria2c_ok, paths.get("aria2c_path")),
+            "version": aria2c_version,
+            "detail": (
+                "No Android distribution channel; the native downloader "
+                "handles all traffic"
+                if (not aria2c_ok and is_android)
+                else paths.get("aria2c_path")
+            ),
+        },
+        {
+            "name": "quickjs",
+            "ok": quickjs_ok,
+            "source": "runtime" if quickjs_ok else "missing",
+            "version": None,
+            "detail": (
+                "python-quickjs binding"
+                if quickjs_ok
+                else ("No Chaquopy wheel on Android; Deno is primary"
+                      if is_android else "pip install python-quickjs")
+            ),
+        },
+        {
+            "name": "deno",
+            "ok": deno_ok,
+            "source": _source("deno", deno_ok, paths.get("deno_path")),
+            "version": deno_version,
+            "detail": paths.get("deno_path"),
+        },
+    ]
+
+    # SEC-05 (partial): advisory floor — yt-dlp below the EJS generation is
+    # known-vulnerable (e.g. CVE-2024-38519 class <2024.07.01). Advisory
+    # only (never blocking): the UI banners it, the user updates.
+    yt_dlp_outdated = _is_version_below(yt_dlp_ver, "2025.11.12")
+
     log.info(
         f"Bootstrap completed — ffmpeg={'ok' if ffmpeg_ok else 'fail'} "
         f"aria2c={'ok' if aria2c_ok else 'fail'} "
@@ -664,6 +768,7 @@ def bootstrap() -> dict:
     return {
         "success": True,
         "yt_dlp_version": yt_dlp_ver,
+        "yt_dlp_outdated": yt_dlp_outdated,
         "ffmpeg_ok": ffmpeg_ok,
         "ffmpeg_version": ffmpeg_version,
         "aria2c_ok": aria2c_ok,
@@ -675,6 +780,7 @@ def bootstrap() -> dict:
         "js_runtime_version": js_runtime_version,
         "needs_update": len(update_components) > 0,
         "update_components": update_components,
+        "binaries": binaries,
         "contract_version": "1.0",
     }
 

@@ -538,3 +538,48 @@ final settingsProvider =
   final prefs = ref.watch(sharedPreferencesProvider);
   return SettingsNotifier(prefs);
 });
+
+/// SEC-04: custom yt-dlp argument templates are user-typed CLI fragments.
+/// They are stored but never executed today; when (if) a command runner
+/// consumes them, path-escape flags must already be gated at input.
+/// Returns an error string when the args must be rejected, else null.
+String? validateTemplateArgs(String args) {
+  if (args.contains('\x00')) return 'Template contains invalid characters.';
+  if (args.length > 2000) return 'Template is too long (max 2000 chars).';
+  const pathFlags = {'-o', '--output', '-P', '--paths'};
+  final tokens = args.split(RegExp(r'\s+'));
+  for (var i = 0; i < tokens.length; i++) {
+    final t = tokens[i];
+    String? value;
+    if (pathFlags.contains(t) && i + 1 < tokens.length) {
+      value = tokens[i + 1];
+    } else {
+      for (final flag in pathFlags) {
+        final prefix = '$flag=';
+        if (t.startsWith(prefix)) value = t.substring(prefix.length);
+      }
+      // Short -oVALUE form (e.g. -o%(title)s).
+      if (value == null && t.startsWith('-o') && t.length > 2 && !t.startsWith('--')) {
+        value = t.substring(2);
+      }
+    }
+    if (value == null || value.isEmpty) continue;
+    final v = value.replaceAll(RegExp('^["\']|["\']\$'), '');
+    if (v.startsWith('/') ||
+        v.startsWith('\\') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(v) ||
+        v.startsWith('\\\\') ||
+        v.split(RegExp(r'[\\/]')).contains('..')) {
+      return 'Blocked: output path escapes the download folder ($t).';
+    }
+  }
+  return null;
+}
+
+/// True when the args request shell execution. Allowed (user agency, same
+/// as Seal-style custom commands) but the UI must warn: only run templates
+/// you typed yourself.
+bool templateWantsExec(String args) {
+  return RegExp(r'(^|\s)--exec(-before-download|-after-move)?(\s|=|$)')
+      .hasMatch(args);
+}

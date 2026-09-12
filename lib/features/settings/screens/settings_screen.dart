@@ -775,28 +775,75 @@ class _BinaryDownloadsSection extends ConsumerWidget {
           );
         }
 
+        BinaryStatus lookup(String name, BinaryStatus fallback) {
+          if (status.binaries.isEmpty) return fallback;
+          return status.binaries.firstWhere(
+            (b) => b.name == name,
+            orElse: () => fallback,
+          );
+        }
+
+        final ytDlp = lookup(
+            'yt-dlp',
+            BinaryStatus(
+                name: 'yt-dlp',
+                ok: status.ytDlpVersion != null,
+                version: status.ytDlpVersion));
+        final ffmpeg = lookup(
+            'ffmpeg',
+            BinaryStatus(
+                name: 'ffmpeg',
+                ok: status.ffmpegOk,
+                version: status.ffmpegVersion));
+        final aria2c = lookup(
+            'aria2c',
+            BinaryStatus(
+                name: 'aria2c',
+                ok: status.aria2cOk,
+                version: status.aria2cVersion));
+        // Effective JS runtime — never a hardcoded phantom. On Android the
+        // bundled Deno satisfies this; QuickJS has no Chaquopy wheel.
+        final jsName = status.jsRuntime != null && status.jsRuntime != 'none'
+            ? status.jsRuntime!
+            : (Platform.isAndroid ? 'QuickJS' : 'Deno');
+        final jsRecord = lookup(
+            jsName,
+            BinaryStatus(
+                name: jsName,
+                ok: status.jsRuntimeOk,
+                version: status.jsRuntimeOk ? status.jsRuntimeVersion : null));
         final binaries = [
           _SettingsBinaryInfo(
             name: 'yt-dlp',
-            ok: status.ytDlpVersion != null,
-            version: status.ytDlpVersion,
+            ok: ytDlp.ok,
+            version: ytDlp.version,
+            source: ytDlp.source,
+            detail: ytDlp.detail,
+            actionable: ytDlp.isActionable,
           ),
           _SettingsBinaryInfo(
             name: 'FFmpeg',
-            ok: status.ffmpegOk,
-            version: status.ffmpegVersion,
+            ok: ffmpeg.ok,
+            version: ffmpeg.version,
+            source: ffmpeg.source,
+            detail: ffmpeg.detail,
+            actionable: ffmpeg.isActionable,
           ),
           _SettingsBinaryInfo(
             name: 'aria2c',
-            ok: status.aria2cOk,
-            version: status.aria2cVersion,
+            ok: aria2c.ok,
+            version: aria2c.version,
+            source: aria2c.source,
+            detail: aria2c.detail,
+            actionable: aria2c.isActionable,
           ),
-          // JS runtime: QuickJS on Android (pending), Deno on desktop
           _SettingsBinaryInfo(
-            name: Platform.isAndroid ? 'QuickJS' : 'Deno',
-            ok: status.jsRuntimeOk,
-            version: status.jsRuntimeOk ? status.jsRuntimeVersion : null,
-            optional: Platform.isAndroid,
+            name: 'JS · $jsName',
+            ok: jsRecord.ok,
+            version: jsRecord.version,
+            source: jsRecord.source,
+            detail: jsRecord.detail,
+            actionable: jsRecord.isActionable,
           ),
         ];
 
@@ -837,6 +884,14 @@ class _BinaryDownloadsSection extends ConsumerWidget {
                                 color: colorScheme.onSurface,
                               ),
                             ),
+                            if (binary.subtitle != null)
+                              Text(
+                                binary.subtitle!,
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.outline,
+                                  fontSize: 11,
+                                ),
+                              ),
                             if (binary.version != null)
                               Text(
                                 binary.version!,
@@ -862,8 +917,9 @@ class _BinaryDownloadsSection extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      // Hide Redownload for optional pending binaries (not downloadable)
-                      if (!binary.optional)
+                      // Redownload only when a re-bootstrap could fix it:
+                      // unsupported-platform binaries stay hidden.
+                      if (!binary.ok && binary.actionable)
                       SizedBox(
                         height: 32,
                         child: OutlinedButton(
@@ -943,14 +999,46 @@ class _SettingsBinaryInfo {
   final String name;
   final bool ok;
   final String? version;
-  /// When true and not ok, shows 'pending' (neutral) instead of 'missing' (error).
-  final bool optional;
+  final String source;
+  final String? detail;
+  /// False for states no re-bootstrap can fix (e.g. unsupported platform).
+  final bool actionable;
 
   const _SettingsBinaryInfo({
     required this.name,
     required this.ok,
     this.version,
-    this.optional = false,
+    this.source = 'unknown',
+    this.detail,
+    this.actionable = true,
   });
+
+  /// Neutral 'pending' instead of red 'missing' when nothing can be done.
+  bool get optional => !ok && !actionable;
+
+  String get sourceLabel {
+    switch (source) {
+      case 'bundled':
+        return 'Bundled';
+      case 'downloaded':
+        return 'Downloaded';
+      case 'system':
+        return 'System';
+      case 'runtime':
+        return 'Runtime';
+      case 'unsupported':
+        return 'Unavailable';
+      case 'missing':
+        return 'Missing';
+      default:
+        return '';
+    }
+  }
+
+  String? get subtitle {
+    if (!ok && detail != null && detail!.length < 120) return detail;
+    if (sourceLabel.isNotEmpty) return sourceLabel;
+    return null;
+  }
 }
 
