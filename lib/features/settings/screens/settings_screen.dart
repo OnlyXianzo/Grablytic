@@ -747,6 +747,10 @@ class _BinaryDownloadsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statusAsync = ref.watch(engineStatusProvider);
+    // While a bootstrap is (re)running, the Redownload buttons go inert:
+    // each tap costs network + probes, and mashing them used to stack
+    // overlapping bootstraps with no visible effect.
+    final isWorking = statusAsync.isLoading || statusAsync.isRefreshing;
 
     return statusAsync.when(
       loading: () => const BootstrapStatusCard(),
@@ -923,9 +927,11 @@ class _BinaryDownloadsSection extends ConsumerWidget {
                       SizedBox(
                         height: 32,
                         child: OutlinedButton(
-                          onPressed: () {
-                            ref.invalidate(engineStatusProvider);
-                          },
+                          onPressed: isWorking
+                              ? null
+                              : () {
+                                  ref.invalidate(engineStatusProvider);
+                                },
                           style: OutlinedButton.styleFrom(
                             foregroundColor: colorScheme.primary,
                             side: BorderSide(
@@ -949,9 +955,11 @@ class _BinaryDownloadsSection extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    ref.invalidate(engineStatusProvider);
-                  },
+                  onPressed: isWorking
+                      ? null
+                      : () {
+                          ref.invalidate(engineStatusProvider);
+                        },
                   icon: const Icon(Icons.refresh, size: 16),
                   label: const Text('Re-bootstrap all'),
                   style: OutlinedButton.styleFrom(
