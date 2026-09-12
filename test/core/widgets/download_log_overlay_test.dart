@@ -20,9 +20,9 @@ LogEntry _engineLine(String id, String message) {
 Widget _harness(LogBuffer buffer, {bool visible = true}) {
   return ProviderScope(
     overrides: [logBufferProvider.overrideWithValue(buffer)],
-    child: const MaterialApp(
+    child: MaterialApp(
       home: Scaffold(
-        body: DownloadLogOverlay(downloadId: 'dl-1', visible: true),
+        body: DownloadLogOverlay(downloadId: 'dl-1', visible: visible),
       ),
     ),
   );
