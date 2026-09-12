@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
-import '../../../core/utils/log_buffer.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../providers/log_provider.dart';
 
