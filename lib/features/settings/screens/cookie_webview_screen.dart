@@ -4,65 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../providers/settings_provider.dart';
-
-class NetscapeCookie {
-  final String domain;
-  final String includeSubdomains; // 'TRUE' or 'FALSE'
-  final String path;
-  final String secure; // 'TRUE' or 'FALSE'
-  final String expiration;
-  final String name;
-  final String value;
-  final bool isHttpOnly;
-
-  NetscapeCookie({
-    required this.domain,
-    required this.includeSubdomains,
-    required this.path,
-    required this.secure,
-    required this.expiration,
-    required this.name,
-    required this.value,
-    required this.isHttpOnly,
-  });
-
-  factory NetscapeCookie.fromLine(String line) {
-    bool isHttpOnly = false;
-    String cleanLine = line.trim();
-    if (cleanLine.startsWith('#HttpOnly_')) {
-      isHttpOnly = true;
-      cleanLine = cleanLine.substring('#HttpOnly_'.length);
-    }
-    final parts = cleanLine.split('\t');
-    if (parts.length < 7) {
-      throw FormatException('Invalid Netscape cookie line: $line');
-    }
-    return NetscapeCookie(
-      domain: parts[0],
-      includeSubdomains: parts[1],
-      path: parts[2],
-      secure: parts[3],
-      expiration: parts[4],
-      name: parts[5],
-      value: parts[6],
-      isHttpOnly: isHttpOnly,
-    );
-  }
-
-  String toLine() {
-    final prefix = isHttpOnly ? '#HttpOnly_' : '';
-    return '$prefix$domain\t$includeSubdomains\t$path\t$secure\t$expiration\t$name\t$value';
-  }
-}
+import '../../../core/utils/cookie_store.dart';
 
 class CookieWebViewScreen extends ConsumerStatefulWidget {
   final String loginUrl;
   final String siteName;
+  /// When set, captured cookies are handed to the caller (e.g. the
+  /// per-site profiles screen) instead of being written to the global
+  /// cookies.txt. Legacy callers leave it null and keep old behavior.
+  final Future<void> Function(List<NetscapeCookie> cookies)? onCaptured;
 
   const CookieWebViewScreen({
     super.key,
     required this.loginUrl,
     required this.siteName,
+    this.onCaptured,
   });
 
   @override
@@ -143,6 +99,13 @@ class _CookieWebViewScreenState extends ConsumerState<CookieWebViewScreen> {
 
       if (hasSessionToken || !autoClose) {
         _isProcessing = true;
+        // Profiles flow: hand cookies to the caller (it stores per-site
+        // content and regenerates the merged file itself).
+        if (widget.onCaptured != null) {
+          await widget.onCaptured!(_toNetscape(cookies));
+          if (mounted) Navigator.of(context).pop(true);
+          return;
+        }
         await _saveCookies(cookies);
 
         final notifier = ref.read(settingsProvider.notifier);
@@ -178,6 +141,26 @@ class _CookieWebViewScreenState extends ConsumerState<CookieWebViewScreen> {
         );
       }
     }
+  }
+
+  /// Same conversion as [_saveCookies] but without touching the file.
+  List<NetscapeCookie> _toNetscape(List<WebViewCookie> webViewCookies) {
+    final nowSecs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final tenYearsSecs = nowSecs + 10 * 365 * 24 * 60 * 60;
+    final out = <NetscapeCookie>[];
+    for (var wc in webViewCookies) {
+      if (wc.name.isEmpty || wc.domain.isEmpty) continue;
+      out.add(NetscapeCookie(
+        domain: wc.domain,
+        includeSubdomains: wc.domain.startsWith('.') ? 'TRUE' : 'FALSE',
+        path: wc.path,
+        secure: 'TRUE',
+        expiration: tenYearsSecs.toString(),
+        name: wc.name,
+        value: wc.value,
+      ));
+    }
+    return out;
   }
 
   Future<void> _saveCookies(List<WebViewCookie> webViewCookies) async {

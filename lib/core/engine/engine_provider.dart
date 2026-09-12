@@ -18,6 +18,11 @@ final engineProvider = Provider<EngineService>((ref) {
   final initialOutputDir = settings.downloadPath == '/Internal/Videos'
       ? '$_appDir/TrueStream'
       : settings.downloadPath;
+  // ytdlnis parity: cookies only reach yt-dlp when the master switch is
+  // on (per-site toggles are merged into the file by the Cookies screen).
+  String? effectiveCookiesPath(
+      {required bool useCookies, required String? cookiesPath}) =>
+      useCookies ? cookiesPath : null;
 
   if (_appDir != null) {
     _setPathsFuture = engine.setPaths({
@@ -27,12 +32,15 @@ final engineProvider = Provider<EngineService>((ref) {
       'ffmpeg_path': _ffmpegPath,
       'aria2c_path': _aria2cPath,
       'deno_path': _denoPath,
-      'cookies_path': settings.cookiesPath,
+      'cookies_path': effectiveCookiesPath(
+          useCookies: settings.useCookies, cookiesPath: settings.cookiesPath),
     });
   }
 
   ref.listen<AppSettings>(settingsProvider, (previous, next) {
-    if (previous?.downloadPath != next.downloadPath || previous?.cookiesPath != next.cookiesPath) {
+    if (previous?.downloadPath != next.downloadPath ||
+        previous?.cookiesPath != next.cookiesPath ||
+        previous?.useCookies != next.useCookies) {
       final outputDir = next.downloadPath == '/Internal/Videos'
           ? '$_appDir/TrueStream'
           : next.downloadPath;
@@ -43,7 +51,8 @@ final engineProvider = Provider<EngineService>((ref) {
         'ffmpeg_path': _ffmpegPath,
         'aria2c_path': _aria2cPath,
         'deno_path': _denoPath,
-        'cookies_path': next.cookiesPath,
+        'cookies_path': effectiveCookiesPath(
+            useCookies: next.useCookies, cookiesPath: next.cookiesPath),
       });
     }
   });

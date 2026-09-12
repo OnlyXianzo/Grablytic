@@ -50,6 +50,8 @@ class AppSettings {
   final bool verbose;
   final bool autoStartDownloadOnShare;
   final String? cookiesPath;
+  final bool useCookies;
+  final List<Map<String, dynamic>> cookieProfiles;
   final bool youtubeLoggedIn;
   final bool instagramLoggedIn;
   final bool twitterLoggedIn;
@@ -89,6 +91,8 @@ class AppSettings {
     this.verbose = false,
     this.autoStartDownloadOnShare = false,
     this.cookiesPath,
+    this.useCookies = false,
+    this.cookieProfiles = const [],
     this.youtubeLoggedIn = false,
     this.instagramLoggedIn = false,
     this.twitterLoggedIn = false,
@@ -131,6 +135,8 @@ class AppSettings {
     bool? verbose,
     bool? autoStartDownloadOnShare,
     Object? cookiesPath = _sentinel,
+    bool? useCookies,
+    List<Map<String, dynamic>>? cookieProfiles,
     bool? youtubeLoggedIn,
     bool? instagramLoggedIn,
     bool? twitterLoggedIn,
@@ -170,6 +176,8 @@ class AppSettings {
       verbose: verbose ?? this.verbose,
       autoStartDownloadOnShare: autoStartDownloadOnShare ?? this.autoStartDownloadOnShare,
       cookiesPath: cookiesPath == _sentinel ? this.cookiesPath : (cookiesPath as String?),
+      useCookies: useCookies ?? this.useCookies,
+      cookieProfiles: cookieProfiles ?? this.cookieProfiles,
       youtubeLoggedIn: youtubeLoggedIn ?? this.youtubeLoggedIn,
       instagramLoggedIn: instagramLoggedIn ?? this.instagramLoggedIn,
       twitterLoggedIn: twitterLoggedIn ?? this.twitterLoggedIn,
@@ -257,6 +265,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final sponsorBlockCats = _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
     final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
     final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
+    final useCookies = _prefs.getBool('useCookies') ?? false;
+    final cookieProfilesJson = _prefs.getStringList('cookieProfiles') ?? [];
+    final cookieProfiles = <Map<String, dynamic>>[];
+    for (final raw in cookieProfilesJson) {
+      try {
+        cookieProfiles.add(Map<String, dynamic>.from(jsonDecode(raw) as Map));
+      } catch (_) {}
+    }
 
     state = AppSettings(
       wifiOnly: wifiOnly,
@@ -293,6 +309,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       scheduleTime: scheduleTime,
       scheduleDays: scheduleDays,
       sponsorBlockCats: sponsorBlockCats,
+      useCookies: useCookies,
+      cookieProfiles: cookieProfiles,
       useGridView: useGridView,
       downloadArchive: downloadArchive,
       archiveByFolder: archiveByFolder,
@@ -372,6 +390,63 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     }
     state = state.copyWith(cookiesPath: path);
   }
+
+  void setUseCookies(bool value) {
+    _prefs.setBool('useCookies', value);
+    state = state.copyWith(useCookies: value);
+  }
+
+  void _persistCookieProfiles(List<Map<String, dynamic>> profiles) {
+    _prefs.setStringList(
+      'cookieProfiles',
+      profiles.map((p) => jsonEncode(p)).toList(),
+    );
+    state = state.copyWith(cookieProfiles: profiles);
+  }
+
+  /// Insert or replace the profile for [url] (matched case-insensitively
+  /// on the exact URL string). [lines] are Netscape data lines.
+  void upsertCookieProfile({
+    required String url,
+    required String description,
+    required List<String> lines,
+  }) {
+    final updated = [...state.cookieProfiles];
+    final idx = updated.indexWhere(
+      (p) => (p['url'] as String? ?? '').toLowerCase() == url.toLowerCase(),
+    );
+    final entry = {
+      'id': idx == -1
+          ? DateTime.now().millisecondsSinceEpoch.toString()
+          : updated[idx]['id'],
+      'url': url,
+      'description': description,
+      'content': lines,
+      'enabled': idx == -1 ? true : (updated[idx]['enabled'] as bool? ?? true),
+    };
+    if (idx == -1) {
+      updated.add(entry);
+    } else {
+      updated[idx] = entry;
+    }
+    _persistCookieProfiles(updated);
+  }
+
+  void toggleCookieProfile(String id) {
+    final updated = state.cookieProfiles.map((p) {
+      if (p['id'] != id) return p;
+      return {...p, 'enabled': !(p['enabled'] as bool? ?? true)};
+    }).toList();
+    _persistCookieProfiles(updated);
+  }
+
+  void deleteCookieProfile(String id) {
+    _persistCookieProfiles(
+      state.cookieProfiles.where((p) => p['id'] != id).toList(),
+    );
+  }
+
+  void clearCookieProfiles() => _persistCookieProfiles([]);
 
   void setYoutubeLoggedIn(bool value) {
     _prefs.setBool('youtubeLoggedIn', value);

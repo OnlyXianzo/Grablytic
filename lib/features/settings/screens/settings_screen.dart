@@ -11,6 +11,7 @@ import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../home/widgets/bootstrap_status_card.dart';
 import 'command_templates_screen.dart';
+import 'cookies_screen.dart';
 import 'presets_screen.dart';
 import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
@@ -148,6 +149,19 @@ class SettingsScreen extends ConsumerWidget {
                   );
                 },
               ).animate().fadeIn(delay: 230.ms, duration: 300.ms).slideX(begin: 0.1),
+              _SettingNavItem(
+                icon: Icons.cookie_outlined,
+                title: 'Cookies',
+                subtitle: 'Site logins for members-only content',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CookiesScreen(),
+                    ),
+                  );
+                },
+              ).animate().fadeIn(delay: 235.ms, duration: 300.ms).slideX(begin: 0.1),
               Padding(
                 padding: const EdgeInsets.only(top: 24, bottom: 8),
                 child: Text(
