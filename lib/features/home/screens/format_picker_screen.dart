@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/download_config.dart';
 import '../../../core/utils/format_selector.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
@@ -40,34 +41,6 @@ const _vpnKeywords = [
 bool _isVpnSuggested(String error) {
   final lower = error.toLowerCase();
   return _vpnKeywords.any((kw) => lower.contains(kw));
-}
-
-/// Build the P1 settings overlay for the engine download config.
-///
-/// Keys match `engine/truestream_engine/config.py` DEFAULT_CFG exactly
-/// (Dart `downloadSubtitles` → yt-dlp `writesubtitles`, etc.). Null/empty
-/// values are omitted so engine defaults survive the merge. Only keys with
-/// a real user setting on the Dart side are sent — thumbnail/metadata have
-/// no toggles (engine defaults already on) and are intentionally absent.
-Map<String, dynamic> _settingsConfig(AppSettings settings) {
-  final config = <String, dynamic>{
-    'writesubtitles': settings.downloadSubtitles,
-    'writeautomaticsub': settings.downloadAutoSubtitles,
-    'subtitleslangs': List<String>.from(settings.subtitleLanguages),
-    'embedsubtitles': settings.embedSubtitles,
-    'sponsorblock_cats': List<String>.from(settings.sponsorBlockCats),
-    'aria2c_enabled': settings.aria2cEnabled,
-    'aria2c_chunks': settings.aria2cChunks,
-  };
-  final maxSpeed = settings.aria2cMaxSpeed;
-  if (maxSpeed != null && maxSpeed.trim().isNotEmpty) {
-    config['aria2c_max_speed'] = maxSpeed.trim();
-  }
-  final proxy = settings.proxy;
-  if (proxy != null && proxy.trim().isNotEmpty) {
-    config['proxy'] = proxy.trim();
-  }
-  return config;
 }
 
 class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
@@ -222,7 +195,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       // P1: forward user settings under exact engine contract keys
       // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
-      ..._settingsConfig(ref.read(settingsProvider)),
+      ...settingsDownloadConfig(ref.read(settingsProvider)),
     };
 
     final result = await AppLogger.trace<Map<String, dynamic>>(

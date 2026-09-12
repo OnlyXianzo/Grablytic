@@ -61,6 +61,7 @@ class AppSettings {
   final List<String> subtitleLanguages;
   final bool downloadAutoSubtitles;
   final bool embedSubtitles;
+  final bool saveDescription;
   final bool aria2cEnabled;
   final int aria2cChunks;
   final String? aria2cMaxSpeed;
@@ -98,6 +99,7 @@ class AppSettings {
     this.subtitleLanguages = const ['en'],
     this.downloadAutoSubtitles = false,
     this.embedSubtitles = false,
+    this.saveDescription = false,
     this.aria2cEnabled = false,
     this.aria2cChunks = 5,
     this.aria2cMaxSpeed,
@@ -138,6 +140,7 @@ class AppSettings {
     List<String>? subtitleLanguages,
     bool? downloadAutoSubtitles,
     bool? embedSubtitles,
+    bool? saveDescription,
     bool? aria2cEnabled,
     int? aria2cChunks,
     Object? aria2cMaxSpeed = _sentinel,
@@ -175,11 +178,16 @@ class AppSettings {
       subtitleLanguages: subtitleLanguages ?? this.subtitleLanguages,
       downloadAutoSubtitles: downloadAutoSubtitles ?? this.downloadAutoSubtitles,
       embedSubtitles: embedSubtitles ?? this.embedSubtitles,
+      saveDescription: saveDescription ?? this.saveDescription,
       aria2cEnabled: aria2cEnabled ?? this.aria2cEnabled,
       aria2cChunks: aria2cChunks ?? this.aria2cChunks,
       aria2cMaxSpeed: aria2cMaxSpeed == _sentinel ? this.aria2cMaxSpeed : (aria2cMaxSpeed as String?),
       observedSources: observedSources ?? this.observedSources,
       useGridView: useGridView ?? this.useGridView,
+      customTemplates: customTemplates ?? this.customTemplates,
+      scheduleEnabled: scheduleEnabled ?? this.scheduleEnabled,
+      scheduleTime: scheduleTime ?? this.scheduleTime,
+      scheduleDays: scheduleDays ?? this.scheduleDays,
       sponsorBlockCats: sponsorBlockCats ?? this.sponsorBlockCats,
       downloadArchive: downloadArchive ?? this.downloadArchive,
       archiveByFolder: archiveByFolder ?? this.archiveByFolder,
@@ -222,6 +230,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final subtitleLanguages = _prefs.getStringList('subtitleLanguages') ?? ['en'];
     final downloadAutoSubtitles = _prefs.getBool('downloadAutoSubtitles') ?? false;
     final embedSubtitles = _prefs.getBool('embedSubtitles') ?? false;
+    final saveDescription = _prefs.getBool('saveDescription') ?? false;
     final aria2cEnabled = _prefs.getBool('aria2cEnabled') ?? false;
     final aria2cChunks = _prefs.getInt('aria2cChunks') ?? 5;
     final aria2cMaxSpeed = _prefs.getString('aria2cMaxSpeed');
@@ -268,6 +277,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       subtitleLanguages: subtitleLanguages,
       downloadAutoSubtitles: downloadAutoSubtitles,
       embedSubtitles: embedSubtitles,
+      saveDescription: saveDescription,
       aria2cEnabled: aria2cEnabled,
       aria2cChunks: aria2cChunks,
       aria2cMaxSpeed: aria2cMaxSpeed,
@@ -414,6 +424,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final newValue = !state.embedSubtitles;
     _prefs.setBool('embedSubtitles', newValue);
     state = state.copyWith(embedSubtitles: newValue);
+  }
+
+  void toggleSaveDescription() {
+    final newValue = !state.saveDescription;
+    _prefs.setBool('saveDescription', newValue);
+    state = state.copyWith(saveDescription: newValue);
   }
 
   void setUseGridView(bool value) {

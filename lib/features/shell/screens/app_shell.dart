@@ -9,6 +9,7 @@ import '../../../providers/download_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/download_config.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -75,6 +76,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         'container': settings.qualityCeiling == 'best' ? 'mkv' : 'mp4',
         'quality_ceiling': settings.qualityCeiling,
         'audio_only': settings.audioOnly,
+        ...settingsDownloadConfig(settings),
       };
 
       ref.read(engineProvider).startDownload(

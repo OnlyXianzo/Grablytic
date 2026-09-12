@@ -264,10 +264,15 @@ def build_ydl_opts(
         # -> Metadata. Subtitles must be in the container before chapters are
         # cut, and chapter edits must land before tags are written.
         subs_enabled = cfg.get("writesubtitles", False) or cfg.get("writeautomaticsub", False)
-        if subs_enabled and cfg.get("embedsubtitles"):
+        if subs_enabled:
+            # Sidecar download is independent of embedding: a user who
+            # wants .srt/.vtt files without embedding still needs these
+            # keys (previously gated behind embedsubtitles — nothing was
+            # ever written for sidecar-only).
             opts["writesubtitles"] = cfg.get("writesubtitles", False)
             opts["writeautomaticsub"] = cfg.get("writeautomaticsub", False)
             opts["subtitleslangs"] = cfg.get("subtitleslangs", ["en"])
+        if subs_enabled and cfg.get("embedsubtitles"):
             # `embedsubs` is not a real YoutubeDL param (silently ignored).
             # The CLI maps --embed-subs to the FFmpegEmbedSubtitle PP, so we
             # append it explicitly. already_have_subtitle keeps the sidecar

@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../core/engine/engine_provider.dart';
+import '../core/utils/download_config.dart';
 import 'download_provider.dart';
 import 'playlist_provider.dart';
 import 'preset_provider.dart';
+import 'settings_provider.dart';
 
 const _uuid = Uuid();
 
@@ -127,6 +129,7 @@ class BatchNotifier extends StateNotifier<BatchState> {
       'container': activePreset.preferredContainer,
       'quality_ceiling': activePreset.qualityCeiling,
       'audio_only': activePreset.audioOnly,
+      ...settingsDownloadConfig(_ref.read(settingsProvider)),
     };
 
     engine

@@ -224,6 +224,21 @@ def test_subtitles_embedded():
     assert "FFmpegEmbedSubtitle" in keys
 
 
+def test_subtitles_sidecar_without_embed():
+    # Sidecar-only (write but don't embed) must still download .srt files:
+    # writesubtitles/subtitleslangs set, no FFmpegEmbedSubtitle PP.
+    opts = build_ydl_opts(config={
+        "writesubtitles": True,
+        "writeautomaticsub": False,
+        "subtitleslangs": ["en", "hi"],
+        "embedsubtitles": False,
+    })
+    assert opts.get("writesubtitles") is True
+    assert opts.get("subtitleslangs") == ["en", "hi"]
+    keys = [pp.get("key") for pp in opts.get("postprocessors", [])]
+    assert "FFmpegEmbedSubtitle" not in keys
+
+
 def test_merge_output_format_mp4():
     opts = build_ydl_opts(config={"container": "mp4"})
     assert opts["merge_output_format"] == "mp4"

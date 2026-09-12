@@ -254,6 +254,14 @@ class SettingsScreen extends ConsumerWidget {
                 colorScheme: colorScheme,
               ).animate().fadeIn(delay: 240.ms, duration: 300.ms).slideX(begin: 0.1),
               _SettingSwitch(
+                icon: Icons.description_outlined,
+                title: 'Save Description',
+                subtitle: 'Save video description as a text file',
+                value: settings.saveDescription,
+                onChanged: () => ref.read(settingsProvider.notifier).toggleSaveDescription(),
+                colorScheme: colorScheme,
+              ).animate().fadeIn(delay: 250.ms, duration: 300.ms).slideX(begin: 0.1),
+              _SettingSwitch(
                 icon: Icons.notifications_outlined,
                 title: 'Download Completion Alerts',
                 subtitle: 'Notify when a file finishes',
