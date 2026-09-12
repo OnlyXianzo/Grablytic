@@ -28,6 +28,17 @@ void main() {
       expect(cfg['write_description'], isTrue);
     });
 
+    test('thumbnail format follows PNG toggle', () {
+      expect(
+        settingsDownloadConfig(const AppSettings(pngThumbnails: true))['thumbnail_format'],
+        'png',
+      );
+      expect(
+        settingsDownloadConfig(const AppSettings())['thumbnail_format'],
+        'jpg',
+      );
+    });
+
     test('forwards organize-by-folder and archive flags', () {
       const s = AppSettings(archiveByFolder: true, downloadArchive: true);
       final cfg = settingsDownloadConfig(s);

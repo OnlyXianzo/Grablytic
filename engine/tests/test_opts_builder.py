@@ -257,6 +257,15 @@ def test_use_archive_defaults_to_data_dir():
     assert "download_archive" not in opts3
 
 
+def test_thumbnail_format_png_option():
+    opts = build_ydl_opts(config={"thumbnail_format": "png"})
+    conv = [pp for pp in opts.get("postprocessors", []) if pp.get("key") == "FFmpegThumbnailsConvertor"]
+    assert conv and conv[0]["format"] == "png"
+    opts2 = build_ydl_opts(config={})
+    conv2 = [pp for pp in opts2.get("postprocessors", []) if pp.get("key") == "FFmpegThumbnailsConvertor"]
+    assert conv2 and conv2[0]["format"] == "jpg"
+
+
 def test_merge_output_format_mp4():
     opts = build_ydl_opts(config={"container": "mp4"})
     assert opts["merge_output_format"] == "mp4"

@@ -40,6 +40,7 @@ DEFAULT_CFG = {
     "quality_ceiling": "4k",
     # ── Metadata ────────────────────────────────────────────────────────
     "embedthumbnail": True,
+    "thumbnail_format": "jpg",
     "addmetadata": True,
     # ── Subtitles ───────────────────────────────────────────────────────
     "writesubtitles": False,

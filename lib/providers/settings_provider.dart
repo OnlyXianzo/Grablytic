@@ -62,6 +62,7 @@ class AppSettings {
   final bool downloadAutoSubtitles;
   final bool embedSubtitles;
   final bool saveDescription;
+  final bool pngThumbnails;
   final bool aria2cEnabled;
   final int aria2cChunks;
   final String? aria2cMaxSpeed;
@@ -100,6 +101,7 @@ class AppSettings {
     this.downloadAutoSubtitles = false,
     this.embedSubtitles = false,
     this.saveDescription = false,
+    this.pngThumbnails = false,
     this.aria2cEnabled = false,
     this.aria2cChunks = 5,
     this.aria2cMaxSpeed,
@@ -141,6 +143,7 @@ class AppSettings {
     bool? downloadAutoSubtitles,
     bool? embedSubtitles,
     bool? saveDescription,
+    bool? pngThumbnails,
     bool? aria2cEnabled,
     int? aria2cChunks,
     Object? aria2cMaxSpeed = _sentinel,
@@ -179,6 +182,7 @@ class AppSettings {
       downloadAutoSubtitles: downloadAutoSubtitles ?? this.downloadAutoSubtitles,
       embedSubtitles: embedSubtitles ?? this.embedSubtitles,
       saveDescription: saveDescription ?? this.saveDescription,
+      pngThumbnails: pngThumbnails ?? this.pngThumbnails,
       aria2cEnabled: aria2cEnabled ?? this.aria2cEnabled,
       aria2cChunks: aria2cChunks ?? this.aria2cChunks,
       aria2cMaxSpeed: aria2cMaxSpeed == _sentinel ? this.aria2cMaxSpeed : (aria2cMaxSpeed as String?),
@@ -231,6 +235,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final downloadAutoSubtitles = _prefs.getBool('downloadAutoSubtitles') ?? false;
     final embedSubtitles = _prefs.getBool('embedSubtitles') ?? false;
     final saveDescription = _prefs.getBool('saveDescription') ?? false;
+    final pngThumbnails = _prefs.getBool('pngThumbnails') ?? false;
     final aria2cEnabled = _prefs.getBool('aria2cEnabled') ?? false;
     final aria2cChunks = _prefs.getInt('aria2cChunks') ?? 5;
     final aria2cMaxSpeed = _prefs.getString('aria2cMaxSpeed');
@@ -278,6 +283,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       downloadAutoSubtitles: downloadAutoSubtitles,
       embedSubtitles: embedSubtitles,
       saveDescription: saveDescription,
+      pngThumbnails: pngThumbnails,
       aria2cEnabled: aria2cEnabled,
       aria2cChunks: aria2cChunks,
       aria2cMaxSpeed: aria2cMaxSpeed,
@@ -430,6 +436,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final newValue = !state.saveDescription;
     _prefs.setBool('saveDescription', newValue);
     state = state.copyWith(saveDescription: newValue);
+  }
+
+  void togglePngThumbnails() {
+    final newValue = !state.pngThumbnails;
+    _prefs.setBool('pngThumbnails', newValue);
+    state = state.copyWith(pngThumbnails: newValue);
   }
 
   void setUseGridView(bool value) {

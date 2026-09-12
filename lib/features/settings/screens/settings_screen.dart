@@ -263,6 +263,14 @@ class SettingsScreen extends ConsumerWidget {
                 colorScheme: colorScheme,
               ).animate().fadeIn(delay: 250.ms, duration: 300.ms).slideX(begin: 0.1),
               _SettingSwitch(
+                icon: Icons.image_outlined,
+                title: 'PNG Thumbnails',
+                subtitle: 'Save thumbnail image as PNG instead of JPG',
+                value: settings.pngThumbnails,
+                onChanged: () => ref.read(settingsProvider.notifier).togglePngThumbnails(),
+                colorScheme: colorScheme,
+              ).animate().fadeIn(delay: 255.ms, duration: 300.ms).slideX(begin: 0.1),
+              _SettingSwitch(
                 icon: Icons.notifications_outlined,
                 title: 'Download Completion Alerts',
                 subtitle: 'Notify when a file finishes',

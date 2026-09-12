@@ -21,6 +21,7 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
     'write_description': settings.saveDescription,
     'organize_by_folder': settings.archiveByFolder,
     'use_archive': settings.downloadArchive,
+    'thumbnail_format': settings.pngThumbnails ? 'png' : 'jpg',
   };
   final maxSpeed = settings.aria2cMaxSpeed;
   if (maxSpeed != null && maxSpeed.trim().isNotEmpty) {

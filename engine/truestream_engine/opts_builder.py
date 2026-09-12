@@ -265,8 +265,11 @@ def build_ydl_opts(
             # writethumbnail is the real YoutubeDL param (write_thumbnail does
             # not exist) — the thumbnail file must exist for EmbedThumbnail
             # to embed anything (#9).
+            thumb_fmt = str(cfg.get("thumbnail_format") or "jpg").lower()
+            if thumb_fmt not in ("jpg", "png", "webp"):
+                thumb_fmt = "jpg"
             opts["writethumbnail"] = True
-            pp.append({"key": "FFmpegThumbnailsConvertor", "format": "jpg"})
+            pp.append({"key": "FFmpegThumbnailsConvertor", "format": thumb_fmt})
             pp.append({"key": "EmbedThumbnail"})
 
         meta_pp: list[str] = []
