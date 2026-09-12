@@ -128,20 +128,24 @@ class MainActivity : FlutterActivity() {
                         }
                         val ffmpegBin = bins["ffmpeg"]?.takeIf { File(it.executable).canExecute() }
                         val denoBin = bins["deno"]?.takeIf { File(it.executable).canExecute() }
+                        val nodeBin = bins["node"]?.takeIf { File(it.executable).canExecute() }
                         ffmpegPath = ffmpegBin?.executable ?: dartFfmpegPath
                         // EVERY bundled binary needs EVERY support tree: the
-                        // linker resolves ffmpeg's AND deno's deps from these
-                        // dirs (a ffmpeg-only path leaves libsqlite3.so etc.
-                        // unreachable → CANNOT LINK EXECUTABLE). Mirrors
-                        // ytdlnis RuntimeManager (all usr/lib + native dir).
+                        // linker resolves ffmpeg's AND deno's AND node's deps
+                        // from these dirs (a ffmpeg-only path leaves
+                        // libsqlite3.so etc. unreachable → CANNOT LINK
+                        // EXECUTABLE). Mirrors ytdlnis RuntimeManager
+                        // (all usr/lib + native dir).
                         val ldDirs = listOfNotNull(
                             ffmpegBin?.ldLibDir,
                             denoBin?.ldLibDir,
+                            nodeBin?.ldLibDir,
                             applicationContext.applicationInfo.nativeLibraryDir,
                         ).distinct()
                         val combinedLdPath =
                             ldDirs.joinToString(":").takeIf { it.isNotEmpty() }
                         val ffmpegLdPath = combinedLdPath
+                        val resolvedNodePath = nodeBin?.executable
                         val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
                         for (s in BinaryPackageManager.status(bins)) {
                             android.util.Log.i(
@@ -152,7 +156,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("truestream_engine")
-                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath)
+                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
                             withContext(Dispatchers.Main) { result.success(mapOf("success" to true)) }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_INVALID_PATH", e.message, null) }

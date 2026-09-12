@@ -9,6 +9,7 @@ _paths = {
     "cookies_path": None,
     "aria2c_path": None,
     "deno_path": None,
+    "nodejs_path": None,
     "po_token": None,
     "update_channel": "stable",
 }
@@ -24,6 +25,7 @@ def set_paths(
     deno_path: str | None = None,
     po_token: str | None = None,
     ffmpeg_ld_path: str | None = None,
+    nodejs_path: str | None = None,
 ) -> dict:
     import os
     import sys
@@ -68,6 +70,18 @@ def set_paths(
             system = _shutil.which(f"deno{ext}") or _shutil.which("deno")
             _paths["deno_path"] = system or bundled
 
+    # Resolve node: explicit → bundled → system → placeholder.
+    # (Android primary JS runtime; links cleanly on Bionic.)
+    if nodejs_path and os.path.isfile(nodejs_path):
+        _paths["nodejs_path"] = nodejs_path
+    else:
+        bundled = os.path.join(bin_dir, f"node{ext}")
+        if os.path.isfile(bundled):
+            _paths["nodejs_path"] = bundled
+        else:
+            system = _shutil.which(f"node{ext}") or _shutil.which("node")
+            _paths["nodejs_path"] = system or bundled
+
     _paths["cookies_path"] = cookies_path
     _paths["po_token"] = po_token
 
@@ -95,7 +109,7 @@ def set_paths(
 
     # Inject binary directories into PATH
     path_dirs = [bin_dir]
-    for key in ("ffmpeg_path", "aria2c_path", "deno_path"):
+    for key in ("ffmpeg_path", "aria2c_path", "deno_path", "nodejs_path"):
         val = _paths.get(key)
         if val:
             path_dirs.append(os.path.dirname(val))

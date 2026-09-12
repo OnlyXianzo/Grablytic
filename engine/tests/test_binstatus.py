@@ -59,7 +59,7 @@ class TestBinariesList:
         res = boot.bootstrap()
         assert res["success"] is True
         assert {b["name"] for b in res["binaries"]} == \
-            {"yt-dlp", "ffmpeg", "aria2c", "quickjs", "deno"}
+            {"yt-dlp", "ffmpeg", "aria2c", "quickjs", "deno", "node"}
         for b in res["binaries"]:
             assert set(b) == {"name", "ok", "source", "version", "detail"}
         # .so executable resolves as the bundled jniLibs binary.

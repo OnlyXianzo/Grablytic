@@ -32,6 +32,10 @@
   deno + native dir), fixing `CANNOT LINK EXECUTABLE` for bundled
   binaries; `set_paths` accepts colon-joined dirs.
 - Live per-download engine-log overlay on download cards (ytdlnis-style).
+- Android JS runtime is now bundled Node.js (`nodejs-25.3.0` jniLibs;
+  Deno's `libsqlite3.so` doesn't ship) with node-first priority on
+  Android; bot-check errors map to cookie guidance; probe output uncapped
+  for verbatim linker diagnostics.
 
 ### Fixed
 - Engine logs now reach Android: `logger.set_global_event_callback()` push

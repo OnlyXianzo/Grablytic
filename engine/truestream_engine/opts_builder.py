@@ -355,9 +355,34 @@ def build_ydl_opts(
     return opts
 
 
+def _is_android_app() -> bool:
+    """True only inside the production Chaquopy app process (NOT Termux).
+
+    Same java-bridge sniff as bootstrap: Termux/desktop Pythons raise
+    ImportError. Used to prefer Node on Android, where the bundled Deno
+    cannot satisfy all of its shared-library deps.
+    """
+    try:
+        from java.android import context  # type: ignore[import-not-found]
+        return context is not None
+    except Exception:
+        return False
+
+
 def _configure_js_runtime(opts: dict, paths: dict) -> None:
     import os
     from truestream_engine.po_token import detect_js_runtime
+
+    # Android: Node first. Rationale: ytdlnis treats Node as the workhorse
+    # (their Deno bundle has the same missing-deps fate as ours —
+    # libsqlite3.so; Node links cleanly on Bionic). Desktop keeps the
+    # yt-dlp-recommended Deno-first order.
+    if _is_android_app():
+        node_path = paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
+        if node_path and os.path.isfile(node_path):
+            opts["js_runtimes"] = {"node": {"path": node_path}}
+            opts["remote_components"] = ["ejs:github"]
+            return
 
     # Prioritize explicit deno_path first (e.g. bundled libdeno.so on Android)
     deno_path = paths.get("deno_path") or os.environ.get("DENO_PATH") or shutil_which("deno")

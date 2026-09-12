@@ -67,6 +67,9 @@ class EngineStatus {
   // Desktop-only: Deno
   final bool denoOk;
   final String? denoVersion;
+  // Android primary JS runtime (bundled Node); desktop fallback.
+  final bool nodeOk;
+  final String? nodeVersion;
   // Android-only: QuickJS
   final bool quickjsOk;
   // Common: detected JS runtime (quickjs | deno | none)
@@ -88,6 +91,8 @@ class EngineStatus {
     this.aria2cVersion,
     this.denoOk = false,
     this.denoVersion,
+    this.nodeOk = false,
+    this.nodeVersion,
     this.quickjsOk = false,
     this.jsRuntime,
     this.jsRuntimeVersion,
@@ -103,7 +108,9 @@ class EngineStatus {
 
   /// True if the JS runtime for this platform is available.
   bool get jsRuntimeOk {
-    if (Platform.isAndroid) return quickjsOk;
+    // Android: bundled Node is primary (Deno's shared-lib deps don't
+    // ship); QuickJS has no Chaquopy wheel. Any working runtime counts.
+    if (Platform.isAndroid) return quickjsOk || nodeOk || denoOk;
     return denoOk;
   }
 
@@ -144,6 +151,8 @@ final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
       final jsRuntime = result['js_runtime'] as String?;
       final jsRuntimeVersion = result['js_runtime_version'] as String?;
       final quickjsOk = result['quickjs_ok'] as bool? ?? false;
+      final nodeOk = result['node_ok'] as bool? ?? false;
+      final nodeVersion = result['node_version'] as String?;
       final ffmpegOk = result['ffmpeg_ok'] as bool? ?? false;
       final aria2cOk = result['aria2c_ok'] as bool? ?? false;
       // Additive payload (new engines): full provenance records.
@@ -182,6 +191,8 @@ final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
         aria2cVersion: result['aria2c_version'] as String?,
         denoOk: jsRuntime == 'deno',
         denoVersion: jsRuntime == 'deno' ? jsRuntimeVersion : null,
+        nodeOk: nodeOk,
+        nodeVersion: nodeVersion,
         quickjsOk: quickjsOk,
         jsRuntime: jsRuntime,
         jsRuntimeVersion: jsRuntimeVersion,

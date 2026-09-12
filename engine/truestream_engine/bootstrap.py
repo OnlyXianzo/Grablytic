@@ -391,7 +391,7 @@ def _probe_report(bin_path: str, timeout: int = 8) -> dict:
         )
         report["returncode"] = proc.returncode
         out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-        report["output"] = out[:300]
+        report["output"] = out[:2000]
         if proc.returncode == 0 and proc.stdout:
             first = proc.stdout.splitlines()[0].strip()[:120] or None
             report["version"] = first
@@ -660,7 +660,7 @@ def bootstrap() -> dict:
         if not rep["ok"]:
             log.warn(
                 f"Probe {name} ({path}) failed "
-                f"rc={rep['returncode']}: {rep['output'][:160]}"
+                f"rc={rep['returncode']}: {rep['output']}"
             )
         return rep["version"]
 
@@ -680,6 +680,15 @@ def bootstrap() -> dict:
             deno_ok = True
             deno_version = deno_version or _probe_if_needed("deno", p)
 
+    # Node: no download channel (desktop relies on system node; Android on
+    # the bundled jniLibs .so resolved via set_paths). Probe like the rest.
+    node_ok, node_version = False, None
+    if paths.get("nodejs_path"):
+        p = paths["nodejs_path"]
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            node_ok = True
+            node_version = _probe_if_needed("node", p)
+
     # Pre-existing executables (bundled jniLibs .so files, system binaries)
     # carry no release tag — probe live so version fields are never blank.
     if ffmpeg_ok and not ffmpeg_version and paths.get("ffmpeg_path"):
@@ -688,6 +697,8 @@ def bootstrap() -> dict:
         aria2c_version = _probe_if_needed("aria2c", paths["aria2c_path"])
     if deno_ok and not deno_version and paths.get("deno_path"):
         deno_version = _probe_if_needed("deno", paths["deno_path"])
+    if node_ok and not node_version and paths.get("nodejs_path"):
+        node_version = _probe_if_needed("node", paths["nodejs_path"])
 
     # One line proving the child-process environment yt-dlp will inherit.
     # If a bundled .so later fails to spawn, compare: missing/wrong
@@ -720,6 +731,11 @@ def bootstrap() -> dict:
     if deno_ok and deno_version:
         js_runtime = "deno"
         js_runtime_version = deno_version
+    elif is_android and node_ok:
+        # Android prefers the bundled Node (Deno's shared-lib deps don't
+        # ship); version may still be None when only presence is known.
+        js_runtime = "node"
+        js_runtime_version = node_version
     else:
         js_runtime = js_name
         js_runtime_version = js_ver
@@ -800,6 +816,13 @@ def bootstrap() -> dict:
             "version": deno_version,
             "detail": _probe_detail("deno", paths.get("deno_path")),
         },
+        {
+            "name": "node",
+            "ok": node_ok,
+            "source": _source("node", node_ok, paths.get("nodejs_path")),
+            "version": node_version,
+            "detail": _probe_detail("node", paths.get("nodejs_path")),
+        },
     ]
 
     # SEC-05 (partial): advisory floor — yt-dlp below the EJS generation is
@@ -825,6 +848,8 @@ def bootstrap() -> dict:
         "aria2c_version": aria2c_version,
         "deno_ok": deno_ok,
         "deno_version": deno_version,
+        "node_ok": node_ok,
+        "node_version": node_version,
         "quickjs_ok": quickjs_ok,
         "js_runtime": js_runtime,
         "js_runtime_version": js_runtime_version,

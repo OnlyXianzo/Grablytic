@@ -47,6 +47,7 @@ object BinaryPackageManager {
     private val SPECS = listOf(
         Spec("ffmpeg", "libffmpeg.zip.so", "libffmpeg.so"),
         Spec("deno", "libdeno.zip.so", "libdeno.so"),
+        Spec("node", "libnode.zip.so", "libnode.so"),
     )
 
     /**

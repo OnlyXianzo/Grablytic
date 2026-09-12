@@ -55,6 +55,7 @@ def test_get_paths_optional_fields_default_none(monkeypatch):
     assert paths["cookies_path"] is None
     assert paths["aria2c_path"] == f"/tmp/data/bin/aria2c{ext}"
     assert paths["deno_path"] == f"/tmp/data/bin/deno{ext}"
+    assert paths["nodejs_path"] == f"/tmp/data/bin/node{ext}"
     assert paths["po_token"] is None
 
 

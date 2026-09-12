@@ -31,6 +31,10 @@ class TrueStreamError(Exception):
 _ERROR_MAP = {
     "not available in your country": ("ERROR_GEO_BLOCKED", True),
     "sign in to confirm your age": ("ERROR_AGE_RESTRICTED", True),
+    # YouTube bot-check wall: the fix is cookies, not VPN — map to
+    # FORBIDDEN so the UI offers 'Try with Cookies' (zero UI churn).
+    "confirm you're not a bot": ("ERROR_FORBIDDEN", True),
+    "sign in to confirm": ("ERROR_FORBIDDEN", True),
     "this video is private": ("ERROR_PRIVATE", True),
     "video unavailable": ("ERROR_UNAVAILABLE", False),
     "HTTP Error 429": ("ERROR_RATE_LIMITED", True),

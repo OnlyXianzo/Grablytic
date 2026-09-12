@@ -38,6 +38,14 @@ class TestClassifyError:
         assert err.error_type == "ERROR_AGE_RESTRICTED"
         assert err.recoverable is True
 
+    def test_bot_check_maps_to_forbidden_for_cookie_guidance(self):
+        exc = Exception(
+            "ERROR: [youtube] RhxEmvngWBY: Sign in to confirm you're not "
+            "a bot. Use --cookies-from-browser or --cookies")
+        err = classify_error(exc)
+        assert err.error_type == "ERROR_FORBIDDEN"
+        assert err.recoverable is True
+
     def test_private_video(self):
         exc = Exception("this video is private")
         err = classify_error(exc)

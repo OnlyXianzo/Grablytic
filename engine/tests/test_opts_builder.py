@@ -367,3 +367,33 @@ def test_legacy_use_aria2_alias(tmp_path):
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"use_aria2": True})
     assert opts["external_downloader"]["default"] == "aria2c"
+
+
+def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
+    import sys
+    import types
+    import truestream_engine.opts_builder as opts_mod
+    deno_file = tmp_path / "deno"
+    deno_file.touch()
+    node_file = tmp_path / "node"
+    node_file.touch()
+    _paths["deno_path"] = str(deno_file)
+    _paths["nodejs_path"] = str(node_file)
+    fake_java = types.ModuleType("java.android")
+    fake_java.context = object()
+    monkeypatch.setitem(sys.modules, "java.android", fake_java)
+    opts = build_ydl_opts()
+    assert opts["js_runtimes"] == {"node": {"path": str(node_file)}}
+
+
+def test_desktop_keeps_deno_first(tmp_path):
+    import sys
+    sys.modules.pop("java.android", None)
+    deno_file = tmp_path / "deno"
+    deno_file.touch()
+    node_file = tmp_path / "node"
+    node_file.touch()
+    _paths["deno_path"] = str(deno_file)
+    _paths["nodejs_path"] = str(node_file)
+    opts = build_ydl_opts()
+    assert opts["js_runtimes"] == {"deno": {"path": str(deno_file)}}

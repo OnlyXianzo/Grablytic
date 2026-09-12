@@ -21,6 +21,10 @@
 val nativePackageVersions = mapOf(
     "ffmpeg" to "7.1.1",
     "deno" to "2.7.7",
+    // Primary Android JS runtime: Node links cleanly on Bionic while the
+    // Deno bundle is missing shared libs (libsqlite3.so). Same pinned,
+    // verified fetch as the rest.
+    "nodejs" to "25.3.0",
 )
 // Must stay in sync with abiFilters in build.gradle.kts.
 val nativePackageAbis = listOf("arm64-v8a", "x86_64")
@@ -28,7 +32,7 @@ val nativePackagesRepo = "deniscerri/ytdlnis-packages"
 
 tasks.register("downloadNativePackages") {
     group = "truestream"
-    description = "Fetch verified ffmpeg/deno jniLibs from ytdlnis-packages releases."
+    description = "Fetch verified ffmpeg/deno/nodejs jniLibs from ytdlnis-packages releases."
     onlyIf { !project.hasProperty("skipNativePackages") }
     doLast {
         val jniLibs = layout.projectDirectory.dir("src/main/jniLibs").asFile
