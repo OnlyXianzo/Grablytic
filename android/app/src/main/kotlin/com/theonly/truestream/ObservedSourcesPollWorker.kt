@@ -339,16 +339,15 @@ class ObservedSourcesPollWorker(
             val helper = py.getModule("truestream_engine.scheduler_check")
 
             val playlistResult = engine.callAttr("get_playlist_info", sourceUrl, "{}")
-            val entriesPy = playlistResult.asMap()["entries"] ?: return emptyList()
+            val entriesPy = playlistResult?.callAttr("get", "entries") ?: return emptyList()
 
             val idsPy = helper.callAttr("flat_entries_to_ids", entriesPy).asList()
             val entries = mutableListOf<SourceEntry>()
             for (item in idsPy) {
-                val map = item.asMap()
-                val id = map["id"]?.toString() ?: continue
+                val id = item.callAttr("get", "id")?.toString() ?: continue
                 if (id !in seenIds) {
-                    val url = map["url"]?.toString() ?: "https://www.youtube.com/watch?v=$id"
-                    val title = map["title"]?.toString() ?: id
+                    val url = item.callAttr("get", "url")?.toString() ?: "https://www.youtube.com/watch?v=$id"
+                    val title = item.callAttr("get", "title")?.toString() ?: id
                     entries.add(SourceEntry(id, url, title))
                 }
             }
