@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../providers/settings_provider.dart';
+import '../widgets/onboarding_permissions_step.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -14,7 +15,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int _beat = 1;
 
   void _nextBeat() {
-    if (_beat < 4) {
+    if (_beat < 5) {
       setState(() => _beat++);
     }
   }
@@ -64,7 +65,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
           ),
 
-          // Skip Button
+          // Skip Button (beats 1-4 only: beat 5's Continue is the exit path,
+          // so skipping there is meaningless — denial never blocks Continue)
           if (_beat < 4)
             Positioned(
               top: 16,
@@ -265,7 +267,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ).animate(delay: 800.ms).slideX(begin: 0.5, curve: Curves.easeOutCubic, duration: 400.ms).fadeIn(),
               const SizedBox(height: 40),
               ElevatedButton(
-                onPressed: _complete,
+                onPressed: _nextBeat,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: colorScheme.primaryContainer,
                   foregroundColor: colorScheme.onPrimaryContainer,
@@ -274,10 +276,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Get Started'),
+                child: const Text('Continue'),
               ).animate().fadeIn(delay: 800.ms),
             ],
           ),
+        );
+      case 5:
+        // Permissions beat: pre-permission explainer cards with per-card
+        // accept/reject. First-launch-only: finishing sets the same
+        // onboardingCompleted key as Skip / the old beat-4 button.
+        return OnboardingPermissionsStep(
+          key: const ValueKey(5),
+          onFinished: _complete,
         );
       default:
         return const SizedBox.shrink();
