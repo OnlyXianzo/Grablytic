@@ -151,7 +151,11 @@ event bridge) between Flutter and Python.
 | Home | `lib/features/home/screens/home_screen.dart` | Tab 0 — URL input, active downloads, format picker |
 | Format Picker | `lib/features/home/screens/format_picker_screen.dart` | Modal — format list, quality selection, container, muxed badges |
 | Batch Download | `lib/features/home/screens/batch_download_screen.dart` | Multi-URL paste, list management |
-| Media Preview | `lib/features/home/screens/media_preview_screen.dart` | Thumbnail + metadata before download |
+| Media Preview | `lib/features/home/screens/media_preview_screen.dart` | Downloaded-file thumbnail + metadata, open in system player |
+| Playlist Selection | `lib/features/home/screens/playlist_selection_screen.dart` | Playlist URL → entry multi-select, reverse/shuffle, unavailable marking |
+| Share Sheet | `lib/features/home/widgets/share_intent_sheet.dart` | Bottom sheet — shared-URL choice UI, engine-ready gated |
+| Download Log Sheet | `lib/features/home/widgets/download_log_sheet.dart` | Bottom sheet — one download's logs (live + history) |
+| Overflow Menu | `lib/features/home/widgets/download_overflow_menu.dart` | Per-item actions: redownload, audio, delete, logs |
 | Batch Import | `lib/features/home/screens/batch_import_dialog.dart` | Dialog — import from clipboard or file |
 | Library | `lib/features/library/screens/library_screen.dart` | Tab 1 — completed downloads, grid/list toggle |
 | Download History | `lib/features/library/screens/download_history_screen.dart` | SQLite history, search & filters |
@@ -174,7 +178,7 @@ event bridge) between Flutter and Python.
 - Narrow (<600px): BottomNavigationBar with custom-styled `_NavItem` widgets
 - Wide (≥600px): `NavigationRail` with `VerticalDivider` + `Expanded`
 
-The engine status banner and download progress are surfaced via Riverpod listeners in the shell. Share intent URLs arrive through `EngineService.sharedUrlStream` and are handled by the shell's `_initSharedUrlListening`.
+The engine status banner and download progress are surfaced via Riverpod listeners in the shell. Share intent URLs arrive through `EngineService.sharedUrlStream` and are handled by the shell's `_initSharedUrlListening`; the default path shows a choice bottom sheet (`ShareIntentSheet`) gated on `engineStatusProvider.ready`, with an auto-start opt-in that skips it.
 
 ## Riverpod Provider Dependency Graph
 
@@ -219,6 +223,10 @@ abstract class EngineService {
   Future<String?> getSharedUrl();
   Stream<String> get sharedUrlStream;
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir});
+  Future<Map<String, dynamic>> queueStatus();
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent);
+  Future<Map<String, dynamic>> clearArchive();
+  Future<Map<String, dynamic>> openNotificationSettings();
   Future<Map<String, dynamic>> updateCheck();
   Future<Map<String, dynamic>> setUpdateChannel(String channel);
 }
@@ -257,9 +265,9 @@ Selection is automatic via `engineProvider`:
 
 | Class | File | Responsibility |
 |---|---|---|
-| `MainActivity` | `MainActivity.kt` | Chaquopy startup, MethodChannel/EventChannel setup, `paths/set` (bundled jniLibs win over Dart `bin/` paths), `EngineEventListener` callback sink, share-intent receiver, `DownloadService` start/update/done wiring |
+| `MainActivity` | `MainActivity.kt` | Chaquopy startup, MethodChannel/EventChannel setup, `paths/set` (bundled jniLibs win over Dart `bin/` paths), `EngineEventListener` callback sink, share-intent receiver, `DownloadService` start/update/done wiring, `download/queue_status` + `download/set_concurrency` + `download/clear_archive` handlers, terminal finished/error/cancelled alert routing |
 | `BinaryPackageManager` | `BinaryPackageManager.kt` | Resolves `libffmpeg.so`/`libdeno.so` in `nativeLibraryDir`, extracts `lib*.zip.so` support trees to `noBackupFilesDir/packages`, `--version` probes, zip-slip guard, size-marker skip |
-| `DownloadService` | `DownloadService.kt` | `dataSync` foreground service: progress notification, `START_NOT_STICKY`, `onTimeout` stop, swipe-away handling. No new runtime permissions. |
+| `DownloadService` | `DownloadService.kt` | `dataSync` foreground service: progress notification, `START_NOT_STICKY`, `onTimeout` stop, swipe-away handling, HIGH-importance completion/error alerts with per-download IDs. No new runtime permissions. |
 
 > Binary updates ride **app updates**: downloaded files can't execute on
 > targetSdk > 28, so silent in-app binary updating is impossible on Android.

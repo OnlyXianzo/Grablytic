@@ -44,7 +44,9 @@ TrueStream is a **privacy-first media downloader** that pulls video & audio from
 
 ### 📥 Downloading
 - 🎯 **Maximum-quality ladder** — AV1 → VP9 → H264 cascade with quality ceiling (up to 4K) and muxed-stream support for non-YouTube sites.
-- 📚 **Batch & playlists** — whole channels, ranges (`playlist_items`), reverse/shuffle, multi-URL batch importer with clipboard support.
+- 📚 **Batch & playlists** — whole channels, Playlist Selection screen (entry multi-select, reverse/shuffle, unavailable-entry marking), multi-URL batch importer with clipboard support.
+- 🗂️ **Download queue** — FIFO engine queue (default 2 concurrent, 1–5 configurable in Settings), queued status on cards, enforced at every entry point.
+- 🎛️ **Per-download controls** — overflow menu per item: redownload, audio re-fetch, delete (file + history), per-download logs.
 - ⏱️ **Section cutting** — FFmpeg-only `--download-sections` syntax (`*10:15-20:00`), no extra runtime needed. Invalid specs warn-and-skip, never fail.
 - 🔁 **Resume anything** — startup scan finds `.part` files, recovers URLs from `.info.json`, respects 24 h expiry.
 - 📦 **Download archive** — skip already-downloaded items, optional per-folder archives.
@@ -54,13 +56,13 @@ TrueStream is a **privacy-first media downloader** that pulls video & audio from
 - 🖼️ **Thumbnails, chapters, metadata** — embed thumbnail (with `writethumbnail` fix), split chapters, add metadata in canonical yt-dlp PP order.
 - 💬 **Real subtitle embedding** — `FFmpegEmbedSubtitle` post-processor (`--embed-subs` equivalent) with language picker, auto-subs toggle, sidecar control.
 - ✂️ **SponsorBlock** — mark *and* cut sponsor/intro/outro/self-promo chapters (`ModifyChapters` after `EmbedSubtitle`, before `Metadata`).
-- 🎞️ **In-app preview** — thumbnail + metadata check before you commit.
+- 🎞️ **In-app preview** — thumbnail + duration + stream counts in the Format Picker before you commit.
 
 ### 📱 Android-native (zero install prompts)
 - 📦 **Bundled `ffmpeg` + `deno` in jniLibs** — fetched at build time from pinned `ytdlnis-packages` APKs (SHA-256 verified), resolved via `BinaryPackageManager`. No helper APKs, no `REQUEST_INSTALL_PACKAGES`, manifest stays `INTERNET` + capped storage only.
 - 🔄 **Foreground keep-alive** — `dataSync`-type `DownloadService` with progress notification, `START_NOT_STICKY`, timeout handling. Survives screen-lock & activity death.
 - ⚡ **Callback event delivery** — Kotlin `EngineEventListener.onEvent` replaces queue polling: yt-dlp hooks push straight to Flutter, no polling overhead / GIL lag. Desktop keeps the queue path unchanged.
-- 📤 **Share intent** — share a URL from any app → TrueStream opens with the link prefilled (optional auto-start).
+- 📤 **Share intent** — share a URL from any app → choice bottom sheet (quality/settings before anything downloads); optional auto-start opt-in skips the sheet.
 
 ### 🔓 Access & bypass
 - 🍪 **Cookie & session auth** — in-app WebView cookie capture (Netscape export) + per-site login flags for private/age-restricted content.
@@ -72,6 +74,7 @@ TrueStream is a **privacy-first media downloader** that pulls video & audio from
 - 📝 **Aggressive persistent logging** — buffered `AppLogger` (30 s flush, `app_logs.txt` mirror, instant flush on ERROR/FATAL) + Python `RotatingFileHandler` (`server_logs.log`) + traced IPC middleware.
 - 🛰️ **GitHub auto-report** — search-based dedup reporter (Flutter + `github_notifier.py`) so duplicate crash issues aren't filed twice.
 - 📊 **Diagnostics & Logs screen** — troubleshooting flow, live log stream viewer (color-coded, filter by level/tag/search/source, tap-to-expand, export), engine/bootstrap status cards.
+- 🔍 **Per-download logs** — tap any download (queue card, history row, overflow menu) for its own log, live and after completion.
 
 ### ♿ Accessibility & theming
 - ✅ **WCAG 2.2 AA** — semantic labels, 48×48 touch targets, full TalkBack/VoiceOver support.
@@ -94,6 +97,11 @@ Based on the latest commits on `main`:
 | 📝 Logging | Buffered persistent logs both sides + global error handlers + navigation/Riverpod/engine observers + GitHub dedup reporter + live viewer tab. |
 | 🔒 Security | **Zip-Slip/Tar-Slip hardened extraction**, `java.android` bridge detection (Termux-safe), allowlisted JS hashes, aria2c arg validation (1–16 chunks, speed regex), no DASH/HLS via aria2c (CVE-2026-50574), `0600/0700` temp dirs, aware-UTC datetimes, 99 % progress cap (terminal `finished` vs stream events). |
 | 📋 Playlists | Generator guards, expanded video IDs, storage sanitization. |
+| 📤 Share sheet | Shared links open a choice bottom sheet (engine-ready gated) instead of auto-starting; auto-start kept as opt-in. Format Picker header always shows thumbnail + duration + stream counts. |
+| 🗂️ Queue & controls | FIFO engine queue (default 2, 1–5 in Settings) on Android + desktop; per-item overflow menu (redownload, audio re-fetch, delete, logs); native completion/error alerts; permission rationale flow. |
+| 🔍 Per-download logs | `download_id` correlation end-to-end; log bottom sheet from queue, history, or overflow menu; bounded retention. |
+| 🖼️ Thumbnails | Sidecar-preserving embed, `thumbnail_path` on finish events, history DB v2, local-first Library rendering. |
+| 📋 Playlist selection | New selection screen (multi-select, reverse/shuffle, unavailable marking) wired to the tested engine contract. |
 | 🧪 CI | Fixed `flutter analyze` (181 cascading errors from `AppLogger` regex escapes) + Python `UnboundLocalError` (`deno_version=None` under pytest); `lintVital` disabled for AGP/Kotlin-script bug; `zip.so` stripping skipped. |
 | 🎬 SABR/PO-Token | YouTube format-block resolution + aria2c DASH hardening (July). |
 
@@ -108,19 +116,21 @@ Based on the latest commits on `main`:
 | 1 | **Onboarding** | First-run tour → routes to AppShell |
 | 2 | **Home** (queue) | URL input, active downloads, bootstrap status, error-recovery cards |
 | 3 | **Format Picker** | Stream list, quality/codec/container choice, muxed badges |
-| 4 | **Media Preview** | Thumbnail + metadata confirmation before download |
-| 5 | **Batch Download** | Multi-URL paste, list management, clipboard/file import dialog |
-| 6 | **Library** | Completed downloads, grid/list toggle, search & filters |
-| 7 | **Download History** | SQLite-backed history with search & filters |
-| 8 | **Playlist Details** | Entry list, add/remove, unavailable-entry marking |
-| 9 | **Settings** | Quality, network, aria2c, subtitles, SponsorBlock, schedule, archive, templates, observed sources, auth, updates |
-| 10 | **Download Presets** | 7 built-in + custom format/container/output-template presets |
-| 11 | **Profile Editor** | Per-site extraction profiles (YouTube 1080p/4K, Podcast, FLAC, Opus, X/Twitter) |
-| 12 | **Cookie WebView** | In-app browser → Netscape cookie export |
-| 13 | **Diagnostics & Logs** | Troubleshooting flow, live log stream, export, engine status |
-| 14 | **About** | Version, licenses, links |
+| 4 | **Media Preview** | Downloaded-file thumbnail + metadata, open in system player |
+| 5 | **Playlist Selection** | Playlist URL → entry multi-select, reverse/shuffle, unavailable marking |
+| 6 | **Download Log Sheet** | Bottom sheet with one download's logs (live + history) |
+| 7 | **Batch Download** | Multi-URL paste, list management, clipboard/file import dialog |
+| 8 | **Library** | Completed downloads, grid/list toggle, search & filters |
+| 9 | **Download History** | SQLite-backed history with search & filters |
+| 10 | **Playlist Details** | Entry list, add/remove, unavailable-entry marking |
+| 11 | **Settings** | Quality, network, aria2c, concurrency, subtitles, SponsorBlock, schedule, archive, templates, observed sources, auth, updates |
+| 12 | **Download Presets** | 7 built-in + custom format/container/output-template presets |
+| 13 | **Profile Editor** | Per-site extraction profiles (YouTube 1080p/4K, Podcast, FLAC, Opus, X/Twitter) |
+| 14 | **Cookie WebView** | In-app browser → Netscape cookie export |
+| 15 | **Diagnostics & Logs** | Troubleshooting flow, live log stream, export, engine status |
+| 16 | **About** | Version, licenses, links |
 
-Navigation: **AppShell** (`IndexedStack`, 3 tabs) — `BottomNavigationBar` on narrow (<600 px), `NavigationRail` on wide screens. Share-intent URLs arrive via `EngineService.sharedUrlStream`.
+Navigation: **AppShell** (`IndexedStack`, 3 tabs) — `BottomNavigationBar` on narrow (<600 px), `NavigationRail` on wide screens. Share-intent URLs arrive via `EngineService.sharedUrlStream`; the default path shows a choice bottom sheet gated on engine readiness (auto-start opt-in skips it).
 
 ---
 
@@ -173,6 +183,9 @@ downloads in `threading.Thread` + cancel event · Riverpod for shared state
 | `playlist/info` | F → P | Flat-extract entries |
 | `search/query` | F → P | Search YouTube/SoundCloud queries via yt-dlp search extractors |
 | `resume/scan` | F → P | Scan cache for `.part` files |
+| `download/queue_status` | F → P | Parked queued IDs + active count + limit |
+| `download/set_concurrency` | F → P | Set max concurrent downloads (1–5) |
+| `download/clear_archive` | F → P | Clear download-archive (redownload-after-delete recovery) |
 | `engine/update_check` | F → P | CDN re-check |
 | `engine/set_update_channel` | F → P | stable / nightly / master |
 

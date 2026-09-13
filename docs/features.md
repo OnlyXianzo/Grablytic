@@ -1,6 +1,6 @@
 # Features
 
-> Last updated: **2026-09-11** — complete capability catalog. Settings paths refer to
+> Last updated: **2026-09-13** — complete capability catalog. Settings paths refer to
 > **Settings** tabs in the app unless noted.
 
 ## 📥 Downloading
@@ -10,7 +10,9 @@
 | Max-quality ladder | AV1 → VP9 → H264 cascade, quality ceiling up to 4K, explicit format-ID override from Format Picker | Quality ceiling, Format Picker |
 | Muxed streams | Non-YouTube platforms expose pre-merged streams alongside DASH | Format Picker (muxed badge) |
 | Batch URLs | Multi-URL paste, clipboard/file import, per-item status | Home → Batch |
-| Playlists | Flat extraction, ranges (`1-10`), reverse, shuffle, single-item (`no_playlist`), deleted-entry marking | Playlist options |
+| Playlists | Selection screen: multi-select, reverse/shuffle, unavailable marking; ranges (`1-10`), single-item (`no_playlist`) | Playlist Selection |
+| Queue | FIFO engine queue, default 2 concurrent (1–5), queued status, enforced at every entry point | Simultaneous downloads |
+| Per-item controls | Overflow menu: redownload, audio re-fetch, delete (file + history), per-download logs | Home / Library item |
 | Section cutting | FFmpeg-only `download_sections` (`*10:15-20:00`), `force_keyframes_at_cuts`; bad specs warn-and-skip | Advanced |
 | Resume | `.part` scan on startup, `.info.json` URL recovery, 24 h expiry, storage sanitization | Automatic |
 | Archive | `download_archive` skips repeats; optional per-folder archives | Download Archive |
@@ -35,7 +37,7 @@
 | Templates | `%(uploader)s - %(title)s` default + custom output templates | Templates |
 | Site profiles | YouTube 1080p / 4K, Podcast Audio, Lossless FLAC, Opus Compact, Twitter/X | Profile Editor |
 | Presets | 7 built-in + unlimited custom (format + container + template) | Presets |
-| Preview | Thumbnail + metadata confirmation screen | Home → Preview |
+| Preview | Thumbnail + duration + stream counts header in Format Picker | Format Picker |
 
 ## 🔓 Access & bypass
 
@@ -54,7 +56,8 @@
 |---|---|---|
 | Classified errors | Typed codes + `recoverable` + `suggests_vpn`; Error Recovery cards | Home (on failure) |
 | Cancel | Threading event → `cancelled` event (desktop maps `ERROR_CANCELLED`) | Download card |
-| Share intent | `ACTION_SEND` text/plain → URL prefill → optional auto-start | System share sheet |
+| Share intent | `ACTION_SEND` text/plain → choice bottom sheet (engine-ready gated) → Format Picker; auto-start opt-in skips the sheet | System share sheet |
+| Per-download logs | Own log view per download (live + post-completion), bounded retention | Queue card / History / overflow menu |
 | Bootstrap status | ffmpeg/aria2c/deno/quickjs health + versions + `needs_update` | Home status card |
 | Update channels | stable / nightly / master; `update_check` diffs SHA-256 | Settings → Updates |
 | Persistent logs | `app_logs.txt` (Dart, 30 s flush) + `server_logs.log` (Python rotation) | Export |

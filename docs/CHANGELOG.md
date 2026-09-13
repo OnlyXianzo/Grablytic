@@ -2,6 +2,34 @@
 
 > Distilled from commit history (`git log --oneline`). Current version: `0.0.1-beta+1`.
 
+## Unreleased — 2026-09-13 (Share sheet, queue, per-download logs, playlist selection)
+
+- **Share intent** (was: prefill-and-auto-start): shared URLs now open a
+  choice bottom sheet (quality/settings before anything downloads), gated
+  on engine readiness; `autoStartDownloadOnShare` kept as an explicit
+  opt-in that skips the sheet. Format Picker header always shows
+  thumbnail + duration + stream counts.
+- **Download queue**: FIFO engine queue (default 2 concurrent, 1–5 in
+  Settings, enforced on Android + desktop at every entry point), queued
+  card status, scoped redownload flags + Clear-archive recovery.
+- **Per-download controls**: overflow menu per item (redownload, audio
+  re-fetch, delete with file + history, per-download logs); Settings
+  permission flow (rationale → request → open-system-settings on denial);
+  native completion/error alerts.
+- **Per-download logs**: `download_id` correlation source → sink, log
+  bottom sheet (queue card, history row, overflow menu), bounded retention
+  (5000 global / 500 per download / LRU-50) proven by test.
+- **Thumbnails**: sidecar-preserving `EmbedThumbnail`, finished-event
+  `thumbnail_path` (+ desktop IPC), history DB v1→v2 `thumbnailPath`,
+  local-first Library rendering with fallbacks.
+- **Playlist selection**: new `PlaylistSelectionScreen` (entry
+  multi-select, reverse/shuffle, unavailable marking) wired to the tested
+  `build_playlist_items` engine contract; routed at paste + share entries.
+- Verification at landing: `flutter analyze` clean, `flutter test`
+  243/243, `pytest` 301/301. Device-dependent checks (release-APK icon,
+  real downloads, Android 13+ permission/alerts, Kotlin CI build) remain
+  open manual verification.
+
 ## Unreleased — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
 
 ### Fixed
