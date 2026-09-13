@@ -78,6 +78,16 @@ class TestBuildFormatString:
                "format_code": "bestvideo+bestaudio/best"}
         assert build_format_string(cfg) == "137/best"
 
+    def test_explicit_audio_only_format_without_video(self):
+        cfg = {"explicit_format_id": None, "explicit_audio_format_id": "140"}
+        result = build_format_string(cfg)
+        assert result == "140/bestaudio/best"
+
+    def test_video_ladder_has_audio_fallback(self):
+        cfg = {"audio_only": False, "quality_ceiling": "1080p"}
+        result = build_format_string(cfg)
+        assert result.endswith("/bestaudio/best")
+
 
 class TestGetFormatsPlaylist:
     def test_generator_entries_in_formats(self, monkeypatch):

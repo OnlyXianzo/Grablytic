@@ -127,7 +127,10 @@ def build_ydl_opts(
         tmpl = DEFAULT_CFG["output_tmpl"]
 
     fmt = override_format or build_format_string(cfg)
-    is_audio = override_audio if override_audio is not None else cfg["audio_only"]
+    explicit_vid = cfg.get("explicit_format_id")
+    explicit_aid = cfg.get("explicit_audio_format_id")
+    has_audio_only_explicit = bool(explicit_aid) and not bool(explicit_vid)
+    is_audio = override_audio if override_audio is not None else (bool(cfg.get("audio_only")) or has_audio_only_explicit)
     container = override_container or cfg["container"]
 
     if cfg.get("organize_by_folder"):
@@ -157,11 +160,24 @@ def build_ydl_opts(
     opts = apply_aria2c_opts(opts, cfg)
 
     if is_audio:
+        raw_container = (container or "").lower()
+        audio_fmt = (cfg.get("audio_format") or "").lower()
+        if raw_container in ("mp3", "m4a", "flac", "opus", "wav", "aac", "vorbis"):
+            audio_codec = raw_container
+        elif audio_fmt in ("mp3", "m4a", "flac", "opus", "wav", "aac", "vorbis"):
+            audio_codec = audio_fmt
+        elif raw_container in ("mkv", "mp4"):
+            audio_codec = "m4a"
+        elif raw_container == "webm":
+            audio_codec = "opus"
+        else:
+            audio_codec = "mp3"
+
         opts["postprocessors"] = [
             {
                 "key": "FFmpegExtractAudio",
-                "preferredcodec": cfg.get("audio_format", container),
-                "preferredquality": "0",
+                "preferredcodec": audio_codec,
+                "preferredquality": str(cfg.get("audio_quality", "0")),
             }
         ]
         opts["keepvideo"] = False
@@ -260,6 +276,8 @@ def build_ydl_opts(
             opts["format"] = f"{vid}+{aid}"
         else:
             opts["format"] = vid
+    elif cfg.get("explicit_audio_format_id"):
+        opts["format"] = cfg["explicit_audio_format_id"]
 
     # Post-processing — only one of merge/remux, never both
     if paths.get("ffmpeg_path"):
@@ -311,14 +329,11 @@ def build_ydl_opts(
             })
 
         if meta_pp:
-            if is_audio:
-                pass  # metadata handled by FFmpegExtractAudio
-            else:
-                pp.append({
-                    "key": "FFmpegMetadata",
-                    "add_metadata": cfg.get("addmetadata", True),
-                    "add_chapters": True,
-                })
+            pp.append({
+                "key": "FFmpegMetadata",
+                "add_metadata": cfg.get("addmetadata", True),
+                "add_chapters": True,
+            })
 
         if cfg.get("embedthumbnail"):
             # already_have_thumbnail=True keeps the sidecar thumbnail file on

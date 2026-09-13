@@ -474,3 +474,44 @@ def test_desktop_keeps_deno_first(tmp_path):
     _paths["nodejs_path"] = str(node_file)
     opts = build_ydl_opts()
     assert opts["js_runtimes"] == {"deno": {"path": str(deno_file)}}
+
+
+def test_explicit_audio_format_id_sets_format():
+    opts = build_ydl_opts(config={"explicit_audio_format_id": "140"})
+    assert opts["format"] == "140"
+
+
+def test_audio_only_adds_ffmpeg_extract_audio(tmp_path):
+    ffmpeg_file = tmp_path / "ffmpeg"
+    ffmpeg_file.touch()
+    _paths["ffmpeg_path"] = str(ffmpeg_file)
+    opts = build_ydl_opts(config={"audio_only": True, "container": "mp3"})
+    assert "merge_output_format" not in opts
+    pps = opts.get("postprocessors", [])
+    extract_pps = [p for p in pps if p.get("key") == "FFmpegExtractAudio"]
+    assert len(extract_pps) == 1
+    assert extract_pps[0]["preferredcodec"] == "mp3"
+
+
+def test_audio_only_maps_video_container_to_audio(tmp_path):
+    ffmpeg_file = tmp_path / "ffmpeg"
+    ffmpeg_file.touch()
+    _paths["ffmpeg_path"] = str(ffmpeg_file)
+    opts = build_ydl_opts(config={"audio_only": True, "container": "mkv", "audio_format": "none"})
+    pps = opts.get("postprocessors", [])
+    extract_pps = [p for p in pps if p.get("key") == "FFmpegExtractAudio"]
+    assert len(extract_pps) == 1
+    assert extract_pps[0]["preferredcodec"] == "m4a"
+
+
+def test_explicit_audio_without_video_treated_as_audio(tmp_path):
+    ffmpeg_file = tmp_path / "ffmpeg"
+    ffmpeg_file.touch()
+    _paths["ffmpeg_path"] = str(ffmpeg_file)
+    opts = build_ydl_opts(config={"explicit_audio_format_id": "hls_aac_160k", "container": "opus"})
+    assert opts["format"] == "hls_aac_160k"
+    assert "merge_output_format" not in opts
+    pps = opts.get("postprocessors", [])
+    extract_pps = [p for p in pps if p.get("key") == "FFmpegExtractAudio"]
+    assert len(extract_pps) == 1
+    assert extract_pps[0]["preferredcodec"] == "opus"

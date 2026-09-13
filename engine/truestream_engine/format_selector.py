@@ -6,6 +6,8 @@ def build_format_string(cfg: dict) -> str:
         return f"{explicit_vid}+{explicit_aid}/{explicit_vid}/best"
     if explicit_vid:
         return f"{explicit_vid}/best"
+    if explicit_aid:
+        return f"{explicit_aid}/bestaudio/best"
 
     # Raw yt-dlp format string override (site profiles, power users).
     # DEFAULT_CFG leaves this None so the ladder below stays the default;
@@ -23,7 +25,7 @@ def build_format_string(cfg: dict) -> str:
             "flac": "bestaudio[ext=flac]/bestaudio[ext=webm]/bestaudio",
             "mp3": "bestaudio[ext=mp3]/bestaudio",
         }
-        return fmt_map.get(audio_fmt, "bestaudio")
+        return fmt_map.get(audio_fmt, "bestaudio/best")
 
     ceiling = cfg.get("quality_ceiling", "4k")
     height_map = {"4k": 2160, "1080p": 1080, "720p": 720, "best": 99999}
@@ -36,4 +38,5 @@ def build_format_string(cfg: dict) -> str:
         f"bestvideo[height<={max_h}][ext=mp4]+bestaudio[ext=m4a]"
         f"/bestvideo[height<={max_h}]+bestaudio"
         f"/best[height<={max_h}]"
+        f"/bestaudio/best"
     )
