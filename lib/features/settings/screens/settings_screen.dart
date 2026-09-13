@@ -6,12 +6,14 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../providers/search_provider.dart';
 import '../../../providers/engine_status_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../home/widgets/bootstrap_status_card.dart';
 import 'command_templates_screen.dart';
 import 'cookies_screen.dart';
+import 'observed_sources_screen.dart';
 import 'presets_screen.dart';
 import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
@@ -45,225 +47,334 @@ class SettingsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
               // 1. General & Interface
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'General',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+              _SettingsSection(
+                title: 'General & Interface',
+                icon: Icons.tune,
+                children: [
+                  _SettingThemeSelector(
+                    currentTheme: settings.themeMode,
+                    onChanged: (mode) => ref.read(settingsProvider.notifier).setThemeMode(mode),
+                    colorScheme: colorScheme,
                   ),
-                ),
-              ),
-              _SettingThemeSelector(
-                currentTheme: settings.themeMode,
-                onChanged: (mode) => ref.read(settingsProvider.notifier).setThemeMode(mode),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.grid_view_outlined,
-                title: 'Library Grid View',
-                subtitle: 'Display media cards in two-column masonry grid',
-                value: settings.useGridView,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleGridView(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 40.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.notifications_outlined,
-                title: 'Download Completion Alerts',
-                subtitle: 'Notify when a file finishes',
-                value: settings.completionAlerts,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleCompletionAlerts(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 80.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.share_outlined,
-                title: 'Auto-start Download on Share',
-                subtitle: 'Automatically start when link is shared to TrueStream',
-                value: settings.autoStartDownloadOnShare,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleAutoStartDownloadOnShare(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 100.ms, duration: 300.ms).slideX(begin: 0.1),
-              const _BackgroundPermissionsSection(),
+                  _SettingSwitch(
+                    icon: Icons.grid_view_outlined,
+                    title: 'Library Grid View',
+                    subtitle: 'Display media cards in two-column masonry grid',
+                    value: settings.useGridView,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleGridView(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.notifications_outlined,
+                    title: 'Download Completion Alerts',
+                    subtitle: 'Notify when a file finishes',
+                    value: settings.completionAlerts,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleCompletionAlerts(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.share_outlined,
+                    title: 'Auto-start Download on Share',
+                    subtitle: 'Automatically start when link is shared to TrueStream',
+                    value: settings.autoStartDownloadOnShare,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleAutoStartDownloadOnShare(),
+                    colorScheme: colorScheme,
+                  ),
+                  const _BackgroundPermissionsSection(),
+                ],
+              ).animate().fadeIn(duration: 300.ms).slideX(begin: 0.05),
 
               // 2. Directories & Storage
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 8),
-                child: Text(
-                  'Directories & Storage',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              _SettingNavItem(
+              _SettingsSection(
+                title: 'Directories & Storage',
                 icon: Icons.folder_outlined,
-                title: 'Download Path',
-                subtitle: settings.downloadPath,
-                colorScheme: colorScheme,
-                onTap: () async {
-                  try {
-                    final selectedDirectory = await FilePicker.getDirectoryPath();
-                    if (selectedDirectory != null && context.mounted) {
-                      ref.read(settingsProvider.notifier).setDownloadPath(selectedDirectory);
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
+                children: [
+                  _SettingNavItem(
+                    icon: Icons.folder_outlined,
+                    title: 'Download folder',
+                    subtitle: settings.downloadPath,
+                    colorScheme: colorScheme,
+                    onTap: () async {
+                      try {
+                        final selectedDirectory = await FilePicker.getDirectoryPath();
+                        if (selectedDirectory != null && context.mounted) {
+                          ref.read(settingsProvider.notifier).setDownloadPath(selectedDirectory);
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error picking folder: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.archive_outlined,
+                    title: 'Skip already-downloaded videos',
+                    subtitle: 'yt-dlp avoids re-downloading duplicates',
+                    value: settings.downloadArchive,
+                    onChanged: () => ref.read(settingsProvider.notifier).setDownloadArchive(!settings.downloadArchive),
+                    colorScheme: colorScheme,
+                  ),
+                  if (settings.downloadArchive)
+                    _SettingSwitch(
+                      icon: Icons.folder_special_outlined,
+                      title: 'Separate history per folder',
+                      subtitle: 'Separate archive per download folder',
+                      value: settings.archiveByFolder,
+                      onChanged: () => ref.read(settingsProvider.notifier).setArchiveByFolder(!settings.archiveByFolder),
+                      colorScheme: colorScheme,
+                    ),
+                  _SettingAction(
+                    icon: Icons.history,
+                    title: 'Clear Search History',
+                    subtitle: 'Remove cached search queries',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      ref.read(searchProvider.notifier).clear();
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error picking folder: $e')),
+                        const SnackBar(content: Text('Search history cleared')),
                       );
-                    }
-                  }
-                },
-              ).animate().fadeIn(delay: 120.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.archive_outlined,
-                title: 'Track downloaded videos',
-                subtitle: 'yt-dlp avoids re-downloading duplicates',
-                value: settings.downloadArchive,
-                onChanged: () => ref.read(settingsProvider.notifier).setDownloadArchive(!settings.downloadArchive),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 140.ms, duration: 300.ms).slideX(begin: 0.1),
-              if (settings.downloadArchive)
-                _SettingSwitch(
-                  icon: Icons.folder_special_outlined,
-                  title: 'Organize by folder',
-                  subtitle: 'Separate archive per download folder',
-                  value: settings.archiveByFolder,
-                  onChanged: () => ref.read(settingsProvider.notifier).setArchiveByFolder(!settings.archiveByFolder),
-                  colorScheme: colorScheme,
-                ).animate().fadeIn(delay: 150.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingAction(
-                icon: Icons.history,
-                title: 'Clear Search History',
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 160.ms, duration: 300.ms).slideX(begin: 0.1),
-
-              // 3. Downloading & Network
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 8),
-                child: Text(
-                  'Downloading & Network',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+                    },
                   ),
-                ),
-              ),
-              _SettingSwitch(
-                icon: Icons.cloud_outlined,
-                title: 'Wi-Fi Only Downloads',
-                subtitle: 'Prevent data usage for downloads',
-                value: settings.wifiOnly,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleWifiOnly(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 170.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
+                ],
+              ).animate().fadeIn(delay: 50.ms, duration: 300.ms).slideX(begin: 0.05),
+
+              // 3. Network & Acceleration
+              _SettingsSection(
+                title: 'Network & Acceleration',
                 icon: Icons.speed,
-                title: 'Enable Turbo Download Mode',
-                subtitle: 'Accelerate speed with multi-threading',
-                value: settings.turboMode,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleTurboMode(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 180.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.air,
-                title: 'Enable aria2c',
-                subtitle: 'Multi-connection download acceleration',
-                value: settings.aria2cEnabled,
-                onChanged: () => ref.read(settingsProvider.notifier).setAria2cEnabled(!settings.aria2cEnabled),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 190.ms, duration: 300.ms).slideX(begin: 0.1),
-              if (settings.aria2cEnabled) ...[
-                _Aria2cChunkSlider(
-                  chunks: settings.aria2cChunks,
-                  onChanged: (v) => ref.read(settingsProvider.notifier).setAria2cChunks(v),
-                  colorScheme: colorScheme,
-                ).animate().fadeIn(delay: 200.ms, duration: 300.ms).slideX(begin: 0.1),
-                _Aria2cSpeedField(
-                  maxSpeed: settings.aria2cMaxSpeed,
-                  onChanged: (v) => ref.read(settingsProvider.notifier).setAria2cMaxSpeed(v),
-                  colorScheme: colorScheme,
-                ).animate().fadeIn(delay: 210.ms, duration: 300.ms).slideX(begin: 0.1),
-              ],
-              _SettingNavItem(
-                icon: Icons.tune,
-                title: 'Download Presets',
-                subtitle: 'Configure quality & container settings',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PresetsScreen(),
-                    ),
-                  );
-                },
-              ).animate().fadeIn(delay: 220.ms, duration: 300.ms).slideX(begin: 0.1),
-
-              // 4. Processing
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 8),
-                child: Text(
-                  'Processing',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+                children: [
+                  _SettingSwitch(
+                    icon: Icons.cloud_outlined,
+                    title: 'Wi-Fi Only Downloads',
+                    subtitle: 'Prevent data usage for downloads',
+                    value: settings.wifiOnly,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleWifiOnly(),
+                    colorScheme: colorScheme,
                   ),
-                ),
-              ),
-              _SettingNavItem(
-                icon: Icons.closed_caption_outlined,
-                title: 'Subtitle Settings',
-                subtitle: 'Language, auto-captions & embedding',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SubtitleSettingsScreen(),
+                  _SettingSwitch(
+                    icon: Icons.speed,
+                    title: 'Turbo download mode',
+                    subtitle: 'Accelerate speed with multi-threading',
+                    value: settings.turboMode,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleTurboMode(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.air,
+                    title: 'Use aria2c accelerator',
+                    subtitle: 'Multi-connection download acceleration',
+                    value: settings.aria2cEnabled,
+                    onChanged: () => ref.read(settingsProvider.notifier).setAria2cEnabled(!settings.aria2cEnabled),
+                    colorScheme: colorScheme,
+                  ),
+                  if (settings.aria2cEnabled) ...[
+                    _Aria2cChunkSlider(
+                      chunks: settings.aria2cChunks,
+                      onChanged: (v) => ref.read(settingsProvider.notifier).setAria2cChunks(v),
+                      colorScheme: colorScheme,
                     ),
-                  );
-                },
-              ).animate().fadeIn(delay: 230.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingNavItem(
-                icon: Icons.block,
-                title: 'SponsorBlock',
-                subtitle: 'Skip sponsored segments',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SponsorBlockSettingsScreen(),
+                    _Aria2cSpeedField(
+                      maxSpeed: settings.aria2cMaxSpeed,
+                      onChanged: (v) => ref.read(settingsProvider.notifier).setAria2cMaxSpeed(v),
+                      colorScheme: colorScheme,
                     ),
-                  );
-                },
-              ).animate().fadeIn(delay: 240.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.content_cut,
-                title: 'Split Chapters',
-                subtitle: 'Split video into chapters after download',
-                value: settings.splitChapters,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleSplitChapters(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 250.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.description_outlined,
-                title: 'Save Description',
-                subtitle: 'Save video description as a text file',
-                value: settings.saveDescription,
-                onChanged: () => ref.read(settingsProvider.notifier).toggleSaveDescription(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 260.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingSwitch(
-                icon: Icons.image_outlined,
-                title: 'PNG Thumbnails',
-                subtitle: 'Save thumbnail image as PNG instead of JPG',
-                value: settings.pngThumbnails,
-                onChanged: () => ref.read(settingsProvider.notifier).togglePngThumbnails(),
-                colorScheme: colorScheme,
-              ).animate().fadeIn(delay: 270.ms, duration: 300.ms).slideX(begin: 0.1),
+                  ],
+                  _SettingNavItem(
+                    icon: Icons.vpn_key_outlined,
+                    title: 'Proxy server',
+                    subtitle: (settings.proxy?.isNotEmpty ?? false)
+                        ? settings.proxy!
+                        : 'Not set — direct connection',
+                    colorScheme: colorScheme,
+                    onTap: () async {
+                      final controller =
+                          TextEditingController(text: settings.proxy ?? '');
+                      final picked = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          title: const Text('Proxy server'),
+                          content: TextField(
+                            controller: controller,
+                            decoration: const InputDecoration(
+                              labelText: 'Proxy URL',
+                              hintText: 'http://proxy:8080',
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.url,
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel'),
+                            ),
+                            if (settings.proxy?.isNotEmpty ?? false)
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, ''),
+                                child: const Text('Remove'),
+                              ),
+                            FilledButton(
+                              onPressed: () =>
+                                  Navigator.pop(ctx, controller.text.trim()),
+                              child: const Text('Save'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (picked != null && context.mounted) {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setProxy(picked.isEmpty ? null : picked);
+                      }
+                    },
+                  ),
+                  _SettingNavItem(
+                    icon: Icons.tune,
+                    title: 'Quality presets',
+                    subtitle: 'Configure quality & container settings',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PresetsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ).animate().fadeIn(delay: 100.ms, duration: 300.ms).slideX(begin: 0.05),
 
-              // 5. Packages & Updates
+              // 4. Media & Post-Processing
+              _SettingsSection(
+                title: 'Media & Subtitles',
+                icon: Icons.movie_filter_outlined,
+                children: [
+                  _SettingNavItem(
+                    icon: Icons.closed_caption_outlined,
+                    title: 'Subtitles',
+                    subtitle: 'Language, auto-captions & embedding',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SubtitleSettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _SettingNavItem(
+                    icon: Icons.block,
+                    title: 'SponsorBlock',
+                    subtitle: 'Skip sponsored segments',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SponsorBlockSettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.content_cut,
+                    title: 'Split video by chapters',
+                    subtitle: 'Split video into chapters after download',
+                    value: settings.splitChapters,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleSplitChapters(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.description_outlined,
+                    title: 'Save video description',
+                    subtitle: 'Save video description as a text file',
+                    value: settings.saveDescription,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleSaveDescription(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.image_outlined,
+                    title: 'Lossless thumbnails (PNG)',
+                    subtitle: 'Save thumbnail image as PNG instead of JPG',
+                    value: settings.pngThumbnails,
+                    onChanged: () => ref.read(settingsProvider.notifier).togglePngThumbnails(),
+                    colorScheme: colorScheme,
+                  ),
+                ],
+              ).animate().fadeIn(delay: 150.ms, duration: 300.ms).slideX(begin: 0.05),
+
+              // 5. Automation & Scheduling
+              _SettingsSection(
+                title: 'Automation & Scheduling',
+                icon: Icons.auto_mode,
+                children: [
+                  _SettingNavItem(
+                    icon: Icons.schedule,
+                    title: 'Scheduled downloads',
+                    subtitle: 'Set time windows for downloads',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ScheduleSettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _SettingNavItem(
+                    icon: Icons.visibility_outlined,
+                    title: 'Observed Sources',
+                    subtitle: 'Monitor channels and playlists for automated downloads',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ObservedSourcesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _SettingNavItem(
+                    icon: Icons.terminal,
+                    title: 'Custom download commands',
+                    subtitle: 'Custom yt-dlp argument templates',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CommandTemplatesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ).animate().fadeIn(delay: 200.ms, duration: 300.ms).slideX(begin: 0.05),
+
+              // 6. Accounts & Authentication
+              _SettingsSection(
+                title: 'Accounts & Authentication',
+                icon: Icons.security,
+                children: [
+                  _SettingNavItem(
+                    icon: Icons.cookie_outlined,
+                    title: 'Logins for members-only videos',
+                    subtitle: 'Site logins for members-only content',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CookiesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ).animate().fadeIn(delay: 250.ms, duration: 300.ms).slideX(begin: 0.05),
+
+              // 7. Packages
               Padding(
                 padding: const EdgeInsets.only(top: 24, bottom: 8),
                 child: Text(
@@ -277,84 +388,101 @@ class SettingsScreen extends ConsumerWidget {
               _PackagesSection(
                 colorScheme: colorScheme,
                 textTheme: textTheme,
-              ).animate().fadeIn(delay: 280.ms, duration: 300.ms).slideX(begin: 0.1),
+              ).animate().fadeIn(delay: 280.ms, duration: 300.ms).slideX(begin: 0.05),
+              _SettingNavItem(
+                icon: Icons.refresh_outlined,
+                title: 'Update channel',
+                subtitle: settings.updateChannel,
+                colorScheme: colorScheme,
+                onTap: () async {
+                  final picked = await showDialog<String>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Update channel'),
+                      content: RadioGroup<String>(
+                        groupValue: settings.updateChannel,
+                        onChanged: (v) => Navigator.pop(ctx, v),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            RadioListTile<String>(
+                              title: Text('stable'),
+                              value: 'stable',
+                            ),
+                            RadioListTile<String>(
+                              title: Text('nightly'),
+                              value: 'nightly',
+                            ),
+                            RadioListTile<String>(
+                              title: Text('master'),
+                              value: 'master',
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (picked != null && context.mounted) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setUpdateChannel(picked);
+                    try {
+                      await ref.read(engineProvider).setUpdateChannel(picked);
+                    } catch (_) {}
+                  }
+                },
+              ).animate().fadeIn(delay: 285.ms, duration: 300.ms).slideX(begin: 0.05),
 
-              // 6. Advanced
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 8),
-                child: Text(
-                  'Advanced',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              _SettingNavItem(
-                icon: Icons.schedule,
-                title: 'Download Schedule',
-                subtitle: 'Set time windows for downloads',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ScheduleSettingsScreen(),
-                    ),
-                  );
-                },
-              ).animate().fadeIn(delay: 290.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingNavItem(
-                icon: Icons.terminal,
-                title: 'Command Templates',
-                subtitle: 'Custom yt-dlp argument templates',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const CommandTemplatesScreen(),
-                    ),
-                  );
-                },
-              ).animate().fadeIn(delay: 300.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingNavItem(
-                icon: Icons.cookie_outlined,
-                title: 'Cookies',
-                subtitle: 'Site logins for members-only content',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const CookiesScreen(),
-                    ),
-                  );
-                },
-              ).animate().fadeIn(delay: 310.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingNavItem(
-                icon: Icons.bug_report_outlined,
-                title: 'Diagnostics & Logs',
-                subtitle: 'View, export, delete, or report app logs',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const LogViewerScreen(),
-                    ),
-                  );
-                },
-              ).animate().fadeIn(delay: 320.ms, duration: 300.ms).slideX(begin: 0.1),
-              _SettingNavItem(
+              // 8. System & Diagnostics
+              _SettingsSection(
+                title: 'System & Diagnostics',
                 icon: Icons.info_outline,
-                title: 'About TrueStream',
-                subtitle: 'v0.0.1-beta · The Only',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AboutScreen(),
-                    ),
-                  );
-                },
-              ).animate().fadeIn(delay: 330.ms, duration: 300.ms).slideX(begin: 0.1),
+                children: [
+                  _SettingSwitch(
+                    icon: Icons.bug_report,
+                    title: 'Detailed engine logging',
+                    subtitle: 'Record extra engine detail for troubleshooting',
+                    value: settings.verbose,
+                    onChanged: () =>
+                        ref.read(settingsProvider.notifier).toggleVerbose(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingNavItem(
+                    icon: Icons.bug_report_outlined,
+                    title: 'App logs & diagnostics',
+                    subtitle: 'View, export, delete, or report app logs',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const LogViewerScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _SettingNavItem(
+                    icon: Icons.info_outline,
+                    title: 'About TrueStream',
+                    subtitle: 'v0.0.1-beta · The Only',
+                    colorScheme: colorScheme,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AboutScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ).animate().fadeIn(delay: 300.ms, duration: 300.ms).slideX(begin: 0.05),
               const SizedBox(height: 32),
               // Version badge
               Center(
@@ -384,6 +512,76 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
+class _SettingsSection extends StatelessWidget {
+  final String title;
+  final IconData? icon;
+  final List<Widget> children;
+
+  const _SettingsSection({
+    required this.title,
+    this.icon,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+            child: Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  title,
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < children.length; i++) ...[
+                  if (i > 0)
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      indent: 56,
+                      endIndent: 16,
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.15),
+                    ),
+                  children[i],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SettingSwitch extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -407,50 +605,55 @@ class _SettingSwitch extends StatelessWidget {
 
     return Semantics(
       label: '$title, $subtitle, ${value ? 'enabled' : 'disabled'}',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            Semantics(
-              label: title,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: colorScheme.outline, size: 20),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: textTheme.bodyLarge),
-                  Text(
-                    subtitle,
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+      child: InkWell(
+        onTap: onChanged,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Semantics(
+                label: title,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainer,
+                    shape: BoxShape.circle,
                   ),
-                ],
+                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                ),
               ),
-            ),
-            Switch.adaptive(
-              value: value,
-              onChanged: (_) => onChanged(),
-              activeTrackColor: colorScheme.primary,
-              inactiveTrackColor: colorScheme.surfaceContainerHighest,
-              thumbColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return colorScheme.onPrimary;
-                }
-                return colorScheme.outline;
-              }),
-            ),
-          ],
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: textTheme.bodyLarge),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Switch.adaptive(
+                value: value,
+                onChanged: (_) => onChanged(),
+                activeTrackColor: colorScheme.primary,
+                inactiveTrackColor: colorScheme.surfaceContainerHighest,
+                thumbColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return colorScheme.onPrimary;
+                  }
+                  return colorScheme.outline;
+                }),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -483,9 +686,8 @@ class _SettingNavItem extends StatelessWidget {
       label: '$title, $subtitle',
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               Semantics(
@@ -506,6 +708,7 @@ class _SettingNavItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, style: textTheme.bodyLarge),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: textTheme.labelSmall?.copyWith(
@@ -516,6 +719,7 @@ class _SettingNavItem extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               Semantics(
                 label: 'Navigate',
                 child: trailing ??
@@ -532,11 +736,15 @@ class _SettingNavItem extends StatelessWidget {
 class _SettingAction extends StatelessWidget {
   final IconData icon;
   final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
   final ColorScheme colorScheme;
 
   const _SettingAction({
     required this.icon,
     required this.title,
+    this.subtitle,
+    this.onTap,
     required this.colorScheme,
   });
 
@@ -544,28 +752,51 @@ class _SettingAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          Semantics(
-            label: title,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                shape: BoxShape.circle,
+    return Semantics(
+      button: true,
+      label: title,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Semantics(
+                label: title,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHigh,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                ),
               ),
-              child: Icon(icon, color: colorScheme.outline, size: 20),
-            ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
-          Text(
-            title,
-            style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -587,11 +818,11 @@ class _Aria2cChunkSlider extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           Semantics(
-            label: 'Concurrent chunks',
+            label: 'aria2c connections',
             child: Container(
               width: 40,
               height: 40,
@@ -607,7 +838,7 @@ class _Aria2cChunkSlider extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Concurrent chunks', style: textTheme.bodyLarge),
+                Text('aria2c connections', style: textTheme.bodyLarge),
                 Text(
                   '$chunks connections',
                   style: textTheme.labelSmall?.copyWith(
@@ -653,11 +884,11 @@ class _Aria2cSpeedField extends StatelessWidget {
     final controller = TextEditingController(text: maxSpeed ?? '');
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           Semantics(
-            label: 'Max speed limit',
+            label: 'aria2c speed limit',
             child: Container(
               width: 40,
               height: 40,
@@ -673,7 +904,7 @@ class _Aria2cSpeedField extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Max speed limit', style: textTheme.bodyLarge),
+                Text('aria2c speed limit', style: textTheme.bodyLarge),
                 Text(
                   'e.g. 10M or leave empty for unlimited',
                   style: textTheme.labelSmall?.copyWith(
@@ -735,7 +966,7 @@ class _SettingThemeSelector extends StatelessWidget {
     return Semantics(
       label: 'Appearance, Choose Light, Dark, or System mode',
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             Semantics(
@@ -769,6 +1000,7 @@ class _SettingThemeSelector extends StatelessWidget {
               label: 'Theme selection, currently ${currentTheme.name}',
               child: DropdownButton<AppThemeMode>(
                 value: currentTheme,
+                underline: const SizedBox.shrink(),
                 onChanged: (val) {
                   if (val != null) onChanged(val);
                 },

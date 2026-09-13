@@ -64,7 +64,7 @@ void main() {
 
       expect(find.text('Settings'), findsWidgets);
       expect(find.text('Wi-Fi Only Downloads'), findsOneWidget);
-      expect(find.text('Download Path'), findsOneWidget);
+      expect(find.text('Download folder'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('About TrueStream'), findsOneWidget);
     });

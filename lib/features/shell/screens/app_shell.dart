@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -294,139 +295,306 @@ class _AppShellState extends ConsumerState<AppShell> {
           children: _screens,
         ),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerLowest,
-          border: Border(
-            top: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-            ),
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                  icon: Icons.download,
-                  label: 'Download',
-                  isActive: _currentIndex == 0,
-                  colorScheme: colorScheme,
-                  onTap: () => _onDestinationSelected(0),
-                ),
-                _NavItem(
-                  icon: Icons.folder_open,
-                  label: 'Library',
-                  isActive: _currentIndex == 1,
-                  colorScheme: colorScheme,
-                  onTap: () => _onDestinationSelected(1),
-                ),
-                _NavItem(
-                  icon: Icons.settings,
-                  label: 'Settings',
-                  isActive: _currentIndex == 2,
-                  colorScheme: colorScheme,
-                  onTap: () => _onDestinationSelected(2),
-                ),
-              ],
-            ),
-          ),
-        ),
+      bottomNavigationBar: _FluidBottomNavBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: _onDestinationSelected,
+        colorScheme: colorScheme,
       ),
     );
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItemData {
   final IconData icon;
   final String label;
-  final bool isActive;
-  final ColorScheme colorScheme;
-  final VoidCallback onTap;
 
-  const _NavItem({
+  const _NavItemData({
     required this.icon,
     required this.label,
-    required this.isActive,
-    required this.colorScheme,
-    required this.onTap,
   });
+}
+
+class _FluidBottomNavBar extends StatefulWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+  final ColorScheme colorScheme;
+
+  const _FluidBottomNavBar({
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+    required this.colorScheme,
+  });
+
+  @override
+  State<_FluidBottomNavBar> createState() => _FluidBottomNavBarState();
+}
+
+class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _morphController;
+  late Animation<double> _posAnim;
+
+  double _currentPos = 0.0;
+  double _animStartPos = 0.0;
+  double _animTargetPos = 0.0;
+  bool _isDragging = false;
+
+  static const List<_NavItemData> _items = [
+    _NavItemData(icon: Icons.download, label: 'Download'),
+    _NavItemData(icon: Icons.folder_open, label: 'Library'),
+    _NavItemData(icon: Icons.settings, label: 'Settings'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPos = widget.selectedIndex.toDouble();
+    _animStartPos = _currentPos;
+    _animTargetPos = _currentPos;
+    _morphController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _posAnim = AlwaysStoppedAnimation(_currentPos);
+  }
+
+  @override
+  void dispose() {
+    _morphController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FluidBottomNavBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedIndex != oldWidget.selectedIndex && !_isDragging) {
+      final target = widget.selectedIndex.toDouble();
+      _animateTo(target, immediate: _animationsDisabled(context));
+    }
+  }
+
+  /// Reduced-motion gate for the pill animation.
+  ///
+  /// Android "Remove animations" arrives via [MediaQuery.disableAnimations],
+  /// but iOS Reduce Motion does NOT set that flag — it surfaces separately
+  /// via [AccessibilityFeatures.reduceMotion]. Either one means: jump the
+  /// highlight instantly instead of sliding it.
+  bool _animationsDisabled(BuildContext context) {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return true;
+    return WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.reduceMotion;
+  }
+
+  void _animateTo(double target, {bool immediate = false}) {
+    if (immediate) {
+      _morphController.stop();
+      setState(() {
+        _currentPos = target;
+        _animStartPos = target;
+        _animTargetPos = target;
+      });
+      return;
+    }
+
+    _animStartPos = _currentPos;
+    _animTargetPos = target;
+    _morphController.stop();
+    _morphController.reset();
+
+    _posAnim = Tween<double>(begin: _animStartPos, end: _animTargetPos).animate(
+      CurvedAnimation(
+        parent: _morphController,
+        curve: Curves.easeInOutCubic,
+      ),
+    )..addListener(() {
+        setState(() {
+          _currentPos = _posAnim.value;
+        });
+      });
+
+    _morphController.forward();
+  }
+
+  void _handleDrag(double localX, double totalWidth) {
+    final slotWidth = totalWidth / _items.length;
+    final pos = ((localX / slotWidth) - 0.5).clamp(0.0, (_items.length - 1).toDouble());
+    setState(() {
+      _currentPos = pos;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    final child = isActive
-        ? Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Semantics(
-                      label: label,
-                      child: Icon(icon, color: colorScheme.onPrimaryContainer, size: 20),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onPrimaryContainer,
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.colorScheme.surfaceContainerLowest,
+        border: Border(
+          top: BorderSide(
+            color: widget.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final totalWidth = constraints.maxWidth;
+              final slotWidth = totalWidth / _items.length;
+
+              // Fluid / liquid morph calculations:
+              // During transition, the highlight stretches horizontally and slightly
+              // compresses vertically, mimicking liquid surface tension and volume preservation.
+              double stretchFactor = 0.0;
+              double squishFactor = 0.0;
+
+              if (_morphController.isAnimating) {
+                final animProgress = _morphController.value;
+                final morphFactor = math.sin(animProgress * math.pi);
+                final travelDist = (_animTargetPos - _animStartPos).abs();
+                stretchFactor = (morphFactor * 0.28 * travelDist).clamp(0.0, 0.45);
+                squishFactor = (morphFactor * 0.08).clamp(0.0, 0.15);
+              } else if (_isDragging) {
+                final distFromInt = (_currentPos - _currentPos.round()).abs();
+                stretchFactor = (distFromInt * 0.22).clamp(0.0, 0.35);
+                squishFactor = (distFromInt * 0.06).clamp(0.0, 0.1);
+              }
+
+              const baseHeight = 44.0;
+              final baseWidth = math.min(slotWidth - 8.0, 96.0);
+              final pillWidth = baseWidth * (1.0 + stretchFactor);
+              final pillHeight = baseHeight * (1.0 - squishFactor);
+
+              final centerX = (_currentPos + 0.5) * slotWidth;
+              final pillLeft = (centerX - (pillWidth / 2)).clamp(0.0, totalWidth - pillWidth);
+              const containerHeight = 56.0;
+              final pillTop = (containerHeight - pillHeight) / 2;
+
+              return GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: (details) {
+                  _isDragging = true;
+                  _morphController.stop();
+                  _handleDrag(details.localPosition.dx, totalWidth);
+                },
+                onHorizontalDragUpdate: (details) {
+                  _handleDrag(details.localPosition.dx, totalWidth);
+                },
+                onHorizontalDragEnd: (details) {
+                  _isDragging = false;
+                  final target = _currentPos.round().clamp(0, _items.length - 1);
+                  _animateTo(target.toDouble(),
+                      immediate: _animationsDisabled(context));
+                  widget.onDestinationSelected(target);
+                },
+                onHorizontalDragCancel: () {
+                  _isDragging = false;
+                  final target = widget.selectedIndex.toDouble();
+                  _animateTo(target,
+                      immediate: _animationsDisabled(context));
+                },
+                child: SizedBox(
+                  height: containerHeight,
+                  width: totalWidth,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Smoothly sliding and morphing liquid pill highlight
+                      Positioned(
+                        left: pillLeft,
+                        top: pillTop,
+                        width: pillWidth,
+                        height: pillHeight,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: widget.colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(pillHeight / 2),
+                          ),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 3),
+                              width: 16 * (1.0 + stretchFactor),
+                              height: 2.5,
+                              decoration: BoxDecoration(
+                                color: widget.colorScheme.primary,
+                                borderRadius: BorderRadius.circular(1.25),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 3),
-              Container(
-                width: 16,
-                height: 2,
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(1),
-                ),
-              ),
-            ],
-          )
-        : Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Semantics(
-                  label: label,
-                  child: Icon(icon, color: colorScheme.onSurfaceVariant, size: 20),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  style: textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurfaceVariant,
+                      // Navigation items
+                      Row(
+                        children: List.generate(_items.length, (index) {
+                          final item = _items[index];
+                          final dist = (index - _currentPos).abs().clamp(0.0, 1.0);
+                          final activeWeight = 1.0 - dist;
+
+                          final iconColor = Color.lerp(
+                            widget.colorScheme.onSurfaceVariant,
+                            widget.colorScheme.onPrimaryContainer,
+                            activeWeight,
+                          )!;
+                          final textColor = Color.lerp(
+                            widget.colorScheme.onSurfaceVariant,
+                            widget.colorScheme.onPrimaryContainer,
+                            activeWeight,
+                          )!;
+
+                          final isSelected = widget.selectedIndex == index;
+
+                          return Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: isSelected,
+                              label: item.label,
+                              child: InkResponse(
+                                onTap: () => widget.onDestinationSelected(index),
+                                containedInkWell: true,
+                                highlightShape: BoxShape.rectangle,
+                                borderRadius: BorderRadius.circular(24),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    minWidth: 48,
+                                    minHeight: 48,
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        item.icon,
+                                        size: 22,
+                                        color: iconColor,
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        item.label,
+                                        style: textTheme.labelSmall?.copyWith(
+                                          fontWeight: activeWeight > 0.5
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                          color: textColor,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          );
-
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          child: child,
+              );
+            },
+          ),
         ),
       ),
     );
