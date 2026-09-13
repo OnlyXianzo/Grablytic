@@ -418,6 +418,23 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "search/query" -> {
+                    val query = call.argument<String>("query") ?: ""
+                    val site = call.argument<String>("site") ?: "youtube"
+                    val limit = call.argument<Int>("limit") ?: 20
+                    val config = call.argument<Map<String, Any>>("config")
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val python = py ?: return@launch
+                            val engine = python.getModule("truestream_engine")
+                            val searchResult = engine.callAttr("search_query", query, site, limit, configJson(config))
+                            val jsonStr = pyJson(searchResult)
+                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) { result.error("ERROR_SEARCH_FAILED", e.message, null) }
+                        }
+                    }
+                }
                 "resume/scan" -> {
                     val cacheDir = call.argument<String>("cache_dir")
                     scope.launch(Dispatchers.IO) {

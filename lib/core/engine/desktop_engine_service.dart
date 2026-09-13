@@ -413,6 +413,21 @@ class DesktopEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> search({
+    required String query,
+    String site = 'youtube',
+    int limit = 20,
+    required Map<String, dynamic> config,
+  }) async {
+    return _sendRequest('search/query', {
+      'query': query,
+      'site': site,
+      'limit': limit,
+      'config': config,
+    });
+  }
+
+  @override
   Future<String?> getSharedUrl() => Future.value(null);
 
   @override

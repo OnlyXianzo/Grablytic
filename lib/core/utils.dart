@@ -24,3 +24,24 @@ String formatBytes(int bytes, [int decimals = 2]) {
   }
   return '$formatted ${suffixes[suffixIndex]}';
 }
+
+/// Checks whether [input] resembles a URL (scheme + host or standard web domain format).
+/// Used by input bars to differentiate direct media URLs from plain-text search queries.
+bool looksLikeUrl(String input) {
+  final trimmed = input.trim();
+  if (trimmed.isEmpty) return false;
+  if (trimmed.contains(' ')) return false;
+
+  final uri = Uri.tryParse(trimmed);
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty) {
+    return true;
+  }
+
+  // Support domain-like patterns without scheme (e.g. youtube.com/watch?v=..., youtu.be/abc)
+  if (RegExp(r'^(www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/.*)?$').hasMatch(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+

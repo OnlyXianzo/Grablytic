@@ -17,6 +17,12 @@ abstract class EngineService {
     required String url,
     required Map<String, dynamic> config,
   });
+  Future<Map<String, dynamic>> search({
+    required String query,
+    String site = 'youtube',
+    int limit = 20,
+    required Map<String, dynamic> config,
+  });
   Future<String?> getSharedUrl();
   Stream<String> get sharedUrlStream;
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir});

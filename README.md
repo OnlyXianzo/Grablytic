@@ -171,6 +171,7 @@ downloads in `threading.Thread` + cancel event · Riverpod for shared state
 | `progress/stream` | P → F | Progress / post-proc / finished / error / cancelled events |
 | `formats/get` | F → P | List streams for URL |
 | `playlist/info` | F → P | Flat-extract entries |
+| `search/query` | F → P | Search YouTube/SoundCloud queries via yt-dlp search extractors |
 | `resume/scan` | F → P | Scan cache for `.part` files |
 | `engine/update_check` | F → P | CDN re-check |
 | `engine/set_update_channel` | F → P | stable / nightly / master |

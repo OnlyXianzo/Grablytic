@@ -77,6 +77,29 @@ def test_dispatch_calls_module_function(monkeypatch, capsys):
 
 
 @pytest.mark.unit
+def test_dispatch_calls_search(monkeypatch, capsys):
+    mod = _main_mod()
+    called = {}
+
+    def fake_search(query, site="youtube", limit=20, config=None):
+        called["query"] = query
+        called["site"] = site
+        called["limit"] = limit
+        return {"success": True, "query": query, "count": 1, "entries": [{"title": "Test"}]}
+
+    monkeypatch.setattr(mod, "search", fake_search)
+    resps = _run_lines(monkeypatch, capsys, [
+        json.dumps({"id": "s1", "method": "paths/set", "params": {
+            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
+            "cache_dir": "/tmp/x"}}),
+        json.dumps({"id": "q1", "method": "search/query",
+                    "params": {"query": "rick astley", "site": "youtube", "limit": 10}}),
+    ])
+    assert called == {"query": "rick astley", "site": "youtube", "limit": 10}
+    assert _by_id(resps, "q1")["result"]["count"] == 1
+
+
+@pytest.mark.unit
 def test_malformed_line_does_not_kill_loop(monkeypatch, capsys):
     resps = _run_lines(monkeypatch, capsys, [
         "this is not json {{{",

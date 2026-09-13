@@ -8,6 +8,7 @@ from truestream_engine import (
     bootstrap,
     get_formats,
     get_playlist_info,
+    search,
     scan_resume_candidates,
     start_download,
     cancel_download,
@@ -180,6 +181,13 @@ def main():
                         return get_formats(params["url"], params.get("config"))
                     elif method == "playlist/info":
                         return get_playlist_info(params["url"], params.get("config"))
+                    elif method == "search/query":
+                        return search(
+                            query=params.get("query", ""),
+                            site=params.get("site", "youtube"),
+                            limit=params.get("limit", 20),
+                            config=params.get("config"),
+                        )
                     elif method == "resume/scan":
                         return scan_resume_candidates(params["cache_dir"])
                     elif method == "engine/update_check":

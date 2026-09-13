@@ -6,6 +6,7 @@ import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
 import '../../../providers/resume_provider.dart';
 import '../screens/format_picker_screen.dart';
+import 'search_results_screen.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
@@ -13,6 +14,7 @@ import '../widgets/error_recovery_card.dart';
 import '../widgets/download_log_overlay.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils.dart';
 
 
 class HomeScreen extends ConsumerWidget {
@@ -229,29 +231,55 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
   final _focusNode = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
   void _submitUrl() {
-    final url = _controller.text.trim();
-    if (url.isEmpty) return;
-    AppLogger.info('User submitted URL: $url', tag: 'HomeScreen');
+    final input = _controller.text.trim();
+    if (input.isEmpty) return;
     _focusNode.unfocus();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => FormatPickerScreen(
-          url: url,
-          title: url,
+
+    if (looksLikeUrl(input)) {
+      AppLogger.info('User submitted URL: $input', tag: 'HomeScreen');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => FormatPickerScreen(
+            url: input,
+            title: input,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      AppLogger.info('User submitted search query: $input', tag: 'HomeScreen');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SearchResultsScreen(
+            initialQuery: input,
+          ),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final text = _controller.text.trim();
+    final isUrl = text.isEmpty || looksLikeUrl(text);
+
     ref.listen<String?>(sharedUrlProvider, (previous, next) {
       if (next != null && next.isNotEmpty) {
         _controller.text = next;
@@ -276,7 +304,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                 controller: _controller,
                 focusNode: _focusNode,
                 decoration: InputDecoration(
-                  hintText: 'Enter link......',
+                  hintText: 'Search or enter link...',
                   hintStyle: TextStyle(
                     color: widget.colorScheme.outline.withValues(alpha: 0.4),
                   ),
@@ -322,7 +350,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
           const SizedBox(width: 4),
           Semantics(
             button: true,
-            label: 'Submit URL',
+            label: isUrl ? 'Submit URL' : 'Search videos',
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: Material(
@@ -336,7 +364,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                     height: 48,
                     alignment: Alignment.center,
                     child: Icon(
-                      Icons.link,
+                      isUrl ? Icons.link : Icons.search,
                       color: widget.colorScheme.onPrimaryContainer,
                       size: 20,
                     ),

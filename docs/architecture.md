@@ -215,6 +215,7 @@ abstract class EngineService {
   Stream<Map<String, dynamic>> get logStream;
   Future<Map<String, dynamic>> getFormats({String url, Map config});
   Future<Map<String, dynamic>> getPlaylistInfo({String url, Map config});
+  Future<Map<String, dynamic>> search({required String query, String site = 'youtube', int limit = 20, required Map<String, dynamic> config});
   Future<String?> getSharedUrl();
   Stream<String> get sharedUrlStream;
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir});
@@ -308,11 +309,12 @@ Log lines interleaved on stdout:
 | `progress/stream` | P → F | Continuous progress/error/complete events |
 | `formats/get` | F → P | List available streams for URL |
 | `playlist/info` | F → P | List playlist entries with metadata |
+| `search/query` | F → P | Search YouTube/SoundCloud queries via yt-dlp search extractors |
 | `resume/scan` | F → P | Scan cache dir for .part files |
 | `engine/update_check` | F → P | Force re-check binaries from CDN |
 | `engine/set_update_channel` | F → P | Set stable/nightly/master channel |
 
-## Python Engine — 16 Modules + Entry Point
+## Python Engine — 17 Modules + Entry Point
 
 | Module | File | Responsibility |
 |---|---|---|
@@ -326,6 +328,7 @@ Log lines interleaved on stdout:
 | `errors` | `engine/truestream_engine/errors.py` | `TrueStreamError` with typed error codes (ERROR_GEO_BLOCKED, ERROR_RATE_LIMITED, …) + recoverable flag + suggests_vpn. `classify_error()` matches exception text against keyword map. `ERROR_CANCELLED` maps to `cancelled` event on desktop. |
 | `formats` | `engine/truestream_engine/formats.py` | `get_formats()` — extract info without downloading, parse format list into structured objects with codec/resolution/bitrate. Returns recommended video/audio format IDs. |
 | `playlist` | `engine/truestream_engine/playlist.py` | `get_playlist_info()` — flat-extract playlist entries with generator guards, expanded video IDs, deleted-entry marking, storage sanitization. |
+| `search` | `engine/truestream_engine/search.py` | `search()` — flat-extract YouTube (`ytsearch{N}:`) and SoundCloud (`scsearch{N}:`) results via yt-dlp search extractors with entry normalization and error classification. |
 | `bootstrap` | `engine/truestream_engine/bootstrap.py` | CDN manifest fetch, SHA-256-or-fail, Zip/Tar-Slip-hardened extraction, parallel ffmpeg/aria2c/deno fetch, uv venv + yt-dlp install (desktop), Android fail-closed + bundled-jniLibs fallback with live `--version` probes, QuickJS + Deno detection. |
 | `resume` | `engine/truestream_engine/resume.py` | `scan_resume_candidates()` — scans cache dir for .part files, checks age vs 24h expiry, recovers URL from .info.json metadata, sanitizes storage paths. |
 | `po_token` | `engine/truestream_engine/po_token.py` | Allowlisted JS (`verify_js_code`), `detect_js_runtime()` (paths module first), QuickJS-context + Deno-subprocess generation. |

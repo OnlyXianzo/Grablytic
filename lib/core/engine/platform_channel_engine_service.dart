@@ -122,6 +122,23 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> search({
+    required String query,
+    String site = 'youtube',
+    int limit = 20,
+    required Map<String, dynamic> config,
+  }) async {
+    final result = await _channel.invokeMethod<String>('search/query', {
+      'query': query,
+      'site': site,
+      'limit': limit,
+      'config': config,
+    });
+    if (result == null) return {};
+    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+  }
+
+  @override
   Future<String?> getSharedUrl() async {
     try {
       final result = await _channel.invokeMethod<Map>('intent/get_shared');

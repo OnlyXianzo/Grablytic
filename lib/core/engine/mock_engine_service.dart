@@ -208,6 +208,65 @@ class MockEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> search({
+    required String query,
+    String site = 'youtube',
+    int limit = 20,
+    required Map<String, dynamic> config,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return {
+        'success': false,
+        'error_type': 'ERROR_INVALID_PARAM',
+        'error_message': 'Search query cannot be empty',
+      };
+    }
+    if (trimmed == '__trigger_error__') {
+      return {
+        'success': false,
+        'error_type': 'ERROR_FORBIDDEN',
+        'error_message': "Sign in to confirm you're not a bot",
+      };
+    }
+    if (trimmed == '__empty__') {
+      return {
+        'success': true,
+        'query': trimmed,
+        'site': site,
+        'count': 0,
+        'entries': <Map<String, dynamic>>[],
+      };
+    }
+    return {
+      'success': true,
+      'query': trimmed,
+      'site': site,
+      'count': 2,
+      'entries': [
+        {
+          'index': 1,
+          'title': '$trimmed - Official Video',
+          'url': 'https://www.youtube.com/watch?v=mockVideo111',
+          'duration_seconds': 212,
+          'thumbnail_url': 'https://img.youtube.com/vi/mockVideo111/0.jpg',
+          'uploader': 'Test Artist',
+          'is_available': true,
+        },
+        {
+          'index': 2,
+          'title': '$trimmed - Live Performance',
+          'url': 'https://www.youtube.com/watch?v=mockVideo222',
+          'duration_seconds': 345,
+          'thumbnail_url': 'https://img.youtube.com/vi/mockVideo222/0.jpg',
+          'uploader': 'Music Channel',
+          'is_available': true,
+        },
+      ],
+    };
+  }
+
+  @override
   Future<String?> getSharedUrl() => Future.value(null);
 
   @override

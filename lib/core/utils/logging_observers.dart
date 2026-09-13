@@ -282,6 +282,17 @@ class TracedEngineService implements EngineService {
       );
 
   @override
+  Future<Map<String, dynamic>> search({
+    required String query,
+    String site = 'youtube',
+    int limit = 20,
+    required Map<String, dynamic> config,
+  }) => _traced(
+        'search/query',
+        () => _inner.search(query: query, site: site, limit: limit, config: config),
+      );
+
+  @override
   Future<String?> getSharedUrl() =>
       _traced('intent/get_shared', _inner.getSharedUrl);
 

@@ -31,4 +31,29 @@ void main() {
       expect(formatBytes((1024 * 1.3333).toInt(), 3), equals('1.333 KB'));
     });
   });
+
+  group('looksLikeUrl', () {
+    test('recognizes standard http and https URLs', () {
+      expect(looksLikeUrl('https://youtube.com/watch?v=dQw4w9WgXcQ'), isTrue);
+      expect(looksLikeUrl('http://example.com/audio.mp3'), isTrue);
+      expect(looksLikeUrl('https://soundcloud.com/artist/track'), isTrue);
+    });
+
+    test('recognizes domain without scheme', () {
+      expect(looksLikeUrl('www.youtube.com/watch?v=dQw4w9WgXcQ'), isTrue);
+      expect(looksLikeUrl('youtu.be/dQw4w9WgXcQ'), isTrue);
+      expect(looksLikeUrl('youtube.com/watch?v=dQw4w9WgXcQ'), isTrue);
+      expect(looksLikeUrl('m.youtube.com/video'), isTrue);
+    });
+
+    test('rejects search queries and plain text', () {
+      expect(looksLikeUrl('rick astley never gonna give you up'), isFalse);
+      expect(looksLikeUrl('lofi hip hop beats to relax'), isFalse);
+      expect(looksLikeUrl('classical piano cover'), isFalse);
+      expect(looksLikeUrl('beethoven'), isFalse);
+      expect(looksLikeUrl('   '), isFalse);
+      expect(looksLikeUrl(''), isFalse);
+    });
+  });
 }
+

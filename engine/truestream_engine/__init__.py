@@ -8,6 +8,7 @@ from truestream_engine.hooks import build_progress_hook
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.formats import get_formats
 from truestream_engine.playlist import get_playlist_info
+from truestream_engine.search import search_query
 from truestream_engine.po_token import generate_po_token
 from truestream_engine.resume import scan_resume_candidates
 from truestream_engine.bootstrap import bootstrap, update_check
@@ -35,6 +36,7 @@ __all__ = [
     "TrueStreamError",
     "get_formats",
     "get_playlist_info",
+    "search_query",
     "generate_po_token",
     "scan_resume_candidates",
     "bootstrap",
