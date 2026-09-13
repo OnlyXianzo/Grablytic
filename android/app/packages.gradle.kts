@@ -20,6 +20,25 @@ val nativePackageVersions = mapOf(
     "deno" to "2.7.7",
     "nodejs" to "25.3.0",
 )
+// Release variant selector: which JS runtime(s) to bundle for the PO-Token/SABR
+// challenge path. `both` (default) reproduces the pre-variant universal APK;
+// `deno` / `node` produce the single-runtime release variants (Task 2).
+// Build with e.g.: flutter build apk --release -PtargetAbi=arm64-v8a -PjsRuntime=node
+// Unknown values fail the build loudly (fail closed — never ship a runtimeless APK).
+val jsRuntimeProp = (project.findProperty("jsRuntime") as String?)?.trim()?.lowercase()
+val jsRuntime = if (jsRuntimeProp.isNullOrBlank()) "both" else jsRuntimeProp
+check(jsRuntime in setOf("deno", "node", "both")) {
+    "Unknown -PjsRuntime=$jsRuntimeProp (expected deno|node|both)"
+}
+// NOTE: the map keys are "deno"/"nodejs" while the property values are
+// "deno"/"node" — normalized explicitly so a typo can't silently empty the set.
+val activePackageVersions = nativePackageVersions.filterKeys { pkg ->
+    jsRuntime == "both" || (jsRuntime == "deno" && pkg == "deno") ||
+        (jsRuntime == "node" && pkg == "nodejs")
+}
+check(activePackageVersions.isNotEmpty()) {
+    "jsRuntime=$jsRuntime selected zero JS packages — refusing to build"
+}
 // Must stay in sync with abiFilters in build.gradle.kts.
 val targetAbiProp = project.findProperty("targetAbi") as String?
 val nativePackageAbis = if (!targetAbiProp.isNullOrBlank()) {
@@ -39,6 +58,28 @@ tasks.register("downloadNativePackages") {
     onlyIf { !project.hasProperty("skipNativePackages") }
     doLast {
         val jniLibs = layout.projectDirectory.dir("src/main/jniLibs").asFile
+
+        // Drop stale single-runtime leftovers when switching variants locally
+        // (e.g. `both` → `-PjsRuntime=node`): each upstream package contributes
+        // exactly lib<pkg>.so + lib<pkg>.zip.so per ABI (verified against the
+        // deno-2.7.7 / nodejs-25.3.0 arm64 payloads 2026-09-13), so deleting the
+        // known names is exact — ffmpeg is never touched. CI runners start clean
+        // and never hit this path.
+        val pkgSoName = mapOf("deno" to "deno", "nodejs" to "node")
+        // Prune across every ABI this project ever builds, not just the active
+        // -PtargetAbi: a universal build followed by a single-ABI variant build
+        // must not leave the excluded runtime behind in another ABI folder.
+        val allKnownAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        for ((pkg, _) in nativePackageVersions) {
+            if (activePackageVersions.containsKey(pkg)) continue
+            val so = pkgSoName.getValue(pkg)
+            for (abi in allKnownAbis) {
+                jniLibs.resolve("$abi/lib$so.so").delete()
+                jniLibs.resolve("$abi/lib$so.zip.so").delete()
+                jniLibs.resolve(".$pkg-$abi.sha256").delete()
+            }
+            logger.lifecycle("native-packages: pruned inactive package $pkg (jsRuntime=$jsRuntime)")
+        }
 
         // 1. Fetch verified FFmpeg from youtubedl-android AAR (Maven Central).
         val ffmpegWarm = nativePackageAbis.all { abi -> jniLibs.resolve(".ffmpeg-$abi.sha256").isFile }
@@ -97,7 +138,13 @@ tasks.register("downloadNativePackages") {
             logger.lifecycle("native-packages: ffmpeg up to date ($ffmpegVersion)")
         }
 
-        // 2. Fetch verified Deno and NodeJS from ytdlnis-packages (GitHub Releases).
+        // 2. Fetch verified Deno and/or NodeJS from ytdlnis-packages
+        // (GitHub Releases). The active set follows -PjsRuntime
+        // (deno|node|both, default both); ffmpeg above is always bundled.
+        logger.lifecycle(
+            "native-packages: jsRuntime=$jsRuntime " +
+                "(bundling ${activePackageVersions.keys.sorted().joinToString(",")})"
+        )
         val slurper = groovy.json.JsonSlurper()
         val releases: List<Map<String, Any?>>
         try {
@@ -106,7 +153,7 @@ tasks.register("downloadNativePackages") {
                 .openStream().use { slurper.parse(it) } as List<Map<String, Any?>>
             releases = parsed
         } catch (e: Exception) {
-            val warm = nativePackageVersions.keys.all { pkg ->
+            val warm = activePackageVersions.keys.all { pkg ->
                 nativePackageAbis.all { abi ->
                     if (pkg == "deno" && abi == "armeabi-v7a") true
                     else jniLibs.resolve(".$pkg-$abi.sha256").isFile
@@ -119,7 +166,7 @@ tasks.register("downloadNativePackages") {
             throw GradleException("native-packages: releases API unreachable and no cached jniLibs: ${e.message}")
         }
 
-        for ((pkg, version) in nativePackageVersions) {
+        for ((pkg, version) in activePackageVersions) {
             val tag = "$pkg-$version"
             val release = releases.firstOrNull { it["tag_name"] == tag }
                 ?: throw GradleException("Native package release not found: $tag")

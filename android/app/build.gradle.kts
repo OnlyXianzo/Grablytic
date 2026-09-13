@@ -41,6 +41,14 @@ android {
         versionName = flutter.versionName
 
         // Chaquopy HARD-requires ndk.abiFilters (build fails without it).
+        // Release variants (Task 2): the JS-runtime dimension lives in
+        // packages.gradle.kts as `-PjsRuntime=deno|node|both` (default `both`),
+        // combined with this `-PtargetAbi` selector. Shipped matrix:
+        // arm64-v8a+Deno, arm64-v8a+Node.js, universal(both). Deliberately NOT
+        // Gradle splits{} / product flavors: splits{} conflicts with this
+        // Chaquopy-mandated abiFilters block (hard build error), and flavor-level
+        // abiFilters are silently ignored by the Flutter Gradle plugin ≥3.35.
+        // The -P property matrix produces the same artifacts without either risk.
         // If targetAbi is passed (-PtargetAbi=arm64-v8a), build for that specific ABI.
         // Otherwise, bundle arm64-v8a, armeabi-v7a, and x86_64 for a universal APK.
         val targetAbi = project.findProperty("targetAbi") as String?
