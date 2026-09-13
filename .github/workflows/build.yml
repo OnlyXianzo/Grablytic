@@ -5,28 +5,25 @@ on:
 
 jobs:
   android:
-    name: Build Android (${{ matrix.abi }})
+    name: Build Android (${{ matrix.variant }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - abi: universal
-            target_arg: ""
-            artifact_name: truestream-android-universal
-            output_name: truestream-android-universal.apk
-          - abi: arm64-v8a
+          # Release variants (Task 2: -PjsRuntime x -PtargetAbi; Task 3: names).
+          # Shipped set: arm64+Deno (recommended default), arm64+Node (smaller),
+          # universal (both runtimes, all ABIs — also covers armv7/x86_64 devices;
+          # Deno has no armv7 upstream build, so no standalone armv7+Deno row).
+          - variant: arm64-deno
             target_arg: "-PtargetAbi=arm64-v8a"
-            artifact_name: truestream-android-arm64-v8a
-            output_name: truestream-android-arm64-v8a.apk
-          - abi: armeabi-v7a
-            target_arg: "-PtargetAbi=armeabi-v7a"
-            artifact_name: truestream-android-armeabi-v7a
-            output_name: truestream-android-armeabi-v7a.apk
-          - abi: x86_64
-            target_arg: "-PtargetAbi=x86_64"
-            artifact_name: truestream-android-x86_64
-            output_name: truestream-android-x86_64.apk
+            jsruntime_arg: "-PjsRuntime=deno"
+          - variant: arm64-node
+            target_arg: "-PtargetAbi=arm64-v8a"
+            jsruntime_arg: "-PjsRuntime=node"
+          - variant: universal
+            target_arg: ""
+            jsruntime_arg: ""
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -81,23 +78,29 @@ jobs:
       - name: Stamp git commit
         run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
-      - name: Build Android APK (${{ matrix.abi }})
+      - name: Stamp release version
+        run: |
+          V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "TRUESTREAM_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
+
+      - name: Build Android APK (${{ matrix.variant }})
         run: |
           flutter build apk --release \
             --dart-define=TRUESTREAM_FLUTTER_VERSION="${{ env.TRUESTREAM_FLUTTER_VERSION }}" \
             --dart-define=TRUESTREAM_GIT_SHA="${{ env.TRUESTREAM_GIT_SHA }}" \
-            ${{ matrix.target_arg }}
+            ${{ matrix.target_arg }} \
+            ${{ matrix.jsruntime_arg }}
 
       - name: Prepare APK output
         run: |
           mkdir -p dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk dist/android/${{ matrix.output_name }}
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/truestream-v${{ env.TRUESTREAM_RELEASE_VERSION }}-${{ matrix.variant }}.apk"
 
-      - name: Upload Android Artifact (${{ matrix.abi }})
+      - name: Upload Android Artifact (${{ matrix.variant }})
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: dist/android/${{ matrix.output_name }}
+          name: truestream-${{ matrix.variant }}
+          path: dist/android/truestream-v${{ env.TRUESTREAM_RELEASE_VERSION }}-${{ matrix.variant }}.apk
 
   linux:
     name: Build Linux (${{ matrix.arch }} - deb, rpm, arch, tar.gz)
