@@ -69,4 +69,13 @@ abstract class EngineService {
   /// Open the OS notification settings for this app (Android 13+ denial
   /// recovery). Returns `{'success', 'launched'}` — never throws.
   Future<Map<String, dynamic>> openNotificationSettings();
+
+  /// Synchronizes background scheduler parameters with the native platform
+  /// for observed sources periodic background polling. Never throws.
+  Future<Map<String, dynamic>> syncSchedule({
+    required bool enabled,
+    int intervalMinutes = 60,
+    bool wifiOnly = true,
+    bool requiresCharging = false,
+  });
 }

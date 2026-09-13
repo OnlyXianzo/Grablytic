@@ -535,4 +535,13 @@ class DesktopEngineService implements EngineService {
   @override
   Future<Map<String, dynamic>> openNotificationSettings() async =>
       {'success': false, 'supported': false};
+
+  @override
+  Future<Map<String, dynamic>> syncSchedule({
+    required bool enabled,
+    int intervalMinutes = 60,
+    bool wifiOnly = true,
+    bool requiresCharging = false,
+  }) async =>
+      {'success': true, 'supported': false};
 }

@@ -170,7 +170,7 @@ class DownloadHistoryDb {
     final path = p.join(dir.path, 'truestream.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE downloads (
@@ -199,6 +199,16 @@ class DownloadHistoryDb {
         ''');
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status)');
+        await db.execute('''
+          CREATE TABLE seen_source_videos (
+            source_url TEXT NOT NULL,
+            video_id TEXT NOT NULL,
+            seen_at TEXT NOT NULL,
+            PRIMARY KEY (source_url, video_id)
+          )
+        ''');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         // v1 → v2: local thumbnail sidecar path (task 03 thumbnails). PRAGMA
@@ -240,6 +250,19 @@ class DownloadHistoryDb {
           }
           await db.execute(
               'CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status)');
+        }
+        // v3 → v4: observed sources background scheduler deduplication ledger.
+        if (oldVersion < 4) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS seen_source_videos (
+              source_url TEXT NOT NULL,
+              video_id TEXT NOT NULL,
+              seen_at TEXT NOT NULL,
+              PRIMARY KEY (source_url, video_id)
+            )
+          ''');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)');
         }
       },
     );
@@ -382,5 +405,84 @@ class DownloadHistoryDb {
   Future<int> clearAll() async {
     final db = await database;
     return db.delete('downloads');
+  }
+
+  /// Pending records for background scheduler execution or queued startup.
+  Future<List<DownloadRecord>> getPending({int limit = 50}) async {
+    final db = await database;
+    final rows = await db.query(
+      'downloads',
+      where: 'status = ?',
+      whereArgs: ['pending'],
+      orderBy: 'queuePosition ASC, timestamp ASC',
+      limit: limit,
+    );
+    return rows.map((r) => DownloadRecord.fromMap(r)).toList();
+  }
+
+  /// Seen video IDs recorded for a given observed source URL.
+  Future<Set<String>> getSeenSourceVideoIds(String sourceUrl) async {
+    final db = await database;
+    final rows = await db.query(
+      'seen_source_videos',
+      columns: ['video_id'],
+      where: 'source_url = ?',
+      whereArgs: [sourceUrl],
+    );
+    return rows.map((r) => r['video_id'] as String).toSet();
+  }
+
+  /// Bulk records video IDs as seen for an observed source URL.
+  Future<void> recordSeenSourceVideos(
+    String sourceUrl,
+    List<String> videoIds, {
+    String? now,
+  }) async {
+    if (videoIds.isEmpty) return;
+    final db = await database;
+    final timestamp = now ?? DateTime.now().toIso8601String();
+    final batch = db.batch();
+    for (final vid in videoIds) {
+      batch.insert(
+        'seen_source_videos',
+        {
+          'source_url': sourceUrl,
+          'video_id': vid,
+          'seen_at': timestamp,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Returns only candidate video IDs that have not yet been seen for this source URL.
+  Future<List<String>> filterNewSourceVideoIds(
+    String sourceUrl,
+    List<String> candidateVideoIds,
+  ) async {
+    if (candidateVideoIds.isEmpty) return const [];
+    final seen = await getSeenSourceVideoIds(sourceUrl);
+    final result = <String>[];
+    final added = <String>{};
+    for (final id in candidateVideoIds) {
+      if (!seen.contains(id) && added.add(id)) {
+        result.add(id);
+      }
+    }
+    return result;
+  }
+
+  /// Clears seen records (optionally for a specific source URL, or all).
+  Future<int> clearSeenSourceVideos({String? sourceUrl}) async {
+    final db = await database;
+    if (sourceUrl != null) {
+      return db.delete(
+        'seen_source_videos',
+        where: 'source_url = ?',
+        whereArgs: [sourceUrl],
+      );
+    }
+    return db.delete('seen_source_videos');
   }
 }

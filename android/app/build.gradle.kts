@@ -87,6 +87,7 @@ dependencies {
     // (mirrors ytdlnis ZipUtils — java.util.zip cannot see Unix symlink
     // entries and extracts them as text files, breaking the linker).
     implementation("org.apache.commons:commons-compress:1.26.2")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 }
 
 chaquopy {

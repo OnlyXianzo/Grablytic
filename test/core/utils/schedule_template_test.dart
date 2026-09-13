@@ -63,4 +63,42 @@ void main() {
       expect(isWithinScheduleWindow(s, DateTime(2026, 9, 12, 3, 0)), isTrue);
     });
   });
+
+  group('Schedule settings & summary', () {
+    test('default scheduler settings', () {
+      const s = AppSettings();
+      expect(s.scheduleEnabled, isFalse);
+      expect(s.scheduleTime, '22:00');
+      expect(s.scheduleDays, [1, 2, 3, 4, 5]);
+      expect(s.scheduleIntervalMinutes, 60);
+      expect(s.scheduleWifiOnly, isTrue);
+      expect(s.scheduleRequiresCharging, isFalse);
+    });
+
+    test('copyWith updates scheduler settings', () {
+      const s = AppSettings();
+      final updated = s.copyWith(
+        scheduleEnabled: true,
+        scheduleTime: '01:30',
+        scheduleDays: [6, 7],
+        scheduleIntervalMinutes: 30,
+        scheduleWifiOnly: false,
+        scheduleRequiresCharging: true,
+      );
+      expect(updated.scheduleEnabled, isTrue);
+      expect(updated.scheduleTime, '01:30');
+      expect(updated.scheduleDays, [6, 7]);
+      expect(updated.scheduleIntervalMinutes, 30);
+      expect(updated.scheduleWifiOnly, isFalse);
+      expect(updated.scheduleRequiresCharging, isTrue);
+    });
+
+    test('scheduleSummary formats day names and time', () {
+      const s = AppSettings(
+        scheduleDays: [6, 7],
+        scheduleTime: '23:00',
+      );
+      expect(scheduleSummary(s), 'Sat, Sun from 23:00');
+    });
+  });
 }

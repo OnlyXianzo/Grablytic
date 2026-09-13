@@ -151,6 +151,11 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
   field('scheduleEnabled', previous.scheduleEnabled, next.scheduleEnabled);
   field('scheduleTime', previous.scheduleTime, next.scheduleTime);
   listField('scheduleDays', previous.scheduleDays, next.scheduleDays);
+  field('scheduleIntervalMinutes', previous.scheduleIntervalMinutes,
+      next.scheduleIntervalMinutes);
+  field('scheduleWifiOnly', previous.scheduleWifiOnly, next.scheduleWifiOnly);
+  field('scheduleRequiresCharging', previous.scheduleRequiresCharging,
+      next.scheduleRequiresCharging);
   listField('sponsorBlockCats', previous.sponsorBlockCats,
       next.sponsorBlockCats);
   field('downloadArchive', previous.downloadArchive, next.downloadArchive);
@@ -282,6 +287,23 @@ class TracedEngineService implements EngineService {
   @override
   Future<Map<String, dynamic>> openNotificationSettings() => _traced(
       'system/notification_settings', () => _inner.openNotificationSettings());
+
+  @override
+  Future<Map<String, dynamic>> syncSchedule({
+    required bool enabled,
+    int intervalMinutes = 60,
+    bool wifiOnly = true,
+    bool requiresCharging = false,
+  }) =>
+      _traced(
+        'schedule/sync',
+        () => _inner.syncSchedule(
+          enabled: enabled,
+          intervalMinutes: intervalMinutes,
+          wifiOnly: wifiOnly,
+          requiresCharging: requiresCharging,
+        ),
+      );
 
   @override
   Future<Map<String, dynamic>> getFormats({

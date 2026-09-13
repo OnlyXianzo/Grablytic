@@ -642,6 +642,21 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "schedule/sync" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val intervalMinutes = (call.argument<Int>("interval_minutes") ?: 60).toLong().coerceAtLeast(15L)
+                    val wifiOnly = call.argument<Boolean>("wifi_only") ?: true
+                    val requiresCharging = call.argument<Boolean>("requires_charging") ?: false
+
+                    ObservedSourcesPollWorker.schedule(
+                        context = applicationContext,
+                        enabled = enabled,
+                        intervalMinutes = intervalMinutes,
+                        wifiOnly = wifiOnly,
+                        requiresCharging = requiresCharging,
+                    )
+                    result.success(mapOf("success" to true))
+                }
                 else -> result.notImplemented()
             }
         }

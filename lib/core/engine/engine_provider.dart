@@ -63,6 +63,21 @@ final engineProvider = Provider<EngineService>((ref) {
         engine.setConcurrency(next.maxConcurrentDownloads);
       } catch (_) {}
     }
+
+    // Schedule background periodic sync: push updated parameters whenever changed.
+    if (previous?.scheduleEnabled != next.scheduleEnabled ||
+        previous?.scheduleIntervalMinutes != next.scheduleIntervalMinutes ||
+        previous?.scheduleWifiOnly != next.scheduleWifiOnly ||
+        previous?.scheduleRequiresCharging != next.scheduleRequiresCharging) {
+      try {
+        engine.syncSchedule(
+          enabled: next.scheduleEnabled,
+          intervalMinutes: next.scheduleIntervalMinutes,
+          wifiOnly: next.scheduleWifiOnly,
+          requiresCharging: next.scheduleRequiresCharging,
+        );
+      } catch (_) {}
+    }
   });
 
   // Initial sync: the engine backstop defaults to 2, so push the persisted
@@ -70,6 +85,16 @@ final engineProvider = Provider<EngineService>((ref) {
   // soon as Chaquopy/the subprocess can serve calls).
   try {
     engine.setConcurrency(settings.maxConcurrentDownloads);
+  } catch (_) {}
+
+  // Initial schedule sync to platform WorkManager.
+  try {
+    engine.syncSchedule(
+      enabled: settings.scheduleEnabled,
+      intervalMinutes: settings.scheduleIntervalMinutes,
+      wifiOnly: settings.scheduleWifiOnly,
+      requiresCharging: settings.scheduleRequiresCharging,
+    );
   } catch (_) {}
 
   if (engine is MockEngineService) {

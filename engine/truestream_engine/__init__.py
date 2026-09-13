@@ -26,6 +26,12 @@ from truestream_engine.persistent import (
     read_log_tail as server_log_tail,
 )
 from truestream_engine.github_notifier import notify_exception, fingerprint as issue_fingerprint
+from truestream_engine.scheduler_check import (
+    flat_entry_video_id,
+    flat_entries_to_ids,
+    parse_youtube_rss,
+    diff_new_entries,
+)
 
 __all__ = [
     "set_paths",
@@ -57,4 +63,8 @@ __all__ = [
     "server_log_tail",
     "notify_exception",
     "issue_fingerprint",
+    "flat_entry_video_id",
+    "flat_entries_to_ids",
+    "parse_youtube_rss",
+    "diff_new_entries",
 ]

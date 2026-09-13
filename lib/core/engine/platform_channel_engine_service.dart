@@ -300,5 +300,26 @@ class PlatformChannelEngineService implements EngineService {
       return {'success': false};
     }
   }
+
+  @override
+  Future<Map<String, dynamic>> syncSchedule({
+    required bool enabled,
+    int intervalMinutes = 60,
+    bool wifiOnly = true,
+    bool requiresCharging = false,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>('schedule/sync', {
+        'enabled': enabled,
+        'interval_minutes': intervalMinutes,
+        'wifi_only': wifiOnly,
+        'requires_charging': requiresCharging,
+      });
+      if (result == null) return {'success': true};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
 }
 

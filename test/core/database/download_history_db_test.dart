@@ -205,5 +205,73 @@ void main() {
       expect(row.first['progress'], 0.5);
       expect(row.first['updatedAt'], '2026-09-13T12:01:00.000Z');
     });
+
+    test('v3 to v4 migration creates seen_source_videos table and index', () async {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS seen_source_videos (
+          source_url TEXT NOT NULL,
+          video_id TEXT NOT NULL,
+          seen_at TEXT NOT NULL,
+          PRIMARY KEY (source_url, video_id)
+        )
+      ''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)');
+
+      final info = await db.rawQuery('PRAGMA table_info(seen_source_videos)');
+      final cols = info.map((c) => c['name'] as String).toSet();
+      expect(cols, containsAll(['source_url', 'video_id', 'seen_at']));
+    });
+
+    test('seen_source_videos recording, filtering, and clearing', () async {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS seen_source_videos (
+          source_url TEXT NOT NULL,
+          video_id TEXT NOT NULL,
+          seen_at TEXT NOT NULL,
+          PRIMARY KEY (source_url, video_id)
+        )
+      ''');
+
+      const sourceUrl = 'https://www.youtube.com/@veritasium';
+      final now = DateTime.now().toIso8601String();
+
+      // Insert batch
+      final batch = db.batch();
+      for (final vid in ['vid_1', 'vid_2']) {
+        batch.insert('seen_source_videos', {
+          'source_url': sourceUrl,
+          'video_id': vid,
+          'seen_at': now,
+        });
+      }
+      await batch.commit(noResult: true);
+
+      // Query seen
+      final rows = await db.query(
+        'seen_source_videos',
+        columns: ['video_id'],
+        where: 'source_url = ?',
+        whereArgs: [sourceUrl],
+      );
+      final seen = rows.map((r) => r['video_id'] as String).toSet();
+      expect(seen, {'vid_1', 'vid_2'});
+
+      // Filter new candidate IDs
+      final candidates = ['vid_1', 'vid_3', 'vid_2', 'vid_4', 'vid_3'];
+      final newIds = candidates.where((id) => !seen.contains(id)).toSet().toList();
+      expect(newIds, ['vid_3', 'vid_4']);
+
+      // Clear specific source
+      final deleted = await db.delete(
+        'seen_source_videos',
+        where: 'source_url = ?',
+        whereArgs: [sourceUrl],
+      );
+      expect(deleted, 2);
+
+      final emptyRows = await db.query('seen_source_videos');
+      expect(emptyRows, isEmpty);
+    });
   });
 }

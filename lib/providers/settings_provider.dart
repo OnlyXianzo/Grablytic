@@ -74,6 +74,9 @@ class AppSettings {
   final bool scheduleEnabled;
   final String scheduleTime;
   final List<int> scheduleDays;
+  final int scheduleIntervalMinutes;
+  final bool scheduleWifiOnly;
+  final bool scheduleRequiresCharging;
   final List<String> sponsorBlockCats;
   final bool downloadArchive;
   final bool archiveByFolder;
@@ -121,6 +124,9 @@ class AppSettings {
     this.scheduleEnabled = false,
     this.scheduleTime = '22:00',
     this.scheduleDays = const [1, 2, 3, 4, 5],
+    this.scheduleIntervalMinutes = 60,
+    this.scheduleWifiOnly = true,
+    this.scheduleRequiresCharging = false,
     this.sponsorBlockCats = const ['sponsor'],
     this.downloadArchive = false,
     this.archiveByFolder = true,
@@ -167,6 +173,9 @@ class AppSettings {
     bool? scheduleEnabled,
     String? scheduleTime,
     List<int>? scheduleDays,
+    int? scheduleIntervalMinutes,
+    bool? scheduleWifiOnly,
+    bool? scheduleRequiresCharging,
     List<String>? sponsorBlockCats,
     bool? downloadArchive,
     bool? archiveByFolder,
@@ -210,6 +219,9 @@ class AppSettings {
       scheduleEnabled: scheduleEnabled ?? this.scheduleEnabled,
       scheduleTime: scheduleTime ?? this.scheduleTime,
       scheduleDays: scheduleDays ?? this.scheduleDays,
+      scheduleIntervalMinutes: scheduleIntervalMinutes ?? this.scheduleIntervalMinutes,
+      scheduleWifiOnly: scheduleWifiOnly ?? this.scheduleWifiOnly,
+      scheduleRequiresCharging: scheduleRequiresCharging ?? this.scheduleRequiresCharging,
       sponsorBlockCats: sponsorBlockCats ?? this.sponsorBlockCats,
       downloadArchive: downloadArchive ?? this.downloadArchive,
       archiveByFolder: archiveByFolder ?? this.archiveByFolder,
@@ -274,6 +286,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final scheduleTime = _prefs.getString('scheduleTime') ?? '22:00';
     final scheduleDaysRaw = _prefs.getStringList('scheduleDays') ?? ['1', '2', '3', '4', '5'];
     final scheduleDays = scheduleDaysRaw.map((e) => int.tryParse(e) ?? 1).toList();
+    final scheduleIntervalMinutes = _prefs.getInt('scheduleIntervalMinutes') ?? 60;
+    final scheduleWifiOnly = _prefs.getBool('scheduleWifiOnly') ?? true;
+    final scheduleRequiresCharging = _prefs.getBool('scheduleRequiresCharging') ?? false;
     final sponsorBlockCats = _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
     final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
     final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
@@ -323,6 +338,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       scheduleEnabled: scheduleEnabled,
       scheduleTime: scheduleTime,
       scheduleDays: scheduleDays,
+      scheduleIntervalMinutes: scheduleIntervalMinutes,
+      scheduleWifiOnly: scheduleWifiOnly,
+      scheduleRequiresCharging: scheduleRequiresCharging,
       sponsorBlockCats: sponsorBlockCats,
       useCookies: useCookies,
       cookieProfiles: cookieProfiles,
@@ -581,6 +599,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setScheduleDays(List<int> value) {
     _prefs.setStringList('scheduleDays', value.map((e) => e.toString()).toList());
     state = state.copyWith(scheduleDays: value);
+  }
+
+  void setScheduleIntervalMinutes(int value) {
+    _prefs.setInt('scheduleIntervalMinutes', value);
+    state = state.copyWith(scheduleIntervalMinutes: value);
+  }
+
+  void setScheduleWifiOnly(bool value) {
+    _prefs.setBool('scheduleWifiOnly', value);
+    state = state.copyWith(scheduleWifiOnly: value);
+  }
+
+  void setScheduleRequiresCharging(bool value) {
+    _prefs.setBool('scheduleRequiresCharging', value);
+    state = state.copyWith(scheduleRequiresCharging: value);
   }
 
   void setSponsorBlockCats(List<String> cats) {
