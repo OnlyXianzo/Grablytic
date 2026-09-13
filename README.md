@@ -337,6 +337,7 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 | [Changelog](docs/CHANGELOG.md) | Release notes distilled from commit history |
 | [Accessibility audit](docs/testing/ACCESSIBILITY_AUDIT.md) | WCAG 2.2 findings & remediation |
 | [Performance audit](docs/testing/PERFORMANCE_AUDIT.md) | Frame-rate methodology |
+| [DMCA / Copyright](DMCA.md) | General-purpose-tool notice, user responsibility, takedown contact |
 
 ---
 
@@ -355,6 +356,13 @@ See **[docs/contributing.md](docs/contributing.md)** for the full checklist.
 ## 📄 License
 
 This project is open source. See the [LICENSE](LICENSE) file for details.
+
+### ⚖️ Legal / DMCA
+
+TrueStream is a **general-purpose tool** — you are responsible for your own
+use and for complying with applicable law. Copyright holders: please send
+takedown/infringement reports to **xianzo.help@gmail.com**. Full notice:
+**[DMCA.md](DMCA.md)**.
 
 <div align="center">
 
