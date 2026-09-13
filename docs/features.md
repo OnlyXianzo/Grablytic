@@ -14,10 +14,11 @@
 | Queue | FIFO engine queue, default 2 concurrent (1–5), queued status, enforced at every entry point | Simultaneous downloads |
 | Per-item controls | Overflow menu: redownload, audio re-fetch, delete (file + history), per-download logs | Home / Library item |
 | Section cutting | FFmpeg-only `download_sections` (`*10:15-20:00`), `force_keyframes_at_cuts`; bad specs warn-and-skip | Advanced |
-| Resume | `.part` scan on startup, `.info.json` URL recovery, 24 h expiry, storage sanitization | Automatic |
+| Resume & DB recovery | SQLite schema v3 execution snapshots (`configJson`, byte counters, queue position), 5s heartbeat, automatic startup recovery sweep in `DownloadNotifier`, safe `BootReceiver` (reboot recovery without illegal background FGS start) + fallback `.part` scan | Automatic |
 | Archive | `download_archive` skips repeats; optional per-folder archives | Download Archive |
 | Scheduling | Time window + weekdays queue gating | Schedule |
-| Observed sources | Channel/source watchlist for auto-download | Observed Sources |
+| Observed sources & WorkManager | Android WorkManager `ObservedSourcesPollWorker` (`observed-sources-poll`, zero exact alarms), two-tier poll (Atom RSS tier 1, Chaquopy fallback tier 2), SQLite schema v4 `seen_source_videos` deduplication, auto-queueing to `downloads` table | Observed Sources & Settings → Schedule |
+| Speed sparkline & ETA | Dual-stage EMA speed ($\alpha=0.3$) and ETA ($\alpha=0.15$) smoothing, 60-sample historical ring buffer, zero-dependency `DownloadSparkline` canvas painter | Active download cards |
 | Live | `live_from_start` for livestreams | Advanced |
 | Rate & retries | Rate limit, retries (10), fragment retries (10), sleep interval, concurrent fragments (4), socket timeout (30) | Network |
 | Proxy & geo | HTTP/SOCKS proxy, `geo_bypass`, VPN hints on classified errors | Network / Privacy |

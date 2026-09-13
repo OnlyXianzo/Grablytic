@@ -104,6 +104,12 @@ event bridge) between Flutter and Python.
 │  │  onEvent callback │  │ + probe + extract│  │ + notif      │ │
 │  └────────┬─────────┘  └────────┬─────────┘  └──────────────┘ │
 │           │                     │                              │
+│  ┌────────┴─────────┐  ┌────────┴─────────┐                   │
+│  │  BootReceiver    │  │ ObservedSources  │                   │
+│  │  reboot recovery │  │ PollWorker       │                   │
+│  │  SQLite reset    │  │ WorkManager      │                   │
+│  └──────────────────┘  └──────────────────┘                   │
+│           │                     │                              │
 ├───────────┴─────────────────────┴──────────────────────────────┤
 │                      IPC TRANSPORT LAYER                        │
 │                                                                │
@@ -229,6 +235,7 @@ abstract class EngineService {
   Future<Map<String, dynamic>> openNotificationSettings();
   Future<Map<String, dynamic>> updateCheck();
   Future<Map<String, dynamic>> setUpdateChannel(String channel);
+  Future<Map<String, dynamic>> syncSchedule({required int intervalMinutes, required bool wifiOnly, required bool requiresCharging});
 }
 ```
 
@@ -265,9 +272,11 @@ Selection is automatic via `engineProvider`:
 
 | Class | File | Responsibility |
 |---|---|---|
-| `MainActivity` | `MainActivity.kt` | Chaquopy startup, MethodChannel/EventChannel setup, `paths/set` (bundled jniLibs win over Dart `bin/` paths), `EngineEventListener` callback sink, share-intent receiver, `DownloadService` start/update/done wiring, `download/queue_status` + `download/set_concurrency` + `download/clear_archive` handlers, terminal finished/error/cancelled alert routing |
+| `MainActivity` | `MainActivity.kt` | Chaquopy startup, MethodChannel/EventChannel setup, `paths/set` (bundled jniLibs win over Dart `bin/` paths), `EngineEventListener` callback sink, share-intent receiver, `DownloadService` start/update/done wiring, `download/queue_status` + `download/set_concurrency` + `download/clear_archive` handlers, `schedule/sync` handler for WorkManager scheduling, terminal finished/error/cancelled alert routing |
 | `BinaryPackageManager` | `BinaryPackageManager.kt` | Resolves `libffmpeg.so`/`libdeno.so` in `nativeLibraryDir`, extracts `lib*.zip.so` support trees to `noBackupFilesDir/packages`, `--version` probes, zip-slip guard, size-marker skip |
 | `DownloadService` | `DownloadService.kt` | `dataSync` foreground service: progress notification, `START_NOT_STICKY`, `onTimeout` stop, swipe-away handling, HIGH-importance completion/error alerts with per-download IDs. No new runtime permissions. |
+| `BootReceiver` | `BootReceiver.kt` | BroadcastReceiver for `ACTION_BOOT_COMPLETED` and `ACTION_MY_PACKAGE_REPLACED`. Sweeps SQLite `downloads` table to mark unfinished rows as `interrupted`. Never starts an FGS directly to comply with Android 14+ background execution limits. |
+| `ObservedSourcesPollWorker` | `ObservedSourcesPollWorker.kt` | WorkManager CoroutineWorker for `observed-sources-poll`. Runs periodic inexact checks with battery/network constraints. Executes two-tier poll (Atom RSS feed first; Chaquopy `extract_flat` fallback), checks against schema v4 `seen_source_videos` table, and queues new videos directly into SQLite. |
 
 > Binary updates ride **app updates**: downloaded files can't execute on
 > targetSdk > 28, so silent in-app binary updating is impossible on Android.
@@ -319,10 +328,11 @@ Log lines interleaved on stdout:
 | `playlist/info` | F → P | List playlist entries with metadata |
 | `search/query` | F → P | Search YouTube/SoundCloud queries via yt-dlp search extractors |
 | `resume/scan` | F → P | Scan cache dir for .part files |
+| `schedule/sync` | F → K | Synchronize WorkManager periodic polling constraints and interval |
 | `engine/update_check` | F → P | Force re-check binaries from CDN |
 | `engine/set_update_channel` | F → P | Set stable/nightly/master channel |
 
-## Python Engine — 17 Modules + Entry Point
+## Python Engine — 18 Modules + Entry Point
 
 | Module | File | Responsibility |
 |---|---|---|
@@ -339,6 +349,7 @@ Log lines interleaved on stdout:
 | `search` | `engine/truestream_engine/search.py` | `search()` — flat-extract YouTube (`ytsearch{N}:`) and SoundCloud (`scsearch{N}:`) results via yt-dlp search extractors with entry normalization and error classification. |
 | `bootstrap` | `engine/truestream_engine/bootstrap.py` | CDN manifest fetch, SHA-256-or-fail, Zip/Tar-Slip-hardened extraction, parallel ffmpeg/aria2c/deno fetch, uv venv + yt-dlp install (desktop), Android fail-closed + bundled-jniLibs fallback with live `--version` probes, QuickJS + Deno detection. |
 | `resume` | `engine/truestream_engine/resume.py` | `scan_resume_candidates()` — scans cache dir for .part files, checks age vs 24h expiry, recovers URL from .info.json metadata, sanitizes storage paths. |
+| `scheduler_check` | `engine/truestream_engine/scheduler_check.py` | Pure helper functions (`parse_atom_feed_entries`, `filter_unseen_videos`) for lightweight YouTube Atom RSS XML feed parsing and video deduplication without heavy extractor overhead. |
 | `po_token` | `engine/truestream_engine/po_token.py` | Allowlisted JS (`verify_js_code`), `detect_js_runtime()` (paths module first), QuickJS-context + Deno-subprocess generation. |
 | `logger` | `engine/truestream_engine/logger.py` | 5-level structured logger, daily rotation, IPC queue forwarding, thread-local context, trace timing, exception logging with tracebacks. |
 | `persistent` | `engine/truestream_engine/persistent.py` | `RotatingFileHandler` (`server_logs.log`), `traced_request` IPC middleware. |
@@ -460,22 +471,31 @@ test/
     ├── frame_rate_audit.dart      # Frame rate audit for all screens
     └── platform_test_matrix.dart # Platform-specific test definitions
 
-engine/tests/  (181 tests)
+engine/tests/  (309 tests)
+├── test_binstatus.py             # Live probe fail-closed & linker error checks
+├── test_bootstrap_extract.py     # Zip-Slip / Tar-Slip hardening
+├── test_bridge_config.py         # Chaquopy bridge configuration conversion
+├── test_concurrency_effect.py    # Multi-download concurrency validation
 ├── test_config.py                # Config defaults, merge behavior
+├── test_downloader.py            # Cancel, VPN hints, filesize, finished contract
 ├── test_errors.py                # Error classification, edge cases
 ├── test_format_selector.py       # Format string generation + storage guards
+├── test_hooks.py                 # 99% cap, pp_key stages, callback vs queue
+├── test_log_bridge.py            # Event delivery & logging bridge
+├── test_logger.py                # Structured logger, rotation, IPC queue
+├── test_main_ipc.py              # JSON-RPC stdin/stdout dispatch loop
 ├── test_misc.py                  # Miscellaneous utility tests
 ├── test_opts_builder.py          # yt-dlp opts: PP order, sections, aria2c, JS runtime
+├── test_overflow_engine.py       # Engine overflow menu action integration
+├── test_packages.py              # Bundled .so fallback, shutil.which mocks
 ├── test_paths.py                 # Path injection, PATH management
 ├── test_playlist.py              # Playlist detection, generators, IDs, sanitization
-├── test_downloader.py            # Cancel, VPN hints, filesize, finished contract
-├── test_hooks.py                 # 99% cap, pp_key stages, callback vs queue
-├── test_bootstrap_extract.py     # Zip-Slip / Tar-Slip hardening
-├── test_packages.py              # Bundled .so fallback, shutil.which mocks
-└── test_logger.py                # Structured logger, rotation, IPC queue
+├── test_queue.py                 # Download queue FIFO ordering & state
+├── test_scheduler_check.py       # Atom RSS feed parsing & video deduplication
+└── test_search.py                # Search extractor integration & query formatters
 ```
 
-Total: **181 Python unit tests**, Flutter widget + unit tests, 2 performance audit files.
+Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 performance audit files.
 
 ## Build & Deploy
 

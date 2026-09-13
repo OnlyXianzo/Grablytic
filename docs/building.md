@@ -143,7 +143,7 @@ Output: `build/linux/x64/release/bundle/`
 flutter test
 ```
 
-Runs widget and unit tests under `test/`.
+Runs **262 widget and unit tests** under `test/`.
 
 ### Python Engine Tests
 
@@ -152,10 +152,10 @@ Runs widget and unit tests under `test/`.
 pytest engine/tests/ -v
 ```
 
-Runs **181 unit tests** covering config, errors, format selection, opts building
+Runs **309 unit tests** covering config, errors, format selection, opts building
 (PP order, sections, aria2c validation, JS runtime), paths, playlists
 (generators, IDs, sanitization), downloader, hooks, bootstrap extraction
-(Zip/Tar-Slip), bundled packages, and the structured logger.
+(Zip/Tar-Slip), bundled packages, scheduler checks, and the structured logger.
 
 > CI installs with `uv pip install --system yt-dlp pytest -e engine/`
 > (see `.github/workflows/verify.yml`). If collection fails locally, ensure

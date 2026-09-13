@@ -48,9 +48,10 @@ TrueStream is a **privacy-first media downloader** that pulls video & audio from
 - 🗂️ **Download queue** — FIFO engine queue (default 2 concurrent, 1–5 configurable in Settings), queued status on cards, enforced at every entry point.
 - 🎛️ **Per-download controls** — overflow menu per item: redownload, audio re-fetch, delete (file + history), per-download logs.
 - ⏱️ **Section cutting** — FFmpeg-only `--download-sections` syntax (`*10:15-20:00`), no extra runtime needed. Invalid specs warn-and-skip, never fail.
-- 🔁 **Resume anything** — startup scan finds `.part` files, recovers URLs from `.info.json`, respects 24 h expiry.
+- 🔁 **DB-driven resume & recovery** — SQLite schema v3 execution snapshots (`configJson`, queue position, byte progress), 5s throttled heartbeat, automatic startup recovery sweep in `DownloadNotifier`, safe `BootReceiver` reboot recovery without illegal background FGS start + fallback `.part` scan.
 - 📦 **Download archive** — skip already-downloaded items, optional per-folder archives.
-- 🔔 **Scheduling & watchlists** — scheduled download windows + observed channels/sources.
+- 🔔 **Scheduling & background watchlists** — scheduled download windows + WorkManager `ObservedSourcesPollWorker` background periodic polling (Atom RSS tier 1 + flat extractor fallback) with SQLite schema v4 deduplication.
+- 📈 **Speed sparklines & smoothed ETA** — dual-stage EMA speed ($\alpha=0.3$) and ETA ($\alpha=0.15$) smoothing, 60-sample ring buffer, zero-dependency `DownloadSparkline` painter embedded in active download cards.
 
 ### 🎨 Media & metadata
 - 🖼️ **Thumbnails, chapters, metadata** — embed thumbnail (with `writethumbnail` fix), split chapters, add metadata in canonical yt-dlp PP order.
@@ -102,10 +103,13 @@ Based on the latest commits on `main`:
 | 🔍 Per-download logs | `download_id` correlation end-to-end; log bottom sheet from queue, history, or overflow menu; bounded retention. |
 | 🖼️ Thumbnails | Sidecar-preserving embed, `thumbnail_path` on finish events, history DB v2, local-first Library rendering. |
 | 📋 Playlist selection | New selection screen (multi-select, reverse/shuffle, unavailable marking) wired to the tested engine contract. |
+| 📈 Speed sparkline & ETA | Dual-stage EMA speed smoothing ($\alpha=0.3$) and ETA smoothing ($\alpha=0.15$), 60-sample ring buffer, zero-dependency `DownloadSparkline` painter embedded in active download cards. |
+| 🔁 DB-driven resume | SQLite schema v3 execution snapshots (`configJson`, `queuePosition`, `attempts`, byte counters), 5s heartbeat, startup recovery sweep in `DownloadNotifier`, safe `BootReceiver` (`BOOT_COMPLETED` without direct FGS start). |
+| ⏰ Background scheduler | Inexact `PeriodicWorkRequest` via WorkManager (`observed-sources-poll`, zero exact alarms), two-tier poll (Atom RSS first, Chaquopy fallback), SQLite schema v4 `seen_source_videos` deduplication ledger, auto-queueing to `pending`. |
 | 🧪 CI | Fixed `flutter analyze` (181 cascading errors from `AppLogger` regex escapes) + Python `UnboundLocalError` (`deno_version=None` under pytest); `lintVital` disabled for AGP/Kotlin-script bug; `zip.so` stripping skipped. |
 | 🎬 SABR/PO-Token | YouTube format-block resolution + aria2c DASH hardening (July). |
 
-> Full history: `git log --oneline -30` · Planned: DB-driven resume across reboot/6 h cap, WorkManager scheduling.
+> Full history: `git log --oneline -30`
 
 ---
 
@@ -280,16 +284,16 @@ CI: [`verify.yml`](.github/workflows/verify.yml) runs `flutter analyze` +
 ## 🧪 Testing
 
 ```bash
-flutter analyze        # must be zero-error
-flutter test           # widget + unit tests (test/)
-pytest engine/tests/ -v  # 181 engine tests
+flutter analyze          # must be zero-error (0 issues found)
+flutter test             # 262 widget + unit tests (test/)
+pytest engine/tests/ -v  # 309 engine tests
 ```
 
 Coverage: config · errors · format ladder · opts (incl. subtitle-PP order,
 sections, aria2c validation, JS runtime) · paths · playlists (generators, IDs,
 sanitization) · downloader (cancel, VPN hints, filesize) · hooks (99 % cap,
 `pp_key` stages) · bootstrap extraction (Zip/Tar-Slip) · packages (bundled
-`.so` fallback) · structured logger.
+`.so` fallback) · structured logger · scheduler checks & feed parsing.
 
 ---
 

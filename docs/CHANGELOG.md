@@ -2,8 +2,24 @@
 
 > Distilled from commit history (`git log --oneline`). Current version: `0.0.1-beta+1`.
 
-## Unreleased — 2026-09-13 (Share sheet, queue, per-download logs, playlist selection)
+## Unreleased — 2026-09-13 (Speed sparkline, DB resume, background scheduler, share sheet, queue, playlist selection)
 
+- **Speed sparkline & ETA smoothing**:
+  - Dual-stage exponential moving average (EMA) smoothing for download speeds ($\alpha=0.3$) and ETA countdowns ($\alpha=0.15$) eliminating erratic UI fluctuations.
+  - Retains a 60-sample historical speed ring buffer in `DownloadItem`.
+  - Zero-dependency `DownloadSparkline` custom painter with gradient fill embedded in active download cards.
+- **DB-driven download resume across process death & reboot**:
+  - Upgraded SQLite database to schema v3 with full download execution snapshots (`configJson`, `queuePosition`, `attempts`, `downloadedBytes`, `totalBytes`, `speedBytesPerSecond`, `etaSeconds`).
+  - Periodic 5-second database heartbeat in `DownloadNotifier` persisting active progress metrics.
+  - Automatic startup recovery sweep in `DownloadNotifier` picking up and resuming interrupted downloads without user intervention.
+  - Android `BootReceiver` handling `ACTION_BOOT_COMPLETED` and `ACTION_MY_PACKAGE_REPLACED` safely marking interrupted downloads in SQLite without violating Android 14+ background FGS launch restrictions.
+- **Background periodic scheduler for observed sources**:
+  - Android WorkManager `ObservedSourcesPollWorker` executing periodic background checks (`observed-sources-poll`) with zero exact alarms.
+  - Two-tier polling: Tier 1 lightweight YouTube Atom RSS feed fetch with zero heavy extractor or JS overhead; Tier 2 Chaquopy `extract_flat` fallback.
+  - SQLite database schema v4 with `seen_source_videos` deduplication ledger.
+  - Auto-queues newly discovered videos to SQLite `downloads` table with status `'pending'` and surfaces discovery notification.
+  - Settings UI controls: interval (15m to 24h), Wi-Fi only, requires charging, battery optimization tile, and manual trigger.
+  - Cross-layer sync via `EngineService.syncSchedule` and `schedule/sync` MethodChannel.
 - **Share intent** (was: prefill-and-auto-start): shared URLs now open a
   choice bottom sheet (quality/settings before anything downloads), gated
   on engine readiness; `autoStartDownloadOnShare` kept as an explicit
@@ -25,10 +41,10 @@
 - **Playlist selection**: new `PlaylistSelectionScreen` (entry
   multi-select, reverse/shuffle, unavailable marking) wired to the tested
   `build_playlist_items` engine contract; routed at paste + share entries.
-- Verification at landing: `flutter analyze` clean, `flutter test`
-  243/243, `pytest` 301/301. Device-dependent checks (release-APK icon,
-  real downloads, Android 13+ permission/alerts, Kotlin CI build) remain
-  open manual verification.
+- Verification: `flutter analyze` clean (0 issues), `flutter test`
+  262/262 passed, `pytest` 309/309 passed. Device-dependent checks
+  (release-APK icon, real downloads, Android 13+ permission/alerts,
+  Kotlin CI build) remain open manual verification.
 
 ## Unreleased — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
 
