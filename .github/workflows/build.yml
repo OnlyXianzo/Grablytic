@@ -157,6 +157,11 @@ jobs:
       - name: Stamp Flutter version
         run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
 
+      - name: Stamp release version
+        run: |
+          V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "TRUESTREAM_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
+
       - name: Stamp git commit
         run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
@@ -176,7 +181,7 @@ jobs:
       - name: Package Tarball (.tar.gz)
         run: |
           mkdir -p dist/linux
-          tar -czvf "dist/linux/truestream-0.0.1-beta-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
+          tar -czvf "dist/linux/truestream-${{ env.TRUESTREAM_RELEASE_VERSION }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
 
       - name: Package Debian (.deb)
         run: |
@@ -186,9 +191,9 @@ jobs:
           mkdir -p pkg_deb/usr/share/applications
           mkdir -p pkg_deb/usr/share/icons/hicolor/512x512/apps
 
-          cat << 'EOF' > pkg_deb/DEBIAN/control
+          cat << EOF > pkg_deb/DEBIAN/control
           Package: truestream
-          Version: 0.0.1-beta
+          Version: ${{ env.TRUESTREAM_RELEASE_VERSION }}
           Section: video
           Priority: optional
           Architecture: ${{ matrix.deb_arch }}
@@ -222,14 +227,14 @@ jobs:
           cp assets/brand/truestream_logo_circle.png pkg_deb/usr/share/icons/hicolor/512x512/apps/truestream.png
           chmod -R 755 pkg_deb/opt/truestream
 
-          dpkg-deb --build pkg_deb "dist/linux/truestream_0.0.1-beta_${{ matrix.deb_arch }}.deb"
+          dpkg-deb --build pkg_deb "dist/linux/truestream_${{ env.TRUESTREAM_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
 
       - name: Package RPM (.rpm)
         run: |
-          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/truestream_0.0.1-beta_${{ matrix.deb_arch }}.deb"
+          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/truestream_${{ env.TRUESTREAM_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
           RPM_FILE=$(ls truestream*.rpm 2>/dev/null | head -n 1)
           if [ -n "$RPM_FILE" ]; then
-            mv "$RPM_FILE" "dist/linux/truestream-0.0.1-beta-1.${{ matrix.rpm_arch }}.rpm"
+            mv "$RPM_FILE" "dist/linux/truestream-${{ env.TRUESTREAM_RELEASE_VERSION }}-1.${{ matrix.rpm_arch }}.rpm"
           fi
 
       - name: Package Arch Linux (.pkg.tar.zst)
@@ -249,7 +254,7 @@ jobs:
           INST_SIZE=$(du -sb pkg_arch | awk '{print $1}')
           cat << EOF > pkg_arch/.PKGINFO
           pkgname = truestream
-          pkgver = 0.0.1-1
+          pkgver = ${{ env.TRUESTREAM_RELEASE_VERSION }}-1
           pkgdesc = Fast, beautiful, privacy-first media downloader
           url = https://github.com/OnlyXianzo/TrueStream
           builddate = $(date +%s)
@@ -263,7 +268,7 @@ jobs:
           depend = aria2
           EOF
 
-          tar --zstd -cf "dist/linux/truestream-0.0.1-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
+          tar --zstd -cf "dist/linux/truestream-${{ env.TRUESTREAM_RELEASE_VERSION }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
 
       - name: Upload Linux Packages (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
