@@ -503,14 +503,19 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 
 **Build workflow** (`build.yml`):
 - Manual trigger (`workflow_dispatch`)
-- 3 parallel jobs: Android APK, Windows app, Linux app
-- Android: Java 17 + CMake 3.31.4 + Python 3.11 + Flutter stable → `flutter build apk --release`
-  - `packages.gradle.kts` fetches pinned ytdlnis-packages APKs → extracts `.so` → jniLibs
-  - `lintVital*` disabled (AGP/Kotlin-script analysis bug); `zip.so` stripping skipped
-- Windows: Flutter → `flutter build windows --release` + copy engine bundle
-- Linux: apt deps + Flutter → `flutter build linux --release` + copy engine bundle
-- APK: uploaded as artifact (app-release.apk)
-- Desktop: full runner release directory uploaded as artifact (includes engine files)
+- **Android matrix** (parallel builds on `ubuntu-latest`):
+  - Universal APK (`truestream-android-universal.apk` containing all ABIs)
+  - ARM64-v8a APK (`truestream-android-arm64-v8a.apk` for armv8 / aarch64 / arm64)
+  - ARMeabi-v7a APK (`truestream-android-armeabi-v7a.apk` for armv7)
+  - x86_64 APK (`truestream-android-x86_64.apk`)
+- **Linux matrix** (`ubuntu-latest` for x64, `ubuntu-24.04-arm` for arm64):
+  - Debian packages (`.deb` via `dpkg-deb`)
+  - RedHat / openSUSE packages (`.rpm` via `alien`)
+  - Arch Linux packages (`.pkg.tar.zst` via `zstd`)
+  - Portable release tarballs (`.tar.gz`)
+  - Python engine bundled directly alongside each release
+- **Windows** (`windows-latest`):
+  - 64-bit portable release zip (`truestream-windows-x64.zip`) + release bundle with Python engine included
 
 **Verification workflow** (`verify.yml`):
 - On push/PR to main

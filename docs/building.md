@@ -184,12 +184,21 @@ Triggers on every push/PR to `main`. Runs:
 - `flutter test`
 - `pytest engine/tests/ -v`
 
-### Build & Release (`build.yml`)
+### Automated Builds (`build.yml`)
 
-Manual trigger only (`workflow_dispatch`). Builds all three platforms:
-- **Android** — APK uploaded as artifact (with jniLibs packages)
-- **Windows** — release bundle with engine copied alongside
-- **Linux** — release bundle with engine copied alongside
+The `build.yml` GitHub Actions workflow produces multi-architecture binaries across platforms on manual trigger (`workflow_dispatch`):
+- **Android**:
+  - `truestream-android-universal.apk` (all ABIs bundled)
+  - `truestream-android-arm64-v8a.apk` (ARMv8 / AArch64 / ARM64)
+  - `truestream-android-armeabi-v7a.apk` (ARMv7)
+  - `truestream-android-x86_64.apk` (x86_64 emulator / devices)
+- **Linux** (built on `ubuntu-latest` and `ubuntu-24.04-arm`):
+  - Debian packages (`.deb` for `amd64` and `arm64`)
+  - RPM packages (`.rpm` for `x86_64` and `aarch64`)
+  - Arch Linux packages (`.pkg.tar.zst` for `x86_64` and `aarch64`)
+  - Portable release tarballs (`.tar.gz`)
+- **Windows**:
+  - 64-bit portable release zip (`truestream-windows-x64.zip`) and release bundle with engine included
 
 To trigger: go to GitHub → Actions → **Build and Release** → **Run workflow**.
 

@@ -21,7 +21,12 @@ val nativePackageVersions = mapOf(
     "nodejs" to "25.3.0",
 )
 // Must stay in sync with abiFilters in build.gradle.kts.
-val nativePackageAbis = listOf("arm64-v8a", "x86_64")
+val targetAbiProp = project.findProperty("targetAbi") as String?
+val nativePackageAbis = if (!targetAbiProp.isNullOrBlank()) {
+    listOf(targetAbiProp)
+} else {
+    listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+}
 val nativePackagesRepo = "deniscerri/ytdlnis-packages"
 
 val ffmpegAarUrl = "https://repo1.maven.org/maven2/io/github/junkfood02/youtubedl-android/ffmpeg/0.17.2/ffmpeg-0.17.2.aar"
@@ -102,7 +107,10 @@ tasks.register("downloadNativePackages") {
             releases = parsed
         } catch (e: Exception) {
             val warm = nativePackageVersions.keys.all { pkg ->
-                nativePackageAbis.all { abi -> jniLibs.resolve(".$pkg-$abi.sha256").isFile }
+                nativePackageAbis.all { abi ->
+                    if (pkg == "deno" && abi == "armeabi-v7a") true
+                    else jniLibs.resolve(".$pkg-$abi.sha256").isFile
+                }
             }
             if (warm) {
                 logger.warn("native-packages: releases API unreachable (${e.message}); reusing cached jniLibs")
@@ -118,6 +126,10 @@ tasks.register("downloadNativePackages") {
             @Suppress("UNCHECKED_CAST")
             val assets = release["assets"] as List<Map<String, Any?>>
             for (abi in nativePackageAbis) {
+                if (pkg == "deno" && abi == "armeabi-v7a") {
+                    logger.lifecycle("native-packages: skipping deno on $abi (64-bit only upstream, nodejs used as fallback)")
+                    continue
+                }
                 val assetName = "app-$abi-release.apk"
                 val asset = assets.firstOrNull { it["name"] == assetName }
                     ?: throw GradleException("Asset $assetName missing in $tag")

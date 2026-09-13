@@ -40,12 +40,17 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Chaquopy HARD-requires ndk.abiFilters (build fails without it),
-        // and AGP forbids abiFilters alongside ABI splits — so we ship one
-        // universal APK (no --split-per-abi, see build.yml).
+        // Chaquopy HARD-requires ndk.abiFilters (build fails without it).
+        // If targetAbi is passed (-PtargetAbi=arm64-v8a), build for that specific ABI.
+        // Otherwise, bundle arm64-v8a, armeabi-v7a, and x86_64 for a universal APK.
+        val targetAbi = project.findProperty("targetAbi") as String?
         ndk {
             abiFilters.clear()
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            if (!targetAbi.isNullOrBlank()) {
+                abiFilters += targetAbi
+            } else {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            }
         }
     }
 

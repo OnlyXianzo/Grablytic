@@ -5,8 +5,28 @@ on:
 
 jobs:
   android:
-    name: Build Android APK
+    name: Build Android (${{ matrix.abi }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: universal
+            target_arg: ""
+            artifact_name: truestream-android-universal
+            output_name: truestream-android-universal.apk
+          - abi: arm64-v8a
+            target_arg: "-PtargetAbi=arm64-v8a"
+            artifact_name: truestream-android-arm64-v8a
+            output_name: truestream-android-arm64-v8a.apk
+          - abi: armeabi-v7a
+            target_arg: "-PtargetAbi=armeabi-v7a"
+            artifact_name: truestream-android-armeabi-v7a
+            output_name: truestream-android-armeabi-v7a.apk
+          - abi: x86_64
+            target_arg: "-PtargetAbi=x86_64"
+            artifact_name: truestream-android-x86_64
+            output_name: truestream-android-x86_64.apk
     env:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -61,17 +81,185 @@ jobs:
       - name: Stamp git commit
         run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
-      - name: Build APK (universal, both ABIs)
-        run: flutter build apk --release --dart-define=TRUESTREAM_FLUTTER_VERSION="${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define=TRUESTREAM_GIT_SHA="${{ env.TRUESTREAM_GIT_SHA }}"
+      - name: Build Android APK (${{ matrix.abi }})
+        run: |
+          flutter build apk --release \
+            --dart-define=TRUESTREAM_FLUTTER_VERSION="${{ env.TRUESTREAM_FLUTTER_VERSION }}" \
+            --dart-define=TRUESTREAM_GIT_SHA="${{ env.TRUESTREAM_GIT_SHA }}" \
+            ${{ matrix.target_arg }}
 
-      - name: Upload APK Artifact
+      - name: Prepare APK output
+        run: |
+          mkdir -p dist/android
+          cp build/app/outputs/flutter-apk/app-release.apk dist/android/${{ matrix.output_name }}
+
+      - name: Upload Android Artifact (${{ matrix.abi }})
         uses: actions/upload-artifact@v4
         with:
-          name: truestream-android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: ${{ matrix.artifact_name }}
+          path: dist/android/${{ matrix.output_name }}
+
+  linux:
+    name: Build Linux (${{ matrix.arch }} - deb, rpm, arch, tar.gz)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            deb_arch: amd64
+            rpm_arch: x86_64
+            arch_arch: x86_64
+            os: ubuntu-latest
+          - arch: arm64
+            deb_arch: arm64
+            rpm_arch: aarch64
+            arch_arch: aarch64
+            os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Linux build and packaging dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev pkg-config alien rpm zstd
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter pub get
+
+      - name: Stamp Flutter version
+        run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
+
+      - name: Stamp git commit
+        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build Linux Release Bundle
+        run: |
+          flutter build linux --release \
+            --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" \
+            --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
+
+      - name: Bundle Python Engine
+        run: |
+          BUNDLE_DIR=$(find build/linux -name "bundle" -type d | head -n 1)
+          echo "Found bundle directory at: $BUNDLE_DIR"
+          echo "BUNDLE_DIR=$BUNDLE_DIR" >> $GITHUB_ENV
+          cp -r engine/truestream_engine "$BUNDLE_DIR/"
+
+      - name: Package Tarball (.tar.gz)
+        run: |
+          mkdir -p dist/linux
+          tar -czvf "dist/linux/truestream-0.0.1-beta-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
+
+      - name: Package Debian (.deb)
+        run: |
+          mkdir -p pkg_deb/DEBIAN
+          mkdir -p pkg_deb/opt/truestream
+          mkdir -p pkg_deb/usr/bin
+          mkdir -p pkg_deb/usr/share/applications
+          mkdir -p pkg_deb/usr/share/icons/hicolor/512x512/apps
+
+          cat << 'EOF' > pkg_deb/DEBIAN/control
+          Package: truestream
+          Version: 0.0.1-beta
+          Section: video
+          Priority: optional
+          Architecture: ${{ matrix.deb_arch }}
+          Maintainer: OnlyXianzo <184820152+OnlyXianzo@users.noreply.github.com>
+          Depends: libgtk-3-0, python3, ffmpeg, aria2
+          Description: Fast, beautiful, privacy-first media downloader
+           Download from 1,000+ platforms with Flutter UI and yt-dlp Python engine.
+          EOF
+          chmod 644 pkg_deb/DEBIAN/control
+          chmod 755 pkg_deb/DEBIAN
+
+          cat << 'EOF' > pkg_deb/usr/bin/truestream
+          #!/bin/sh
+          exec /opt/truestream/truestream "$@"
+          EOF
+          chmod 755 pkg_deb/usr/bin/truestream
+
+          cat << 'EOF' > pkg_deb/usr/share/applications/truestream.desktop
+          [Desktop Entry]
+          Name=TrueStream
+          Comment=Privacy-first media downloader
+          Exec=/usr/bin/truestream
+          Icon=truestream
+          Terminal=false
+          Type=Application
+          Categories=AudioVideo;Video;Network;
+          EOF
+          chmod 644 pkg_deb/usr/share/applications/truestream.desktop
+
+          cp -r "$BUNDLE_DIR"/* pkg_deb/opt/truestream/
+          cp assets/brand/truestream_logo_circle.png pkg_deb/usr/share/icons/hicolor/512x512/apps/truestream.png
+          chmod -R 755 pkg_deb/opt/truestream
+
+          dpkg-deb --build pkg_deb "dist/linux/truestream_0.0.1-beta_${{ matrix.deb_arch }}.deb"
+
+      - name: Package RPM (.rpm)
+        run: |
+          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/truestream_0.0.1-beta_${{ matrix.deb_arch }}.deb"
+          RPM_FILE=$(ls truestream*.rpm 2>/dev/null | head -n 1)
+          if [ -n "$RPM_FILE" ]; then
+            mv "$RPM_FILE" "dist/linux/truestream-0.0.1-beta-1.${{ matrix.rpm_arch }}.rpm"
+          fi
+
+      - name: Package Arch Linux (.pkg.tar.zst)
+        run: |
+          mkdir -p pkg_arch/opt/truestream
+          mkdir -p pkg_arch/usr/bin
+          mkdir -p pkg_arch/usr/share/applications
+          mkdir -p pkg_arch/usr/share/icons/hicolor/512x512/apps
+
+          cp -r "$BUNDLE_DIR"/* pkg_arch/opt/truestream/
+          cp pkg_deb/usr/bin/truestream pkg_arch/usr/bin/truestream
+          cp pkg_deb/usr/share/applications/truestream.desktop pkg_arch/usr/share/applications/truestream.desktop
+          cp assets/brand/truestream_logo_circle.png pkg_arch/usr/share/icons/hicolor/512x512/apps/truestream.png
+          chmod -R 755 pkg_arch/opt/truestream
+          chmod 755 pkg_arch/usr/bin/truestream
+
+          INST_SIZE=$(du -sb pkg_arch | awk '{print $1}')
+          cat << EOF > pkg_arch/.PKGINFO
+          pkgname = truestream
+          pkgver = 0.0.1-1
+          pkgdesc = Fast, beautiful, privacy-first media downloader
+          url = https://github.com/OnlyXianzo/TrueStream
+          builddate = $(date +%s)
+          packager = TrueStream CI
+          size = $INST_SIZE
+          arch = ${{ matrix.arch_arch }}
+          license = custom
+          depend = gtk3
+          depend = python
+          depend = ffmpeg
+          depend = aria2
+          EOF
+
+          tar --zstd -cf "dist/linux/truestream-0.0.1-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
+
+      - name: Upload Linux Packages (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: truestream-linux-${{ matrix.arch }}-packages
+          path: dist/linux/*
 
   windows:
-    name: Build Windows App
+    name: Build Windows App (x64)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,60 +287,25 @@ jobs:
       - name: Stamp git commit
         run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Build Windows App
+      - name: Build Windows App (64-bit)
         run: flutter build windows --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
 
       - name: Copy Python Engine to Bundle
         run: xcopy /E /I engine\truestream_engine build\windows\x64\runner\Release\truestream_engine
 
-      - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: truestream-windows-app
-          path: build/windows/x64/runner/Release/
-
-  linux:
-    name: Build Linux App
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Install Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Linux dependencies
+      - name: Package Windows ZIP
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev
+          mkdir dist\windows
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\windows\truestream-windows-x64.zip
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-
-      - run: flutter pub get
-
-      - name: Stamp Flutter version
-        run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
-
-      - name: Stamp git commit
-        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-
-      - name: Build Linux App
-        run: flutter build linux --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
-
-      - name: Copy Python Engine to Bundle
-        run: cp -r engine/truestream_engine build/linux/x64/release/bundle/
-
-      - name: Upload Linux Artifact
+      - name: Upload Windows Portable Zip
         uses: actions/upload-artifact@v4
         with:
-          name: truestream-linux-app
-          path: build/linux/x64/release/bundle/
+          name: truestream-windows-x64-zip
+          path: dist\windows\truestream-windows-x64.zip
+
+      - name: Upload Windows Release Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: truestream-windows-x64-bundle
+          path: build\windows\x64\runner\Release\
