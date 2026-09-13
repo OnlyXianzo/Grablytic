@@ -14,6 +14,7 @@ import 'batch_import_dialog.dart';
 import '../widgets/error_recovery_card.dart';
 import '../widgets/download_log_overlay.dart';
 import '../widgets/download_overflow_menu.dart';
+import '../widgets/download_sparkline.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils.dart';
@@ -579,6 +580,11 @@ class _DownloadCard extends StatelessWidget {
                         ),
                       ],
                       const SizedBox(height: 4),
+                      if (item.speedHistory.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        DownloadSparkline(samples: item.speedHistory),
+                        const SizedBox(height: 4),
+                      ],
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(

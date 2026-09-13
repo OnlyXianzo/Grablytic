@@ -21,6 +21,10 @@ class DownloadItem {
   final double speed;
   /// Estimated seconds remaining (-1 when unknown).
   final int eta;
+  /// Rolling per-download speed history (smoothed bytes/sec samples, oldest
+  /// first, capped at [kSpeedHistoryCap]). Transient UI signal for the
+  /// sparkline only — never persisted. Empty until samples arrive.
+  final List<double> speedHistory;
   /// Post-processing stage key (merging, embedding_thumbnail, …) or null
   /// while plain downloading.
   final String? stage;
@@ -50,6 +54,7 @@ class DownloadItem {
     this.totalBytes = 0,
     this.speed = 0,
     this.eta = -1,
+    this.speedHistory = const [],
     this.stage,
     this.stageLabel,
     this.thumbnailUrl,
@@ -73,6 +78,8 @@ class DownloadItem {
     int? totalBytes,
     double? speed,
     int? eta,
+    List<double>? speedHistory,
+    bool clearHistory = false,
     String? stage,
     bool clearStage = false,
     String? stageLabel,
@@ -99,6 +106,8 @@ class DownloadItem {
       totalBytes: totalBytes ?? this.totalBytes,
       speed: speed ?? this.speed,
       eta: eta ?? this.eta,
+      speedHistory:
+          clearHistory ? const [] : (speedHistory ?? this.speedHistory),
       stage: clearStage ? null : (stage ?? this.stage),
       stageLabel: clearStageLabel ? null : (stageLabel ?? this.stageLabel),
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
@@ -117,10 +126,48 @@ class DownloadItem {
   }
 }
 
+/// EMA weight on each new speed sample (standard α·new + (1-α)·old form).
+/// Mirrors yt-dlp's fragment-path smoothing (`smoothing=0.7` in its inverted
+/// convention — mind the inversion, do not copy 0.7 here). Settles in ~5-7
+/// samples at 1 Hz yet visibly damps single-sample spikes.
+const kSpeedEmaAlpha = 0.3;
+
+/// Lighter second-stage EMA on the derived ETA (yt-dlp ETA convention).
+const kEtaEmaAlpha = 0.15;
+
+/// Max retained speed samples per download (60 × 8 B ≈ 0.5 KB).
+const kSpeedHistoryCap = 60;
+
+/// Minimum smoothed samples before a derived ETA is shown.
+const kEtaGraceSamples = 3;
+
+/// Minimum elapsed time before a derived ETA is shown.
+const kEtaGracePeriod = Duration(seconds: 2);
+
+/// Per-download 'downloading' UI update cadence gate. yt-dlp HTTP hooks fire
+/// per data block (tens of Hz); each event carries absolute counters so
+/// dropping intermediates loses nothing — the next admitted event is latest.
+const kProgressCoalesceWindow = Duration(seconds: 1);
+
+/// Per-download smoother state. Lives in the notifier (transient, never
+/// persisted); the display-ready ring buffer lives on [DownloadItem].
+class _DownloadSmoother {
+  double? smoothSpeed;
+  double? smoothEta;
+  int samples = 0;
+  DateTime? firstSampleAt;
+  DateTime? lastEmitAt;
+  int lastEta = -1;
+}
+
 class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   final EngineService _engine;
+  final DateTime Function() _clock;
+  final Map<String, _DownloadSmoother> _smoothers = {};
 
-  DownloadNotifier(this._engine) : super([]);
+  DownloadNotifier(this._engine, {DateTime Function()? clock})
+      : _clock = clock ?? DateTime.now,
+        super([]);
 
   List<DownloadItem> get completed =>
       state.where((d) => d.status == 'completed').toList();
@@ -215,8 +262,27 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       final downloaded = event['downloaded_bytes'] as int? ?? 0;
       final total = event['total_bytes'] as int? ?? 0;
       final progress = total > 0 ? downloaded / total : 0.0;
-      final speed = (event['speed'] as num?)?.toDouble() ?? 0;
-      final eta = event['eta'] as int? ?? -1;
+      final rawSpeed = (event['speed'] as num?)?.toDouble() ?? 0;
+      final index = state.indexWhere((d) => d.id == downloadId);
+      if (index == -1) return;
+      // 1 Hz coalesce gate (part of the feature, not polish): per-block
+      // HTTP callbacks would otherwise rebuild every watcher at tens of Hz
+      // and repaint the sparkline per block.
+      final now = _clock();
+      final smoother =
+          _smoothers.putIfAbsent(downloadId, _DownloadSmoother.new);
+      final lastEmit = smoother.lastEmitAt;
+      if (lastEmit != null &&
+          now.difference(lastEmit) < kProgressCoalesceWindow) {
+        return;
+      }
+      smoother.lastEmitAt = now;
+      final current = state[index];
+      final display = _admitSample(smoother, rawSpeed,
+          downloaded: downloaded,
+          total: total,
+          now: now,
+          previous: current.speedHistory);
       state = [
         for (final d in state)
           if (d.id != downloadId)
@@ -227,8 +293,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               progress: progress.clamp(0.0, 0.99),
               downloadedBytes: downloaded,
               totalBytes: total,
-              speed: speed,
-              eta: eta,
+              speed: display.speed,
+              eta: display.eta,
+              speedHistory: display.history,
               clearStage: true,
               clearStageLabel: true,
             ),
@@ -342,6 +409,67 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
       _persistRecord(item);
     }
+  }
+
+  /// Admits one coalesced raw speed sample and returns the display values.
+  ///
+  /// Speed is EMA-filtered (α=[kSpeedEmaAlpha], seeded by the first sample);
+  /// ETA is *derived* from remaining/smoothed-speed (raw ETA ratios are never
+  /// smoothed directly) with a lighter second EMA (α=[kEtaEmaAlpha]).
+  /// Grace: ETA stays unknown until [kEtaGraceSamples] samples or
+  /// [kEtaGracePeriod] elapsed. Stall ticks (speed ≤ 0) draw an honest zero
+  /// on the graph but hold the last speed/ETA readouts instead of flashing
+  /// `--:--`. Unknown totals always yield unknown ETA.
+  ({double speed, int eta, List<double> history}) _admitSample(
+    _DownloadSmoother s,
+    double rawSpeed, {
+    required int downloaded,
+    required int total,
+    required DateTime now,
+    required List<double> previous,
+  }) {
+    s.firstSampleAt ??= now;
+    final double displaySpeed;
+    var history = <double>[];
+    if (rawSpeed > 0) {
+      s.samples += 1;
+      s.smoothSpeed = s.smoothSpeed == null
+          ? rawSpeed
+          : kSpeedEmaAlpha * rawSpeed + (1 - kSpeedEmaAlpha) * s.smoothSpeed!;
+      displaySpeed = s.smoothSpeed!;
+      history = [...previous, displaySpeed];
+      if (history.length > kSpeedHistoryCap) {
+        history = history.sublist(history.length - kSpeedHistoryCap);
+      }
+    } else {
+      displaySpeed = s.smoothSpeed ?? 0;
+      history = [...previous, 0.0];
+      if (history.length > kSpeedHistoryCap) {
+        history = history.sublist(history.length - kSpeedHistoryCap);
+      }
+    }
+
+    var eta = s.lastEta;
+    final graceOk = s.samples >= kEtaGraceSamples ||
+        now.difference(s.firstSampleAt!) >= kEtaGracePeriod;
+    if (rawSpeed > 0 &&
+        displaySpeed > 0 &&
+        total > 0 &&
+        graceOk &&
+        s.smoothSpeed != null) {
+      final remaining = total - downloaded;
+      final derived = remaining <= 0 ? 0 : (remaining / displaySpeed).round();
+      s.smoothEta = s.smoothEta == null
+          ? derived.toDouble()
+          : kEtaEmaAlpha * derived + (1 - kEtaEmaAlpha) * s.smoothEta!;
+      eta = s.smoothEta!.round();
+      if (eta < 0) eta = 0;
+      s.lastEta = eta;
+    } else if (s.samples == 0) {
+      eta = -1;
+      s.lastEta = -1;
+    }
+    return (speed: displaySpeed, eta: eta, history: history);
   }
 
   void _persistRecord(DownloadItem item) {
