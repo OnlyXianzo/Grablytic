@@ -424,6 +424,7 @@ class _DownloadCard extends StatelessWidget {
     final isDownloading = item.status == 'downloading';
     final isQueued = item.status == 'queued' || item.status == 'pending';
     final isError = item.status == 'error';
+    final isInterrupted = item.status == 'interrupted';
     final textTheme = Theme.of(context).textTheme;
 
     return Semantics(
@@ -478,6 +479,15 @@ class _DownloadCard extends StatelessWidget {
                                 size: 32,
                               ),
                             )
+                          : isInterrupted
+                              ? Semantics(
+                                  label: 'Interrupted',
+                                  child: Icon(
+                                    Icons.pause_circle_outline,
+                                    color: colorScheme.secondary,
+                                    size: 32,
+                                  ),
+                                )
                           : Semantics(
                               label: isError ? 'Error' : 'Completed',
                               child: Icon(
@@ -616,6 +626,31 @@ class _DownloadCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ] else if (isInterrupted) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.pause_circle_outline,
+                              size: 14, color: colorScheme.secondary),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Interrupted — tap menu to resume',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.secondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (item.downloadedBytes > 0 && item.totalBytes > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)} (${(item.progress * 100).toInt()}%)',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.outline,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
                     ] else if (isError) ...[
                       const SizedBox(height: 8),
                       Text(

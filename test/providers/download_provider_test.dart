@@ -230,5 +230,21 @@ void main() {
       expect(item.downloadedBytes, 10240);
       expect(item.totalBytes, 10240);
     });
+
+    test('interrupted item can be resumed via resumeInterrupted', () {
+      final n = _notifier();
+      n.addDownload(DownloadItem(
+        id: 'dl-int',
+        title: 'Interrupted Download',
+        url: 'https://test.com/v',
+        status: 'interrupted',
+        downloadedBytes: 500,
+        totalBytes: 1000,
+        attempts: 1,
+      ));
+      expect(n.state.single.status, 'interrupted');
+      n.resumeInterrupted('dl-int');
+      expect(n.state.single.status, 'downloading');
+    });
   });
 }

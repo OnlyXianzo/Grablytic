@@ -1,3 +1,4 @@
+import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show File;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,6 +44,8 @@ class DownloadItem {
   final bool suggestsVpn;
   final Map<String, dynamic>? config;
   final String? networkType;
+  final int attempts;
+  final int? queuePosition;
 
   DownloadItem({
     required this.id,
@@ -69,6 +72,8 @@ class DownloadItem {
     this.suggestsVpn = false,
     this.config,
     this.networkType,
+    this.attempts = 0,
+    this.queuePosition,
   }) : addedAt = addedAt ?? DateTime.now();
 
   DownloadItem copyWith({
@@ -95,6 +100,8 @@ class DownloadItem {
     bool? suggestsVpn,
     Map<String, dynamic>? config,
     String? networkType,
+    int? attempts,
+    int? queuePosition,
   }) {
     return DownloadItem(
       id: id,
@@ -122,6 +129,8 @@ class DownloadItem {
       suggestsVpn: suggestsVpn ?? this.suggestsVpn,
       config: config ?? this.config,
       networkType: networkType ?? this.networkType,
+      attempts: attempts ?? this.attempts,
+      queuePosition: queuePosition ?? this.queuePosition,
     );
   }
 }
@@ -157,6 +166,7 @@ class _DownloadSmoother {
   int samples = 0;
   DateTime? firstSampleAt;
   DateTime? lastEmitAt;
+  DateTime? lastHeartbeatAt;
   int lastEta = -1;
 }
 
@@ -197,6 +207,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         (d.status == 'downloading' ||
             d.status == 'pending' ||
             d.status == 'queued'));
+  }
+
+  /// Update max concurrent downloads dynamically (1 to 5).
+  Future<void> setMaxConcurrent(int maxConcurrent) async {
+    try {
+      await _engine.setConcurrency(maxConcurrent);
+    } catch (_) {}
   }
 
   /// Push the user's concurrency preference to the engine backstop
@@ -243,10 +260,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final type = event['type'] as String?;
     if (type == 'log') return;
 
+    final eventType = event['event'] as String?;
     final downloadId = event['download_id'] as String?;
     if (downloadId == null) return;
-
-    final eventType = event['event'] as String?;
 
     if (eventType == 'queued') {
       // Engine backstop parked this id (at-limit). Surface queue position
@@ -279,6 +295,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       smoother.lastEmitAt = now;
       final current = state[index];
       final display = _admitSample(smoother, rawSpeed,
+          downloadId: downloadId,
           downloaded: downloaded,
           total: total,
           now: now,
@@ -423,6 +440,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   ({double speed, int eta, List<double> history}) _admitSample(
     _DownloadSmoother s,
     double rawSpeed, {
+    required String downloadId,
     required int downloaded,
     required int total,
     required DateTime now,
@@ -469,11 +487,35 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       eta = -1;
       s.lastEta = -1;
     }
+
+    // Throttled heartbeat to SQLite (~5s cadence) for DB-driven resume continuity.
+    if (downloaded > 0 || total > 0) {
+      if (s.lastHeartbeatAt == null ||
+          now.difference(s.lastHeartbeatAt!) >= const Duration(seconds: 5)) {
+        s.lastHeartbeatAt = now;
+        DownloadHistoryDb.instance
+            .updateHeartbeat(
+              downloadId,
+              bytesDownloaded: downloaded,
+              totalBytes: total > 0 ? total : null,
+              progress: total > 0 ? (downloaded / total).clamp(0.0, 0.99) : 0.0,
+              now: now.toIso8601String(),
+            )
+            .catchError((_) => 0);
+      }
+    }
+
     return (speed: displaySpeed, eta: eta, history: history);
   }
 
   void _persistRecord(DownloadItem item) {
     try {
+      final configJson =
+          item.config != null ? jsonEncode(item.config) : null;
+      final qPos = item.queuePosition ??
+          (state.indexWhere((d) => d.id == item.id) >= 0
+              ? state.indexWhere((d) => d.id == item.id)
+              : null);
       final record = DownloadRecord(
         id: item.id,
         url: item.url,
@@ -490,9 +532,109 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         timestamp: item.addedAt.toIso8601String(),
         thumbnailUrl: item.thumbnailUrl,
         thumbnailPath: item.thumbnailPath,
+        configJson: configJson,
+        queuePosition: qPos,
+        attempts: item.attempts,
+        lastErrorType: item.errorType,
+        lastErrorMessage: item.errorMessage,
+        bytesDownloaded: item.downloadedBytes,
+        totalBytes: item.totalBytes > 0 ? item.totalBytes : null,
+        updatedAt: DateTime.now().toIso8601String(),
       );
       DownloadHistoryDb.instance.insert(record).catchError((_) => 0);
     } catch (_) {}
+  }
+
+  /// Sweeps lingering active/queued downloads in SQLite to 'interrupted' on
+  /// startup and re-enqueues them if attempts < 3.
+  Future<int> restoreInterruptedDownloads({bool autoResume = true}) async {
+    final count = await DownloadHistoryDb.instance.sweepActiveToInterrupted();
+    if (!autoResume) return count;
+
+    final records = await DownloadHistoryDb.instance.getInterrupted(limit: 50);
+    int resumed = 0;
+    for (final record in records) {
+      Map<String, dynamic> config = {};
+      if (record.configJson != null && record.configJson!.isNotEmpty) {
+        try {
+          config = jsonDecode(record.configJson!) as Map<String, dynamic>;
+        } catch (_) {}
+      }
+
+      final attempts = record.attempts;
+      if (attempts >= 3) {
+        // Cap reached: surface as interrupted in memory for manual user resume
+        if (!state.any((d) => d.id == record.id)) {
+          state = [
+            ...state,
+            DownloadItem(
+              id: record.id,
+              title: record.title,
+              url: record.url,
+              status: 'interrupted',
+              progress: record.progress,
+              downloadedBytes: record.bytesDownloaded,
+              totalBytes: record.totalBytes ?? record.fileSize ?? 0,
+              config: config,
+              thumbnailUrl: record.thumbnailUrl,
+              thumbnailPath: record.thumbnailPath,
+              attempts: attempts,
+              queuePosition: record.queuePosition,
+            ),
+          ];
+        }
+        continue;
+      }
+
+      // Auto-resume: increment attempt and re-start
+      final nextAttempts = attempts + 1;
+      await DownloadHistoryDb.instance.update(record.copyWith(
+        attempts: nextAttempts,
+        status: 'queued',
+        updatedAt: DateTime.now().toIso8601String(),
+      ));
+
+      final item = DownloadItem(
+        id: record.id,
+        title: record.title,
+        url: record.url,
+        status: 'queued',
+        progress: record.progress,
+        downloadedBytes: record.bytesDownloaded,
+        totalBytes: record.totalBytes ?? record.fileSize ?? 0,
+        config: config,
+        thumbnailUrl: record.thumbnailUrl,
+        thumbnailPath: record.thumbnailPath,
+        attempts: nextAttempts,
+        queuePosition: record.queuePosition,
+      );
+
+      if (!state.any((d) => d.id == record.id)) {
+        state = [...state, item];
+      }
+
+      _engine
+          .startDownload(
+        url: record.url,
+        downloadId: record.id,
+        config: config,
+        networkType: config['network_type']?.toString() ?? 'wifi',
+      )
+          .then((result) {
+        if (result['queued'] == true) {
+          state = [
+            for (final d in state)
+              if (d.id != record.id) d else d.copyWith(status: 'queued'),
+          ];
+        }
+      }).catchError((_) {});
+      resumed++;
+    }
+    return resumed;
+  }
+
+  void resumeInterrupted(String id) {
+    redownload(id, fresh: false);
   }
 
   static String _derivePlatform(String url) {
@@ -706,6 +848,8 @@ final downloadProvider =
     StateNotifierProvider<DownloadNotifier, List<DownloadItem>>((ref) {
   final engine = ref.watch(engineProvider);
   final notifier = DownloadNotifier(engine);
+  // Auto-sweep and restore interrupted downloads across process restart / LMK
+  notifier.restoreInterruptedDownloads();
   final subscription = engine.progressStream.listen(
     (event) {
       notifier.handleProgressEvent(event);

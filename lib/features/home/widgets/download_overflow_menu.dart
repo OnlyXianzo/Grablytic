@@ -35,7 +35,8 @@ class DownloadOverflowButton extends ConsumerWidget {
   bool get _isTerminal =>
       item.status == 'completed' ||
       item.status == 'error' ||
-      item.status == 'cancelled';
+      item.status == 'cancelled' ||
+      item.status == 'interrupted';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -77,7 +78,9 @@ class DownloadOverflowButton extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Text(item.status == 'completed'
                     ? 'Redownload'
-                    : 'Retry download'),
+                    : (item.status == 'interrupted'
+                        ? 'Resume download'
+                        : 'Retry download')),
               ],
             ),
           ),
@@ -152,7 +155,9 @@ class DownloadOverflowButton extends ConsumerWidget {
             context,
             item.status == 'completed'
                 ? 'Re-downloading (fresh fetch)'
-                : 'Retrying download');
+                : (item.status == 'interrupted'
+                    ? 'Resuming download'
+                    : 'Retrying download'));
       case 'audio':
         if (_isActive) {
           _snack(context, 'Cancel the active download first');
