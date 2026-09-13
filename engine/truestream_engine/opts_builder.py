@@ -195,14 +195,14 @@ def build_ydl_opts(
         opts["sleep_interval"] = int(sleep)
 
     if cfg.get("no_playlist"):
-        opts["playlist_items"] = "1"
+        opts["noplaylist"] = True
 
     if cfg.get("playlist_items"):
-        opts["playlist_items"] = cfg["playlist_items"]
+        opts["playlist_items"] = str(cfg["playlist_items"])
     if cfg.get("playlist_rev"):
-        opts["playlist_reverse"] = True
+        opts["playlistreverse"] = True
     if cfg.get("playlist_rand"):
-        opts["playlist_random"] = True
+        opts["playlistrandom"] = True
 
     if cfg.get("live_from_start"):
         opts["live_from_start"] = True
@@ -269,8 +269,7 @@ def build_ydl_opts(
             if thumb_fmt not in ("jpg", "png", "webp"):
                 thumb_fmt = "jpg"
             opts["writethumbnail"] = True
-            pp.append({"key": "FFmpegThumbnailsConvertor", "format": thumb_fmt})
-            pp.append({"key": "EmbedThumbnail"})
+            pp.append({"key": "FFmpegThumbnailsConvertor", "format": thumb_fmt, "when": "before_dl"})
 
         meta_pp: list[str] = []
         if cfg.get("addmetadata"):
@@ -279,8 +278,9 @@ def build_ydl_opts(
             meta_pp.append("embed_thumbnail")
 
         # Canonical yt-dlp PP order: ... -> EmbedSubtitle -> ModifyChapters
-        # -> Metadata. Subtitles must be in the container before chapters are
-        # cut, and chapter edits must land before tags are written.
+        # -> Metadata -> EmbedThumbnail. Subtitles must be in the container
+        # before chapters are cut, and chapter edits must land before tags
+        # and cover art are written.
         subs_enabled = cfg.get("writesubtitles", False) or cfg.get("writeautomaticsub", False)
         if subs_enabled:
             # Sidecar download is independent of embedding: a user who
@@ -316,10 +316,20 @@ def build_ydl_opts(
                     "add_chapters": True,
                 })
 
+        if cfg.get("embedthumbnail"):
+            pp.append({
+                "key": "EmbedThumbnail",
+                "already_have_thumbnail": bool(cfg.get("writethumbnail", False)),
+            })
+
         if cfg.get("split_chapters"):
             pp.append({"key": "FFmpegSplitChapters"})
 
         if not is_audio:
+            # WebM container cannot embed cover art (raises EmbedThumbnailPPError in yt-dlp);
+            # Matroska (MKV) is the container that supports VP9/AV1/Opus plus attached pictures.
+            if cfg.get("embedthumbnail") and container == "webm":
+                container = "mkv"
             opts["merge_output_format"] = container
             # Do NOT also set remux_video — legacy bug avoided
 

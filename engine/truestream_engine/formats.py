@@ -112,11 +112,17 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                     best_muxed = f
 
         log.info(f"Found {len(parsed)} formats for {url}")
+        thumb = info.get("thumbnail")
+        if not thumb and info.get("thumbnails"):
+            thumbs = info.get("thumbnails")
+            if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+                thumb = thumbs[-1].get("url")
+
         return {
             "success": True,
             "title": info.get("title", ""),
             "duration_seconds": info.get("duration"),
-            "thumbnail_url": info.get("thumbnail"),
+            "thumbnail_url": thumb,
             "is_live": info.get("is_live", False),
             "is_playlist": is_playlist,
             "extractor": info.get("extractor_key") or info.get("extractor", ""),

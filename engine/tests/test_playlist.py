@@ -75,3 +75,46 @@ class TestGetPlaylistInfo:
         assert res["entries"][1]["title"] == "[Deleted video]"
         # Test webpage_url
         assert res["entries"][2]["url"] == "https://youtube.com/watch?v=123"
+
+    def test_thumbnail_and_playlist_index_handling(self, monkeypatch):
+        from truestream_engine.playlist import get_playlist_info
+        import truestream_engine.playlist as pl_mod
+
+        def sample_generator():
+            yield {
+                "title": "Item 1",
+                "url": "https://example.com/1",
+                "playlist_index": 5,
+                "thumbnails": [{"url": "https://example.com/small.jpg"}, {"url": "https://example.com/large.jpg"}],
+            }
+            yield {
+                "title": "Item 2",
+                "url": "https://example.com/2",
+                "thumbnail": "https://example.com/direct.jpg",
+            }
+
+        class MockYDL:
+            def __init__(self, opts):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download=False):
+                return {
+                    "_type": "playlist",
+                    "title": "Index Test",
+                    "entries": sample_generator(),
+                }
+
+        monkeypatch.setattr(pl_mod, "YoutubeDL", MockYDL)
+
+        res = get_playlist_info("https://youtube.com/playlist?list=test")
+        assert res["success"] is True
+        # Explicit playlist_index is preserved
+        assert res["entries"][0]["index"] == 5
+        # Fallback to last entry in thumbnails list
+        assert res["entries"][0]["thumbnail_url"] == "https://example.com/large.jpg"
+        # Sequential index when playlist_index is missing
+        assert res["entries"][1]["index"] == 2
+        assert res["entries"][1]["thumbnail_url"] == "https://example.com/direct.jpg"

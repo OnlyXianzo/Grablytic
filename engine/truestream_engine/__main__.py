@@ -12,6 +12,8 @@ from truestream_engine import (
     scan_resume_candidates,
     start_download,
     cancel_download,
+    get_queue_status,
+    set_max_concurrent,
     set_update_channel,
     update_check,
 )
@@ -69,6 +71,7 @@ def poll_queues():
                                 "download_id": download_id,
                                 "filesize_bytes": res.get("filesize_bytes", 0),
                                 "total_bytes": res.get("filesize_bytes", 0),
+                                "file_path": res.get("file_path"),
                             }
                         elif res.get("error_type") == "ERROR_CANCELLED":
                             # Parity with Android: user cancellation is a
@@ -177,6 +180,10 @@ def main():
                         )
                     elif method == "download/cancel":
                         return cancel_download(params["download_id"])
+                    elif method == "download/queue_status":
+                        return {"success": True, **get_queue_status()}
+                    elif method == "download/set_concurrency":
+                        return set_max_concurrent(params.get("max_concurrent", 2))
                     elif method == "formats/get":
                         return get_formats(params["url"], params.get("config"))
                     elif method == "playlist/info":

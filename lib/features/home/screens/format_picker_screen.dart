@@ -330,12 +330,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
 
     if (result['success'] == true) {
+      final wasQueued = result['queued'] == true;
       notifier.addDownload(
         DownloadItem(
           id: downloadId,
           title: _fetchedTitle.isNotEmpty ? _fetchedTitle : widget.title,
           url: widget.url,
-          status: 'downloading',
+          status: wasQueued ? 'queued' : 'downloading',
           config: config,
           networkType: 'wifi',
         ),
@@ -347,12 +348,25 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
       if (mounted) {
         Navigator.pop(context);
+        final wasQueued = result['queued'] == true;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Download started')),
+          SnackBar(
+              content: Text(wasQueued
+                  ? 'Queued — starts when a slot frees up'
+                  : 'Download started')),
         );
       }
     } else {
-      if (mounted) setState(() => _isStarting = false);
+      if (mounted) {
+        setState(() => _isStarting = false);
+        final err = result['error_type']?.toString();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(err == 'ERROR_ALREADY_ACTIVE'
+                  ? 'Download already in progress for this link'
+                  : 'Could not start download')),
+        );
+      }
     }
   }
 
@@ -453,6 +467,66 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        // Metadata preview header (Part B): thumbnail +
+                        // duration + stream counts always visible, not hidden
+                        // behind the preview action. Data already arrives via
+                        // formats.py (title/thumbnail_url/duration_seconds).
+                        if (_thumbnailUrl.isNotEmpty || _durationSeconds != null) ...[
+                          const SizedBox(height: 12),
+                          Semantics(
+                            label: 'Video preview',
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Semantics(
+                                  label: 'Video thumbnail',
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: _thumbnailUrl.isNotEmpty
+                                        ? Image.network(
+                                            _thumbnailUrl,
+                                            width: 112,
+                                            height: 64,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, _, _) =>
+                                                _thumbFallback(colorScheme),
+                                          )
+                                        : _thumbFallback(colorScheme),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (_durationSeconds != null)
+                                        Semantics(
+                                          label:
+                                              'Duration ${_formatDuration(_durationSeconds)}',
+                                          child: Text(
+                                            'Duration ${_formatDuration(_durationSeconds)}',
+                                            style: textTheme.labelMedium?.copyWith(
+                                              color: colorScheme.onSurfaceVariant,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${_videoFormats.length} video · ${_audioFormats.length} audio'
+                                        '${_muxedFormats.isNotEmpty ? ' · ${_muxedFormats.length} combined' : ''} streams',
+                                        style: textTheme.labelSmall?.copyWith(
+                                          color: colorScheme.outline,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         TextField(
                           decoration: InputDecoration(
@@ -620,6 +694,19 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                       ],
                     ),
                   ),
+      ),
+    );
+  }
+
+  Widget _thumbFallback(ColorScheme colorScheme) {
+    return Container(
+      width: 112,
+      height: 64,
+      color: colorScheme.surfaceContainerHigh,
+      child: Icon(
+        Icons.movie_outlined,
+        size: 28,
+        color: colorScheme.outline.withValues(alpha: 0.5),
       ),
     );
   }

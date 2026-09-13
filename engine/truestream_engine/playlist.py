@@ -69,12 +69,20 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
                 if re.match(r"^[a-zA-Z0-9_-]{11}$", raw_url):
                     raw_url = f"https://www.youtube.com/watch?v={raw_url}"
 
+            thumb = e.get("thumbnail")
+            if not thumb and e.get("thumbnails"):
+                thumbs = e.get("thumbnails")
+                if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+                    thumb = thumbs[-1].get("url")
+
+            item_index = e.get("playlist_index") or idx
+
             entries.append({
-                "index": idx,
+                "index": item_index,
                 "title": title,
                 "url": raw_url,
                 "duration_seconds": e.get("duration"),
-                "thumbnail_url": e.get("thumbnail"),
+                "thumbnail_url": thumb,
                 "uploader": e.get("uploader"),
                 "is_available": e.get("title") is not None and e.get("availability") != "private",
             })

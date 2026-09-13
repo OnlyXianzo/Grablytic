@@ -17,20 +17,27 @@ class BatchItem {
   final String title;
   final BatchItemStatus status;
   final double progress;
+  final String? thumbnailUrl;
 
   const BatchItem({
     required this.url,
     required this.title,
     this.status = BatchItemStatus.pending,
     this.progress = 0,
+    this.thumbnailUrl,
   });
 
-  BatchItem copyWith({BatchItemStatus? status, double? progress}) {
+  BatchItem copyWith({
+    BatchItemStatus? status,
+    double? progress,
+    String? thumbnailUrl,
+  }) {
     return BatchItem(
       url: url,
       title: title,
       status: status ?? this.status,
       progress: progress ?? this.progress,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
     );
   }
 }
@@ -153,7 +160,8 @@ class BatchNotifier extends StateNotifier<BatchState> {
                 id: downloadId,
                 title: item.title,
                 url: item.url,
-                status: 'downloading',
+                status: result['queued'] == true ? 'queued' : 'downloading',
+                thumbnailUrl: item.thumbnailUrl,
               ),
             );
 

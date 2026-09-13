@@ -188,5 +188,69 @@ void main() {
       expect(find.text('50 % downloading'), findsOneWidget);
       expect(find.textContaining('2.0 MB/s'), findsOneWidget);
     });
+
+    testWidgets('renders fallback icon when completed item has no thumbnail',
+        (WidgetTester tester) async {
+      final item = DownloadItem(
+        id: 'dl-no-thumb',
+        title: 'No Thumb Video',
+        url: 'https://example.com/no-thumb',
+        status: 'completed',
+        thumbnailUrl: null,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            engineProvider.overrideWithValue(mockEngine),
+            downloadProvider.overrideWith((ref) {
+              final notifier = DownloadNotifier(mockEngine);
+              notifier.addDownload(item);
+              return notifier;
+            }),
+          ],
+          child: const MaterialApp(
+            home: LibraryScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No Thumb Video'), findsOneWidget);
+      expect(find.byIcon(Icons.image_outlined), findsOneWidget);
+    });
+
+    testWidgets('renders Image.network when completed item has thumbnail URL',
+        (WidgetTester tester) async {
+      final item = DownloadItem(
+        id: 'dl-with-thumb',
+        title: 'Thumb Video',
+        url: 'https://example.com/with-thumb',
+        status: 'completed',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            engineProvider.overrideWithValue(mockEngine),
+            downloadProvider.overrideWith((ref) {
+              final notifier = DownloadNotifier(mockEngine);
+              notifier.addDownload(item);
+              return notifier;
+            }),
+          ],
+          child: const MaterialApp(
+            home: LibraryScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Thumb Video'), findsOneWidget);
+      expect(find.byType(Image), findsOneWidget);
+    });
   });
 }

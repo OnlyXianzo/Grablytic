@@ -128,9 +128,9 @@ def test_geo_bypass_default_on():
     assert opts["geo_bypass"] is True
 
 
-def test_no_playlist_sets_items_to_1():
+def test_no_playlist_sets_noplaylist():
     opts = build_ydl_opts(config={"no_playlist": True})
-    assert opts["playlist_items"] == "1"
+    assert opts["noplaylist"] is True
 
 
 def test_playlist_items_override():
@@ -140,12 +140,12 @@ def test_playlist_items_override():
 
 def test_playlist_reverse():
     opts = build_ydl_opts(config={"playlist_rev": True})
-    assert opts["playlist_reverse"] is True
+    assert opts["playlistreverse"] is True
 
 
 def test_playlist_random():
     opts = build_ydl_opts(config={"playlist_rand": True})
-    assert opts["playlist_random"] is True
+    assert opts["playlistrandom"] is True
 
 
 def test_live_from_start():
@@ -207,6 +207,28 @@ def test_embed_thumbnail_adds_postprocessors():
     keys = [pp.get("key") for pp in pps]
     assert "FFmpegThumbnailsConvertor" in keys
     assert "EmbedThumbnail" in keys
+    assert opts.get("writethumbnail") is True
+
+
+def test_embed_thumbnail_postprocessor_ordering():
+    opts = build_ydl_opts(config={
+        "embedthumbnail": True,
+        "addmetadata": True,
+        "writesubtitles": True,
+        "embedsubtitles": True,
+    })
+    pps = opts.get("postprocessors", [])
+    keys = [pp.get("key") for pp in pps]
+    # Canonical yt-dlp PP order: ThumbnailsConvertor -> EmbedSubtitle -> Metadata -> EmbedThumbnail
+    assert keys.index("FFmpegThumbnailsConvertor") < keys.index("FFmpegEmbedSubtitle")
+    assert keys.index("FFmpegEmbedSubtitle") < keys.index("FFmpegMetadata")
+    assert keys.index("FFmpegMetadata") < keys.index("EmbedThumbnail")
+
+
+def test_embed_thumbnail_webm_coerced_to_mkv():
+    # WebM cannot embed cover art; opts_builder coerces container to mkv
+    opts = build_ydl_opts(config={"embedthumbnail": True, "container": "webm"})
+    assert opts.get("merge_output_format") == "mkv"
 
 
 def test_subtitles_embedded():

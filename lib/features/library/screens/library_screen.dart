@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
@@ -397,6 +398,43 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   }
 }
 
+class _ThumbnailImage extends StatelessWidget {
+  final String? url;
+  final Widget fallback;
+
+  const _ThumbnailImage({
+    required this.url,
+    required this.fallback,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (url == null || url!.trim().isEmpty) return fallback;
+    final trimmed = url!.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Image.network(
+        trimmed,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) => fallback,
+      );
+    }
+    final path = trimmed.startsWith('file://') ? trimmed.substring(7) : trimmed;
+    final file = File(path);
+    if (!file.existsSync()) {
+      return fallback;
+    }
+    return Image.file(
+      file,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (context, error, stackTrace) => fallback,
+    );
+  }
+}
+
 class _LibraryGridCard extends ConsumerWidget {
   final DownloadItem item;
   final ColorScheme colorScheme;
@@ -457,42 +495,66 @@ class _LibraryGridCard extends ConsumerWidget {
                           ],
                         ),
                 ),
-                child: Center(
-                  child: isDownloading
-                      ? SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              CircularProgressIndicator(
-                                value: item.progress,
-                                strokeWidth: 3,
-                                color: colorScheme.primary,
-                                backgroundColor: colorScheme.surfaceContainerHighest,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _ThumbnailImage(
+                      url: item.thumbnailUrl,
+                      fallback: Center(
+                        child: isError
+                            ? Icon(
+                                Icons.error_outline,
+                                size: 40,
+                                color: colorScheme.error,
+                              )
+                            : Icon(
+                                Icons.movie_outlined,
+                                size: 40,
+                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                               ),
-                              Text(
-                                '${(item.progress * 100).toInt()}%',
-                                style: textTheme.mono.copyWith(
+                      ),
+                    ),
+                    if (isDownloading)
+                      Container(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        child: Center(
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: item.progress,
+                                  strokeWidth: 3,
                                   color: colorScheme.primary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
+                                  backgroundColor: colorScheme.surfaceContainerHighest,
                                 ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : isError
-                          ? Icon(
-                              Icons.error_outline,
-                              size: 40,
-                              color: colorScheme.error,
-                            )
-                          : Icon(
-                              Icons.movie_outlined,
-                              size: 40,
-                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                Text(
+                                  '${(item.progress * 100).toInt()}%',
+                                  style: textTheme.mono.copyWith(
+                                    color: colorScheme.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
+                          ),
+                        ),
+                      ),
+                    if (isError && item.thumbnailUrl != null && item.thumbnailUrl!.trim().isNotEmpty)
+                      Container(
+                        color: colorScheme.errorContainer.withValues(alpha: 0.4),
+                        child: Center(
+                          child: Icon(
+                            Icons.error_outline,
+                            size: 40,
+                            color: colorScheme.error,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -650,6 +712,7 @@ class _LibraryItem extends ConsumerWidget {
             Container(
               width: 128,
               height: 72,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: isError
                     ? colorScheme.errorContainer.withValues(alpha: 0.2)
@@ -661,11 +724,40 @@ class _LibraryItem extends ConsumerWidget {
                       )
                     : null,
               ),
-              child: isDownloading
-                  ? Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _ThumbnailImage(
+                    url: item.thumbnailUrl,
+                    fallback: Center(
+                      child: isDownloading
+                          ? const SizedBox.shrink()
+                          : isError
+                              ? Semantics(
+                                  label: 'Failed',
+                                  child: Icon(
+                                    Icons.error_outline,
+                                    color: colorScheme.error,
+                                    size: 32,
+                                  ),
+                                )
+                              : Semantics(
+                                  label: 'Completed',
+                                  child: Icon(
+                                    Icons.image_outlined,
+                                    color: colorScheme.outline.withValues(alpha: 0.4),
+                                    size: 32,
+                                  ),
+                                ),
+                    ),
+                  ),
+                  if (isDownloading)
+                    Container(
+                      color: item.thumbnailUrl != null && item.thumbnailUrl!.trim().isNotEmpty
+                          ? Colors.black.withValues(alpha: 0.35)
+                          : Colors.transparent,
+                      child: Center(
+                        child: Container(
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
@@ -681,25 +773,24 @@ class _LibraryItem extends ConsumerWidget {
                             ),
                           ),
                         ),
-                      ],
-                    )
-                  : isError
-                      ? Semantics(
+                      ),
+                    ),
+                  if (isError && item.thumbnailUrl != null && item.thumbnailUrl!.trim().isNotEmpty)
+                    Container(
+                      color: colorScheme.errorContainer.withValues(alpha: 0.4),
+                      child: Center(
+                        child: Semantics(
                           label: 'Failed',
                           child: Icon(
                             Icons.error_outline,
                             color: colorScheme.error,
                             size: 32,
                           ),
-                        )
-                      : Semantics(
-                          label: 'Completed',
-                          child: Icon(
-                            Icons.image_outlined,
-                            color: colorScheme.outline.withValues(alpha: 0.4),
-                            size: 32,
-                          ),
                         ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(

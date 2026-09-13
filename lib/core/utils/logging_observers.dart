@@ -155,6 +155,8 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
       next.sponsorBlockCats);
   field('downloadArchive', previous.downloadArchive, next.downloadArchive);
   field('archiveByFolder', previous.archiveByFolder, next.archiveByFolder);
+  field('maxConcurrentDownloads', previous.maxConcurrentDownloads,
+      next.maxConcurrentDownloads);
   return changes;
 }
 
@@ -264,6 +266,14 @@ class TracedEngineService implements EngineService {
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() =>
       _traced('system/notification_request', () => _inner.requestNotificationPermission());
+
+  @override
+  Future<Map<String, dynamic>> queueStatus() =>
+      _traced('download/queue_status', () => _inner.queueStatus());
+
+  @override
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) =>
+      _traced('download/set_concurrency', () => _inner.setConcurrency(maxConcurrent));
 
   @override
   Future<Map<String, dynamic>> getFormats({
