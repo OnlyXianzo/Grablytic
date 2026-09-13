@@ -4,6 +4,8 @@
 
 Thanks for contributing to TrueStream. Here's how the process works.
 
+Please note that this project is released with a Contributor [Code of Conduct](../CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+
 ## Getting Started
 
 1. Fork the repository.

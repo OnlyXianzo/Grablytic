@@ -17,9 +17,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Link target -> reason. Deliberate gaps only; shrink this, never grow it.
-KNOWN_MISSING = {
-    "LICENSE": "no license file yet (needs a legal decision, see README)",
-}
+KNOWN_MISSING = {}
 
 LINK_RE = re.compile(r"\]\(([^)#]+)(#[^)]*)?\)")
 

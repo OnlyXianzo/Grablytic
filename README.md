@@ -388,9 +388,11 @@ See **[docs/contributing.md](docs/contributing.md)** for the full checklist.
 
 ---
 
-## 📄 License
+## 📄 License & Code of Conduct
 
-This project is open source. See the [LICENSE](LICENSE) file for details.
+TrueStream is open source and licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0).
+
+Please review our [Code of Conduct](CODE_OF_CONDUCT.md) before participating in or contributing to the project.
 
 ### ⚖️ Legal / DMCA
 
