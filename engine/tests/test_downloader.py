@@ -106,3 +106,72 @@ class TestYDLoggerAndCompletion:
         assert res["download_id"] == "existing1"
         assert res["file_path"] == str(target_file)
         assert res["filesize_bytes"] == 10240
+
+
+class TestFindThumbnailPath:
+    def test_preferred_format_found(self, tmp_path):
+        media = tmp_path / "video.mkv"
+        media.write_bytes(b"media")
+        thumb = tmp_path / "video.jpg"
+        thumb.write_bytes(b"thumb")
+        got = dl_mod._find_thumbnail_path(str(media), {"thumbnail_format": "jpg"})
+        assert got == str(thumb)
+
+    def test_falls_back_to_other_extensions(self, tmp_path):
+        media = tmp_path / "video.mp4"
+        media.write_bytes(b"media")
+        thumb = tmp_path / "video.png"
+        thumb.write_bytes(b"thumb")
+        got = dl_mod._find_thumbnail_path(str(media), {"thumbnail_format": "jpg"})
+        assert got == str(thumb)
+
+    def test_missing_sidecar_returns_none(self, tmp_path):
+        media = tmp_path / "video.mp4"
+        media.write_bytes(b"media")
+        assert dl_mod._find_thumbnail_path(str(media), {}) is None
+
+    def test_missing_media_or_none_returns_none(self, tmp_path):
+        assert dl_mod._find_thumbnail_path(None, {}) is None
+        assert dl_mod._find_thumbnail_path("", {}) is None
+        assert dl_mod._find_thumbnail_path(str(tmp_path / "nope.mp4"), {}) is None
+        # Never raises on garbage input.
+        assert dl_mod._find_thumbnail_path(12345, None) is None
+
+    @pytest.mark.unit
+    def test_finished_event_carries_thumbnail_path(self, _env, tmp_path, monkeypatch):
+        # End-to-end through download_thread with a faked YoutubeDL: the
+        # sidecar next to the output file must be reported as thumbnail_path
+        # in BOTH the callback event and the result-queue dict.
+        target_file = tmp_path / "thumb_video.mkv"
+        target_file.write_bytes(b"A" * 4096)
+        sidecar = tmp_path / "thumb_video.jpg"
+        sidecar.write_bytes(b"B" * 512)
+
+        seen_events: list = []
+
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.logger = opts.get("logger")
+
+            def add_progress_hook(self, hook):
+                pass
+
+            def download(self, urls):
+                if self.logger:
+                    self.logger.debug(f"[download] {target_file} has already been downloaded")
+                return 0
+
+        monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYoutubeDL)
+        res_q: queue.Queue = queue.Queue()
+        dl_mod.download_thread(
+            url="https://x.test/v", download_id="thumb1",
+            result_queue=res_q,
+            event_callback=type("CB", (), {
+                "onEvent": lambda self, s: seen_events.append(s),
+            })(),
+        )
+        import json as _json
+        finished = [ _json.loads(s) for s in seen_events if '"finished"' in s]
+        assert finished, "expected a terminal finished callback event"
+        assert finished[0]["thumbnail_path"] == str(sidecar)
+        assert finished[0]["file_path"] == str(target_file)

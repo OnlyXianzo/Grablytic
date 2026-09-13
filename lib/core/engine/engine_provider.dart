@@ -40,8 +40,7 @@ final engineProvider = Provider<EngineService>((ref) {
   ref.listen<AppSettings>(settingsProvider, (previous, next) {
     if (previous?.downloadPath != next.downloadPath ||
         previous?.cookiesPath != next.cookiesPath ||
-        previous?.useCookies != next.useCookies) {
-      final outputDir = next.downloadPath == '/Internal/Videos'
+        previous?.useCookies != next.useCookies) {      final outputDir = next.downloadPath == '/Internal/Videos'
           ? '$_appDir/TrueStream'
           : next.downloadPath;
       engine.setPaths({
@@ -55,7 +54,23 @@ final engineProvider = Provider<EngineService>((ref) {
             useCookies: next.useCookies, cookiesPath: next.cookiesPath),
       });
     }
+    // Queue gate: push the persisted preference whenever it changes (the
+    // Settings slider also calls setConcurrency directly for immediacy;
+    // this listener covers every other path that mutates the setting).
+    // Never throws — EngineService.setConcurrency is fail-safe.
+    if (previous?.maxConcurrentDownloads != next.maxConcurrentDownloads) {
+      try {
+        engine.setConcurrency(next.maxConcurrentDownloads);
+      } catch (_) {}
+    }
   });
+
+  // Initial sync: the engine backstop defaults to 2, so push the persisted
+  // preference at startup (fire-and-forget; the module global exists as
+  // soon as Chaquopy/the subprocess can serve calls).
+  try {
+    engine.setConcurrency(settings.maxConcurrentDownloads);
+  } catch (_) {}
 
   if (engine is MockEngineService) {
     ref.onDispose(() => engine.dispose());

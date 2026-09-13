@@ -25,6 +25,51 @@ def detect_playlist(url: str) -> bool:
     return any(re.search(p, url) for p in _PLAYLIST_PATTERNS)
 
 
+# yt-dlp flat-extraction placeholder titles for entries that cannot be
+# downloaded. get_playlist_info() surfaces these as unavailable so callers
+# can exclude them from build_playlist_items() before downloading.
+_UNAVAILABLE_TITLES = frozenset({"[Deleted video]", "[Private video]"})
+
+
+def build_playlist_items(selected: list) -> str:
+    """Translate user-selected playlist entry indices into a yt-dlp
+    ``playlist_items`` string.
+
+    ``selected`` holds the 1-based ``index`` values reported by
+    :func:`get_playlist_info` (yt-dlp's ``playlist_items`` syntax is
+    1-indexed — ``PlaylistEntries[1:10] => (0, 1, ... 9)`` per installed
+    yt-dlp ``utils/_utils.py`` — so NO 0→1 adjustment happens here; the
+    values pass straight through after validation).
+
+    Each value is validated with yt-dlp's own ``parse_playlist_items``
+    parser, so a malformed index raises ``ValueError`` instead of silently
+    downloading the wrong entries. Duplicates are dropped, order is kept.
+    Empty input returns ``""`` (caller should skip the download).
+    """
+    from yt_dlp.utils import PlaylistEntries
+
+    seen: list[int] = []
+    for raw in selected or []:
+        # Strict: only ints and digit-strings. int(2.5) would silently
+        # truncate to 2 and download the WRONG entry — reject instead.
+        if isinstance(raw, bool):
+            raise ValueError(f"Invalid playlist index: {raw!r}")
+        if isinstance(raw, int):
+            idx = raw
+        elif isinstance(raw, str) and raw.strip().isdigit():
+            idx = int(raw.strip())
+        else:
+            raise ValueError(f"Invalid playlist index: {raw!r}")
+        if idx < 1:
+            raise ValueError(f"Invalid playlist index (1-based): {raw!r}")
+        # Validate against yt-dlp's own grammar — single source of truth
+        # for what the downloader will accept.
+        list(PlaylistEntries.parse_playlist_items(str(idx)))
+        if idx not in seen:
+            seen.append(idx)
+    return ",".join(str(i) for i in seen)
+
+
 def get_playlist_info(url: str, config: dict | None = None) -> dict:
     log.info(f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}")
 
@@ -62,7 +107,6 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             title = e.get("title")
             if not title or title == "[Deleted video]":
                 title = "[Deleted video]"
-
             raw_url = e.get("url") or e.get("webpage_url") or ""
             if raw_url and not raw_url.startswith("http") and not raw_url.startswith("/"):
                 # Plain YouTube 11-char video ID from flat extraction
@@ -84,7 +128,14 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
                 "duration_seconds": e.get("duration"),
                 "thumbnail_url": thumb,
                 "uploader": e.get("uploader"),
-                "is_available": e.get("title") is not None and e.get("availability") != "private",
+                # Flat extraction reports removed entries as title=None or a
+                # "[Deleted video]"/"[Private video]" placeholder with no
+                # playable URL — all three mean "cannot be downloaded".
+                "is_available": (
+                    e.get("title") is not None
+                    and e.get("title") not in _UNAVAILABLE_TITLES
+                    and e.get("availability") != "private"
+                ),
             })
             idx += 1
 

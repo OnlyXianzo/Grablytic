@@ -11,6 +11,12 @@ class LogEntry {
   final int? durationMs;
   final String? exception;
   final String source; // 'engine' or 'ui'
+  final String? _downloadId;
+
+  String? get downloadId =>
+      _downloadId ??
+      (context['download_id'] as String?) ??
+      (extra['download_id'] as String?);
 
   const LogEntry({
     required this.timestamp,
@@ -23,20 +29,28 @@ class LogEntry {
     this.durationMs,
     this.exception,
     this.source = 'ui',
-  });
+    String? downloadId,
+  }) : _downloadId = downloadId;
 
   factory LogEntry.fromEngineJson(Map<String, dynamic> json) {
+    final contextMap = (json['context'] as Map<String, dynamic>?) ?? {};
+    final extraMap = (json['extra'] as Map<String, dynamic>?) ?? {};
+    final dlId = json['download_id']?.toString() ??
+        contextMap['download_id']?.toString() ??
+        extraMap['download_id']?.toString();
+
     return LogEntry(
       timestamp: DateTime.parse(json['ts'] as String),
       level: _parseLevel(json['level'] as String? ?? 'INFO'),
       logger: json['logger'] as String? ?? 'engine',
       message: json['message'] as String? ?? '',
-      context: (json['context'] as Map<String, dynamic>?) ?? {},
-      extra: (json['extra'] as Map<String, dynamic>?) ?? {},
+      context: contextMap,
+      extra: extraMap,
       traceId: json['trace_id'] as String?,
       durationMs: json['duration_ms'] as int?,
       exception: json['exception'] as String?,
       source: 'engine',
+      downloadId: dlId,
     );
   }
 
@@ -78,5 +92,6 @@ class LogEntry {
         'duration_ms': durationMs,
         'exception': exception,
         'source': source,
+        'download_id': downloadId,
       };
 }

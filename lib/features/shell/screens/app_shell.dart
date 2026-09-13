@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../home/screens/home_screen.dart';
+import '../../home/widgets/share_intent_sheet.dart';
 import '../../library/screens/library_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import '../../../providers/download_provider.dart';
+import '../../../providers/engine_status_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
@@ -30,6 +32,9 @@ class _AppShellState extends ConsumerState<AppShell> {
   // are ignored so logs/state update exactly once. User drags leave this
   // null and behave as before.
   int? _animTarget;
+  // Guards against stacking duplicate share sheets when intents arrive in
+  // quick succession (cold-start getSharedUrl + stream event for one share).
+  bool _shareSheetOpen = false;
 
   @override
   void initState() {
@@ -102,10 +107,31 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   Future<void> _handleSharedUrl(String url) async {
-    if (url.isEmpty) return;
+    if (url.isEmpty || !mounted) return;
 
     final settings = ref.read(settingsProvider);
     if (settings.autoStartDownloadOnShare) {
+      // Engine-readiness gate: never auto-start into an unbootstrapped
+      // engine (empty/failed download). Fall back to the preview sheet path
+      // so the user sees a "still setting up" state instead of silence.
+      EngineStatus status;
+      try {
+        status = await ref.read(engineStatusProvider.future);
+      } catch (e) {
+        status = EngineStatus(ready: false, error: e.toString());
+      }
+      if (!mounted) return;
+      if (!status.ready) {
+        ref.read(sharedUrlProvider.notifier).state = url;
+        _currentIndex = 0;
+        _pageController.jumpToPage(0);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Engine still setting up — review the link, then retry.'),
+          ),
+        );
+        return;
+      }
       if (!isWithinScheduleWindow(settings, DateTime.now()) && mounted) {
         final go = await showDialog<bool>(
           context: context,
@@ -152,7 +178,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         ...settingsDownloadConfig(settings),
       };
 
-      ref.read(engineProvider).startDownload(
+      final startRes = await ref.read(engineProvider).startDownload(
         url: url,
         downloadId: downloadId,
         config: config,
@@ -164,23 +190,42 @@ class _AppShellState extends ConsumerState<AppShell> {
           id: downloadId,
           title: url,
           url: url,
-          status: 'downloading',
+          status: startRes['queued'] == true ? 'queued' : 'downloading',
           config: config,
           networkType: 'wifi',
         ),
       );
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Auto-starting download from shared link')),
+        SnackBar(
+            content: Text(startRes['queued'] == true
+                ? 'Queued — starts when a slot frees up'
+                : 'Auto-starting download from shared link')),
       );
 
       _currentIndex = 0;
       _pageController.jumpToPage(0);
     } else {
+      // Default path: prefill the Home URL field (existing behavior, kept
+      // for continuity) AND surface the share bottom sheet so the user
+      // picks quality/settings before anything downloads.
       ref.read(sharedUrlProvider.notifier).state = url;
       _currentIndex = 0;
       _pageController.jumpToPage(0);
+      _showShareSheet(url);
     }
+  }
+
+  /// Share bottom sheet (YTDLnis/Seal "bottom card" parity at the Dart
+  /// layer). Instant and lightweight: format extraction stays deferred to
+  /// FormatPickerScreen after the user confirms.
+  void _showShareSheet(String url) {
+    if (!mounted || _shareSheetOpen) return;
+    _shareSheetOpen = true;
+    showShareIntentSheet<void>(context, url).whenComplete(() {
+      _shareSheetOpen = false;
+    });
   }
 
   final _screens = [

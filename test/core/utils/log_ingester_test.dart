@@ -106,6 +106,67 @@ void main() {
         expect(buffer.entries, hasLength(1));
         expect(buffer.entries.single.message, 'real problem');
       });
+
+      test('ingests engine JSON with download_id and correlates to scoped buffer', () async {
+        ingester.start(controller.stream);
+
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:00',
+          'level': 'INFO',
+          'logger': 'downloader',
+          'message': 'download started',
+          'download_id': 'dl-ingest-001',
+        });
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:01',
+          'level': 'INFO',
+          'logger': 'downloader',
+          'message': 'other download started',
+          'download_id': 'dl-ingest-002',
+        });
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(buffer.entries, hasLength(2));
+        expect(buffer.getEntriesForDownload('dl-ingest-001'), hasLength(1));
+        expect(buffer.getEntriesForDownload('dl-ingest-001').single.message,
+            equals('download started'));
+        expect(buffer.getEntriesForDownload('dl-ingest-001').single.downloadId,
+            equals('dl-ingest-001'));
+        expect(buffer.filtered(downloadId: 'dl-ingest-001'), hasLength(1));
+      });
+
+      test('correlates download_id from context and extra maps', () async {
+        ingester.start(controller.stream);
+
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:00',
+          'level': 'INFO',
+          'logger': 'downloader',
+          'message': 'context download',
+          'context': {'download_id': 'dl-ctx-99'},
+        });
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:01',
+          'level': 'INFO',
+          'logger': 'downloader',
+          'message': 'extra download',
+          'extra': {'download_id': 'dl-extra-88'},
+        });
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(buffer.getEntriesForDownload('dl-ctx-99'), hasLength(1));
+        expect(buffer.getEntriesForDownload('dl-ctx-99').single.message,
+            equals('context download'));
+        expect(buffer.getEntriesForDownload('dl-extra-88'), hasLength(1));
+        expect(buffer.getEntriesForDownload('dl-extra-88').single.message,
+            equals('extra download'));
+      });
     });
 
     group('malformed events', () {

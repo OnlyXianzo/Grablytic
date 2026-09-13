@@ -502,4 +502,37 @@ class DesktopEngineService implements EngineService {
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() async =>
       {'success': false, 'supported': false};
+
+  @override
+  Future<Map<String, dynamic>> queueStatus() async {
+    try {
+      return await _sendRequest('download/queue_status', {});
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async {
+    try {
+      return await _sendRequest('download/set_concurrency', {
+        'max_concurrent': maxConcurrent,
+      });
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> clearArchive() async {
+    try {
+      return await _sendRequest('download/clear_archive', {});
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> openNotificationSettings() async =>
+      {'success': false, 'supported': false};
 }

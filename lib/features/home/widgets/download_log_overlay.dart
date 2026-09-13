@@ -4,13 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../providers/log_provider.dart';
+import 'download_log_sheet.dart';
 
 /// Live engine-log strip for one download (ytdlnis-style).
 ///
 /// Translucent black box, white monospace lines, fed by the shared
-/// [LogBuffer]: engine events carry the download id in thread-local
-/// context (`context['download_id']`, fallback `traceId`), so concurrent
-/// downloads never interleave here. Collapsed: last 8 lines. Tap:
+/// [LogBuffer]'s per-download store: engine events carry the download id
+/// (`downloadId`, fallback `traceId`), so concurrent downloads never
+/// interleave here. Collapsed: last 8 lines. Tap:
 /// expands to the last 60 with autoscroll. The parent decides visibility
 /// (downloading or errored); empty renders nothing.
 class DownloadLogOverlay extends ConsumerStatefulWidget {
@@ -59,10 +60,12 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
     super.dispose();
   }
 
-  List<LogEntry> _linesForDownload(List<LogEntry> all) {
-    final mine = all.where((e) =>
+  List<LogEntry> _linesForDownload(List<LogEntry> scoped) {
+    // Scoped to this download via the per-download store (survives global
+    // buffer eviction). `downloadId` covers top-level/context/extra forms.
+    final mine = scoped.where((e) =>
         e.source == 'engine' &&
-        (e.context['download_id'] == widget.downloadId ||
+        (e.downloadId == widget.downloadId ||
             e.traceId == widget.downloadId));
     final list = mine.toList();
     final cap = _expanded ? _expandedLines : _collapsedLines;
@@ -79,7 +82,8 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
   @override
   Widget build(BuildContext context) {
     if (!widget.visible) return const SizedBox.shrink();
-    final lines = _linesForDownload(ref.watch(logBufferProvider).entries);
+    final lines = _linesForDownload(
+        ref.watch(logBufferProvider).forDownload(widget.downloadId));
     if (lines.isEmpty) return const SizedBox.shrink();
     final textTheme = Theme.of(context).textTheme;
 
@@ -134,6 +138,24 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
                     ),
                   ),
                   const Spacer(),
+                  if (_expanded)
+                    GestureDetector(
+                      onTap: () {
+                        DownloadLogSheet.show(
+                          context,
+                          downloadId: widget.downloadId,
+                          title: 'Download Log',
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          Icons.open_in_new,
+                          size: 13,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
                     size: 14,

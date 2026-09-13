@@ -54,4 +54,19 @@ abstract class EngineService {
   /// never throws.
   Future<Map<String, dynamic>> notificationPermissionStatus();
   Future<Map<String, dynamic>> requestNotificationPermission();
+
+  /// Download queue (engine backstop; Dart owns the queued UI state).
+  /// `queueStatus` → `{'active': [...ids], 'queued': [...ids], 'max_concurrent': N}`.
+  /// `setConcurrency` clamps 1–5, returns `{'success', 'max_concurrent'}`.
+  /// Never throws — unsupported platforms return `{'success': false}`.
+  Future<Map<String, dynamic>> queueStatus();
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent);
+
+  /// Delete the engine download-archive file (recovery for archive-skipped
+  /// re-downloads). Returns `{'success', 'removed', 'path'}` — never throws.
+  Future<Map<String, dynamic>> clearArchive();
+
+  /// Open the OS notification settings for this app (Android 13+ denial
+  /// recovery). Returns `{'success', 'launched'}` — never throws.
+  Future<Map<String, dynamic>> openNotificationSettings();
 }

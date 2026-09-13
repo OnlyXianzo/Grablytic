@@ -1,4 +1,5 @@
 import '../../providers/settings_provider.dart';
+import 'playlist_selection.dart';
 
 /// Shared engine-config overlay built from user settings (P1).
 ///
@@ -22,6 +23,9 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
     'organize_by_folder': settings.archiveByFolder,
     'use_archive': settings.downloadArchive,
     'thumbnail_format': settings.pngThumbnails ? 'png' : 'jpg',
+    // UI-level only (engine opts_builder ignores unknown keys): lets the
+    // native layer gate completion/error alerts without a second IPC.
+    'completion_alerts': settings.completionAlerts,
   };
   final maxSpeed = settings.aria2cMaxSpeed;
   if (maxSpeed != null && maxSpeed.trim().isNotEmpty) {
@@ -31,5 +35,28 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
   if (proxy != null && proxy.trim().isNotEmpty) {
     config['proxy'] = proxy.trim();
   }
+  return config;
+}
+
+/// Playlist-entry config overlay (03-B UI wiring). Keys match
+/// `engine/truestream_engine/config.py` (`playlist_items` /
+/// `playlist_rev` / `playlist_rand`) and flow through `opts_builder.py`
+/// into yt-dlp (`playlist_items` / `playlistreverse` / `playlistrandom`).
+/// [selectedIndices] are the 1-based `index` values from `getPlaylistInfo`,
+/// passed in ascending playlist order — reverse/shuffle travel as flags,
+/// never as a reordered string (see [buildPlaylistItemsString]).
+/// Merged OVER [settingsDownloadConfig] at the call site; `use_archive`
+/// from settings still applies, so re-runs transparently skip completed
+/// entries (no archive toggle needed in playlist UI).
+Map<String, dynamic> playlistDownloadConfig({
+  required List<dynamic> selectedIndices,
+  bool reverse = false,
+  bool shuffle = false,
+}) {
+  final config = <String, dynamic>{
+    'playlist_items': buildPlaylistItemsString(selectedIndices),
+  };
+  if (reverse) config['playlist_rev'] = true;
+  if (shuffle) config['playlist_rand'] = true;
   return config;
 }

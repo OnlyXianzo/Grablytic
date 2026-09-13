@@ -77,6 +77,12 @@ DEFAULT_CFG = {
     # ── Archive ─────────────────────────────────────────────────────────
     "use_archive": False,
     "archive_path": None,
+    # Single-call redownload scopes (never persisted as preferences):
+    # force_overwrite = re-fetch intact files (--force-overwrites semantics);
+    # ignore_archive = bypass download_archive for this call (redownload-
+    # after-delete recovery; cf. Seal #2065 trap).
+    "force_overwrite": False,
+    "ignore_archive": False,
     # Subfolder split: Video/<name> vs Audio/<name> under output_dir.
     "organize_by_folder": False,
     # ── Live ────────────────────────────────────────────────────────────

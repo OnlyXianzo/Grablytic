@@ -5,6 +5,7 @@ import time
 import queue
 import threading
 import traceback
+import contextvars
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -16,6 +17,29 @@ ERROR = 40
 FATAL = 50
 
 LEVEL_NAMES = {10: "DEBUG", 20: "INFO", 30: "WARN", 40: "ERROR", 50: "FATAL"}
+
+_current_download_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_download_id", default=None)
+
+
+def get_current_download_id() -> str | None:
+    return _current_download_id.get()
+
+
+def set_current_download_id(download_id: str | None) -> contextvars.Token:
+    return _current_download_id.set(download_id)
+
+
+def reset_current_download_id(token: contextvars.Token) -> None:
+    _current_download_id.reset(token)
+
+
+@contextmanager
+def download_context(download_id: str | None):
+    token = _current_download_id.set(download_id)
+    try:
+        yield
+    finally:
+        _current_download_id.reset(token)
 
 
 class EngineLogger:
@@ -31,10 +55,13 @@ class EngineLogger:
         if not hasattr(self._context, 'data'):
             self._context.data = {}
         self._context.data.update(kwargs)
+        if "download_id" in kwargs:
+            _current_download_id.set(kwargs["download_id"])
 
     def clear_context(self) -> None:
         if hasattr(self._context, 'data'):
             self._context.data.clear()
+        _current_download_id.set(None)
 
     def set_queue(self, q: queue.Queue | None) -> None:
         self._queue = q
@@ -54,6 +81,10 @@ class EngineLogger:
         level_name = LEVEL_NAMES.get(level, "UNKNOWN")
         now = datetime.now(timezone.utc)
         ts = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
+        did = ctx.get("download_id") or (extra or {}).get("download_id") or _current_download_id.get()
+        trace_id = ctx.get("trace_id") or did
+        if did:
+            ctx["download_id"] = did
 
         event = {
             "type": "log",
@@ -63,7 +94,8 @@ class EngineLogger:
             "message": message,
             "context": ctx,
             "extra": extra or {},
-            "trace_id": ctx.get("trace_id"),
+            "trace_id": trace_id,
+            "download_id": did,
             "duration_ms": duration_ms,
             "exception": repr(exception) if exception else None,
         }
@@ -138,7 +170,7 @@ class EngineLogger:
         else:
             self._log(level, f"{label} OK", duration_ms=int((time.time() - start) * 1000))
 
-    def log_exception(self, exc: BaseException, message: str = "", *, level: int = ERROR) -> None:
+    def log_exception(self, exc: BaseException, message: str = "", *, level: int = ERROR, extra: dict | None = None) -> None:
         try:
             from truestream_engine.persistent import format_traceback as _fmt_tb
             tb_text = _fmt_tb(exc)
@@ -150,11 +182,13 @@ class EngineLogger:
         full_msg = f"{message}: {exc}" if message else str(exc)
         # Keep `message` + `exception` repr stable for tests/IPC consumers;
         # full frames ride in `extra.traceback` for disk + GitHub reports.
+        merged_extra = {"traceback": tb_text}
+        if extra:
+            merged_extra.update(extra)
         try:
-            self._log(level, full_msg, exception=exc,
-                      extra={"traceback": tb_text})
+            self._log(level, full_msg, exception=exc, extra=merged_extra)
         except Exception:
-            self._log(level, full_msg, exception=exc)
+            self._log(level, full_msg, exception=exc, extra=extra)
 
 
 _loggers: dict[str, EngineLogger] = {}

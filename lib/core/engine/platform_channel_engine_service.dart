@@ -250,5 +250,55 @@ class PlatformChannelEngineService implements EngineService {
       return {'success': false};
     }
   }
+
+  @override
+  Future<Map<String, dynamic>> queueStatus() async {
+    try {
+      final result =
+          await _channel.invokeMethod<String>('download/queue_status', {});
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async {
+    try {
+      final result =
+          await _channel.invokeMethod<String>('download/set_concurrency', {
+        'max_concurrent': maxConcurrent,
+      });
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> clearArchive() async {
+    try {
+      final result =
+          await _channel.invokeMethod<String>('download/clear_archive', {});
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> openNotificationSettings() async {
+    try {
+      final result = await _channel
+          .invokeMethod<Map>('system/notification_settings', {});
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
 }
 

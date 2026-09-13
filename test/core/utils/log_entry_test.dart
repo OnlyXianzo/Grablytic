@@ -303,6 +303,121 @@ void main() {
       expect(json['trace_id'], isNull);
       expect(json['duration_ms'], isNull);
       expect(json['exception'], isNull);
+      expect(json['download_id'], isNull);
+    });
+  });
+
+  group('download_id handling', () {
+    test('parses download_id from top-level json field', () {
+      final json = <String, dynamic>{
+        'ts': '2026-07-06T14:30:15.123',
+        'message': 'downloading',
+        'download_id': 'dl-top-level-123',
+      };
+      final entry = LogEntry.fromEngineJson(json);
+      expect(entry.downloadId, equals('dl-top-level-123'));
+    });
+
+    test('parses download_id from context map if top-level is absent', () {
+      final json = <String, dynamic>{
+        'ts': '2026-07-06T14:30:15.123',
+        'message': 'downloading',
+        'context': {'download_id': 'dl-context-456'},
+      };
+      final entry = LogEntry.fromEngineJson(json);
+      expect(entry.downloadId, equals('dl-context-456'));
+    });
+
+    test('parses download_id from extra map if top-level and context are absent', () {
+      final json = <String, dynamic>{
+        'ts': '2026-07-06T14:30:15.123',
+        'message': 'downloading',
+        'extra': {'download_id': 'dl-extra-789'},
+      };
+      final entry = LogEntry.fromEngineJson(json);
+      expect(entry.downloadId, equals('dl-extra-789'));
+    });
+
+    test('prefers top-level download_id over context and extra', () {
+      final json = <String, dynamic>{
+        'ts': '2026-07-06T14:30:15.123',
+        'message': 'downloading',
+        'download_id': 'dl-top',
+        'context': {'download_id': 'dl-ctx'},
+        'extra': {'download_id': 'dl-ext'},
+      };
+      final entry = LogEntry.fromEngineJson(json);
+      expect(entry.downloadId, equals('dl-top'));
+    });
+
+    test('prefers context download_id over extra when top-level is absent', () {
+      final json = <String, dynamic>{
+        'ts': '2026-07-06T14:30:15.123',
+        'message': 'downloading',
+        'context': {'download_id': 'dl-ctx'},
+        'extra': {'download_id': 'dl-ext'},
+      };
+      final entry = LogEntry.fromEngineJson(json);
+      expect(entry.downloadId, equals('dl-ctx'));
+    });
+
+    test('fallback to getter when instantiated with context map', () {
+      final entry = LogEntry(
+        timestamp: DateTime(2026, 7, 6),
+        level: LogLevel.info,
+        logger: 'test',
+        message: 'download log',
+        context: {'download_id': 'dl-from-context-getter'},
+      );
+      expect(entry.downloadId, equals('dl-from-context-getter'));
+    });
+
+    test('fallback to getter when instantiated with extra map', () {
+      final entry = LogEntry(
+        timestamp: DateTime(2026, 7, 6),
+        level: LogLevel.info,
+        logger: 'test',
+        message: 'download log',
+        extra: {'download_id': 'dl-from-extra-getter'},
+      );
+      expect(entry.downloadId, equals('dl-from-extra-getter'));
+    });
+
+    test('explicit constructor downloadId takes precedence over context and extra', () {
+      final entry = LogEntry(
+        timestamp: DateTime(2026, 7, 6),
+        level: LogLevel.info,
+        logger: 'test',
+        message: 'download log',
+        downloadId: 'dl-explicit',
+        context: {'download_id': 'dl-context'},
+        extra: {'download_id': 'dl-extra'},
+      );
+      expect(entry.downloadId, equals('dl-explicit'));
+    });
+
+    test('toJson includes download_id when present', () {
+      final entry = LogEntry(
+        timestamp: DateTime.utc(2026, 7, 6, 14, 30, 15, 123),
+        level: LogLevel.info,
+        logger: 'downloader',
+        message: 'in progress',
+        downloadId: 'dl-json-123',
+      );
+      final json = entry.toJson();
+      expect(json['download_id'], equals('dl-json-123'));
+    });
+
+    test('toJson includes null download_id when absent', () {
+      final entry = LogEntry(
+        timestamp: DateTime.utc(2026, 7, 6, 14, 30, 15, 123),
+        level: LogLevel.info,
+        logger: 'sys',
+        message: 'no download',
+      );
+      final json = entry.toJson();
+      expect(json.containsKey('download_id'), isTrue);
+      expect(json['download_id'], isNull);
     });
   });
 }

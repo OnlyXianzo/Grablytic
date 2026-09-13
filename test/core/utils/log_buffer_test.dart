@@ -9,6 +9,7 @@ LogEntry _entry({
   String message = 'test message',
   String source = 'ui',
   String? exception,
+  String? downloadId,
 }) {
   return LogEntry(
     timestamp: timestamp ?? DateTime(2026, 7, 6),
@@ -17,6 +18,7 @@ LogEntry _entry({
     message: message,
     source: source,
     exception: exception,
+    downloadId: downloadId,
   );
 }
 
@@ -353,6 +355,221 @@ void main() {
       final buffer = LogBuffer();
       buffer.dispose();
       expect(() => buffer.dispose(), returnsNormally);
+    });
+  });
+
+  group('filtered with downloadId', () {
+    test('returns only entries matching the specified downloadId', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(message: 'dl1-start', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'dl2-start', downloadId: 'dl-2'));
+      buffer.add(_entry(message: 'global-log'));
+      buffer.add(_entry(message: 'dl1-progress', downloadId: 'dl-1'));
+
+      final dl1Entries = buffer.filtered(downloadId: 'dl-1');
+      expect(dl1Entries, hasLength(2));
+      expect(dl1Entries.map((e) => e.message).toList(),
+          equals(['dl1-start', 'dl1-progress']));
+
+      final dl2Entries = buffer.filtered(downloadId: 'dl-2');
+      expect(dl2Entries, hasLength(1));
+      expect(dl2Entries.single.message, equals('dl2-start'));
+
+      final nonExistent = buffer.filtered(downloadId: 'non-existent');
+      expect(nonExistent, isEmpty);
+    });
+
+    test('combines downloadId filter with minLevel and search', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(
+          level: LogLevel.info,
+          message: 'dl1 info msg',
+          downloadId: 'dl-1'));
+      buffer.add(_entry(
+          level: LogLevel.warn,
+          message: 'dl1 warn failure',
+          downloadId: 'dl-1'));
+      buffer.add(_entry(
+          level: LogLevel.error,
+          message: 'dl1 error crash',
+          downloadId: 'dl-1'));
+      buffer.add(_entry(
+          level: LogLevel.error,
+          message: 'dl2 error crash',
+          downloadId: 'dl-2'));
+
+      final res = buffer.filtered(
+        downloadId: 'dl-1',
+        minLevel: LogLevel.warn,
+        search: 'crash',
+      );
+      expect(res, hasLength(1));
+      expect(res.single.message, equals('dl1 error crash'));
+    });
+  });
+
+  group('getEntriesForDownload', () {
+    test('returns empty list for unknown downloadId', () {
+      final buffer = LogBuffer();
+      expect(buffer.getEntriesForDownload('unknown'), isEmpty);
+    });
+
+    test('returns scoped entries for downloadId', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(message: 'a', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'b', downloadId: 'dl-2'));
+      buffer.add(_entry(message: 'c', downloadId: 'dl-1'));
+
+      final entries = buffer.getEntriesForDownload('dl-1');
+      expect(entries, hasLength(2));
+      expect(entries.map((e) => e.message).toList(), equals(['a', 'c']));
+    });
+
+    test('respects minLevel parameter', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(
+          level: LogLevel.debug, message: 'dbg', downloadId: 'dl-1'));
+      buffer.add(_entry(
+          level: LogLevel.info, message: 'inf', downloadId: 'dl-1'));
+      buffer.add(_entry(
+          level: LogLevel.warn, message: 'wrn', downloadId: 'dl-1'));
+
+      final entries =
+          buffer.getEntriesForDownload('dl-1', minLevel: LogLevel.info);
+      expect(entries, hasLength(2));
+      expect(entries.map((e) => e.message).toList(), equals(['inf', 'wrn']));
+    });
+
+    test('respects limit parameter returning latest entries', () {
+      final buffer = LogBuffer();
+      for (var i = 1; i <= 5; i++) {
+        buffer.add(_entry(message: 'msg-$i', downloadId: 'dl-1'));
+      }
+
+      final entries = buffer.getEntriesForDownload('dl-1', limit: 3);
+      expect(entries, hasLength(3));
+      expect(entries.map((e) => e.message).toList(),
+          equals(['msg-3', 'msg-4', 'msg-5']));
+    });
+  });
+
+  group('per-download eviction and retention', () {
+    test('enforces maxEntriesPerDownload capping per download', () {
+      final buffer = LogBuffer(maxEntriesPerDownload: 3);
+      for (var i = 1; i <= 5; i++) {
+        buffer.add(_entry(message: 'dl1-$i', downloadId: 'dl-1'));
+      }
+      buffer.add(_entry(message: 'dl2-1', downloadId: 'dl-2'));
+
+      final dl1Entries = buffer.getEntriesForDownload('dl-1');
+      expect(dl1Entries, hasLength(3));
+      expect(dl1Entries.map((e) => e.message).toList(),
+          equals(['dl1-3', 'dl1-4', 'dl1-5']));
+
+      final dl2Entries = buffer.getEntriesForDownload('dl-2');
+      expect(dl2Entries, hasLength(1));
+      expect(dl2Entries.single.message, equals('dl2-1'));
+    });
+
+    test('enforces maxRetainedDownloads via LRU eviction', () {
+      final buffer = LogBuffer(maxRetainedDownloads: 2);
+      buffer.add(_entry(message: 'dl1-1', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'dl2-1', downloadId: 'dl-2'));
+
+      expect(buffer.getEntriesForDownload('dl-1'), isNotEmpty);
+      expect(buffer.getEntriesForDownload('dl-2'), isNotEmpty);
+
+      // Adding a 3rd download exceeds maxRetainedDownloads (2), evicting oldest (dl-1)
+      buffer.add(_entry(message: 'dl3-1', downloadId: 'dl-3'));
+
+      expect(buffer.getEntriesForDownload('dl-1'), isEmpty);
+      expect(buffer.getEntriesForDownload('dl-2'), isNotEmpty);
+      expect(buffer.getEntriesForDownload('dl-3'), isNotEmpty);
+    });
+
+    test('retains download logs even when global buffer overflows', () {
+      final buffer = LogBuffer(
+        maxEntries: 3,
+        maxEntriesPerDownload: 50,
+        maxRetainedDownloads: 10,
+      );
+
+      // Add 2 logs for download-1
+      buffer.add(_entry(message: 'dl1-start', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'dl1-done', downloadId: 'dl-1'));
+
+      // Overflow global buffer with 5 generic logs
+      for (var i = 1; i <= 5; i++) {
+        buffer.add(_entry(message: 'global-$i'));
+      }
+
+      // Global buffer only has the last 3 entries
+      expect(buffer.entries, hasLength(3));
+      expect(buffer.entries.map((e) => e.message).toList(),
+          equals(['global-3', 'global-4', 'global-5']));
+
+      // But download-1 entries are still retained!
+      final dl1Logs = buffer.getEntriesForDownload('dl-1');
+      expect(dl1Logs, hasLength(2));
+      expect(dl1Logs.map((e) => e.message).toList(),
+          equals(['dl1-start', 'dl1-done']));
+
+      // And filtered(downloadId: 'dl-1') retrieves them
+      final filteredDl1 = buffer.filtered(downloadId: 'dl-1');
+      expect(filteredDl1, hasLength(2));
+      expect(filteredDl1.map((e) => e.message).toList(),
+          equals(['dl1-start', 'dl1-done']));
+    });
+  });
+
+  group('streamForDownload', () {
+    test('emits only entries matching downloadId', () async {
+      final buffer = LogBuffer();
+      final emitted = <LogEntry>[];
+      final sub = buffer.streamForDownload('dl-stream').listen(emitted.add);
+
+      buffer.add(_entry(message: 'ignore me'));
+      buffer.add(_entry(message: 'other dl', downloadId: 'dl-other'));
+      buffer.add(_entry(message: 'stream entry 1', downloadId: 'dl-stream'));
+      buffer.add(_entry(message: 'stream entry 2', downloadId: 'dl-stream'));
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(emitted, hasLength(2));
+      expect(emitted[0].message, equals('stream entry 1'));
+      expect(emitted[1].message, equals('stream entry 2'));
+
+      await sub.cancel();
+    });
+  });
+
+  group('clearDownload and clear', () {
+    test('clearDownload removes only the targeted download entries', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(message: 'dl1', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'dl2', downloadId: 'dl-2'));
+
+      expect(buffer.getEntriesForDownload('dl-1'), hasLength(1));
+      expect(buffer.getEntriesForDownload('dl-2'), hasLength(1));
+
+      buffer.clearDownload('dl-1');
+
+      expect(buffer.getEntriesForDownload('dl-1'), isEmpty);
+      expect(buffer.getEntriesForDownload('dl-2'), hasLength(1));
+    });
+
+    test('clear empties both global entries and per-download storage', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(message: 'dl1', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'global'));
+
+      expect(buffer.entries, hasLength(2));
+      expect(buffer.getEntriesForDownload('dl-1'), hasLength(1));
+
+      buffer.clear();
+
+      expect(buffer.entries, isEmpty);
+      expect(buffer.getEntriesForDownload('dl-1'), isEmpty);
     });
   });
 }

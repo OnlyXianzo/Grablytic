@@ -231,6 +231,19 @@ def test_embed_thumbnail_webm_coerced_to_mkv():
     assert opts.get("merge_output_format") == "mkv"
 
 
+def test_embed_thumbnail_keeps_sidecar_for_offline_ui():
+    # Regression (task 03): already_have_thumbnail must be True so yt-dlp
+    # keeps the writethumbnail sidecar after embedding. The flag only
+    # controls post-embed deletion (EmbedThumbnailPP.run), never the embed
+    # itself — with False (the old `cfg.get("writethumbnail")` lookup, a key
+    # that exists nowhere in DEFAULT_CFG/Dart) every sidecar was deleted and
+    # Library could never render thumbnails offline.
+    opts = build_ydl_opts(config={"embedthumbnail": True, "addmetadata": False})
+    pps = opts.get("postprocessors", [])
+    embed = next(pp for pp in pps if pp.get("key") == "EmbedThumbnail")
+    assert embed.get("already_have_thumbnail") is True
+
+
 def test_subtitles_embedded():
     opts = build_ydl_opts(config={
         "writesubtitles": True,

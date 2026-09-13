@@ -182,7 +182,11 @@ def build_ydl_opts(
     if cfg.get("geo_bypass"):
         opts["geo_bypass"] = True
 
-    if cfg.get("use_archive"):
+    # ignore_archive wins over use_archive: redownload-after-delete and
+    # explicit fresh redownloads must actually fetch instead of hitting the
+    # "already recorded in the archive" skip (Seal #2065 trap). Scoped to a
+    # single call — never flips the global preference.
+    if cfg.get("use_archive") and not cfg.get("ignore_archive"):
         import os as _os
 
         archive = cfg.get("archive_path") or _os.path.join(
@@ -317,9 +321,16 @@ def build_ydl_opts(
                 })
 
         if cfg.get("embedthumbnail"):
+            # already_have_thumbnail=True keeps the sidecar thumbnail file on
+            # disk after embedding. The flag ONLY controls post-embed deletion
+            # (EmbedThumbnailPP.run → _delete_downloaded_files when False) —
+            # embedding itself always happens. Keeping the sidecar is what
+            # lets Library render thumbnails offline/privacy-first and lets
+            # downloader.py report a local thumbnail_path (verified against
+            # installed yt-dlp postprocessor/embedthumbnail.py).
             pp.append({
                 "key": "EmbedThumbnail",
-                "already_have_thumbnail": bool(cfg.get("writethumbnail", False)),
+                "already_have_thumbnail": True,
             })
 
         if cfg.get("split_chapters"):
@@ -351,7 +362,15 @@ def build_ydl_opts(
         opts["progress_hooks"] = [build_progress_hook(progress_queue, download_id or "", event_callback)]
         opts["postprocessor_hooks"] = [build_postprocessor_hook(progress_queue, download_id or "", event_callback)]
 
-    opts["continuedl"] = True
+    # force_overwrite (completed-download redownload): --force-overwrites
+    # semantics per yt-dlp manpage — implies --no-continue so an intact
+    # existing file is actually re-fetched instead of hitting the
+    # "has already been downloaded" skip. Default stays resume-capable.
+    if cfg.get("force_overwrite"):
+        opts["overwrites"] = True
+        opts["continuedl"] = False
+    else:
+        opts["continuedl"] = True
 
     # Fragment + socket tuning. These config keys were accepted for months
     # but never applied (dead settings — verified against yt-dlp's

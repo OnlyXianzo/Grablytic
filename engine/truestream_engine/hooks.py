@@ -71,7 +71,7 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                 while _milestones and pct >= _milestones[0]:
                     hit = _milestones.pop(0)
                     try:
-                        _log.info(f"reached {hit}% ({downloaded}/{total} bytes)")
+                        _log.info(f"reached {hit}% ({downloaded}/{total} bytes)", extra={"download_id": download_id})
                     except Exception:
                         pass
             event_json = json.dumps({

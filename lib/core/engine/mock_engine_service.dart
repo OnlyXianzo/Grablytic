@@ -338,6 +338,28 @@ class MockEngineService implements EngineService {
   Future<Map<String, dynamic>> requestNotificationPermission() async =>
       {'success': false, 'supported': false};
 
+  @override
+  Future<Map<String, dynamic>> queueStatus() async => {
+        'success': true,
+        'active': <String>[],
+        'queued': <String>[],
+        'max_concurrent': 2,
+      };
+
+  @override
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async => {
+        'success': true,
+        'max_concurrent': maxConcurrent.clamp(1, 5),
+      };
+
+  @override
+  Future<Map<String, dynamic>> clearArchive() async =>
+      {'success': true, 'removed': false, 'path': null};
+
+  @override
+  Future<Map<String, dynamic>> openNotificationSettings() async =>
+      {'success': false, 'supported': false};
+
   void dispose() {
     _progressController.close();
   }

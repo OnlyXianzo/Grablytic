@@ -1,8 +1,13 @@
+import 'dart:io' show File;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
+
+const _uuid = Uuid();
 
 class DownloadItem {
   final String id;
@@ -22,6 +27,9 @@ class DownloadItem {
   final String? stageLabel;
   final String? thumbnailUrl;
   final String? filePath;
+  /// Local thumbnail sidecar file path reported by the engine finished
+  /// event (task 03). Preferred over [thumbnailUrl] for Library rendering.
+  final String? thumbnailPath;
   final DateTime addedAt;
   final String? fileSize;
   final String? completedDate;
@@ -45,6 +53,7 @@ class DownloadItem {
     this.stage,
     this.stageLabel,
     this.thumbnailUrl,
+    this.thumbnailPath,
     this.filePath,
     DateTime? addedAt,
     this.fileSize,
@@ -69,6 +78,7 @@ class DownloadItem {
     String? stageLabel,
     bool clearStageLabel = false,
     String? thumbnailUrl,
+    String? thumbnailPath,
     String? filePath,
     String? fileSize,
     String? completedDate,
@@ -92,6 +102,7 @@ class DownloadItem {
       stage: clearStage ? null : (stage ?? this.stage),
       stageLabel: clearStageLabel ? null : (stageLabel ?? this.stageLabel),
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      thumbnailPath: thumbnailPath ?? this.thumbnailPath,
       filePath: filePath ?? this.filePath,
       addedAt: addedAt,
       fileSize: fileSize ?? this.fileSize,
@@ -115,9 +126,38 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       state.where((d) => d.status == 'completed').toList();
   List<DownloadItem> get inProgress =>
       state.where((d) => d.status == 'downloading').toList();
+  List<DownloadItem> get queuedItems =>
+      state.where((d) => d.status == 'queued').toList();
 
   bool isDownloading(String url) {
     return state.any((d) => d.url == url && d.status == 'downloading');
+  }
+
+  /// True when the URL has any live slot (downloading, pending, or queued).
+  /// Guards redownload-while-active collisions (engine also rejects with
+  /// ERROR_ALREADY_ACTIVE as backstop).
+  bool isActive(String url) {
+    return state.any((d) =>
+        d.url == url &&
+        (d.status == 'downloading' ||
+            d.status == 'pending' ||
+            d.status == 'queued'));
+  }
+
+  bool isActiveId(String id) {
+    return state.any((d) =>
+        d.id == id &&
+        (d.status == 'downloading' ||
+            d.status == 'pending' ||
+            d.status == 'queued'));
+  }
+
+  /// Push the user's concurrency preference to the engine backstop
+  /// (desktop JSON-RPC + Android Chaquopy handlers; never throws).
+  Future<void> syncConcurrency(int maxConcurrent) async {
+    try {
+      await _engine.setConcurrency(maxConcurrent);
+    } catch (_) {}
   }
 
   void addDownload(DownloadItem item) {
@@ -134,8 +174,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           // Progress events (including per-stream completions) must never
           // flip status to 'completed' — only the terminal 'finished' event
           // does that (after FFmpeg merge + post-processing). Hold at 99%.
+          // Queued items promoted by the engine arrive here first.
           d.copyWith(
-            status: (d.status == 'downloading' || d.status == 'pending')
+            status: (d.status == 'downloading' ||
+                    d.status == 'pending' ||
+                    d.status == 'queued')
                 ? 'downloading'
                 : d.status,
             progress: progress.clamp(0.0, 0.99),
@@ -158,7 +201,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
     final eventType = event['event'] as String?;
 
-    if (eventType == 'downloading') {
+    if (eventType == 'queued') {
+      // Engine backstop parked this id (at-limit). Surface queue position
+      // so the card can render "Queued #N" instead of a stalled 0%.
+      state = [
+        for (final d in state)
+          if (d.id != downloadId)
+            d
+          else
+            d.copyWith(status: 'queued'),
+      ];
+    } else if (eventType == 'downloading') {
       final downloaded = event['downloaded_bytes'] as int? ?? 0;
       final total = event['total_bytes'] as int? ?? 0;
       final progress = total > 0 ? downloaded / total : 0.0;
@@ -212,6 +265,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     } else if (eventType == 'finished') {
       final filesize = event['filesize_bytes'] as int? ?? 0;
       final filePath = event['file_path'] as String?;
+      final thumbnailPath = event['thumbnail_path'] as String?;
       final sizeStr = _formatFilesize(filesize);
       // Terminal outcome — one line per download (never per-progress) so
       // diagnostics reports always show what happened. ID + outcome only,
@@ -230,6 +284,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               downloadedBytes: filesize,
               totalBytes: filesize,
               filePath: filePath ?? d.filePath,
+              thumbnailPath: thumbnailPath ?? d.thumbnailPath,
               speed: 0,
               eta: -1,
               clearStage: true,
@@ -306,6 +361,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         progress: item.progress,
         timestamp: item.addedAt.toIso8601String(),
         thumbnailUrl: item.thumbnailUrl,
+        thumbnailPath: item.thumbnailPath,
       );
       DownloadHistoryDb.instance.insert(record).catchError((_) => 0);
     } catch (_) {}
@@ -323,10 +379,40 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void retryDownload(String id) {
+    redownload(id, fresh: false);
+  }
+
+  /// Redownload a terminal item reusing the same id (history-row stability).
+  /// Terminal-only: active (downloading/pending/queued) ids are refused so
+  /// the engine never sees an id collision (orphaned thread + interleaved
+  /// progress under one id).
+  ///
+  /// [fresh] (completed downloads): merges `force_overwrite: true` +
+  /// `ignore_archive: true` into the stored config so an intact file is
+  /// actually re-fetched instead of hitting the "already downloaded" skip
+  /// or the archive skip (Seal #2065 trap). Failed/cancelled retries keep
+  /// resume-capable defaults so partial `.part` data is reused.
+  void redownload(String id, {bool fresh = false}) {
     final index = state.indexWhere((d) => d.id == id);
     if (index == -1) return;
 
     final item = state[index];
+    // Same-id reuse is only safe from a terminal state. The engine rejects
+    // active-id restarts (ERROR_ALREADY_ACTIVE); guard here too so the UI
+    // explains instead of silently failing.
+    if (item.status == 'downloading' ||
+        item.status == 'pending' ||
+        item.status == 'queued') {
+      AppLogger.warn('Retry blocked: $id is still active (${item.status})',
+          tag: 'download');
+      return;
+    }
+
+    final config = Map<String, dynamic>.from(item.config ?? <String, dynamic>{});
+    if (fresh) {
+      config['force_overwrite'] = true;
+      config['ignore_archive'] = true;
+    }
 
     state = [
       for (final d in state)
@@ -342,15 +428,122 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             eta: -1,
             clearStage: true,
             clearStageLabel: true,
+            config: config,
           ),
     ];
 
     _engine.startDownload(
       url: item.url,
       downloadId: id,
-      config: item.config ?? <String, dynamic>{},
+      config: config,
       networkType: item.networkType ?? 'wifi',
-    );
+    ).then((result) {
+      // Engine backstop may park this as queued (at-limit): reflect it so
+      // the card renders Queued instead of a stalled 0%.
+      if (result['queued'] == true) {
+        state = [
+          for (final d in state)
+            if (d.id != id) d else d.copyWith(status: 'queued'),
+        ];
+      }
+      if (result['success'] != true &&
+          result['error_type'] == 'ERROR_ALREADY_ACTIVE') {
+        AppLogger.warn('Redownload rejected: $id already active',
+            tag: 'download');
+      }
+    }).catchError((_) {});
+  }
+
+  /// "Extract audio" (source re-fetch variant): enqueues a NEW audio-only
+  /// download of the same URL (best audio → single encode from source).
+  /// Returns the new download id, or null when the source item is unknown.
+  /// Local-file extraction (zero bandwidth) is the follow-up; this path
+  /// reuses the proven pipeline and needs no ffmpeg-direct work.
+  Future<String?> downloadAudioFromSource(String id) async {
+    final index = state.indexWhere((d) => d.id == id);
+    if (index == -1) return null;
+    final item = state[index];
+    final newId = _uuid.v4();
+    final config = Map<String, dynamic>.from(item.config ?? <String, dynamic>{});
+    config['audio_only'] = true;
+    // Fresh artifact: never hit the completed-file skip or archive skip.
+    config['force_overwrite'] = true;
+    config['ignore_archive'] = true;
+    Map<String, dynamic> result;
+    try {
+      result = await _engine.startDownload(
+        url: item.url,
+        downloadId: newId,
+        config: config,
+        networkType: item.networkType ?? 'wifi',
+      );
+    } catch (_) {
+      return null;
+    }
+    if (result['success'] != true) return null;
+    addDownload(DownloadItem(
+      id: newId,
+      title: '${item.title} (audio)',
+      url: item.url,
+      status: result['queued'] == true ? 'queued' : 'downloading',
+      config: config,
+      networkType: item.networkType ?? 'wifi',
+      thumbnailUrl: item.thumbnailUrl,
+    ));
+    return newId;
+  }
+
+  /// Remove the history row only — the file on disk is left untouched.
+  Future<void> removeFromHistory(String id) async {
+    state = state.where((d) => d.id != id).toList();
+    try {
+      await DownloadHistoryDb.instance.delete(id);
+    } catch (_) {}
+    AppLogger.info('Removed from history: $id', tag: 'download');
+  }
+
+  /// Delete the downloaded file (if present and the item is terminal) AND
+  /// remove the history row. Active items are refused — Cancel first.
+  /// Returns true when the row was removed. Never throws.
+  Future<bool> deleteFileAndHistory(String id) async {
+    final index = state.indexWhere((d) => d.id == id);
+    if (index == -1) return false;
+    final item = state[index];
+    if (item.status == 'downloading' ||
+        item.status == 'pending' ||
+        item.status == 'queued') {
+      AppLogger.warn('Delete blocked: $id is still active (${item.status})',
+          tag: 'download');
+      return false;
+    }
+    var deletedFile = false;
+    final path = item.filePath;
+    if (path != null && path.isNotEmpty) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          deletedFile = true;
+        }
+      } catch (_) {}
+    }
+    state = state.where((d) => d.id != id).toList();
+    try {
+      await DownloadHistoryDb.instance.delete(id);
+    } catch (_) {}
+    AppLogger.info(
+        'Deleted ${deletedFile ? 'file + ' : ''}history: $id', tag: 'download');
+    return true;
+  }
+
+  /// Clear the engine download-archive file (recovery when re-downloads are
+  /// skipped as "already recorded in the archive"). Never throws.
+  Future<Map<String, dynamic>> clearArchive() async {
+    try {
+      return await _engine.clearArchive();
+    } catch (_) {
+      return {'success': false};
+    }
   }
 
   void cancelDownload(String id) {

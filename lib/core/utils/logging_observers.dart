@@ -276,6 +276,14 @@ class TracedEngineService implements EngineService {
       _traced('download/set_concurrency', () => _inner.setConcurrency(maxConcurrent));
 
   @override
+  Future<Map<String, dynamic>> clearArchive() =>
+      _traced('download/clear_archive', () => _inner.clearArchive());
+
+  @override
+  Future<Map<String, dynamic>> openNotificationSettings() => _traced(
+      'system/notification_settings', () => _inner.openNotificationSettings());
+
+  @override
   Future<Map<String, dynamic>> getFormats({
     required String url,
     required Map<String, dynamic> config,

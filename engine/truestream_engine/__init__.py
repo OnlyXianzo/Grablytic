@@ -3,7 +3,14 @@ from truestream_engine.config import DEFAULT_CFG
 from truestream_engine.opts_builder import build_ydl_opts
 from truestream_engine.format_selector import build_format_string
 from truestream_engine.site_profiles import load_site_profiles
-from truestream_engine.downloader import download_thread, start_download, cancel_download
+from truestream_engine.downloader import (
+    download_thread,
+    start_download,
+    cancel_download,
+    get_queue_status,
+    set_max_concurrent,
+    clear_download_archive,
+)
 from truestream_engine.hooks import build_progress_hook
 from truestream_engine.errors import classify_error, TrueStreamError
 from truestream_engine.formats import get_formats
@@ -31,6 +38,9 @@ __all__ = [
     "download_thread",
     "start_download",
     "cancel_download",
+    "get_queue_status",
+    "set_max_concurrent",
+    "clear_download_archive",
     "build_progress_hook",
     "classify_error",
     "TrueStreamError",

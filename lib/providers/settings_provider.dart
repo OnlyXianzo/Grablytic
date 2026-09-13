@@ -78,6 +78,10 @@ class AppSettings {
   final bool downloadArchive;
   final bool archiveByFolder;
   final bool hasSeenBatteryPrompt;
+  /// Max simultaneous downloads (queue gate). 2 default (Seal-proven 3,
+  /// YTDLnis default 1, 10 crash-prone); allowed 1–5, enforced in engine
+  /// backstop + Dart queued UI.
+  final int maxConcurrentDownloads;
 
   const AppSettings({
     this.wifiOnly = false,
@@ -120,6 +124,7 @@ class AppSettings {
     this.sponsorBlockCats = const ['sponsor'],
     this.downloadArchive = false,
     this.archiveByFolder = true,
+    this.maxConcurrentDownloads = 2,
   });
 
   static const Object _sentinel = Object();
@@ -165,6 +170,7 @@ class AppSettings {
     List<String>? sponsorBlockCats,
     bool? downloadArchive,
     bool? archiveByFolder,
+    int? maxConcurrentDownloads,
   }) {
     return AppSettings(
       wifiOnly: wifiOnly ?? this.wifiOnly,
@@ -207,6 +213,7 @@ class AppSettings {
       sponsorBlockCats: sponsorBlockCats ?? this.sponsorBlockCats,
       downloadArchive: downloadArchive ?? this.downloadArchive,
       archiveByFolder: archiveByFolder ?? this.archiveByFolder,
+      maxConcurrentDownloads: maxConcurrentDownloads ?? this.maxConcurrentDownloads,
     );
   }
 }
@@ -270,6 +277,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final sponsorBlockCats = _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
     final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
     final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
+    final maxConcurrentDownloads =
+        (_prefs.getInt('maxConcurrentDownloads') ?? 2).clamp(1, 5);
     final useCookies = _prefs.getBool('useCookies') ?? false;
     final cookieProfilesJson = _prefs.getStringList('cookieProfiles') ?? [];
     final cookieProfiles = <Map<String, dynamic>>[];
@@ -320,6 +329,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       useGridView: useGridView,
       downloadArchive: downloadArchive,
       archiveByFolder: archiveByFolder,
+      maxConcurrentDownloads: maxConcurrentDownloads,
     );
   }
 
@@ -586,6 +596,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setArchiveByFolder(bool value) {
     _prefs.setBool('archiveByFolder', value);
     state = state.copyWith(archiveByFolder: value);
+  }
+
+  void setMaxConcurrentDownloads(int value) {
+    final clamped = value.clamp(1, 5);
+    _prefs.setInt('maxConcurrentDownloads', clamped);
+    state = state.copyWith(maxConcurrentDownloads: clamped);
   }
 
   Future<void> setCustomTemplates(List<String> templates) async {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../features/home/screens/media_preview_screen.dart';
+import '../../../features/home/widgets/download_overflow_menu.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/settings_provider.dart';
@@ -499,7 +500,10 @@ class _LibraryGridCard extends ConsumerWidget {
                   fit: StackFit.expand,
                   children: [
                     _ThumbnailImage(
-                      url: item.thumbnailUrl,
+                      // Local sidecar first (offline/privacy-first), remote
+                      // URL as fallback. _ThumbnailImage already handles
+                      // both + missing-file fallback (task 03).
+                      url: item.thumbnailPath ?? item.thumbnailUrl,
                       fallback: Center(
                         child: isError
                             ? Icon(
@@ -728,7 +732,9 @@ class _LibraryItem extends ConsumerWidget {
                 fit: StackFit.expand,
                 children: [
                   _ThumbnailImage(
-                    url: item.thumbnailUrl,
+                    // Local sidecar first (offline/privacy-first), remote
+                    // URL as fallback (task 03).
+                    url: item.thumbnailPath ?? item.thumbnailUrl,
                     fallback: Center(
                       child: isDownloading
                           ? const SizedBox.shrink()
@@ -852,13 +858,9 @@ class _LibraryItem extends ConsumerWidget {
                             tooltip: 'Preview',
                           ),
                         ),
-                      Semantics(
-                        label: 'More options',
-                        child: Icon(
-                          Icons.more_vert,
-                          size: 18,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      DownloadOverflowButton(
+                        item: item,
+                        colorScheme: colorScheme,
                       ),
                     ],
                   ),

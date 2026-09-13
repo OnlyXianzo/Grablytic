@@ -12,13 +12,117 @@ from truestream_engine.hooks import _emit_event
 from truestream_engine.paths import get_paths
 from truestream_engine.playlist import detect_playlist
 from truestream_engine.config import coerce_config
-from truestream_engine.logger import get_logger, set_global_event_callback
+from truestream_engine.logger import (
+    download_context,
+    get_logger,
+    set_global_event_callback,
+    EngineLogger,
+)
 
 
 log = get_logger("truestream_engine.downloader")
 
 _active_downloads: dict[str, dict] = {}
 _downloads_lock = threading.Lock()
+
+# ── Download queue / concurrency gate (Milestone 1) ──────────────────────
+# Verified approach: default 2 concurrent (Seal-proven 3, YTDLnis default 1,
+# 10 proven crash-prone), user-configurable 1–5, FIFO promotion, Dart owns
+# admission UI while this semaphore is the airtight backstop for direct
+# engine callers. Single-ID FGS collapse + GIL/FFmpeg oversubscription are
+# the failure modes this prevents.
+_DEFAULT_MAX_CONCURRENT = 2
+_ABSOLUTE_MAX_CONCURRENT = 5
+_max_concurrent = _DEFAULT_MAX_CONCURRENT
+# FIFO of parked entries: each holds download_id/url/config/network_type/
+# progress_queue/result_queue/cancel_event/event_callback/queued_at.
+_pending_queue: list[dict] = []
+
+
+def set_max_concurrent(n) -> dict:
+    """Set max simultaneous downloads, clamped to 1–5. Returns new limit."""
+    global _max_concurrent
+    try:
+        n = int(n)
+    except Exception:
+        n = _DEFAULT_MAX_CONCURRENT
+    _max_concurrent = max(1, min(_ABSOLUTE_MAX_CONCURRENT, n))
+    return {"success": True, "max_concurrent": _max_concurrent}
+
+
+def _running_count() -> int:
+    """Active (non-terminal) downloads. Caller should hold _downloads_lock
+    or accept a best-effort snapshot."""
+    count = 0
+    for info in _active_downloads.values():
+        if not info.get("finished_at"):
+            count += 1
+    return count
+
+
+def get_queue_status() -> dict:
+    with _downloads_lock:
+        return {
+            "active": [did for did, info in _active_downloads.items()
+                       if not info.get("finished_at")],
+            "queued": [e["download_id"] for e in _pending_queue],
+            "max_concurrent": _max_concurrent,
+        }
+
+
+def _spawn_thread(entry: dict) -> threading.Thread:
+    t = threading.Thread(
+        target=download_thread,
+        args=(entry["url"], entry["download_id"], entry["config"],
+              entry["network_type"], entry["progress_queue"],
+              entry["result_queue"], entry["cancel_event"],
+              entry["event_callback"]),
+        daemon=True,
+    )
+    t.start()
+    with _downloads_lock:
+        _active_downloads[entry["download_id"]] = {
+            "cancel_event": entry["cancel_event"],
+            "progress_queue": entry["progress_queue"],
+            "result_queue": entry["result_queue"],
+            "url": entry["url"],
+            "thread": t,
+            "started_at": datetime.now(timezone.utc),
+        }
+    return t
+
+
+def _pump_queue() -> None:
+    """Promote FIFO-parked entries while slots are free. Runs after any
+    terminal transition and after limit increases."""
+    while True:
+        with _downloads_lock:
+            if _running_count() >= _max_concurrent or not _pending_queue:
+                return
+            entry = _pending_queue.pop(0)
+            if entry["download_id"] in _active_downloads:
+                # Superseded (cancelled/replaced) while parked — skip.
+                continue
+        try:
+            _spawn_thread(entry)
+            if entry.get("event_callback") is not None:
+                try:
+                    _emit_event(entry["event_callback"], json.dumps({
+                        "type": "event",
+                        "event": "downloading",
+                        "download_id": entry["download_id"],
+                        "promoted_from_queue": True,
+                    }))
+                except Exception:
+                    pass
+        except Exception:
+            try:
+                log.error(
+                    f"Queued promotion failed: {entry.get('download_id')}",
+                    extra={"download_id": entry.get("download_id")},
+                )
+            except Exception:
+                pass
 
 
 def _cleanup_loop():
@@ -66,7 +170,9 @@ _PATH_PATTERNS = [
 class YDLogger:
     """yt-dlp logger bridge. Collects error lines and tracks output file paths."""
 
-    def __init__(self):
+    def __init__(self, logger: EngineLogger | None = None, download_id: str | None = None):
+        self.logger = logger if logger is not None else log
+        self.download_id = download_id
         self.errors: list[str] = []
         self.output_files: list[str] = []
 
@@ -83,18 +189,22 @@ class YDLogger:
 
     def debug(self, msg):
         self._extract_path(msg)
-        log.debug(msg)
+        extra = {"download_id": self.download_id} if self.download_id else None
+        self.logger.debug(msg, extra=extra)
 
     def info(self, msg):
         self._extract_path(msg)
-        log.info(msg)
+        extra = {"download_id": self.download_id} if self.download_id else None
+        self.logger.info(msg, extra=extra)
 
     def warning(self, msg):
-        log.warn(msg)
+        extra = {"download_id": self.download_id} if self.download_id else None
+        self.logger.warn(msg, extra=extra)
 
     def error(self, msg):
         self.errors.append(str(msg)[:500])
-        log.error(msg)
+        extra = {"download_id": self.download_id} if self.download_id else None
+        self.logger.error(msg, extra=extra)
 
 
 def _last_known_file_info(prog_q) -> tuple[int, str | None]:
@@ -132,6 +242,45 @@ def _last_known_bytes(prog_q) -> int:
     return bytes_val
 
 
+_THUMB_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _find_thumbnail_path(final_path: str | None, config: dict | None = None) -> str | None:
+    """Locate the writethumbnail sidecar for a finished download.
+
+    yt-dlp writes the thumbnail next to the media file under the media
+    basename with an image extension (``prepare_filename(info, 'thumbnail')``;
+    the EmbedThumbnail PP keeps it only when ``already_have_thumbnail`` is
+    true — see opts_builder). Probe the configured ``thumbnail_format``
+    first, then the other known extensions. Pure filesystem check, never
+    raises — returns None when there is nothing to report.
+    """
+    try:
+        if not final_path or not isinstance(final_path, str):
+            return None
+        if not os.path.isfile(final_path):
+            return None
+        base, _ = os.path.splitext(final_path)
+        preferred = None
+        try:
+            preferred = str((config or {}).get("thumbnail_format") or "").lower().strip()
+        except Exception:
+            preferred = None
+        exts: list[str] = []
+        if preferred:
+            dot = preferred if preferred.startswith(".") else f".{preferred}"
+            if dot in _THUMB_EXTS:
+                exts.append(dot)
+        exts.extend(e for e in _THUMB_EXTS if e not in exts)
+        for ext in exts:
+            candidate = base + ext
+            if candidate != final_path and os.path.isfile(candidate):
+                return candidate
+    except Exception:
+        return None
+    return None
+
+
 def download_thread(
     url: str,
     download_id: str,
@@ -142,124 +291,235 @@ def download_thread(
     cancel_event: threading.Event | None = None,
     event_callback=None,
 ):
-    # Android bridge delivers config as a JSON string (Chaquopy Maps are
-    # live HashMap proxies, not mappings). Coerce before any use.
-    config = coerce_config(config)
-    cancel = cancel_event or threading.Event()
-    prog_q = progress_queue or _queue.Queue()
-    res_q = result_queue or _queue.Queue()
+    with download_context(download_id):
+        # Android bridge delivers config as a JSON string (Chaquopy Maps are
+        # live HashMap proxies, not mappings). Coerce before any use.
+        config = coerce_config(config)
+        cancel = cancel_event or threading.Event()
+        prog_q = progress_queue or _queue.Queue()
+        res_q = result_queue or _queue.Queue()
 
-    with _downloads_lock:
-        # Update in place — start_download() already registered this id with
-        # its thread handle; a full reassignment would drop "thread" and any
-        # fields added by concurrent callers (re-audit #10).
-        existing = _active_downloads.get(download_id, {})
-        existing.update({
-            "cancel_event": cancel,
-            "progress_queue": prog_q,
-            "result_queue": res_q,
-            "url": url,
-            "started_at": datetime.now(timezone.utc),
-        })
-        _active_downloads[download_id] = existing
+        with _downloads_lock:
+            # Update in place — start_download() already registered this id with
+            # its thread handle; a full reassignment would drop "thread" and any
+            # fields added by concurrent callers (re-audit #10).
+            existing = _active_downloads.get(download_id, {})
+            existing.update({
+                "cancel_event": cancel,
+                "progress_queue": prog_q,
+                "result_queue": res_q,
+                "url": url,
+                "started_at": datetime.now(timezone.utc),
+            })
+            _active_downloads[download_id] = existing
 
-    log.set_context(download_id=download_id)
-    try:
-        # Never log raw URLs: share/clipboard links routinely carry
-        # signed query params (sig/lsig). Host + path is enough to
-        # identify the item in diagnostics.
-        safe_url = url.split("?", 1)[0] if isinstance(url, str) else "<url>"
-        log.info(f"Download started: {safe_url}", extra={"download_id": download_id})
+        log.set_context(download_id=download_id)
         try:
-            out_dir = (get_paths().get("output_dir")
-                       or get_paths().get("data_dir") or ".")
-            import shutil as _shutil
-            free_mb = _shutil.disk_usage(out_dir).free // (1024 * 1024)
-            log.info(f"Disk output ({out_dir}): {free_mb}MB free",
-                     extra={"download_id": download_id})
-        except Exception:
-            pass
+            # Never log raw URLs: share/clipboard links routinely carry
+            # signed query params (sig/lsig). Host + path is enough to
+            # identify the item in diagnostics.
+            safe_url = url.split("?", 1)[0] if isinstance(url, str) else "<url>"
+            log.info(f"Download started: {safe_url}", extra={"download_id": download_id})
+            try:
+                out_dir = (get_paths().get("output_dir")
+                           or get_paths().get("data_dir") or ".")
+                import shutil as _shutil
+                free_mb = _shutil.disk_usage(out_dir).free // (1024 * 1024)
+                log.info(f"Disk output ({out_dir}): {free_mb}MB free",
+                         extra={"download_id": download_id})
+            except Exception:
+                pass
 
-        paths = get_paths()
-        ffmpeg_path = paths.get("ffmpeg_path")
-        if not ffmpeg_path or not os.path.isfile(ffmpeg_path) or not os.access(ffmpeg_path, os.X_OK):
-            import shutil
-            if not shutil.which("ffmpeg"):
-                log.error(
-                    f"Cannot start download: FFmpeg binary is missing or not executable ({ffmpeg_path}). "
-                    "Please run bootstrap first.",
+            paths = get_paths()
+            ffmpeg_path = paths.get("ffmpeg_path")
+            if not ffmpeg_path or not os.path.isfile(ffmpeg_path) or not os.access(ffmpeg_path, os.X_OK):
+                import shutil
+                if not shutil.which("ffmpeg"):
+                    log.error(
+                        f"Cannot start download: FFmpeg binary is missing or not executable ({ffmpeg_path}). "
+                        "Please run bootstrap first.",
+                        extra={"download_id": download_id},
+                    )
+                    err_event = json.dumps({
+                        "type": "event",
+                        "event": "error",
+                        "download_id": download_id,
+                        "error_type": "ERROR_FFMPEG_MISSING",
+                        "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
+                        "recoverable": True,
+                    })
+                    if event_callback is not None:
+                        _emit_event(event_callback, err_event)
+                    else:
+                        res_q.put({
+                            "success": False,
+                            "download_id": download_id,
+                            "error_type": "ERROR_FFMPEG_MISSING",
+                            "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
+                        })
+                    return
+
+            opts = build_ydl_opts(
+                config=config,
+                network_type=network_type,
+                progress_queue=prog_q,
+                download_id=download_id,
+                url=url,
+                event_callback=event_callback,
+            )
+
+            if get_paths().get("cache_dir"):
+                opts["paths"] = opts.get("paths", {})
+                opts["paths"]["temp"] = get_paths()["cache_dir"]
+
+            ydl_logger = YDLogger(log, download_id=download_id)
+            opts["logger"] = ydl_logger
+            opts["verbose"] = True
+            # One-line effective config: future "it just sat there" reports can
+            # be triaged from this alone (wrong format? no aria2c? no JS?).
+            try:
+                js_map = opts.get("js_runtimes")
+                js_name = next(iter(js_map), None) if isinstance(js_map, dict) else None
+                log.info(
+                    f"Download config: format={opts.get('format')} "
+                    f"container={opts.get('merge_output_format')} "
+                    f"aria2c={'yes' if 'external_downloader' in opts else 'no'} "
+                    f"js={js_name or 'none'}",
                     extra={"download_id": download_id},
                 )
-                err_event = json.dumps({
+                # Full effective opts (sanitized) at DEBUG, only when the user
+                # enabled verbose: the complete triage picture without spamming
+                # default installs.
+                if config.get("verbose"):
+                    from truestream_engine.persistent import sanitize
+                    log.debug(f"Effective opts: {sanitize(opts)}",
+                              extra={"download_id": download_id})
+            except Exception:
+                pass
+
+            ydl = YoutubeDL(opts)
+
+            def ydl_hook(d):
+                if cancel.is_set():
+                    raise KeyboardInterrupt("Download cancelled by user")
+                return d
+
+            ydl.add_progress_hook(ydl_hook)
+
+            ydl.download([url])
+
+            if cancel.is_set():
+                log.warn(f"Download cancelled: {download_id}", extra={"download_id": download_id})
+                terminal_event = json.dumps({
                     "type": "event",
-                    "event": "error",
+                    "event": "cancelled",
                     "download_id": download_id,
-                    "error_type": "ERROR_FFMPEG_MISSING",
-                    "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
-                    "recoverable": True,
+                    "error_type": "ERROR_CANCELLED",
+                    "error_message": "Download cancelled by user",
                 })
                 if event_callback is not None:
-                    _emit_event(event_callback, err_event)
+                    _emit_event(event_callback, terminal_event)
                 else:
                     res_q.put({
                         "success": False,
                         "download_id": download_id,
-                        "error_type": "ERROR_FFMPEG_MISSING",
-                        "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
+                        "error_type": "ERROR_CANCELLED",
+                        "error_message": "Download cancelled by user",
                     })
-                return
+            else:
+                # ignoreerrors=True lets post-processing failures return
+                # normally — but for a SINGLE video any logger.error means the
+                # output is broken (missing merge, failed embed), while the UI
+                # would otherwise celebrate a 'finished' with no file.
+                # Playlists keep lenient behavior: per-item errors there are
+                # normal (deleted/private entries) and must not fail the batch.
+                # Single = URL is not a playlist AND caller didn't request a
+                # multi-item pull (playlist_items other than "1").
+                try:
+                    is_playlist_url = detect_playlist(url) if isinstance(url, str) else False
+                except Exception:
+                    is_playlist_url = False
+                if opts.get("noplaylist") or config.get("no_playlist") or opts.get("playlist_items") == "1":
+                    single = True
+                elif is_playlist_url:
+                    single = False
+                else:
+                    single = opts.get("playlist_items") in (None, "1")
+                if single and ydl_logger.errors:
+                    last = ydl_logger.errors[-1]
+                    log.error(
+                        f"Post-processing failed, failing item: {last[:200]}",
+                        extra={"download_id": download_id},
+                    )
+                    terminal_event = json.dumps({
+                        "type": "event",
+                        "event": "error",
+                        "download_id": download_id,
+                        "error_type": "ERROR_POSTPROCESS_FAILED",
+                        "error_message": f"Processing failed: {last[:200]}",
+                        "recoverable": True,
+                        "suggests_vpn": False,
+                    })
+                    if event_callback is not None:
+                        _emit_event(event_callback, terminal_event)
+                    else:
+                        res_q.put({
+                            "success": False,
+                            "download_id": download_id,
+                            "error_type": "ERROR_POSTPROCESS_FAILED",
+                            "error_message": f"Processing failed: {last[:200]}",
+                            "recoverable": True,
+                            "suggests_vpn": False,
+                        })
+                    return
+                log.info("Download completed", extra={"download_id": download_id})
+                # Terminal finished event carries the last known byte count and file path
+                # so the UI never zeroes out sizes or file paths (filesize_bytes contract).
+                final_bytes, prog_file = _last_known_file_info(prog_q)
 
-        opts = build_ydl_opts(
-            config=config,
-            network_type=network_type,
-            progress_queue=prog_q,
-            download_id=download_id,
-            url=url,
-            event_callback=event_callback,
-        )
+                final_path = None
+                for p in reversed(ydl_logger.output_files):
+                    if os.path.isfile(p):
+                        final_path = p
+                        break
+                if not final_path and prog_file and os.path.isfile(prog_file):
+                    final_path = prog_file
 
-        if get_paths().get("cache_dir"):
-            opts["paths"] = opts.get("paths", {})
-            opts["paths"]["temp"] = get_paths()["cache_dir"]
+                if final_path and os.path.isfile(final_path):
+                    try:
+                        disk_size = os.path.getsize(final_path)
+                        if disk_size > 0 and (final_bytes <= 0 or disk_size > final_bytes):
+                            final_bytes = disk_size
+                    except Exception:
+                        pass
 
-        ydl_logger = YDLogger()
-        opts["logger"] = ydl_logger
-        opts["verbose"] = True
-        # One-line effective config: future "it just sat there" reports can
-        # be triaged from this alone (wrong format? no aria2c? no JS?).
-        try:
-            js_map = opts.get("js_runtimes")
-            js_name = next(iter(js_map), None) if isinstance(js_map, dict) else None
-            log.info(
-                f"Download config: format={opts.get('format')} "
-                f"container={opts.get('merge_output_format')} "
-                f"aria2c={'yes' if 'external_downloader' in opts else 'no'} "
-                f"js={js_name or 'none'}",
-                extra={"download_id": download_id},
-            )
-            # Full effective opts (sanitized) at DEBUG, only when the user
-            # enabled verbose: the complete triage picture without spamming
-            # default installs.
-            if config.get("verbose"):
-                from truestream_engine.persistent import sanitize
-                log.debug(f"Effective opts: {sanitize(opts)}",
-                          extra={"download_id": download_id})
-        except Exception:
-            pass
+                # Local thumbnail sidecar (writethumbnail output kept via
+                # already_have_thumbnail) so Dart can render Library
+                # thumbnails offline instead of re-fetching remote URLs.
+                thumbnail_path = _find_thumbnail_path(final_path, config)
 
-        ydl = YoutubeDL(opts)
+                terminal_event = json.dumps({
+                    "type": "event",
+                    "event": "finished",
+                    "download_id": download_id,
+                    "filesize_bytes": final_bytes,
+                    "total_bytes": final_bytes,
+                    "file_path": final_path,
+                    "thumbnail_path": thumbnail_path,
+                })
+                if event_callback is not None:
+                    _emit_event(event_callback, terminal_event)
+                else:
+                    res_q.put({
+                        "success": True,
+                        "download_id": download_id,
+                        "filesize_bytes": final_bytes,
+                        "file_path": final_path,
+                        "thumbnail_path": thumbnail_path,
+                    })
 
-        def ydl_hook(d):
-            if cancel.is_set():
-                raise KeyboardInterrupt("Download cancelled by user")
-            return d
-
-        ydl.add_progress_hook(ydl_hook)
-
-        ydl.download([url])
-
-        if cancel.is_set():
-            log.warn(f"Download cancelled: {download_id}")
+        except KeyboardInterrupt:
+            log.warn(f"Download cancelled: {download_id}", extra={"download_id": download_id})
             terminal_event = json.dumps({
                 "type": "event",
                 "event": "cancelled",
@@ -276,164 +536,69 @@ def download_thread(
                     "error_type": "ERROR_CANCELLED",
                     "error_message": "Download cancelled by user",
                 })
-        else:
-            # ignoreerrors=True lets post-processing failures return
-            # normally — but for a SINGLE video any logger.error means the
-            # output is broken (missing merge, failed embed), while the UI
-            # would otherwise celebrate a 'finished' with no file.
-            # Playlists keep lenient behavior: per-item errors there are
-            # normal (deleted/private entries) and must not fail the batch.
-            # Single = URL is not a playlist AND caller didn't request a
-            # multi-item pull (playlist_items other than "1").
-            try:
-                is_playlist_url = detect_playlist(url) if isinstance(url, str) else False
-            except Exception:
-                is_playlist_url = False
-            if opts.get("noplaylist") or config.get("no_playlist") or opts.get("playlist_items") == "1":
-                single = True
-            elif is_playlist_url:
-                single = False
-            else:
-                single = opts.get("playlist_items") in (None, "1")
-            if single and ydl_logger.errors:
-                last = ydl_logger.errors[-1]
-                log.error(f"Post-processing failed, failing item: {last[:200]}")
-                terminal_event = json.dumps({
-                    "type": "event",
-                    "event": "error",
-                    "download_id": download_id,
-                    "error_type": "ERROR_POSTPROCESS_FAILED",
-                    "error_message": f"Processing failed: {last[:200]}",
-                    "recoverable": True,
-                    "suggests_vpn": False,
-                })
-                if event_callback is not None:
-                    _emit_event(event_callback, terminal_event)
-                else:
-                    res_q.put({
-                        "success": False,
-                        "download_id": download_id,
-                        "error_type": "ERROR_POSTPROCESS_FAILED",
-                        "error_message": f"Processing failed: {last[:200]}",
-                        "recoverable": True,
-                        "suggests_vpn": False,
-                    })
-                return
-            log.info("Download completed")
-            # Terminal finished event carries the last known byte count and file path
-            # so the UI never zeroes out sizes or file paths (filesize_bytes contract).
-            final_bytes, prog_file = _last_known_file_info(prog_q)
-
-            final_path = None
-            for p in reversed(ydl_logger.output_files):
-                if os.path.isfile(p):
-                    final_path = p
-                    break
-            if not final_path and prog_file and os.path.isfile(prog_file):
-                final_path = prog_file
-
-            if final_path and os.path.isfile(final_path):
-                try:
-                    disk_size = os.path.getsize(final_path)
-                    if disk_size > 0 and (final_bytes <= 0 or disk_size > final_bytes):
-                        final_bytes = disk_size
-                except Exception:
-                    pass
-
+        except Exception as exc:
+            log.log_exception(exc, f"Download failed: {safe_url}", extra={"download_id": download_id})
+            err = classify_error(exc)
             terminal_event = json.dumps({
                 "type": "event",
-                "event": "finished",
+                "event": "error",
                 "download_id": download_id,
-                "filesize_bytes": final_bytes,
-                "total_bytes": final_bytes,
-                "file_path": final_path,
+                "error_type": err.error_type,
+                "error_message": err.message,
+                "recoverable": err.recoverable,
+                # Drives ErrorRecoveryCard VPN recommendations (re-audit #5).
+                "suggests_vpn": err.suggests_vpn,
             })
             if event_callback is not None:
                 _emit_event(event_callback, terminal_event)
             else:
                 res_q.put({
-                    "success": True,
+                    "success": False,
                     "download_id": download_id,
-                    "filesize_bytes": final_bytes,
-                    "file_path": final_path,
+                    "error_type": err.error_type,
+                    "error_message": err.message,
+                    "recoverable": err.recoverable,
+                    "suggests_vpn": err.suggests_vpn,
                 })
-
-    except KeyboardInterrupt:
-        log.warn(f"Download cancelled: {download_id}")
-        terminal_event = json.dumps({
-            "type": "event",
-            "event": "cancelled",
-            "download_id": download_id,
-            "error_type": "ERROR_CANCELLED",
-            "error_message": "Download cancelled by user",
-        })
-        if event_callback is not None:
-            _emit_event(event_callback, terminal_event)
-        else:
-            res_q.put({
-                "success": False,
-                "download_id": download_id,
-                "error_type": "ERROR_CANCELLED",
-                "error_message": "Download cancelled by user",
-            })
-    except Exception as exc:
-        log.log_exception(exc, f"Download failed: {safe_url}")
-        err = classify_error(exc)
-        terminal_event = json.dumps({
-            "type": "event",
-            "event": "error",
-            "download_id": download_id,
-            "error_type": err.error_type,
-            "error_message": err.message,
-            "recoverable": err.recoverable,
-            # Drives ErrorRecoveryCard VPN recommendations (re-audit #5).
-            "suggests_vpn": err.suggests_vpn,
-        })
-        if event_callback is not None:
-            _emit_event(event_callback, terminal_event)
-        else:
-            res_q.put({
-                "success": False,
-                "download_id": download_id,
-                "error_type": err.error_type,
-                "error_message": err.message,
-                "recoverable": err.recoverable,
-                "suggests_vpn": err.suggests_vpn,
-            })
-    except BaseException as exc:
-        # SystemExit / GeneratorExit / KeyboardInterrupt-outside-cancel and
-        # friends bypass `except Exception`. Without this the item rotted as
-        # "downloading" forever with zero diagnostics (ghost downloads).
-        kind = type(exc).__name__
-        try:
-            log.error(f"Download aborted ({kind}): {download_id}")
-        except Exception:
-            pass
-        terminal_event = json.dumps({
-            "type": "event",
-            "event": "error",
-            "download_id": download_id,
-            "error_type": "ERROR_DOWNLOADER_CRASH",
-            "error_message": f"Downloader stopped unexpectedly ({kind})",
-            "recoverable": True,
-            "suggests_vpn": False,
-        })
-        if event_callback is not None:
-            _emit_event(event_callback, terminal_event)
-        else:
-            res_q.put({
-                "success": False,
+        except BaseException as exc:
+            # SystemExit / GeneratorExit / KeyboardInterrupt-outside-cancel and
+            # friends bypass `except Exception`. Without this the item rotted as
+            # "downloading" forever with zero diagnostics (ghost downloads).
+            kind = type(exc).__name__
+            try:
+                log.error(f"Download aborted ({kind}): {download_id}", extra={"download_id": download_id})
+            except Exception:
+                pass
+            terminal_event = json.dumps({
+                "type": "event",
+                "event": "error",
                 "download_id": download_id,
                 "error_type": "ERROR_DOWNLOADER_CRASH",
                 "error_message": f"Downloader stopped unexpectedly ({kind})",
                 "recoverable": True,
                 "suggests_vpn": False,
             })
-    finally:
-        log.clear_context()
-        with _downloads_lock:
-            if download_id in _active_downloads:
-                _active_downloads[download_id]["finished_at"] = datetime.now(timezone.utc)
+            if event_callback is not None:
+                _emit_event(event_callback, terminal_event)
+            else:
+                res_q.put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_DOWNLOADER_CRASH",
+                    "error_message": f"Downloader stopped unexpectedly ({kind})",
+                    "recoverable": True,
+                    "suggests_vpn": False,
+                })
+        finally:
+            log.clear_context()
+            with _downloads_lock:
+                if download_id in _active_downloads:
+                    _active_downloads[download_id]["finished_at"] = datetime.now(timezone.utc)
+            # Free the slot, then promote the next FIFO-parked entry (if any).
+            try:
+                _pump_queue()
+            except Exception:
+                pass
 
 
 def start_download(
@@ -456,46 +621,168 @@ def start_download(
         except Exception:
             pass
 
-    t = threading.Thread(
-        target=download_thread,
-        args=(url, download_id, config, network_type, progress_queue, result_queue, cancel_event, event_callback),
-        daemon=True,
-    )
-    t.start()
-
     with _downloads_lock:
-        _active_downloads[download_id] = {
-            "cancel_event": cancel_event,
-            "progress_queue": progress_queue,
-            "result_queue": result_queue,
-            "url": url,
-            "thread": t,
-            "started_at": datetime.now(timezone.utc),
-        }
+        existing = _active_downloads.get(download_id)
+        # Same-id reuse is only safe from a terminal state (finished_at set).
+        # An active entry means redownload-while-downloading: reject instead
+        # of orphaning the previous thread (interleaved progress + double
+        # terminal events under one id).
+        if existing is not None and not existing.get("finished_at"):
+            return {
+                "success": False,
+                "download_id": download_id,
+                "error_type": "ERROR_ALREADY_ACTIVE",
+                "error_message": "Download already in progress for this ID",
+            }
+        if existing is not None and existing.get("finished_at"):
+            # Terminal entry still awaiting cleanup — drop it so the retry
+            # starts clean under the same id (history row key stability).
+            _active_downloads.pop(download_id, None)
+        for i, e in enumerate(_pending_queue):
+            if e["download_id"] == download_id:
+                return {
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_ALREADY_ACTIVE",
+                    "error_message": "Download already queued for this ID",
+                }
+        queued = _running_count() >= _max_concurrent
+        if queued:
+            entry = {
+                "download_id": download_id,
+                "url": url,
+                "config": config,
+                "network_type": network_type,
+                "progress_queue": progress_queue,
+                "result_queue": result_queue,
+                "cancel_event": cancel_event,
+                "event_callback": event_callback,
+                "queued_at": datetime.now(timezone.utc),
+            }
+            _pending_queue.append(entry)
+            position = len(_pending_queue)
+            if event_callback is not None:
+                try:
+                    _emit_event(event_callback, json.dumps({
+                        "type": "event",
+                        "event": "queued",
+                        "download_id": download_id,
+                        "position": position,
+                    }))
+                except Exception:
+                    pass
+            return {
+                "success": True,
+                "download_id": download_id,
+                "thread_started": False,
+                "queued": True,
+                "position": position,
+            }
+
+    entry = {
+        "download_id": download_id,
+        "url": url,
+        "config": config,
+        "network_type": network_type,
+        "progress_queue": progress_queue,
+        "result_queue": result_queue,
+        "cancel_event": cancel_event,
+        "event_callback": event_callback,
+        "queued_at": datetime.now(timezone.utc),
+    }
+    _spawn_thread(entry)
 
     return {
         "success": True,
         "download_id": download_id,
         "thread_started": True,
+        "queued": False,
     }
 
 
 def cancel_download(download_id: str) -> dict:
+    queued_entry = None
     with _downloads_lock:
+        for i, e in enumerate(_pending_queue):
+            if e["download_id"] == download_id:
+                queued_entry = _pending_queue.pop(i)
+                break
         info = _active_downloads.get(download_id)
-        if not info:
+        if queued_entry is None and not info:
             return {
                 "success": False,
                 "error_type": "ERROR_DOWNLOAD_NOT_FOUND",
                 "error_message": f"No active download with ID: {download_id}",
             }
-        info["cancel_event"].set()
+        if info:
+            try:
+                info["cancel_event"].set()
+            except Exception:
+                pass
+
+    if queued_entry is not None:
+        # Dequeued before a thread ever spawned: deliver a terminal
+        # cancelled event through the same channel the thread would use.
+        terminal = json.dumps({
+            "type": "event",
+            "event": "cancelled",
+            "download_id": download_id,
+            "error_type": "ERROR_CANCELLED",
+            "error_message": "Download cancelled by user",
+        })
+        cb = queued_entry.get("event_callback")
+        if cb is not None:
+            try:
+                _emit_event(cb, terminal)
+            except Exception:
+                pass
+        else:
+            try:
+                queued_entry["result_queue"].put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_CANCELLED",
+                    "error_message": "Download cancelled by user",
+                })
+            except Exception:
+                pass
 
     return {
         "success": True,
         "download_id": download_id,
         "cancelled": True,
     }
+
+
+def clear_download_archive(archive_path: str | None = None) -> dict:
+    """Delete the download-archive file so archive-skipped URLs can be
+    re-downloaded (recovery for delete-file-then-redownload when the archive
+    still lists the video — Seal #2065 workaround made explicit).
+
+    Scope: removes exactly one resolved file inside the engine data dir (or
+    the explicit archive_path when given). Never deletes directories.
+    Returns {'success', 'removed': bool, 'path': str|None} — never raises.
+    """
+    try:
+        import os as _os
+        path = archive_path
+        if not path:
+            try:
+                data_dir = get_paths().get("data_dir")
+            except Exception:
+                data_dir = None
+            if not data_dir:
+                return {"success": False, "removed": False, "path": None,
+                        "error_message": "Data dir not configured"}
+            path = _os.path.join(data_dir, "download_archive.txt")
+        # Confine: regular file only, never a directory.
+        if not _os.path.isfile(path):
+            return {"success": True, "removed": False, "path": path}
+        _os.remove(path)
+        return {"success": True, "removed": True, "path": path}
+    except Exception as exc:
+        return {"success": False, "removed": False, "path": None,
+                "error_message": str(exc)[:200]}
 
 
 def get_active_downloads() -> dict:

@@ -3,7 +3,13 @@ import 'log_entry.dart';
 
 class LogBuffer {
   final int maxEntries;
+  final int maxEntriesPerDownload;
+  final int maxRetainedDownloads;
+
   final List<LogEntry> _entries = [];
+  final Map<String, List<LogEntry>> _perDownloadEntries = {};
+  final List<String> _downloadLru = [];
+
   final StreamController<LogEntry> _controller =
       StreamController<LogEntry>.broadcast();
   LogLevel _minLevel = LogLevel.debug;
@@ -11,12 +17,21 @@ class LogBuffer {
   String? _searchFilter;
   String? _sourceFilter; // 'engine', 'ui', or null (all)
 
-  LogBuffer({this.maxEntries = 5000});
+  LogBuffer({
+    this.maxEntries = 5000,
+    this.maxEntriesPerDownload = 500,
+    this.maxRetainedDownloads = 50,
+  });
 
   Stream<LogEntry> get stream => _controller.stream;
   List<LogEntry> get entries => List.unmodifiable(_entries);
 
   void add(LogEntry entry) {
+    final did = entry.downloadId;
+    if (did != null) {
+      _recordForDownload(did, entry);
+    }
+
     if (entry.level.index < _minLevel.index) return;
     if (_tagFilter != null && !entry.logger.contains(_tagFilter!)) return;
     if (_searchFilter != null &&
@@ -30,6 +45,26 @@ class LogBuffer {
     }
     _entries.add(entry);
     _controller.add(entry);
+  }
+
+  void _recordForDownload(String downloadId, LogEntry entry) {
+    if (!_perDownloadEntries.containsKey(downloadId)) {
+      if (_downloadLru.length >= maxRetainedDownloads) {
+        final oldest = _downloadLru.removeAt(0);
+        _perDownloadEntries.remove(oldest);
+      }
+      _perDownloadEntries[downloadId] = [];
+      _downloadLru.add(downloadId);
+    } else {
+      _downloadLru.remove(downloadId);
+      _downloadLru.add(downloadId);
+    }
+
+    final list = _perDownloadEntries[downloadId]!;
+    if (list.length >= maxEntriesPerDownload) {
+      list.removeAt(0);
+    }
+    list.add(entry);
   }
 
   void setMinLevel(LogLevel level) {
@@ -50,6 +85,37 @@ class LogBuffer {
 
   void clear() {
     _entries.clear();
+    _perDownloadEntries.clear();
+    _downloadLru.clear();
+  }
+
+  void clearDownload(String downloadId) {
+    _perDownloadEntries.remove(downloadId);
+    _downloadLru.remove(downloadId);
+  }
+
+  List<LogEntry> getEntriesForDownload(
+    String downloadId, {
+    LogLevel? minLevel,
+    int? limit,
+  }) {
+    final list = _perDownloadEntries[downloadId];
+    if (list == null || list.isEmpty) {
+      return const [];
+    }
+    var result = list.where((e) {
+      if (minLevel != null && e.level.index < minLevel.index) return false;
+      return true;
+    }).toList();
+    if (limit != null && result.length > limit) {
+      result = result.sublist(result.length - limit);
+    }
+    return result;
+  }
+
+  Stream<LogEntry> streamForDownload(String downloadId) {
+    return _controller.stream.where(
+        (e) => e.downloadId == downloadId || e.traceId == downloadId);
   }
 
   List<LogEntry> filtered({
@@ -57,9 +123,21 @@ class LogBuffer {
     String? tag,
     String? search,
     String? source,
+    String? downloadId,
     int? limit,
   }) {
-    var result = _entries.where((e) {
+    final Iterable<LogEntry> sourceList;
+    if (downloadId != null) {
+      sourceList = _perDownloadEntries[downloadId] ??
+          _entries
+              .where((e) =>
+                  e.downloadId == downloadId || e.traceId == downloadId)
+              .toList();
+    } else {
+      sourceList = _entries;
+    }
+
+    var result = sourceList.where((e) {
       if (minLevel != null && e.level.index < minLevel.index) return false;
       if (tag != null && !e.logger.contains(tag)) return false;
       if (search != null &&
@@ -73,6 +151,21 @@ class LogBuffer {
       result = result.sublist(result.length - limit);
     }
     return result;
+  }
+
+  /// Convenience filter for retrieving all log entries tied to [downloadId].
+  List<LogEntry> forDownload(
+    String downloadId, {
+    LogLevel? minLevel,
+    String? search,
+    int? limit,
+  }) {
+    return filtered(
+      downloadId: downloadId,
+      minLevel: minLevel,
+      search: search,
+      limit: limit,
+    );
   }
 
   void dispose() {

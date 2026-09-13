@@ -285,12 +285,25 @@ class MainActivity : FlutterActivity() {
                                                         )
                                                     }
                                                     "finished", "error", "cancelled" -> {
-                                                        val cancelled = obj.optString("event") == "cancelled"
-                                                        DownloadService.done(
-                                                            this@MainActivity, id, cancelled,
-                                                        )
-                                                        if (obj.optString("event") == "finished") {
-                                                            scanRecentMedia()
+                                                        when (obj.optString("event")) {
+                                                            "finished" -> {
+                                                                DownloadService.finished(
+                                                                    this@MainActivity, id,
+                                                                )
+                                                                scanRecentMedia()
+                                                            }
+                                                            "error" -> {
+                                                                val detail = obj.optString("error_message", null)
+                                                                    .takeIf { it.isNotEmpty() }
+                                                                DownloadService.failed(
+                                                                    this@MainActivity, id, detail,
+                                                                )
+                                                            }
+                                                            else -> {
+                                                                DownloadService.done(
+                                                                    this@MainActivity, id, true,
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -346,6 +359,12 @@ class MainActivity : FlutterActivity() {
                                 } catch (_: Exception) {
                                 }
                             }
+                            val showAlert = try {
+                                @Suppress("UNCHECKED_CAST")
+                                (config as? Map<*, *>)?.get("completion_alerts") as? Boolean
+                            } catch (_: Exception) {
+                                null
+                            } ?: true
                             try {
                                 val title = try {
                                     android.net.Uri.parse(url).host ?: url
@@ -356,8 +375,10 @@ class MainActivity : FlutterActivity() {
                                     this@MainActivity,
                                     downloadId ?: "unknown",
                                     title ?: "Download",
+                                    showAlert,
                                 )
-                            } catch (_: Exception) {
+                            } catch (e: Exception) {
+                                android.util.Log.w("TrueStreamEngine", "DownloadService.start failed: ${e.message}")
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
@@ -368,6 +389,55 @@ class MainActivity : FlutterActivity() {
                                 activeCallbacks.remove(downloadId)
                             }
                             withContext(Dispatchers.Main) { result.error("ERROR_START_FAILED", e.message, null) }
+                        }
+                    }
+                }
+                "download/clear_archive" -> {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val python = py ?: return@launch
+                            val engine = python.getModule("truestream_engine")
+                            val cleared = engine.callAttr("clear_download_archive")
+                            val jsonStr = pyJson(cleared)
+                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) { result.error("ERROR_ARCHIVE_FAILED", e.message, null) }
+                        }
+                    }
+                }
+                "download/queue_status" -> {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val python = py ?: return@launch
+                            val engine = python.getModule("truestream_engine")
+                            val status = engine.callAttr("get_queue_status")
+                            // Desktop parity (__main__.py): {"success": True, **status}.
+                            val jsonStr = pyJson(status).let { raw ->
+                                try {
+                                    val obj = org.json.JSONObject(raw)
+                                    obj.put("success", true)
+                                    obj.toString()
+                                } catch (_: Exception) {
+                                    raw
+                                }
+                            }
+                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) { result.error("ERROR_QUEUE_FAILED", e.message, null) }
+                        }
+                    }
+                }
+                "download/set_concurrency" -> {
+                    val maxConcurrent = call.argument<Int>("max_concurrent") ?: 2
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val python = py ?: return@launch
+                            val engine = python.getModule("truestream_engine")
+                            val updated = engine.callAttr("set_max_concurrent", maxConcurrent)
+                            val jsonStr = pyJson(updated)
+                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) { result.error("ERROR_CONCURRENCY_FAILED", e.message, null) }
                         }
                     }
                 }
@@ -477,6 +547,37 @@ class MainActivity : FlutterActivity() {
                 "system/notification_status" -> {
                     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     result.success(mapOf("success" to true, "supported" to supported, "granted" to notificationsGranted()))
+                }
+                "system/notification_settings" -> {
+                    // Denial recovery: deep-link to this app's notification
+                    // settings (permanently-denied / "don't ask again" path).
+                    var launched = false
+                    try {
+                        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            }
+                        } else {
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.parse("package:$packageName"),
+                            )
+                        }
+                        startActivity(intent)
+                        launched = true
+                    } catch (_: Exception) {
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:$packageName"),
+                                ),
+                            )
+                            launched = true
+                        } catch (_: Exception) {
+                        }
+                    }
+                    result.success(mapOf("success" to launched))
                 }
                 "system/notification_request" -> {
                     if (notificationsGranted()) {

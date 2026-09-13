@@ -16,6 +16,10 @@ class DownloadRecord {
   final double progress;
   final String timestamp;
   final String? thumbnailUrl;
+  /// Local thumbnail sidecar file path (writethumbnail output kept next to
+  /// the media file). Preferred over [thumbnailUrl] for Library rendering:
+  /// offline-friendly and no tracking-pixel network call per row.
+  final String? thumbnailPath;
 
   DownloadRecord({
     required this.id,
@@ -30,6 +34,7 @@ class DownloadRecord {
     this.progress = 0,
     String? timestamp,
     this.thumbnailUrl,
+    this.thumbnailPath,
   }) : timestamp = timestamp ?? DateTime.now().toIso8601String();
 
   Map<String, dynamic> toMap() => {
@@ -45,6 +50,7 @@ class DownloadRecord {
         'progress': progress,
         'timestamp': timestamp,
         'thumbnailUrl': thumbnailUrl,
+        'thumbnailPath': thumbnailPath,
       };
 
   factory DownloadRecord.fromMap(Map<String, dynamic> map) => DownloadRecord(
@@ -60,6 +66,7 @@ class DownloadRecord {
         progress: (map['progress'] as num?)?.toDouble() ?? 0,
         timestamp: map['timestamp'] as String?,
         thumbnailUrl: map['thumbnailUrl'] as String?,
+        thumbnailPath: map['thumbnailPath'] as String?,
       );
 
   Map<String, dynamic> toJson() => toMap();
@@ -84,7 +91,7 @@ class DownloadHistoryDb {
     final path = p.join(dir.path, 'truestream.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE downloads (
@@ -99,9 +106,21 @@ class DownloadHistoryDb {
             status TEXT DEFAULT 'pending',
             progress REAL DEFAULT 0,
             timestamp TEXT NOT NULL,
-            thumbnailUrl TEXT
+            thumbnailUrl TEXT,
+            thumbnailPath TEXT
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // v1 → v2: local thumbnail sidecar path (task 03 thumbnails). PRAGMA
+        // table_info guard keeps this idempotent for partial upgrades.
+        if (oldVersion < 2) {
+          final cols = await db.rawQuery('PRAGMA table_info(downloads)');
+          final names = cols.map((c) => c['name'] as String?).toSet();
+          if (!names.contains('thumbnailPath')) {
+            await db.execute('ALTER TABLE downloads ADD COLUMN thumbnailPath TEXT');
+          }
+        }
       },
     );
   }

@@ -6,15 +6,18 @@ import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
 import '../../../providers/resume_provider.dart';
 import '../screens/format_picker_screen.dart';
+import 'playlist_selection_screen.dart';
 import 'search_results_screen.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_dialog.dart';
 import '../widgets/error_recovery_card.dart';
 import '../widgets/download_log_overlay.dart';
+import '../widgets/download_overflow_menu.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils.dart';
+import '../../../core/utils/playlist_selection.dart';
 
 
 class HomeScreen extends ConsumerWidget {
@@ -255,13 +258,14 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
 
     if (looksLikeUrl(input)) {
       AppLogger.info('User submitted URL: $input', tag: 'HomeScreen');
+      // Playlist URLs get entry selection (03-B) instead of the
+      // single-video format picker — otherwise a playlist "downloads as
+      // it wants" with no subset/reverse/shuffle control.
+      final target = isPlaylistUrl(input)
+          ? PlaylistSelectionScreen(url: input, title: input)
+          : FormatPickerScreen(url: input, title: input);
       Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => FormatPickerScreen(
-            url: input,
-            title: input,
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => target),
       );
     } else {
       AppLogger.info('User submitted search query: $input', tag: 'HomeScreen');
@@ -417,6 +421,7 @@ class _DownloadCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDownloading = item.status == 'downloading';
+    final isQueued = item.status == 'queued' || item.status == 'pending';
     final isError = item.status == 'error';
     final textTheme = Theme.of(context).textTheme;
 
@@ -463,16 +468,28 @@ class _DownloadCard extends StatelessWidget {
                             ),
                           ],
                         )
-                      : Semantics(
-                          label: isError ? 'Error' : 'Completed',
-                          child: Icon(
-                              isError ? Icons.error_outline : Icons.image_outlined,
-                              color: isError
-                                  ? colorScheme.error
-                                  : colorScheme.outline.withValues(alpha: 0.5),
-                              size: 32,
+                      : isQueued
+                          ? Semantics(
+                              label: 'Queued',
+                              child: Icon(
+                                Icons.hourglass_empty,
+                                color: colorScheme.onSurfaceVariant,
+                                size: 32,
+                              ),
+                            )
+                          : Semantics(
+                              label: isError ? 'Error' : 'Completed',
+                              child: Icon(
+                                  isError
+                                      ? Icons.error_outline
+                                      : Icons.image_outlined,
+                                  color: isError
+                                      ? colorScheme.error
+                                      : colorScheme.outline
+                                          .withValues(alpha: 0.5),
+                                  size: 32,
+                                ),
                             ),
-                        ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -492,13 +509,9 @@ class _DownloadCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          Semantics(
-                            label: 'More options',
-                            child: Icon(
-                              Icons.more_vert,
-                              size: 18,
-                              color: colorScheme.outline.withValues(alpha: 0.6),
-                            ),
+                          DownloadOverflowButton(
+                            item: item,
+                            colorScheme: colorScheme,
                           ),
                         ],
                       ),
@@ -580,6 +593,22 @@ class _DownloadCard extends StatelessWidget {
                       DownloadLogOverlay(
                         downloadId: item.id,
                         visible: isDownloading,
+                      ),
+                    ] else if (isQueued) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.hourglass_empty,
+                              size: 14,
+                              color: colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Queued — starts when a slot frees up',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ] else if (isError) ...[
                       const SizedBox(height: 8),

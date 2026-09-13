@@ -16,6 +16,7 @@ from truestream_engine.logger import (
     WARN,
     EngineLogger,
     _loggers,
+    download_context,
     get_logger,
     set_global_log_dir,
     set_global_queue,
@@ -700,3 +701,144 @@ class TestLogException:
 
         events = _drain(q)
         assert events[0]["level"] == "WARN"
+
+
+# ---------------------------------------------------------------------------
+# download_id correlation
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadCorrelation:
+    @pytest.mark.unit
+    def test_download_id_in_log_event(self) -> None:
+        logger = EngineLogger("dl_logger")
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
+        logger.set_queue(q)
+        logger.set_min_level(DEBUG)
+
+        logger.set_context(download_id="dl-abc-123")
+        logger.info("downloading item")
+
+        events = _drain(q)
+        assert len(events) == 1
+        assert events[0]["download_id"] == "dl-abc-123"
+        assert events[0]["context"]["download_id"] == "dl-abc-123"
+        assert events[0]["trace_id"] == "dl-abc-123"
+
+        logger.clear_context()
+
+    @pytest.mark.unit
+    def test_thread_propagation_across_different_loggers(self) -> None:
+        logger1 = EngineLogger("downloader")
+        logger2 = EngineLogger("hooks")
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
+        logger2.set_queue(q)
+        logger2.set_min_level(DEBUG)
+
+        logger1.set_context(download_id="dl-multi-456")
+        logger2.info("hook progress line")
+
+        events = _drain(q)
+        assert len(events) == 1
+        assert events[0]["download_id"] == "dl-multi-456"
+        assert events[0]["context"]["download_id"] == "dl-multi-456"
+
+        logger1.clear_context()
+
+    @pytest.mark.unit
+    def test_thread_isolation_for_download_id(self) -> None:
+        logger = EngineLogger("thread_test")
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
+        logger.set_queue(q)
+        logger.set_min_level(DEBUG)
+
+        logger.set_context(download_id="dl-main-789")
+
+        other_thread_saw_id = []
+
+        def worker():
+            q_worker: queue.Queue[dict[str, Any]] = queue.Queue()
+            logger_w = EngineLogger("worker_logger")
+            logger_w.set_queue(q_worker)
+            logger_w.set_min_level(DEBUG)
+            logger_w.info("worker line")
+            evs = _drain(q_worker)
+            if evs:
+                other_thread_saw_id.append(evs[0].get("download_id"))
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+
+        assert other_thread_saw_id == [None]
+
+        logger.clear_context()
+
+
+# ---------------------------------------------------------------------------
+# download lifecycle correlation (start → progress → finished + failure)
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadLifecycleCorrelation:
+    @pytest.mark.unit
+    def test_lifecycle_events_share_download_id(self) -> None:
+        logger = EngineLogger("lifecycle")
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
+        logger.set_queue(q)
+        logger.set_min_level(DEBUG)
+
+        did = "dl-lifecycle-001"
+        with download_context(did):
+            logger.info("Download started: https://x.test/v")
+            logger.info("reached 50% (500/1000 bytes)")
+            logger.info("Download completed")
+
+        events = _drain(q)
+        assert len(events) == 3
+        assert {e["download_id"] for e in events} == {did}
+        assert all(e["context"].get("download_id") == did for e in events)
+        assert all(e["trace_id"] == did for e in events)
+
+    @pytest.mark.unit
+    def test_failure_inside_context_needs_no_extra(self) -> None:
+        logger = EngineLogger("lifecycle_fail_ctx")
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
+        logger.set_queue(q)
+        logger.set_min_level(DEBUG)
+
+        did = "dl-fail-002"
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError as exc:
+            with download_context(did):
+                logger.log_exception(exc, "Download failed")
+
+        events = _drain(q)
+        assert len(events) == 1
+        assert events[0]["download_id"] == did
+        assert events[0]["context"].get("download_id") == did
+        assert events[0]["level"] == "ERROR"
+        assert "boom" in events[0]["message"]
+
+    @pytest.mark.unit
+    def test_failure_outside_context_uses_explicit_extra(self) -> None:
+        logger = EngineLogger("lifecycle_fail_extra")
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
+        logger.set_queue(q)
+        logger.set_min_level(DEBUG)
+
+        did = "dl-fail-003"
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError as exc:
+            logger.log_exception(
+                exc, "Download failed", extra={"download_id": did}
+            )
+
+        events = _drain(q)
+        assert len(events) == 1
+        assert events[0]["download_id"] == did
+        assert events[0]["level"] == "ERROR"
+        assert "boom" in events[0]["message"]
+

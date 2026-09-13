@@ -339,6 +339,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
           status: wasQueued ? 'queued' : 'downloading',
           config: config,
           networkType: 'wifi',
+          // Forward the formats.py thumbnail URL fetched for the preview
+          // header — otherwise single-download Library rows can never show
+          // a thumbnail (task 03: remote URL now, engine thumbnail_path
+          // supersedes it locally on finish).
+          thumbnailUrl: _thumbnailUrl.isNotEmpty ? _thumbnailUrl : null,
         ),
       );
 

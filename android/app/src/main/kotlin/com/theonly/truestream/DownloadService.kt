@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 
 /**
@@ -46,6 +47,7 @@ class DownloadService : Service() {
 
     private val active = linkedMapOf<String, String>() // downloadId -> title
     private val prog = linkedMapOf<String, Prog>() // downloadId -> progress
+    private val alertPrefs = linkedMapOf<String, Boolean>() // downloadId -> show terminal alert
     private var lastShownId: String? = null
     private var lastPromoteMs: Long = 0
 
@@ -61,6 +63,7 @@ class DownloadService : Service() {
             ACTION_START -> {
                 val id = intent.getStringExtra(EXTRA_ID) ?: return START_NOT_STICKY
                 active[id] = intent.getStringExtra(EXTRA_TITLE) ?: id
+                alertPrefs[id] = intent.getBooleanExtra(EXTRA_SHOW_ALERT, true)
                 promote()
             }
             ACTION_UPDATE -> {
@@ -97,9 +100,45 @@ class DownloadService : Service() {
                     }
                 }
             }
+            ACTION_FINISHED -> {
+                val id = intent.getStringExtra(EXTRA_ID)
+                val title = id?.let { active[it] } ?: id ?: "Download"
+                val showAlert = id?.let { alertPrefs[it] } ?: true
+                active.remove(id)
+                prog.remove(id)
+                alertPrefs.remove(id)
+                if (showAlert && id != null) {
+                    postTerminalAlert(id, title, succeeded = true, detail = null)
+                }
+                if (active.isEmpty()) {
+                    lastShownId = null
+                    stopSelf()
+                } else {
+                    promote()
+                }
+            }
+            ACTION_FAILED -> {
+                val id = intent.getStringExtra(EXTRA_ID)
+                val title = id?.let { active[it] } ?: id ?: "Download"
+                val detail = intent.getStringExtra(EXTRA_DETAIL)
+                val showAlert = id?.let { alertPrefs[it] } ?: true
+                active.remove(id)
+                prog.remove(id)
+                alertPrefs.remove(id)
+                if (showAlert && id != null) {
+                    postTerminalAlert(id, title, succeeded = false, detail = detail)
+                }
+                if (active.isEmpty()) {
+                    lastShownId = null
+                    stopSelf()
+                } else {
+                    promote()
+                }
+            }
             ACTION_DONE, ACTION_CANCEL -> {
                 active.remove(intent?.getStringExtra(EXTRA_ID))
                 prog.remove(intent?.getStringExtra(EXTRA_ID))
+                alertPrefs.remove(intent?.getStringExtra(EXTRA_ID))
                 if (active.isEmpty()) {
                     lastShownId = null
                     stopSelf()
@@ -125,26 +164,90 @@ class DownloadService : Service() {
     }
 
     private fun promote() {
-        val notif = buildNotification()
         try {
-            ServiceCompat.startForeground(
-                this,
-                NOTIF_ID,
-                notif,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-            )
-        } catch (_: Exception) {
-            // Couldn't foreground (background-start restriction etc.) —
-            // never crash the app over the keep-alive mechanism.
+            val notif = buildNotification()
+            try {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIF_ID,
+                    notif,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                )
+            } catch (e: Exception) {
+                // Couldn't foreground (background-start restriction etc.) —
+                // never crash the app over the keep-alive mechanism.
+                android.util.Log.w("DownloadService", "startForeground failed: ${e.message}")
+                if (active.isEmpty()) stopSelf()
+            }
+        } catch (e: Exception) {
+            // buildNotification itself must never crash onStartCommand
+            // (e.g. null launch intent). Log loudly — a logging/notify path
+            // must never break downloads, but the FIRST failure warns.
+            android.util.Log.w("DownloadService", "buildNotification failed: ${e.message}")
             if (active.isEmpty()) stopSelf()
         }
     }
 
-    private fun buildNotification(): Notification {
-        val openApp = PendingIntent.getActivity(
-            this, 0, packageManager.getLaunchIntentForPackage(packageName),
+    private fun openAppIntent(): PendingIntent {
+        val launch = try {
+            packageManager.getLaunchIntentForPackage(packageName)
+        } catch (_: Exception) {
+            null
+        }
+        val target = launch ?: Intent(this, MainActivity::class.java)
+        return PendingIntent.getActivity(
+            this, 0, target,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    private fun notificationsEnabled(): Boolean {
+        return try {
+            NotificationManagerCompat.from(this).areNotificationsEnabled()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Terminal completion/failure alert (separate HIGH-importance channel +
+     * per-download ID so concurrent finishes don't overwrite each other).
+     * The FGS progress row (NOTIF_ID) is updated/removed separately; this
+     * alert is an ordinary notification so it REQUIRES POST_NOTIFICATIONS
+     * on API 33+ — checked here, silently skipped when denied (in-app list
+     * UI remains the source of truth).
+     */
+    private fun postTerminalAlert(
+        downloadId: String,
+        title: String,
+        succeeded: Boolean,
+        detail: String?,
+    ) {
+        if (!notificationsEnabled()) return
+        try {
+            val channel = if (succeeded) CHANNEL_COMPLETE else CHANNEL_ERROR
+            val contentTitle = if (succeeded) "Download complete" else "Download failed"
+            val contentText = if (succeeded) title else (detail?.take(200) ?: title)
+            val notif = NotificationCompat.Builder(this, channel)
+                .setContentTitle(contentTitle)
+                .setContentText(contentText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(false)
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build()
+            val mgr = getSystemService(NotificationManager::class.java) ?: return
+            mgr.notify(alertNotifId(downloadId), notif)
+        } catch (e: Exception) {
+            android.util.Log.w("DownloadService", "terminal alert failed: ${e.message}")
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val openApp = openAppIntent()
         val cancelAll = PendingIntent.getService(
             this, 1, Intent(this, DownloadService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -211,6 +314,24 @@ class DownloadService : Service() {
                 ).apply { description = "Shows active download progress" },
             )
         }
+        if (mgr.getNotificationChannel(CHANNEL_COMPLETE) == null) {
+            mgr.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_COMPLETE,
+                    "Download complete",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply { description = "Alerts when a download finishes" },
+            )
+        }
+        if (mgr.getNotificationChannel(CHANNEL_ERROR) == null) {
+            mgr.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ERROR,
+                    "Download failed",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply { description = "Alerts when a download fails" },
+            )
+        }
     }
 
     companion object {
@@ -218,22 +339,35 @@ class DownloadService : Service() {
         const val ACTION_UPDATE = "com.theonly.truestream.download.UPDATE"
         const val ACTION_DONE = "com.theonly.truestream.download.DONE"
         const val ACTION_CANCEL = "com.theonly.truestream.download.CANCEL"
+        const val ACTION_FINISHED = "com.theonly.truestream.download.FINISHED"
+        const val ACTION_FAILED = "com.theonly.truestream.download.FAILED"
         const val ACTION_STOP = "com.theonly.truestream.download.STOP"
         const val EXTRA_ID = "download_id"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_SHOW_ALERT = "show_alert"
+        const val EXTRA_DETAIL = "detail"
         const val EXTRA_PERCENT = "percent"
         const val EXTRA_STAGE = "stage"
         const val EXTRA_SPEED = "speed_bps"
         const val EXTRA_DOWNLOADED = "downloaded_bytes"
         const val EXTRA_TOTAL = "total_bytes"
         private const val CHANNEL_ID = "truestream_downloads"
+        private const val CHANNEL_COMPLETE = "truestream_complete"
+        private const val CHANNEL_ERROR = "truestream_error"
         private const val NOTIF_ID = 1001
 
-        fun start(ctx: Context, downloadId: String, title: String) {
+        /** Stable per-download alert ID that never collides with NOTIF_ID. */
+        fun alertNotifId(downloadId: String): Int {
+            val h = downloadId.hashCode() and 0x00FFFFFF
+            return 2000 + (h % 200000)
+        }
+
+        fun start(ctx: Context, downloadId: String, title: String, showAlert: Boolean = true) {
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_ID, downloadId)
                 putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_SHOW_ALERT, showAlert)
             }
             start(ctx, intent)
         }
@@ -275,6 +409,23 @@ class DownloadService : Service() {
             start(ctx, intent)
         }
 
+        fun finished(ctx: Context, downloadId: String) {
+            val intent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_FINISHED
+                putExtra(EXTRA_ID, downloadId)
+            }
+            start(ctx, intent)
+        }
+
+        fun failed(ctx: Context, downloadId: String, detail: String? = null) {
+            val intent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_FAILED
+                putExtra(EXTRA_ID, downloadId)
+                if (detail != null) putExtra(EXTRA_DETAIL, detail.take(500))
+            }
+            start(ctx, intent)
+        }
+
         private fun start(ctx: Context, intent: Intent) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -282,9 +433,11 @@ class DownloadService : Service() {
                 } else {
                     ctx.startService(intent)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 // Background-start restriction etc. — downloads continue
-                // without keep-alive rather than crashing.
+                // without keep-alive rather than crashing. Logged so
+                // "download runs with no notification" is diagnosable.
+                android.util.Log.w("DownloadService", "service start failed: ${e.message}")
             }
         }
     }

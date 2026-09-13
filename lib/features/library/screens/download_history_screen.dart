@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/download_history_db.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../providers/download_history_provider.dart';
+import '../../home/widgets/download_log_sheet.dart';
 
 class DownloadHistoryScreen extends ConsumerStatefulWidget {
   const DownloadHistoryScreen({super.key});
@@ -442,6 +443,24 @@ class _HistoryItem extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              ),
+              Semantics(
+                label: 'View download logs',
+                child: IconButton(
+                  icon: Icon(Icons.terminal,
+                      size: 18, color: colorScheme.outline),
+                  onPressed: () {
+                    DownloadLogSheet.show(
+                      context,
+                      downloadId: record.id,
+                      title: record.title,
+                      status: record.status,
+                      url: record.url,
+                    );
+                  },
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'View logs',
                 ),
               ),
               Semantics(

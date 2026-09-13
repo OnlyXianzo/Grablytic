@@ -75,7 +75,7 @@ class SettingsScreen extends ConsumerWidget {
                   _SettingSwitch(
                     icon: Icons.share_outlined,
                     title: 'Auto-start Download on Share',
-                    subtitle: 'Automatically start when link is shared to TrueStream',
+                    subtitle: 'Skip the preview sheet and start immediately when a link is shared',
                     value: settings.autoStartDownloadOnShare,
                     onChanged: () => ref.read(settingsProvider.notifier).toggleAutoStartDownloadOnShare(),
                     colorScheme: colorScheme,
@@ -138,6 +138,32 @@ class SettingsScreen extends ConsumerWidget {
                       );
                     },
                   ),
+                  if (settings.downloadArchive)
+                    _SettingAction(
+                      icon: Icons.playlist_remove_outlined,
+                      title: 'Clear download archive',
+                      subtitle:
+                          'Allow skipped videos to download again',
+                      colorScheme: colorScheme,
+                      onTap: () async {
+                        Map<String, dynamic> res = {'success': false};
+                        try {
+                          res = await ref
+                              .read(engineProvider)
+                              .clearArchive();
+                        } catch (_) {}
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(res['removed'] == true
+                                    ? 'Download archive cleared'
+                                    : res['success'] == true
+                                        ? 'Archive already empty'
+                                        : 'Could not clear archive')),
+                          );
+                        }
+                      },
+                    ),
                 ],
               ).animate().fadeIn(delay: 50.ms, duration: 300.ms).slideX(begin: 0.05),
 
@@ -231,6 +257,20 @@ class SettingsScreen extends ConsumerWidget {
                             .setProxy(picked.isEmpty ? null : picked);
                       }
                     },
+                  ),
+                  _ConcurrencySlider(
+                    value: settings.maxConcurrentDownloads,
+                    onChanged: (v) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setMaxConcurrentDownloads(v);
+                      try {
+                        ref
+                            .read(engineProvider)
+                            .setConcurrency(v);
+                      } catch (_) {}
+                    },
+                    colorScheme: colorScheme,
                   ),
                   _SettingNavItem(
                     icon: Icons.tune,
@@ -802,6 +842,82 @@ class _SettingAction extends StatelessWidget {
   }
 }
 
+/// Simultaneous-download limit (queue gate). Default 2: one downloading
+/// while one merges — radio+CPU overlap without oversubscription (Seal=3,
+/// YTDLnis default=1, 10 crash-prone). Clamped 1–5, enforced by the engine
+/// backstop; extra downloads park as Queued (FIFO).
+class _ConcurrencySlider extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+  final ColorScheme colorScheme;
+
+  const _ConcurrencySlider({
+    required this.value,
+    required this.onChanged,
+    required this.colorScheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Semantics(
+      label:
+          'Simultaneous downloads, $value at a time. Extra downloads wait in a queue.',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Semantics(
+              label: 'Simultaneous downloads',
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer,
+                  shape: BoxShape.circle,
+                ),
+                child:
+                    Icon(Icons.download_outlined, color: colorScheme.outline, size: 20),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Simultaneous downloads', style: textTheme.bodyLarge),
+                  Text(
+                    value == 1
+                        ? '1 at a time — extras queue'
+                        : '$value at a time — extras queue',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 120,
+              child: Slider(
+                value: value.toDouble(),
+                min: 1,
+                max: 5,
+                divisions: 4,
+                label: '$value',
+                activeColor: colorScheme.primary,
+                inactiveColor: colorScheme.surfaceContainerHighest,
+                onChanged: (v) => onChanged(v.round()),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Aria2cChunkSlider extends StatelessWidget {
   final int chunks;
   final ValueChanged<int> onChanged;
@@ -1073,6 +1189,63 @@ class _BackgroundPermissionsSectionState
     if (mounted) setState(() => _working = false);
   }
 
+  /// Contextual rationale first (Play guidance: in-context, never cold-start
+  /// nag), then the single system prompt. When the system no longer shows a
+  /// prompt (denied twice / "don't ask again"), offer the OS settings screen
+  /// instead of re-firing a dead prompt.
+  Future<void> _requestNotifications() async {
+    if (!mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Download notifications?'),
+        content: const Text(
+          'TrueStream shows download progress while downloading and an alert '
+          'when a file finishes or fails.\n\n'
+          'Progress keeps working in the app even if you skip this.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return;
+    final engine = ref.read(engineProvider);
+    Map<String, dynamic> res = {};
+    setState(() => _working = true);
+    try {
+      res = await engine.requestNotificationPermission();
+    } catch (_) {}
+    await _refresh();
+    if (mounted) setState(() => _working = false);
+    if (!mounted) return;
+    final granted = res['granted'] == true || _notifGranted == true;
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Notifications are off — progress still shows in the app.'),
+          action: SnackBarAction(
+            label: 'Open settings',
+            onPressed: () async {
+              try {
+                await ref.read(engineProvider).openNotificationSettings();
+              } catch (_) {}
+            },
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -1101,15 +1274,13 @@ class _BackgroundPermissionsSectionState
           icon: Icons.notifications_outlined,
           title: 'Notifications',
           subtitle: _notifGranted == true
-              ? 'Allowed'
+              ? 'Allowed — progress + completion alerts'
               : 'Needed for download and completion alerts',
           colorScheme: colorScheme,
           trailing: _notifGranted == true
               ? Icon(Icons.check_circle, color: colorScheme.tertiary)
               : null,
-          onTap: _working
-              ? () {}
-              : () => _run(engine.requestNotificationPermission),
+          onTap: _working ? () {} : _requestNotifications,
         ),
       ],
     );
