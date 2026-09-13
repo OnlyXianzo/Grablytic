@@ -339,3 +339,43 @@ jobs:
         with:
           name: truestream-windows-x64-bundle
           path: build\windows\x64\runner\Release\
+
+  publish-release:
+    name: Publish Release Assets
+    needs: [android, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build-artifacts
+
+      - name: Stage and upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          TAG="v${V%%+*}"
+          echo "Target tag: $TAG"
+
+          mkdir -p release_assets
+          find build-artifacts -type f \( -name "*.apk" -o -name "*.deb" -o -name "*.rpm" -o -name "*.pkg.tar.zst" -o -name "*.tar.gz" -o -name "*.zip" \) | while read -r file; do
+            fname=$(basename "$file")
+            echo "Staging asset: $fname from $file"
+            cp "$file" "release_assets/$fname"
+          done
+
+          echo "=== Release Assets ==="
+          ls -lh release_assets/
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" release_assets/* --title "TrueStream $TAG" --generate-notes --latest
+          else
+            gh release upload "$TAG" release_assets/* --clobber
+            gh release edit "$TAG" --latest --prerelease=false
+          fi
+
