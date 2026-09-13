@@ -51,6 +51,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   String? _selectedVideoFormat;
   String? _selectedAudioFormat;
   String _selectedContainer = 'mkv';
+  bool _isAudioOnlyMode = false;
+  String? _recommendedVideoFormatId;
   bool _isLoading = true;
   String? _error;
   bool _suggestsVpn = false;
@@ -132,13 +134,23 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         _durationSeconds = (result['duration_seconds'] as num?)?.toInt();
         
         final activePreset = ref.read(presetsProvider).activePreset;
+        _recommendedVideoFormatId =
+            result['recommended_video_format_id'] as String?;
+        final isPureAudio = _videoFormats.isEmpty && _muxedFormats.isEmpty;
+        _isAudioOnlyMode = activePreset.audioOnly || isPureAudio;
         _selectedContainer = activePreset.preferredContainer;
 
         // P0: sort-then-first (never unsorted .first). Audio = max bitrate.
         _selectedAudioFormat = selectBestAudioFormat(_audioFormats);
 
-        if (activePreset.audioOnly) {
+        if (_isAudioOnlyMode) {
           _selectedVideoFormat = null;
+          _selectedMuxedFormat = null;
+          if (!['m4a', 'mp3', 'opus', 'flac'].contains(_selectedContainer)) {
+            _selectedContainer = activePreset.audioOnly
+                ? activePreset.preferredContainer
+                : 'm4a';
+          }
         } else {
           final targetHeight = targetHeightForCeiling(
             activePreset.qualityCeiling,
@@ -149,14 +161,16 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
             _videoFormats,
             targetHeight: targetHeight,
             preferredCodec: activePreset.preferredCodec,
-            fallbackRecommendedId:
-                result['recommended_video_format_id'] as String?,
+            fallbackRecommendedId: _recommendedVideoFormatId,
           );
 
           // For platforms with only muxed formats (Twitter, Instagram, etc.)
           if (_videoFormats.isEmpty && _muxedFormats.isNotEmpty) {
             _selectedMuxedFormat = _muxedFormats.first['format_id'] as String?;
             _selectedVideoFormat = null;
+          }
+          if (!['mkv', 'mp4', 'webm'].contains(_selectedContainer)) {
+            _selectedContainer = 'mkv';
           }
         }
       } else {
@@ -288,7 +302,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     // replacing. Matches by exact URL or YouTube video id, so a video
     // previously saved as audio (or vice versa) still warns.
     try {
-      final completed = await DownloadHistoryDb.instance.getCompleted();
+      final completed = await DownloadHistoryDb.instance
+          .getCompleted()
+          .timeout(const Duration(milliseconds: 300), onTimeout: () => []);
       final dup = findDuplicate(completed, widget.url);
       if (dup != null && mounted) {
         final again = await _confirmRedownload(dup);
@@ -304,6 +320,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     final downloadId = _uuid.v4();
     final engine = ref.read(engineProvider);
 
+    final isAudioOnly = _isAudioOnlyMode ||
+        (_selectedVideoFormat == null &&
+            _selectedMuxedFormat == null &&
+            _selectedAudioFormat != null);
+
     final config = <String, dynamic>{
       'container': _selectedContainer,
       // P1: forward user settings under exact engine contract keys
@@ -315,7 +336,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       if (_selectedTemplate != null && _selectedTemplate!.isNotEmpty)
         ...parseTemplateConfig(_selectedTemplate!).config,
       'explicit_format_id': _selectedMuxedFormat ?? _selectedVideoFormat,
-      'explicit_audio_format_id': _selectedMuxedFormat != null ? null : _selectedAudioFormat,
+      'explicit_audio_format_id':
+          _selectedMuxedFormat != null ? null : _selectedAudioFormat,
+      if (isAudioOnly) 'audio_only': true,
     };
 
     final result = await AppLogger.trace<Map<String, dynamic>>(
@@ -532,7 +555,69 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 16),
+                        if (_videoFormats.isNotEmpty || _muxedFormats.isNotEmpty) ...[
+                          Center(
+                            child: SegmentedButton<bool>(
+                              segments: const [
+                                ButtonSegment<bool>(
+                                  value: false,
+                                  label: Text('Video + Audio'),
+                                  icon: Icon(Icons.video_library_outlined),
+                                ),
+                                ButtonSegment<bool>(
+                                  value: true,
+                                  label: Text('Audio Only'),
+                                  icon: Icon(Icons.audiotrack_outlined),
+                                ),
+                              ],
+                              selected: {_isAudioOnlyMode},
+                              onSelectionChanged: (val) {
+                                final activePreset =
+                                    ref.read(presetsProvider).activePreset;
+                                setState(() {
+                                  _isAudioOnlyMode = val.first;
+                                  if (_isAudioOnlyMode) {
+                                    _selectedVideoFormat = null;
+                                    _selectedMuxedFormat = null;
+                                    _selectedAudioFormat ??=
+                                        selectBestAudioFormat(_audioFormats);
+                                    if (!['m4a', 'mp3', 'opus', 'flac']
+                                        .contains(_selectedContainer)) {
+                                      _selectedContainer = activePreset.audioOnly
+                                          ? activePreset.preferredContainer
+                                          : 'm4a';
+                                    }
+                                  } else {
+                                    _selectedVideoFormat = selectBestVideoFormat(
+                                      _videoFormats,
+                                      targetHeight: targetHeightForCeiling(
+                                        activePreset.qualityCeiling,
+                                        activePreset.id,
+                                      ),
+                                      preferredCodec: activePreset.preferredCodec,
+                                      fallbackRecommendedId:
+                                          _recommendedVideoFormatId,
+                                    );
+                                    if (_videoFormats.isEmpty &&
+                                        _muxedFormats.isNotEmpty) {
+                                      _selectedMuxedFormat =
+                                          _muxedFormats.first['format_id']
+                                              as String?;
+                                      _selectedVideoFormat = null;
+                                    }
+                                    _selectedAudioFormat ??=
+                                        selectBestAudioFormat(_audioFormats);
+                                    if (!['mkv', 'mp4', 'webm']
+                                        .contains(_selectedContainer)) {
+                                      _selectedContainer = 'mkv';
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         TextField(
                           decoration: InputDecoration(
                             hintText: 'Filter formats (e.g. 1080p, vp9 1080, 251)',
@@ -552,7 +637,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                           onChanged: (v) => setState(() => _filterQuery = v),
                         ),
                         const SizedBox(height: 8),
-                        if (_videoFormats.isNotEmpty)
+                        if (!_isAudioOnlyMode && _videoFormats.isNotEmpty)
                           _buildSectionTile(
                             title: 'VIDEO STREAMS',
                             count: _videoFormats.length,
@@ -567,7 +652,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 _buildFormatRow(fmt, true, colorScheme, textTheme),
                             ],
                           ),
-                        if (_muxedFormats.isNotEmpty)
+                        if (!_isAudioOnlyMode && _muxedFormats.isNotEmpty)
                           _buildSectionTile(
                             title: 'COMBINED STREAMS',
                             count: _muxedFormats.length,
@@ -607,11 +692,28 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                               child: DropdownButton<String>(
                                 value: _selectedContainer,
                                 dropdownColor: colorScheme.surfaceContainerHigh,
-                                items: const [
-                                  DropdownMenuItem(value: 'mkv', child: Text('MKV (Recommended)')),
-                                  DropdownMenuItem(value: 'mp4', child: Text('MP4')),
-                                  DropdownMenuItem(value: 'webm', child: Text('WebM')),
-                                ],
+                                items: _isAudioOnlyMode
+                                    ? const [
+                                        DropdownMenuItem(
+                                            value: 'm4a',
+                                            child: Text('M4A (Recommended)')),
+                                        DropdownMenuItem(
+                                            value: 'mp3', child: Text('MP3')),
+                                        DropdownMenuItem(
+                                            value: 'opus', child: Text('Opus')),
+                                        DropdownMenuItem(
+                                            value: 'flac',
+                                            child: Text('FLAC (Lossless)')),
+                                      ]
+                                    : const [
+                                        DropdownMenuItem(
+                                            value: 'mkv',
+                                            child: Text('MKV (Recommended)')),
+                                        DropdownMenuItem(
+                                            value: 'mp4', child: Text('MP4')),
+                                        DropdownMenuItem(
+                                            value: 'webm', child: Text('WebM')),
+                                      ],
                                 onChanged: (val) {
                                   if (val != null) setState(() => _selectedContainer = val);
                                 },
@@ -854,9 +956,18 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         child: InkWell(
           onTap: () => setState(() {
             if (isVideo) {
-              _selectedVideoFormat = formatId;
+              if (_selectedVideoFormat == formatId) {
+                _selectedVideoFormat = null;
+              } else {
+                _selectedVideoFormat = formatId;
+              }
             } else {
-              _selectedAudioFormat = formatId;
+              if (_selectedAudioFormat == formatId &&
+                  _selectedVideoFormat != null) {
+                _selectedAudioFormat = null;
+              } else {
+                _selectedAudioFormat = formatId;
+              }
             }
           }),
           borderRadius: BorderRadius.circular(12),
