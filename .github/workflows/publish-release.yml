@@ -1,0 +1,53 @@
+name: Publish Release Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Workflow run ID containing artifacts'
+        required: true
+        default: '34767555115'
+      tag_name:
+        description: 'Release tag name'
+        required: true
+        default: 'v0.0.1'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Upload Artifacts to Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts from run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p downloaded_artifacts
+          gh run download "${{ github.event.inputs.run_id }}" --repo "${{ github.repository }}" --dir downloaded_artifacts
+          echo "=== Downloaded Artifacts ==="
+          find downloaded_artifacts -type f
+
+      - name: Flatten and upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release_assets
+          # Find all release binary formats: APKs, debs, rpms, pkg.tar.zst, tar.gz, zip
+          find downloaded_artifacts -type f \( -name "*.apk" -o -name "*.deb" -o -name "*.rpm" -o -name "*.pkg.tar.zst" -o -name "*.tar.gz" -o -name "*.zip" \) | while read -r file; do
+            # Exclude intermediate build bundles if already packaged as zip/tar.gz
+            fname=$(basename "$file")
+            echo "Staging asset: $fname from $file"
+            cp "$file" "release_assets/$fname"
+          done
+
+          echo "=== Final Assets to Upload ==="
+          ls -lh release_assets/
+
+          echo "Uploading assets to release ${{ github.event.inputs.tag_name }}..."
+          gh release upload "${{ github.event.inputs.tag_name }}" release_assets/* --repo "${{ github.repository }}" --clobber
