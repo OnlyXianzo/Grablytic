@@ -89,12 +89,51 @@ flutter build apk --debug -PskipNativePackages
 
 Output: `build/app/outputs/flutter-apk/app-release.apk`
 
+### Release variants (APK size / JS runtime)
+
+The APK's biggest optional payload is the JS runtime for the PO-Token/SABR
+challenge path (yt-dlp EJS). Upstream wrapper sizes, measured 2026-09-13 from
+`deniscerri/ytdlnis-packages`:
+
+| Package | arm64 download (APK) | Installed payload (uncompressed .so) |
+|---|---|---|
+| Deno 2.7.7 | ~91 MB | ~152 MB |
+| Node.js 25.3.0 | ~50 MB | ~82 MB |
+
+Deno is yt-dlp's default/recommended runtime (permission-sandboxed, fastest);
+Node solves the same challenges and saves ~40 MB download / ~70 MB installed.
+Pinned versions satisfy yt-dlp's floors (deno ≥ 2.0, node ≥ 20; solver builds want
+deno ≥ 2.3 / node ≥ 22). Three release variants are shipped:
+
+| Variant | ABI | Runtime | Build command |
+|---|---|---|---|
+| `…-arm64-deno.apk` (default recommendation) | `arm64-v8a` | Deno | `flutter build apk --release -PtargetAbi=arm64-v8a -PjsRuntime=deno` |
+| `…-arm64-node.apk` (smaller) | `arm64-v8a` | Node.js | `flutter build apk --release -PtargetAbi=arm64-v8a -PjsRuntime=node` |
+| `…-universal.apk` (no choice needed) | all | both | `flutter build apk --release` (defaults: all ABIs, `-PjsRuntime=both`) |
+
+Notes:
+- `-PjsRuntime` accepts only `deno|node|both`; anything else fails the build loudly.
+  Omitting it reproduces the pre-variant APK exactly (default `both`).
+- The runtime fallback chain needs no per-variant app changes: if a `.so` is absent,
+  `BinaryPackageManager` skips it and the engine uses whichever runtime is present
+  (deno → node → QuickJS).
+- Deno has no `armeabi-v7a` build upstream (only arm64 + x86_64) — armv7 devices take
+  the Node or universal variant. (`packages.gradle.kts` skips Deno on armv7 automatically.)
+- Deliberately NOT Gradle `splits{}` / product flavors: `splits{}` conflicts with the
+  Chaquopy-mandated `ndk.abiFilters` block (hard build error), and flavor-level abiFilters
+  are silently ignored by the Flutter Gradle plugin ≥ 3.35. The `-PtargetAbi`/`-PjsRuntime`
+  CI matrix produces the same artifacts without either risk.
+- First-run download of the runtime instead of bundling is NOT possible on Android:
+  API 29+ forbids executing app-downloaded files (W^X), so only APK-bundled jniLibs run.
+- CI matrix rows + README download links for these three variants are owned by the
+  Obtainium task (Task 3) — see that task's handoff for final asset names.
+
 **Platform notes:**
 - `minSdk = 24` (Chaquopy requirement; Android 7.0+ devices)
 - `targetSdk` / `compileSdk` managed by Flutter Gradle plugin
-- `minSdk 24`, ABIs `arm64-v8a` + `x86_64` via `ndk.abiFilters`
-  (universal APK — Chaquopy hard-requires abiFilters, which AGP forbids
-  combining with `--split-per-abi`)
+- `minSdk 24`, ABIs `arm64-v8a` + `armeabi-v7a` + `x86_64` via `ndk.abiFilters`
+  (universal APK by default; `-PtargetAbi=<abi>` for a single-ABI APK — Chaquopy
+  hard-requires abiFilters, which AGP forbids combining with `--split-per-abi`)
 - Signing: place `key.properties` in `android/` with `storeFile`, `storePassword`, `keyPassword`, `keyAlias`
 - CMake 3.31+ required (install via Android SDK manager if needed)
 - `lintVital*` tasks are disabled (`android/app/build.gradle.kts`) — works around
