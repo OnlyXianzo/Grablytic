@@ -34,21 +34,26 @@ First install [Obtainium](https://github.com/ImranR98/Obtainium/releases),
 tap the link on your device, confirm — or in Obtainium: *Add App* → paste
 `https://github.com/OnlyXianzo/TrueStream`.
 
-### Which APK? (three release variants)
+### Which APK? (device & hardware variants)
 
-| Variant | Who it's for | 1-tap Obtainium | Direct APK |
-|---|---|---|---|
-| **arm64 + Deno** ✅ recommended | Most phones (arm64). Deno is yt-dlp's default, fastest JS runtime | [Add arm64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | [⬇ arm64‑deno](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-arm64-deno.apk) |
-| **arm64 + Node.js** (smaller) | Same phones, ≈40 MB smaller download — same challenges solved | [Add arm64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | [⬇ arm64‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-arm64-node.apk) |
-| **universal** (no choice needed) | armv7 / x86_64 devices, emulators, or "just give me everything" (both runtimes) | [Add universal](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22universal%5C%22%7D%22%7D) | [⬇ universal](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-universal.apk) |
+> 💡 **Tested Hardware Coverage**: Verified across Android hardware tiers from modern 64-bit flagships down to low-end budget 32-bit devices (e.g. Samsung Galaxy A04e, low-memory ARM32 phones), Chromebooks/emulators (`x86_64`), and Linux desktops with self-contained preinstalled binaries.
 
-<!-- obtainium: on each release, bump the v0.0.1 segment in the three direct-APK links above to the new pubspec version core. -->
+| Variant | Architecture | Runtime | Target Hardware | 1-tap Obtainium | Direct APK |
+|---|---|---|---|---|---|
+| **arm64 + Deno** ✅ | ARM64-v8a | Deno | High-end & modern phones (default) | [Add arm64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | [⬇ arm64‑deno](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-arm64-deno.apk) |
+| **arm64 + Node.js** | ARM64-v8a | Node.js | Modern phones, ≈40 MB smaller download | [Add arm64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | [⬇ arm64‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-arm64-node.apk) |
+| **armv7 + Node.js** | ARMeabi-v7a | Node.js | Low-end & budget 32-bit phones (e.g. Galaxy A04e) | [Add armv7‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22armv7-node%5C%22%7D%22%7D) | [⬇ armv7‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-armv7-node.apk) |
+| **x86_64 + Deno** | x86_64 | Deno | 64-bit Android emulators & Chromebooks | [Add x86_64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-deno%5C%22%7D%22%7D) | [⬇ x86_64‑deno](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-x86_64-deno.apk) |
+| **x86_64 + Node.js** | x86_64 | Node.js | 64-bit emulators & Chromebooks (smaller) | [Add x86_64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-node%5C%22%7D%22%7D) | [⬇ x86_64‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-x86_64-node.apk) |
+| **universal** | All ABIs | Both | Universal multi-ABI fallback for any Android device | [Add universal](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22universal%5C%22%7D%22%7D) | [⬇ universal](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-universal.apk) |
+
+<!-- obtainium: on each release, bump the v0.0.1 segment in the direct-APK links above to the new pubspec version core. -->
 Release assets are named `truestream-v<version>-<variant>.apk` (e.g.
 `truestream-v0.0.1-arm64-deno.apk`), attached to tags like `v0.0.1`
 and built by [`build.yml`](.github/workflows/build.yml).
 Releases ship as stable GitHub Releases (not prereleases) so Obtainium's
 defaults pick them up; each per-variant link above also pins Obtainium's APK
-filter (`arm64-deno` / `arm64-node` / `universal`) so updates always pull the
+filter (`arm64-deno` / `arm64-node` / `armv7-node` / `x86_64-deno` / `x86_64-node` / `universal`) so updates always pull the
 same variant. Build flags per variant:
 [`docs/building.md`](docs/building.md#release-variants-apk-size--js-runtime).
 

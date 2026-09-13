@@ -227,10 +227,12 @@ Triggers on every push/PR to `main`. Runs:
 
 The `build.yml` GitHub Actions workflow produces multi-architecture binaries across platforms on manual trigger (`workflow_dispatch`):
 - **Android**:
-  - `truestream-android-universal.apk` (all ABIs bundled)
-  - `truestream-android-arm64-v8a.apk` (ARMv8 / AArch64 / ARM64)
-  - `truestream-android-armeabi-v7a.apk` (ARMv7)
-  - `truestream-android-x86_64.apk` (x86_64 emulator / devices)
+  - `truestream-v<ver>-arm64-deno.apk` (ARM64-v8a + Deno JS runtime — recommended default for 64-bit flagships & modern phones)
+  - `truestream-v<ver>-arm64-node.apk` (ARM64-v8a + Node.js runtime — smaller footprint for 64-bit devices)
+  - `truestream-v<ver>-armv7-node.apk` (ARMeabi-v7a + Node.js runtime — optimized for budget & low-end 32-bit devices like Samsung Galaxy A04e)
+  - `truestream-v<ver>-x86_64-deno.apk` (x86_64 + Deno runtime — 64-bit emulators & Chromebooks)
+  - `truestream-v<ver>-x86_64-node.apk` (x86_64 + Node.js runtime — smaller download for emulators)
+  - `truestream-v<ver>-universal.apk` (All ABIs bundled with both runtimes — universal fallback)
 - **Linux** (built on `ubuntu-latest` and `ubuntu-24.04-arm`):
   - Debian packages (`.deb` for `amd64` and `arm64`)
   - RPM packages (`.rpm` for `x86_64` and `aarch64`)

@@ -504,10 +504,12 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 **Build workflow** (`build.yml`):
 - Manual trigger (`workflow_dispatch`)
 - **Android matrix** (parallel builds on `ubuntu-latest`):
-  - Universal APK (`truestream-android-universal.apk` containing all ABIs)
-  - ARM64-v8a APK (`truestream-android-arm64-v8a.apk` for armv8 / aarch64 / arm64)
-  - ARMeabi-v7a APK (`truestream-android-armeabi-v7a.apk` for armv7)
-  - x86_64 APK (`truestream-android-x86_64.apk`)
+  - ARM64-v8a + Deno APK (`truestream-v<ver>-arm64-deno.apk`, recommended default for modern 64-bit phones)
+  - ARM64-v8a + Node.js APK (`truestream-v<ver>-arm64-node.apk`, smaller download for 64-bit phones)
+  - ARMeabi-v7a + Node.js APK (`truestream-v<ver>-armv7-node.apk`, budget & low-end 32-bit phones like Samsung Galaxy A04e)
+  - x86_64 + Deno APK (`truestream-v<ver>-x86_64-deno.apk`, 64-bit emulators & Chromebooks)
+  - x86_64 + Node.js APK (`truestream-v<ver>-x86_64-node.apk`, lightweight 64-bit emulator build)
+  - Universal APK (`truestream-v<ver>-universal.apk`, multi-ABI fallback covering ARMv7, ARM64, and x86_64 with both runtimes)
 - **Linux matrix** (`ubuntu-latest` for x64, `ubuntu-24.04-arm` for arm64):
   - Debian packages (`.deb` via `dpkg-deb`)
   - RedHat / openSUSE packages (`.rpm` via `alien`)

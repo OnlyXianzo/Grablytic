@@ -11,16 +11,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Release variants (Task 2: -PjsRuntime x -PtargetAbi; Task 3: names).
-          # Shipped set: arm64+Deno (recommended default), arm64+Node (smaller),
-          # universal (both runtimes, all ABIs — also covers armv7/x86_64 devices;
-          # Deno has no armv7 upstream build, so no standalone armv7+Deno row).
+          # Modern 64-bit ARM (ARM64-v8a):
           - variant: arm64-deno
             target_arg: "-PtargetAbi=arm64-v8a"
             jsruntime_arg: "-PjsRuntime=deno"
           - variant: arm64-node
             target_arg: "-PtargetAbi=arm64-v8a"
             jsruntime_arg: "-PjsRuntime=node"
+
+          # 32-bit ARM (ARMeabi-v7a) — low-end / budget devices (e.g. Galaxy A04e, older phones):
+          - variant: armv7-node
+            target_arg: "-PtargetAbi=armeabi-v7a"
+            jsruntime_arg: "-PjsRuntime=node"
+
+          # 64-bit x86 (x86_64) — emulators, Chromebooks, Intel-based Android:
+          - variant: x86_64-deno
+            target_arg: "-PtargetAbi=x86_64"
+            jsruntime_arg: "-PjsRuntime=deno"
+          - variant: x86_64-node
+            target_arg: "-PtargetAbi=x86_64"
+            jsruntime_arg: "-PjsRuntime=node"
+
+          # Universal multi-ABI bundle (all 3 ABIs + all runtimes):
           - variant: universal
             target_arg: ""
             jsruntime_arg: ""
