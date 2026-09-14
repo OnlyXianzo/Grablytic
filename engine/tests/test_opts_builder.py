@@ -515,3 +515,17 @@ def test_explicit_audio_without_video_treated_as_audio(tmp_path):
     extract_pps = [p for p in pps if p.get("key") == "FFmpegExtractAudio"]
     assert len(extract_pps) == 1
     assert extract_pps[0]["preferredcodec"] == "opus"
+
+
+def test_thumbnails_opt_out_writes_no_thumbnail():
+    # User-facing "Save thumbnails" toggle OFF (embedthumbnail False via
+    # settingsDownloadConfig) must produce zero thumbnail fetching,
+    # converting, or embedding — e.g. Instagram reels today always write
+    # sidecars because the engine default is True and nothing overrides it.
+    opts = build_ydl_opts(config={"embedthumbnail": False, "addmetadata": True})
+    assert "writethumbnail" not in opts
+    keys = [pp.get("key") for pp in opts.get("postprocessors", [])]
+    assert "FFmpegThumbnailsConvertor" not in keys
+    assert "EmbedThumbnail" not in keys
+    # Metadata PP must still exist (independent feature).
+    assert "FFmpegMetadata" in keys

@@ -337,6 +337,14 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   _SettingSwitch(
                     icon: Icons.image_outlined,
+                    title: 'Save thumbnails',
+                    subtitle: 'Download and keep the cover image next to each file',
+                    value: settings.saveThumbnails,
+                    onChanged: () => ref.read(settingsProvider.notifier).toggleSaveThumbnails(),
+                    colorScheme: colorScheme,
+                  ),
+                  _SettingSwitch(
+                    icon: Icons.image_outlined,
                     title: 'Lossless thumbnails (PNG)',
                     subtitle: 'Save thumbnail image as PNG instead of JPG',
                     value: settings.pngThumbnails,

@@ -289,6 +289,10 @@ class TracedEngineService implements EngineService {
       'system/notification_settings', () => _inner.openNotificationSettings());
 
   @override
+  Future<Map<String, dynamic>> openUrl(String url) =>
+      _traced('intent/open_url', () => _inner.openUrl(url));
+
+  @override
   Future<Map<String, dynamic>> syncSchedule({
     required bool enabled,
     int intervalMinutes = 60,

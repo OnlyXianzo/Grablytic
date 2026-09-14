@@ -361,6 +361,10 @@ class MockEngineService implements EngineService {
       {'success': false, 'supported': false};
 
   @override
+  Future<Map<String, dynamic>> openUrl(String url) async =>
+      {'success': false, 'supported': false};
+
+  @override
   Future<Map<String, dynamic>> syncSchedule({
     required bool enabled,
     int intervalMinutes = 60,
