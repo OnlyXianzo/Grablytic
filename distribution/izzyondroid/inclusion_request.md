@@ -1,26 +1,30 @@
-### Application Details
+[✓] The app complies with the inclusion criteria as listed in the README https://gitlab.com/IzzyOnDroid/repo/blob/master/README.md#what-are-the-requirements-an-app-must-meet-to-be-included-with-the-repo
+[✓] The app is not already listed in the repo or issue tracker
 
-- **Application Name**: TrueStream
-- **Package Name (Application ID)**: `com.theonly.truestream`
-- **Source Code Repository**: https://github.com/OnlyXianzo/TrueStream
-- **Issue Tracker**: https://github.com/OnlyXianzo/TrueStream/issues
-- **License**: MIT (`https://github.com/OnlyXianzo/TrueStream/blob/main/LICENSE`)
-- **Releases Page**: https://github.com/OnlyXianzo/TrueStream/releases
+--------
 
-### Repository & Build Information
+### Link to the source code: https://github.com/OnlyXianzo/TrueStream
 
-- **Tag Format**: `v*` (e.g., `v0.0.1`)
-- **Current Version**: `0.0.1` (VersionCode: `2`)
-- **APK Naming Pattern**: `truestream-v{version}-universal.apk` or `truestream-v{version}-arm64-deno.apk`
-- **Release Assets**: Pre-compiled and signed release APKs uploaded as GitHub Release assets.
-- **Fastlane Metadata Available**: Yes, located in repo at `fastlane/metadata/android/en-US/`.
+### Link to app in another app store: None (FOSS-first distribution)
 
-### Compliance & Ethics
+### License used: MIT license (https://github.com/OnlyXianzo/TrueStream/blob/main/LICENSE)
 
-- **Trackers & Analytics**: None (0 trackers. No Google Analytics, no Firebase, no telemetry).
-- **Advertising SDKs**: None (100% ad-free).
-- **Anti-Features**: `NonFreeNet` (downloads user-requested media streams from third-party websites).
-- **Reproducibility & Open Source**: Full source code available, zero proprietary binaries bundled.
+### Category: Multimedia
 
-### Short Description
-Fast, privacy-first media downloader powered by yt-dlp & dual JS runtimes.
+### Summary: Fast, privacy-first media downloader powered by yt-dlp & dual JS runtimes.
+
+### Description:
+
+TrueStream is a high-performance, privacy-first media downloader and audio extractor for Android.
+
+Powered by an embedded Python extraction core with yt-dlp and dual JS runtimes (Deno 2.7.7 and Node.js 25.3.0), TrueStream enables full-fidelity media downloads from over 1,000 supported websites with zero telemetry, zero advertising SDKs, and zero tracking.
+
+#### MAIN FEATURES
+• High-Fidelity Video & Audio: Download up to 4K/8K video resolutions, 60fps streams, and high-bitrate Opus/AAC audio extraction.
+• Dual JavaScript Extraction Runtimes: Bundles Deno 2.7.7 for maximum performance and Node.js 25.3.0 for broad compatibility with complex website extractors.
+• Multi-Stream & Format Selection: Intelligently parse separate video and audio streams, previewing formats, codecs, and sizes before downloading.
+• Playlist & Batch Support: Download complete playlists with selective item filtering, reverse ordering, and shuffle options.
+• Fluid, Responsive UI: Modern dark-mode interface built with Flutter.
+• Hardware-Optimized: Native Bionic C/C++ libraries tailored per Android ABI (arm64-v8a, armeabi-v7a, x86_64).
+• Fastlane Structure: Metadata present in repo under `fastlane/metadata/android/en-US/`.
+• Releases Tagged: Tag `v0.0.1` has pre-compiled signed release APKs (e.g. `truestream-v0.0.1-universal.apk` or `truestream-v0.0.1-arm64-deno.apk`).
