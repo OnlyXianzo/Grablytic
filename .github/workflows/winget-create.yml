@@ -9,11 +9,16 @@ jobs:
   winget:
     name: Submit WinGet Manifest
     runs-on: windows-latest
-    # Fail fast without WINGET_TOKEN: github.token cannot open PRs on microsoft/winget-pkgs.
-    if: ${{ secrets.WINGET_TOKEN != '' }}
+    # Fork-safe: only run upstream (forks lack WINGET_TOKEN; the check step below fails fast there).
+    if: github.repository == 'OnlyXianzo/TrueStream'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check WINGET_TOKEN present
+        run: '[ -n "$WINGET_TOKEN" ] || { echo "::error::WINGET_TOKEN secret is not set — add a classic PAT (public_repo) as repo secret"; exit 1; }'
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
 
       - name: Submit package to Windows Package Manager Community Repository
         uses: vedantmgoyal2009/winget-releaser@v2
