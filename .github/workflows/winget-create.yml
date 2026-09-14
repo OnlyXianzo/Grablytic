@@ -16,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check WINGET_TOKEN present
+        shell: bash
         run: '[ -n "$WINGET_TOKEN" ] || { echo "::error::WINGET_TOKEN secret is not set — add a classic PAT (public_repo) as repo secret"; exit 1; }'
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
