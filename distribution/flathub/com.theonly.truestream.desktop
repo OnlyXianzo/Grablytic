@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=TrueStream
+Comment=Privacy-first media downloader
+Exec=truestream
+Icon=com.theonly.truestream
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Network;

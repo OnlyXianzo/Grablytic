@@ -1,0 +1,1 @@
+Fast, privacy-first media downloader powered by yt-dlp & dual JS runtimes.

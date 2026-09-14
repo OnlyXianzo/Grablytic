@@ -1,0 +1,24 @@
+name: Publish to WinGet
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  winget:
+    name: Submit WinGet Manifest
+    runs-on: windows-latest
+    # Fail fast without WINGET_TOKEN: github.token cannot open PRs on microsoft/winget-pkgs.
+    if: ${{ secrets.WINGET_TOKEN != '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Submit package to Windows Package Manager Community Repository
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: OnlyXianzo.TrueStream
+          version: ${{ github.event.release.tag_name || '0.0.1' }}
+          installers-regex: '\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}

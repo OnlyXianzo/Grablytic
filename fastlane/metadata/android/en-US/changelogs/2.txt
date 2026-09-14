@@ -1,0 +1,7 @@
+TrueStream v0.0.1 Beta (Build 2):
+• Initial public release across Android, Linux, and Windows.
+• Embedded yt-dlp Python engine with Chaquopy IPC runtime.
+• ABI splitting with Deno 2.7.7 and Node.js 25.3.0 runtime options.
+• Fluid bottom navigation with animated transitions and onboarding permissions flow.
+• Audio-only and pure audio source handling (SoundCloud, Opus/AAC).
+• Full batch and playlist selection controls.
