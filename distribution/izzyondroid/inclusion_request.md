@@ -1,4 +1,13 @@
-[✓] The app complies with the inclusion criteria as listed in the README https://gitlab.com/IzzyOnDroid/repo/blob/master/README.md#what-are-the-requirements-an-app-must-meet-to-be-included-with-the-repo
+# IzzyOnDroid Inclusion Request
+
+> **Target Repository**: `https://codeberg.org/IzzyOnDroid/repodata/issues/new`  
+> **Notice**: As of mid-2026, IzzyOnDroid has officially migrated its active issue tracker and metadata submissions from GitLab to Codeberg (`IzzyOnDroid/repodata`).  
+> **Submission Title**: `New App: TrueStream`  
+
+---
+
+```markdown
+[✓] The app complies with the inclusion criteria as listed in the README https://codeberg.org/IzzyOnDroid/repodata#what-are-the-requirements-an-app-must-meet-to-be-included-with-the-repo
 [✓] The app is not already listed in the repo or issue tracker
 
 --------
@@ -28,3 +37,4 @@ Powered by an embedded Python extraction core with yt-dlp and dual JS runtimes (
 • Hardware-Optimized: Native Bionic C/C++ libraries tailored per Android ABI (arm64-v8a, armeabi-v7a, x86_64).
 • Fastlane Structure: Metadata present in repo under `fastlane/metadata/android/en-US/`.
 • Releases Tagged: Tag `v0.0.1` has pre-compiled signed release APKs (e.g. `truestream-v0.0.1-universal.apk` or `truestream-v0.0.1-arm64-deno.apk`).
+```
