@@ -171,6 +171,18 @@ Based on the latest commits on `main`:
 
 Navigation: **AppShell** (`IndexedStack`, 3 tabs) — `BottomNavigationBar` on narrow (<600 px), `NavigationRail` on wide screens. Share-intent URLs arrive via `EngineService.sharedUrlStream`; the default path shows a choice bottom sheet gated on engine readiness (auto-start opt-in skips it).
 
+### 📸 Real screenshots (v0.0.1-beta, 1080×2400 device captures)
+
+| Home | Library (live downloads) | Format Picker (16K HDR) |
+|---|---|---|
+| <img src="assets/screenshots/home-screen.jpg" width="270" /> | <img src="assets/screenshots/library-downloads.jpg" width="270" /> | <img src="assets/screenshots/format-picker-16k.jpg" width="270" /> |
+
+| Settings | Cookies & logins | Engine packages |
+|---|---|---|
+| <img src="assets/screenshots/settings-general.jpg" width="270" /> | <img src="assets/screenshots/cookies-screen.jpg" width="270" /> | <img src="assets/screenshots/packages-installed.jpg" width="270" /> |
+
+Full set (11 captures, incl. About, playlists, network, notification): [`assets/screenshots/`](assets/screenshots/).
+
 ---
 
 ## 🏗 Architecture
