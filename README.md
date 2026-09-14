@@ -59,6 +59,15 @@ same variant. Build flags per variant:
 
 ### 🐧 One-command Linux install (v0.0.1)
 
+Zero decisions — auto-detects distro (apt/dnf/zypper/pacman), arch (x64/arm64),
+verifies SHA256, installs natively:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OnlyXianzo/TrueStream/main/install.sh | bash
+```
+
+Per-family manual equivalents (same assets the script picks):
+
 ```bash
 # Debian / Ubuntu / Mint x64 (apt resolves dependencies)
 curl -LO https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream_0.0.1_amd64.deb && sudo apt install ./truestream_0.0.1_amd64.deb
