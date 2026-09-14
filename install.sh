@@ -22,7 +22,7 @@ run()  { if [ "$DRY_RUN" = "1" ]; then printf '[dry-run] %s\n' "$*"; else eval "
 need() { command -v "$1" >/dev/null 2>&1 || { log "missing required tool: $1"; exit 1; }; }
 
 usage() {
-  cat <<EOF
+  cat <<'EOF'
 Usage: install.sh [--version X.Y.Z] [--uninstall] [--dry-run] [--help]
   --version X.Y.Z  install a pinned release (default: latest GitHub release)
   --uninstall      remove grablytic with the native package manager
