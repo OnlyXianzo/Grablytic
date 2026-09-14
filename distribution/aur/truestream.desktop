@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=TrueStream
-Comment=Privacy-first media downloader
-Exec=/usr/bin/truestream
-Icon=truestream
-Terminal=false
-Type=Application
-Categories=AudioVideo;Video;Network;

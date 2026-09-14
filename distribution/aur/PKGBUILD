@@ -1,32 +1,36 @@
 # Maintainer: OnlyXianzo <xianzo.help@gmail.com>
-pkgname=truestream-bin
+pkgname=grablytic-bin
 pkgver=0.0.1
 pkgrel=1
 pkgdesc="Privacy-first high-performance media downloader powered by yt-dlp"
 arch=('x86_64' 'aarch64')
-url="https://github.com/OnlyXianzo/TrueStream"
+url="https://github.com/OnlyXianzo/Grablytic"
 license=('GPL3')
 depends=('gtk3' 'python' 'ffmpeg' 'aria2')
-provides=('truestream')
-conflicts=('truestream')
+provides=('grablytic')
+conflicts=('grablytic' 'truestream' 'truestream-bin')
+replaces=('truestream-bin')
 
-source_x86_64=("https://github.com/OnlyXianzo/TrueStream/releases/download/v${pkgver}/truestream-${pkgver}-linux-x64.tar.gz")
-source_aarch64=("https://github.com/OnlyXianzo/TrueStream/releases/download/v${pkgver}/truestream-${pkgver}-linux-arm64.tar.gz")
-source=('truestream.desktop' 'truestream.png')
+source_x86_64=("https://github.com/OnlyXianzo/Grablytic/releases/download/v${pkgver}/grablytic-${pkgver}-linux-x64.tar.gz")
+source_aarch64=("https://github.com/OnlyXianzo/Grablytic/releases/download/v${pkgver}/grablytic-${pkgver}-linux-arm64.tar.gz")
+source=('grablytic.desktop' 'grablytic.png')
 
-sha256sums_x86_64=('ddba14063d1bb7d0d7c3e7d1f73fe2c4174cbec1f7528ef353b1f84a626f1450')
-sha256sums_aarch64=('0f39d9eeef6b5ac851612c43b8dbbae20f748b4e6a17541e28033f66a4a0a6d0')
+# Rename transition: no grablytic-* release assets exist yet (v0.0.1 shipped
+# as truestream-*; sums recorded in docs/security-scans.md). Fill these from
+# the first Grablytic release before submitting to the AUR.
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
 sha256sums=('SKIP' 'SKIP')
 
 package() {
-    install -d "${pkgdir}/opt/truestream"
-    cp -r "${srcdir}"/* "${pkgdir}/opt/truestream/"
-    rm -f "${pkgdir}/opt/truestream"/*.tar.gz
-    rm -f "${pkgdir}/opt/truestream"/truestream.desktop "${pkgdir}/opt/truestream"/truestream.png
+    install -d "${pkgdir}/opt/grablytic"
+    cp -r "${srcdir}"/* "${pkgdir}/opt/grablytic/"
+    rm -f "${pkgdir}/opt/grablytic"/*.tar.gz
+    rm -f "${pkgdir}/opt/grablytic"/grablytic.desktop "${pkgdir}/opt/grablytic"/grablytic.png
 
     install -d "${pkgdir}/usr/bin"
-    ln -s /opt/truestream/truestream "${pkgdir}/usr/bin/truestream"
+    ln -s /opt/grablytic/grablytic "${pkgdir}/usr/bin/grablytic"
 
-    install -Dm644 "${srcdir}/truestream.desktop" "${pkgdir}/usr/share/applications/truestream.desktop"
-    install -Dm644 "${srcdir}/truestream.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/truestream.png"
+    install -Dm644 "${srcdir}/grablytic.desktop" "${pkgdir}/usr/share/applications/grablytic.desktop"
+    install -Dm644 "${srcdir}/grablytic.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/grablytic.png"
 }

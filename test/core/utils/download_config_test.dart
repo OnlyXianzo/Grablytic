@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/download_config.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/core/utils/download_config.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 void main() {
   group('settingsDownloadConfig (P1 shared overlay)', () {

@@ -23,7 +23,7 @@ body:
       label: Steps to reproduce
       description: Shortest deterministic repro path.
       placeholder: |
-        1. Open TrueStream.
+        1. Open Grablytic.
         2. Paste a YouTube playlist URL.
         3. Tap "Download All".
         4. App crashes at 30% on the third video.
@@ -60,7 +60,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: TrueStream version
+      label: Grablytic version
       placeholder: e.g. 1.0.0 or commit hash
     validations:
       required: true

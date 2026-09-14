@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/main.dart';
-import 'package:truestream/features/settings/screens/settings_screen.dart';
-import 'package:truestream/providers/settings_provider.dart';
-import 'package:truestream/providers/resume_provider.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
+import 'package:grablytic/main.dart';
+import 'package:grablytic/features/settings/screens/settings_screen.dart';
+import 'package:grablytic/providers/settings_provider.dart';
+import 'package:grablytic/providers/resume_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
 
 class _NoopResumeNotifier extends ResumeNotifier {
   _NoopResumeNotifier(super.ref);
@@ -156,7 +156,7 @@ void main() {
             engineProvider.overrideWith((ref) => testEngine),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
-          child: const TrueStreamApp(),
+          child: const GrablyticApp(),
         ),
       );
       await tester.pumpAndSettle();

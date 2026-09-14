@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/logging_observers.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/core/utils/logging_observers.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 void main() {
   group('diffAppSettings', () {

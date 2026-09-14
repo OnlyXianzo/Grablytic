@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Grablytic
+Comment=Privacy-first media downloader
+Exec=/usr/bin/grablytic
+Icon=grablytic
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Network;

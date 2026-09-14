@@ -2,7 +2,7 @@
 
 > Last updated: **2026-09-11**.
 
-Thanks for contributing to TrueStream. Here's how the process works.
+Thanks for contributing to Grablytic. Here's how the process works.
 
 Please note that this project is released with a Contributor [Code of Conduct](../CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
@@ -20,8 +20,8 @@ Please note that this project is released with a Contributor [Code of Conduct](.
 
 - Follow [Effective Dart](https://dart.dev/effective-dart) guidelines and the settings in `analysis_options.yaml`.
 - Use **Riverpod** for shared state. Never use `setState()` for state shared across widgets. Use `ConsumerWidget` / `ConsumerStatefulWidget` with providers.
-- Body text uses Instrument Sans via `GoogleFonts.instrumentSans()`. Mono text (speeds, URLs, format codes) uses `Theme.of(context).textTheme.mono` (the `TrueStreamTextStyles` extension on `TextTheme` that provides IosevkaCharonMono).
-- All colors must reference DESIGN.md tokens via `TrueStreamColors`. Never hardcode hex values.
+- Body text uses Instrument Sans via `GoogleFonts.instrumentSans()`. Mono text (speeds, URLs, format codes) uses `Theme.of(context).textTheme.mono` (the `GrablyticTextStyles` extension on `TextTheme` that provides IosevkaCharonMono).
+- All colors must reference DESIGN.md tokens via `GrablyticColors`. Never hardcode hex values.
 - Use `const` constructors where possible. Avoid mutable state in widgets.
 - Aim for 48x48 minimum touch targets for interactive elements.
 - Add semantic labels (`Semantics` widget) for screen reader support (WCAG 2.2 AA).
@@ -34,7 +34,7 @@ Please note that this project is released with a Contributor [Code of Conduct](.
 - Use the `YoutubeDL` class API from yt-dlp. Never call `subprocess.run()` with the yt-dlp binary.
 - All blocking operations must run in `threading.Thread` with a cancel event.
 - Use structured JSON for Flutter communication. No `print()` statements for machine-readable output (use `get_logger()` — logs go to file + IPC queue).
-- Keep functions focused on a single responsibility. Each module in `engine/truestream_engine/` owns one concern.
+- Keep functions focused on a single responsibility. Each module in `engine/grablytic_engine/` owns one concern.
 - Use `set_paths()` to inject all binary paths. Never hardcode paths.
 - Extraction of zips/tars: always go through `_safe_extract_zip` / `_safe_extract_tar` (Zip-Slip/Tar-Slip guards). Never call `extractall()` directly.
 - JS execution: only SHA-256-allowlisted snippets via `verify_js_code()`. Never eval remote/fetched JS.
@@ -107,7 +107,7 @@ The CI pipeline in `.github/workflows/verify.yml` enforces all three on every pu
 - **Events**: Android progress goes through `event_callback.onEvent(json)` with queue fallback. Streaming progress capped at 99%; terminal `finished` carries 100% + `filesize_bytes`.
 - **State**: Riverpod `ConsumerWidget`/`Notifier`/`AsyncNotifier`. Never `setState()` for shared state.
 - **Fonts**: Body = `GoogleFonts.instrumentSans()`. Mono = `Theme.of(context).textTheme.mono` (IosevkaCharonMono). Never system fonts.
-- **Colors**: Always from DESIGN.md tokens via `TrueStreamColors`. Never hex literals.
+- **Colors**: Always from DESIGN.md tokens via `GrablyticColors`. Never hex literals.
 - **Config**: Never hardcode paths. All binary paths injected via `set_paths()` (8 args — keep `deno_path` aligned!).
 - **Format options**: Never use both `merge_output_format` and `remux_video` simultaneously in yt-dlp options.
 - **Subtitles**: Embed via `FFmpegEmbedSubtitle` PP, ordered EmbedSubtitle → ModifyChapters → Metadata. Never rely on the (non-existent) `embedsubs` param.
@@ -133,14 +133,14 @@ The CI pipeline in `.github/workflows/verify.yml` enforces all three on every pu
 
 ## How to Add a New Python Module
 
-1. **Create the module:** `engine/truestream_engine/<module>.py`.
-   - Import from sibling modules where needed (e.g. `from truestream_engine.paths import ...`).
+1. **Create the module:** `engine/grablytic_engine/<module>.py`.
+   - Import from sibling modules where needed (e.g. `from grablytic_engine.paths import ...`).
    - Keep one responsibility per module.
 2. **Add tests:** `engine/tests/test_<module>.py`.
    - Write pytest functions with plain `assert` statements.
    - Cover normal cases, edge cases, and error paths.
-3. **Wire into the IPC dispatch** in `engine/truestream_engine/__main__.py`:
+3. **Wire into the IPC dispatch** in `engine/grablytic_engine/__main__.py`:
    - Add an `elif method == "<namespace>/<action>"` branch that calls your function.
    - Return a JSON-serializable dict (include `"success": True/False` for error reporting).
-4. **Update the public API** in `engine/truestream_engine/__init__.py` if the function should be accessible from the package level.
+4. **Update the public API** in `engine/grablytic_engine/__init__.py` if the function should be accessible from the package level.
 5. **Run tests:** `pytest engine/tests/ -v` and verify all pass.

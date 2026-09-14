@@ -4,26 +4,36 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Migration-aware download-folder resolution (TrueStream → Grablytic).
+///
+/// - Fresh installs get `<parent>/Grablytic` (created on demand).
+/// - If a legacy `<parent>/TrueStream` folder already exists (and no
+///   `Grablytic` folder does), it keeps being used so the rename never
+///   orphans the user's existing files. Nothing is moved, renamed, or
+///   deleted — the user can switch folders at any time in Settings, and an
+///   explicitly stored `downloadPath` always wins over both defaults.
+Future<String> _resolveDownloadDir(Directory parent) async {
+  final next = Directory('${parent.path}/Grablytic');
+  if (await next.exists()) return next.path;
+  final legacy = Directory('${parent.path}/TrueStream');
+  if (await legacy.exists()) return legacy.path;
+  await next.create(recursive: true);
+  return next.path;
+}
+
 Future<String> getDefaultDownloadPath() async {
   if (Platform.isAndroid) {
-    final dir = Directory('/storage/emulated/0/Download/TrueStream');
-    if (!await dir.exists()) {
-      try {
-        await dir.create(recursive: true);
-      } catch (_) {
-        final appDoc = await getApplicationDocumentsDirectory();
-        return '${appDoc.path}/Downloads';
-      }
+    try {
+      return await _resolveDownloadDir(
+          Directory('/storage/emulated/0/Download'));
+    } catch (_) {
+      final appDoc = await getApplicationDocumentsDirectory();
+      return '${appDoc.path}/Downloads';
     }
-    return dir.path;
   } else {
     final downloadsDir = await getDownloadsDirectory();
     if (downloadsDir != null) {
-      final dir = Directory('${downloadsDir.path}/TrueStream');
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      return dir.path;
+      return _resolveDownloadDir(downloadsDir);
     }
     final docDir = await getApplicationDocumentsDirectory();
     return '${docDir.path}/Downloads';

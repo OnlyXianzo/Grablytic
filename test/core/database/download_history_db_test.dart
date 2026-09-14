@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:truestream/core/database/download_history_db.dart';
+import 'package:grablytic/core/database/download_history_db.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -87,8 +87,8 @@ void main() {
     late Directory tempDir;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('truestream_db_test_');
-      final dbPath = p.join(tempDir.path, 'test_truestream.db');
+      tempDir = await Directory.systemTemp.createTemp('grablytic_db_test_');
+      final dbPath = p.join(tempDir.path, 'test_grablytic.db');
       db = await openDatabase(
         dbPath,
         version: 3,

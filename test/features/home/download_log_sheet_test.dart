@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:truestream/core/utils/log_buffer.dart';
-import 'package:truestream/core/utils/log_entry.dart';
-import 'package:truestream/features/home/widgets/download_log_sheet.dart';
-import 'package:truestream/providers/log_provider.dart';
+import 'package:grablytic/core/utils/log_buffer.dart';
+import 'package:grablytic/core/utils/log_entry.dart';
+import 'package:grablytic/features/home/widgets/download_log_sheet.dart';
+import 'package:grablytic/providers/log_provider.dart';
 
 void main() {
   late LogBuffer buffer;

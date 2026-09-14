@@ -2,7 +2,7 @@
 
 > **Target Repository**: `https://codeberg.org/IzzyOnDroid/repodata/issues/new`  
 > **Notice**: As of mid-2026, IzzyOnDroid has officially migrated its active issue tracker and metadata submissions from GitLab to Codeberg (`IzzyOnDroid/repodata`).  
-> **Submission Title**: `New App: TrueStream`  
+> **Submission Title**: `New App: Grablytic`  
 
 ---
 
@@ -14,11 +14,11 @@
 
 --------
 
-### Link to the source code: https://github.com/OnlyXianzo/TrueStream
+### Link to the source code: https://github.com/OnlyXianzo/Grablytic
 
 ### Link to app in another app store: None (FOSS-first distribution)
 
-### License used: GPL-3.0-only (https://github.com/OnlyXianzo/TrueStream/blob/main/LICENSE)
+### License used: GPL-3.0-only (https://github.com/OnlyXianzo/Grablytic/blob/main/LICENSE)
 
 ### Category: Multimedia
 
@@ -26,9 +26,9 @@
 
 ### Description:
 
-TrueStream is a high-performance, privacy-first media downloader and audio extractor for Android.
+Grablytic is a high-performance, privacy-first media downloader and audio extractor for Android.
 
-Powered by an embedded Python extraction core with yt-dlp and dual JS runtimes (Deno 2.7.7 and Node.js 25.3.0), TrueStream enables full-fidelity media downloads from over 1,000 supported websites with zero telemetry, zero advertising SDKs, and zero tracking.
+Powered by an embedded Python extraction core with yt-dlp and dual JS runtimes (Deno 2.7.7 and Node.js 25.3.0), Grablytic enables full-fidelity media downloads from over 1,000 supported websites with zero telemetry, zero advertising SDKs, and zero tracking.
 
 #### MAIN FEATURES
 • High-Fidelity Video & Audio: Download up to 4K/8K video resolutions, 60fps streams, and high-bitrate Opus/AAC audio extraction.

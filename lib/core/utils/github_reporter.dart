@@ -27,23 +27,23 @@ class GithubReporter {
 
   static const String _envRepo = String.fromEnvironment(
     'GITHUB_REPO',
-    defaultValue: 'OnlyXianzo/TrueStream',
+    defaultValue: 'OnlyXianzo/Grablytic',
   );
 
   /// Flutter SDK version, stamped at build time:
-  /// `flutter build apk --dart-define=TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -1)`
+  /// `flutter build apk --dart-define=GRABLYTIC_FLUTTER_VERSION=$(flutter --version | head -1)`
   /// (wired in .github/workflows/build.yml). `const` is required — AOT
   /// builds drop non-const environment lookups. Empty (dev runs) → 'unknown'.
   static const String _envFlutter = String.fromEnvironment(
-    'TRUESTREAM_FLUTTER_VERSION',
+    'GRABLYTIC_FLUTTER_VERSION',
     defaultValue: '',
   );
 
-  /// Short git SHA stamped at build time (`--dart-define=TRUESTREAM_GIT_SHA`,
+  /// Short git SHA stamped at build time (`--dart-define=GRABLYTIC_GIT_SHA`,
   /// wired in .github/workflows/build.yml). Lets any pasted log be pinned to
   /// the exact commit that produced it. Empty (dev runs) → 'unknown'.
   static const String _envGitSha = String.fromEnvironment(
-    'TRUESTREAM_GIT_SHA',
+    'GRABLYTIC_GIT_SHA',
     defaultValue: '',
   );
 
@@ -52,7 +52,7 @@ class GithubReporter {
     String? repo,
     String? token,
   })  : owner = owner ?? _envRepo.split('/').first,
-        repo = repo ?? (_envRepo.contains('/') ? _envRepo.split('/').last : 'TrueStream'),
+        repo = repo ?? (_envRepo.contains('/') ? _envRepo.split('/').last : 'Grablytic'),
         _explicitToken = token;
 
   String? get _token {

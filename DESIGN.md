@@ -1,11 +1,11 @@
-# TrueStream Design System
+# Grablytic Design System
 
 > **Version:** 1.0 · **Status:** Canonical
-> **Source of truth for tokens:** `lib/core/theme/app_theme.dart` (`TrueStreamColors`, `AppTheme`)
+> **Source of truth for tokens:** `lib/core/theme/app_theme.dart` (`GrablyticColors`, `AppTheme`)
 > This document describes intent and usage. If this file and `app_theme.dart`
 > ever disagree, `app_theme.dart` wins and this file must be updated.
 
-TrueStream looks like a **curated bazaar**: warm paper, deep ink text, one
+Grablytic looks like a **curated bazaar**: warm paper, deep ink text, one
 confident terracotta voice for the primary value and the primary action,
 and a quiet sage voice reserved for verified / saved / healthy states.
 Depth comes from cream-on-cream tonal shifts and paper gutters — never
@@ -31,11 +31,17 @@ from drop shadows.
 
 ## 2. Brand and logo
 
-The TrueStream mark is a white geometric `T` folded into a hexagonal tile,
-set on a terracotta paper field, with a soft-serif `Truestream` wordmark
+The Grablytic mark is a white geometric `T` folded into a hexagonal tile,
+set on a terracotta paper field, with a soft-serif `Grablytic` wordmark
 below it in paper white.
 
-- **Canonical asset (repo):** `assets/branding/Truestream-logo.png`
+- **Canonical asset (repo):** `assets/branding/Grablytic-logo.png`
+- **TODO (rename):** the current PNGs (`assets/brand/grablytic_logo*.png`,
+  `assets/branding/Grablytic-logo.png`, launcher `mipmap-*`, store icons)
+  are pre-rename artwork carrying the old "T" mark/wordmark — file names were
+  updated for consistency but the artwork itself still needs a real redesign,
+  not a rename. Do not ship a release with new binaries + old mark without
+  resolving this.
 - **Field:** Terracotta Deep (see §3) with visible paper grain. Never
   flat-red, never gradient.
 - **Mark / wordmark:** Paper White `#FFFFFF` on terracotta; Espresso
@@ -77,7 +83,7 @@ below it in paper white.
 | Danger wash | `#FFDAD6` `lightErrorContainer` | `#93000A` `darkErrorContainer` | Error card fill |
 
 Full token list (fixed shades, secondary surfaces, inverse pairings) lives
-in `TrueStreamColors` — consume via `Theme.of(context).colorScheme`, never
+in `GrablyticColors` — consume via `Theme.of(context).colorScheme`, never
 as hex literals. New code with a hex literal fails review.
 
 ### 3.2 Distribution
@@ -249,7 +255,7 @@ semantics. Minimum target 48×48, every item semantically labelled.
 
 ## 7. Screens
 
-Seven connected patterns form the complete flow. TrueStream's
+Seven connected patterns form the complete flow. Grablytic's
 implementation screens bind to them as noted:
 
 1. **Home feed** — search, chips, featured banner, recent-items masonry.
@@ -313,10 +319,10 @@ archive, auth, updates), `SubtitleSettingsScreen`,
 
 ## 10. Implementation binding
 
-- Tokens: `TrueStreamColors` in `lib/core/theme/app_theme.dart`;
+- Tokens: `GrablyticColors` in `lib/core/theme/app_theme.dart`;
   schemes: `AppTheme.light()` / `AppTheme.dark()` (`useMaterial3: true`,
   scaffold = surface, `instrumentSansTextTheme`).
-- Mono: `TrueStreamTextStyles.mono` (`lib/core/theme/text_styles.dart`).
+- Mono: `GrablyticTextStyles.mono` (`lib/core/theme/text_styles.dart`).
 - Shell: `AppShell` — `PageView` + bottom pill nav (<600 dp) /
   `NavigationRail` (wide). Providers stay Riverpod; shared UI state never
   in `setState`.

@@ -19,7 +19,7 @@ Before submitting, check which docs are relevant to your change and confirm you'
 _If your change touches the download engine, IPC layer, or UI:_
 
 - [ ] `docs/architecture.md` — Flutter ↔ Python IPC contract and engine architecture
-- [ ] `DESIGN.md` — TrueStream design system tokens and guidelines
+- [ ] `DESIGN.md` — Grablytic design system tokens and guidelines
 
 ---
 

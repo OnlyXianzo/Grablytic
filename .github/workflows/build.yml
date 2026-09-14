@@ -85,34 +85,34 @@ jobs:
       - run: flutter pub get
 
       - name: Stamp Flutter version
-        run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
+        run: echo "GRABLYTIC_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
 
       - name: Stamp git commit
-        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GRABLYTIC_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Stamp release version
         run: |
           V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          echo "TRUESTREAM_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
+          echo "GRABLYTIC_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
 
       - name: Build Android APK (${{ matrix.variant }})
         run: |
           flutter build apk --release \
-            --dart-define=TRUESTREAM_FLUTTER_VERSION="${{ env.TRUESTREAM_FLUTTER_VERSION }}" \
-            --dart-define=TRUESTREAM_GIT_SHA="${{ env.TRUESTREAM_GIT_SHA }}" \
+            --dart-define=GRABLYTIC_FLUTTER_VERSION="${{ env.GRABLYTIC_FLUTTER_VERSION }}" \
+            --dart-define=GRABLYTIC_GIT_SHA="${{ env.GRABLYTIC_GIT_SHA }}" \
             ${{ matrix.target_arg }} \
             ${{ matrix.jsruntime_arg }}
 
       - name: Prepare APK output
         run: |
           mkdir -p dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/truestream-v${{ env.TRUESTREAM_RELEASE_VERSION }}-${{ matrix.variant }}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}-${{ matrix.variant }}.apk"
 
       - name: Upload Android Artifact (${{ matrix.variant }})
         uses: actions/upload-artifact@v4
         with:
-          name: truestream-${{ matrix.variant }}
-          path: dist/android/truestream-v${{ env.TRUESTREAM_RELEASE_VERSION }}-${{ matrix.variant }}.apk
+          name: grablytic-${{ matrix.variant }}
+          path: dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}-${{ matrix.variant }}.apk
 
   linux:
     name: Build Linux (${{ matrix.arch }} - deb, rpm, arch, tar.gz)
@@ -167,110 +167,114 @@ jobs:
       - run: flutter pub get
 
       - name: Stamp Flutter version
-        run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
+        run: echo "GRABLYTIC_FLUTTER_VERSION=$(flutter --version | head -n 1)" >> $GITHUB_ENV
 
       - name: Stamp release version
         run: |
           V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          echo "TRUESTREAM_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
+          echo "GRABLYTIC_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
 
       - name: Stamp git commit
-        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GRABLYTIC_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Release Bundle
         run: |
           flutter build linux --release \
-            --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" \
-            --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
+            --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" \
+            --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}"
 
       - name: Bundle Python Engine
         run: |
           BUNDLE_DIR=$(find build/linux -name "bundle" -type d | head -n 1)
           echo "Found bundle directory at: $BUNDLE_DIR"
           echo "BUNDLE_DIR=$BUNDLE_DIR" >> $GITHUB_ENV
-          cp -r engine/truestream_engine "$BUNDLE_DIR/"
+          cp -r engine/grablytic_engine "$BUNDLE_DIR/"
 
       - name: Package Tarball (.tar.gz)
         run: |
           mkdir -p dist/linux
-          tar -czvf "dist/linux/truestream-${{ env.TRUESTREAM_RELEASE_VERSION }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
+          tar -czvf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
 
       - name: Package Debian (.deb)
         run: |
           mkdir -p pkg_deb/DEBIAN
-          mkdir -p pkg_deb/opt/truestream
+          mkdir -p pkg_deb/opt/grablytic
           mkdir -p pkg_deb/usr/bin
           mkdir -p pkg_deb/usr/share/applications
           mkdir -p pkg_deb/usr/share/icons/hicolor/512x512/apps
 
           cat << EOF > pkg_deb/DEBIAN/control
-          Package: truestream
-          Version: ${{ env.TRUESTREAM_RELEASE_VERSION }}
+          Package: grablytic
+          Version: ${{ env.GRABLYTIC_RELEASE_VERSION }}
           Section: video
           Priority: optional
           Architecture: ${{ matrix.deb_arch }}
           Maintainer: OnlyXianzo <184820152+OnlyXianzo@users.noreply.github.com>
           Depends: libgtk-3-0, python3, ffmpeg, aria2
+          # Rename takeover: replace a manually installed pre-rename v0.0.1
+          # `truestream` package instead of leaving it orphaned alongside.
+          Replaces: truestream
+          Conflicts: truestream
           Description: Fast, beautiful, privacy-first media downloader
            Download from 1,000+ platforms with Flutter UI and yt-dlp Python engine.
           EOF
           chmod 644 pkg_deb/DEBIAN/control
           chmod 755 pkg_deb/DEBIAN
 
-          cat << 'EOF' > pkg_deb/usr/bin/truestream
+          cat << 'EOF' > pkg_deb/usr/bin/grablytic
           #!/bin/sh
-          exec /opt/truestream/truestream "$@"
+          exec /opt/grablytic/grablytic "$@"
           EOF
-          chmod 755 pkg_deb/usr/bin/truestream
+          chmod 755 pkg_deb/usr/bin/grablytic
 
-          cat << 'EOF' > pkg_deb/usr/share/applications/truestream.desktop
+          cat << 'EOF' > pkg_deb/usr/share/applications/grablytic.desktop
           [Desktop Entry]
-          Name=TrueStream
+          Name=Grablytic
           Comment=Privacy-first media downloader
-          Exec=/usr/bin/truestream
-          Icon=truestream
+          Exec=/usr/bin/grablytic
+          Icon=grablytic
           Terminal=false
           Type=Application
           Categories=AudioVideo;Video;Network;
           EOF
-          chmod 644 pkg_deb/usr/share/applications/truestream.desktop
+          chmod 644 pkg_deb/usr/share/applications/grablytic.desktop
 
-          cp -r "$BUNDLE_DIR"/* pkg_deb/opt/truestream/
-          cp assets/brand/truestream_logo_circle.png pkg_deb/usr/share/icons/hicolor/512x512/apps/truestream.png
-          chmod -R 755 pkg_deb/opt/truestream
+          cp -r "$BUNDLE_DIR"/* pkg_deb/opt/grablytic/
+          cp assets/brand/grablytic_logo_circle.png pkg_deb/usr/share/icons/hicolor/512x512/apps/grablytic.png
+          chmod -R 755 pkg_deb/opt/grablytic
 
-          dpkg-deb --build pkg_deb "dist/linux/truestream_${{ env.TRUESTREAM_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
+          dpkg-deb --build pkg_deb "dist/linux/grablytic_${{ env.GRABLYTIC_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
 
       - name: Package RPM (.rpm)
         run: |
-          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/truestream_${{ env.TRUESTREAM_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
-          RPM_FILE=$(ls truestream*.rpm 2>/dev/null | head -n 1)
+          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/grablytic_${{ env.GRABLYTIC_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
+          RPM_FILE=$(ls grablytic*.rpm 2>/dev/null | head -n 1)
           if [ -n "$RPM_FILE" ]; then
-            mv "$RPM_FILE" "dist/linux/truestream-${{ env.TRUESTREAM_RELEASE_VERSION }}-1.${{ matrix.rpm_arch }}.rpm"
+            mv "$RPM_FILE" "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}-1.${{ matrix.rpm_arch }}.rpm"
           fi
 
       - name: Package Arch Linux (.pkg.tar.zst)
         run: |
-          mkdir -p pkg_arch/opt/truestream
+          mkdir -p pkg_arch/opt/grablytic
           mkdir -p pkg_arch/usr/bin
           mkdir -p pkg_arch/usr/share/applications
           mkdir -p pkg_arch/usr/share/icons/hicolor/512x512/apps
 
-          cp -r "$BUNDLE_DIR"/* pkg_arch/opt/truestream/
-          cp pkg_deb/usr/bin/truestream pkg_arch/usr/bin/truestream
-          cp pkg_deb/usr/share/applications/truestream.desktop pkg_arch/usr/share/applications/truestream.desktop
-          cp assets/brand/truestream_logo_circle.png pkg_arch/usr/share/icons/hicolor/512x512/apps/truestream.png
-          chmod -R 755 pkg_arch/opt/truestream
-          chmod 755 pkg_arch/usr/bin/truestream
+          cp -r "$BUNDLE_DIR"/* pkg_arch/opt/grablytic/
+          cp pkg_deb/usr/bin/grablytic pkg_arch/usr/bin/grablytic
+          cp pkg_deb/usr/share/applications/grablytic.desktop pkg_arch/usr/share/applications/grablytic.desktop
+          cp assets/brand/grablytic_logo_circle.png pkg_arch/usr/share/icons/hicolor/512x512/apps/grablytic.png
+          chmod -R 755 pkg_arch/opt/grablytic
+          chmod 755 pkg_arch/usr/bin/grablytic
 
           INST_SIZE=$(du -sb pkg_arch | awk '{print $1}')
           cat << EOF > pkg_arch/.PKGINFO
-          pkgname = truestream
-          pkgver = ${{ env.TRUESTREAM_RELEASE_VERSION }}-1
+          pkgname = grablytic
+          pkgver = ${{ env.GRABLYTIC_RELEASE_VERSION }}-1
           pkgdesc = Fast, beautiful, privacy-first media downloader
-          url = https://github.com/OnlyXianzo/TrueStream
+          url = https://github.com/OnlyXianzo/Grablytic
           builddate = $(date +%s)
-          packager = TrueStream CI
+          packager = Grablytic CI
           size = $INST_SIZE
           arch = ${{ matrix.arch_arch }}
           license = custom
@@ -280,12 +284,12 @@ jobs:
           depend = aria2
           EOF
 
-          tar --zstd -cf "dist/linux/truestream-${{ env.TRUESTREAM_RELEASE_VERSION }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
+          tar --zstd -cf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
 
       - name: Upload Linux Packages (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
         with:
-          name: truestream-linux-${{ matrix.arch }}-packages
+          name: grablytic-linux-${{ matrix.arch }}-packages
           path: dist/linux/*
 
   windows:
@@ -312,32 +316,32 @@ jobs:
       - run: flutter pub get
 
       - name: Stamp Flutter version
-        run: echo "TRUESTREAM_FLUTTER_VERSION=$(flutter --version | head -n 1)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        run: echo "GRABLYTIC_FLUTTER_VERSION=$(flutter --version | head -n 1)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Stamp git commit
-        run: echo "TRUESTREAM_GIT_SHA=$(git rev-parse --short HEAD)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        run: echo "GRABLYTIC_GIT_SHA=$(git rev-parse --short HEAD)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build Windows App (64-bit)
-        run: flutter build windows --release --dart-define="TRUESTREAM_FLUTTER_VERSION=${{ env.TRUESTREAM_FLUTTER_VERSION }}" --dart-define="TRUESTREAM_GIT_SHA=${{ env.TRUESTREAM_GIT_SHA }}"
+        run: flutter build windows --release --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}"
 
       - name: Copy Python Engine to Bundle
-        run: xcopy /E /I engine\truestream_engine build\windows\x64\runner\Release\truestream_engine
+        run: xcopy /E /I engine\grablytic_engine build\windows\x64\runner\Release\grablytic_engine
 
       - name: Package Windows ZIP
         run: |
           mkdir dist\windows
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\windows\truestream-windows-x64.zip
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\windows\grablytic-windows-x64.zip
 
       - name: Upload Windows Portable Zip
         uses: actions/upload-artifact@v4
         with:
-          name: truestream-windows-x64-zip
-          path: dist\windows\truestream-windows-x64.zip
+          name: grablytic-windows-x64-zip
+          path: dist\windows\grablytic-windows-x64.zip
 
       - name: Upload Windows Release Bundle
         uses: actions/upload-artifact@v4
         with:
-          name: truestream-windows-x64-bundle
+          name: grablytic-windows-x64-bundle
           path: build\windows\x64\runner\Release\
 
   publish-release:
@@ -373,7 +377,7 @@ jobs:
           ls -lh release_assets/
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" release_assets/* --title "TrueStream $TAG" --generate-notes --latest
+            gh release create "$TAG" release_assets/* --title "Grablytic $TAG" --generate-notes --latest
           else
             gh release upload "$TAG" release_assets/* --clobber
             gh release edit "$TAG" --latest --prerelease=false

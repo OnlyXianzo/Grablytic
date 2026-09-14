@@ -1,6 +1,6 @@
 # Security & Privacy Policy
 
-TrueStream is designed with a privacy-first, zero-telemetry architecture. We take the security of our application, user data, and downstream dependencies seriously.
+Grablytic is designed with a privacy-first, zero-telemetry architecture. We take the security of our application, user data, and downstream dependencies seriously.
 
 ## Supported Versions
 
@@ -11,9 +11,9 @@ TrueStream is designed with a privacy-first, zero-telemetry architecture. We tak
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability or sensitive data issue in TrueStream, please report it privately:
+If you discover a security vulnerability or sensitive data issue in Grablytic, please report it privately:
 
-1. **GitHub Security Advisory**: Use the [Private Vulnerability Reporting](https://github.com/OnlyXianzo/TrueStream/security/advisories/new) feature on GitHub to submit a confidential report.
+1. **GitHub Security Advisory**: Use the [Private Vulnerability Reporting](https://github.com/OnlyXianzo/Grablytic/security/advisories/new) feature on GitHub to submit a confidential report.
 2. Please provide a clear description of the vulnerability, reproduction steps, affected versions/platforms, and any potential mitigation.
 3. **Do not** open public GitHub issues or discussions for security vulnerabilities.
 4. We aim to acknowledge reports promptly and coordinate a fix prior to public disclosure.

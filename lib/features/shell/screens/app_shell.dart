@@ -85,7 +85,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Background Downloads'),
         content: const Text(
-          'Allow TrueStream to run unrestricted in the background so downloads do not pause or fail when your screen is turned off.\n\nYou can also configure this later in Settings.',
+          'Allow Grablytic to run unrestricted in the background so downloads do not pause or fail when your screen is turned off.\n\nYou can also configure this later in Settings.',
         ),
         actions: [
           TextButton(

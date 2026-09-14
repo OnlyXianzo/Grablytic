@@ -1,6 +1,6 @@
 """Unit tests for scheduler poll helpers."""
 
-from truestream_engine.scheduler_check import (
+from grablytic_engine.scheduler_check import (
     diff_new_entries,
     flat_entries_to_ids,
     flat_entry_video_id,

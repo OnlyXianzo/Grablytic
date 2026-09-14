@@ -18,7 +18,7 @@ import 'core/utils/log_buffer.dart';
 import 'core/utils/github_reporter.dart';
 import 'core/utils/logging_observers.dart';
 
-/// Route observer instance shared by [TrueStreamApp].
+/// Route observer instance shared by [GrablyticApp].
 final loggingNavigatorObserver = LoggingNavigatorObserver();
 
 void main() async {
@@ -35,7 +35,7 @@ void main() async {
   final logBuffer = LogBuffer(maxEntries: 5000);
   AppLogger.initBuffer(logBuffer);
   AppLogger.info(
-      'App opened/started (build ${const String.fromEnvironment('TRUESTREAM_GIT_SHA', defaultValue: 'dev')})');
+      'App opened/started (build ${const String.fromEnvironment('GRABLYTIC_GIT_SHA', defaultValue: 'dev')})');
 
   final cacheDir = await getTemporaryDirectory();
 
@@ -86,7 +86,7 @@ void main() async {
             sharedPreferencesProvider.overrideWithValue(prefs),
             logBufferProvider.overrideWithValue(logBuffer),
           ],
-          child: const TrueStreamApp(),
+          child: const GrablyticApp(),
         ),
       );
     },
@@ -100,8 +100,8 @@ void main() async {
   );
 }
 
-class TrueStreamApp extends ConsumerWidget {
-  const TrueStreamApp({super.key});
+class GrablyticApp extends ConsumerWidget {
+  const GrablyticApp({super.key});
 
   ThemeMode _mapThemeMode(AppThemeMode mode) {
     switch (mode) {
@@ -120,7 +120,7 @@ class TrueStreamApp extends ConsumerWidget {
     ref.watch(logIngesterProvider);
     final settings = ref.watch(settingsProvider);
     return MaterialApp(
-      title: 'TrueStream',
+      title: 'Grablytic',
       debugShowCheckedModeBanner: false,
       themeMode: _mapThemeMode(settings.themeMode),
       theme: AppTheme.light(),

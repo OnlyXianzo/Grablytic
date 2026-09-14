@@ -1,6 +1,6 @@
-TrueStream is a high-performance, privacy-first media downloader and audio extractor designed for Android and desktop platforms.
+Grablytic is a high-performance, privacy-first media downloader and audio extractor designed for Android and desktop platforms.
 
-Powered by an embedded Python extraction core with yt-dlp, TrueStream enables full-fidelity media downloads from over 1,000 supported websites with zero telemetry, zero advertising SDKs, and zero tracking.
+Powered by an embedded Python extraction core with yt-dlp, Grablytic enables full-fidelity media downloads from over 1,000 supported websites with zero telemetry, zero advertising SDKs, and zero tracking.
 
 Key Features:
 • High-Fidelity Video & Audio: Download up to 4K/8K video resolutions, 60fps streams, and high-bitrate Opus/AAC audio extraction.

@@ -69,7 +69,7 @@ jobs:
         run: uv pip install --system yt-dlp pytest pytest-cov "ruff==0.16.7" -e engine/
 
       - name: Run engine tests with coverage ratchet
-        run: pytest engine/tests/ -q --cov=engine/truestream_engine --cov-report=term --cov-fail-under=75
+        run: pytest engine/tests/ -q --cov=engine/grablytic_engine --cov-report=term --cov-fail-under=75
 
       - name: Ruff correctness gate (F rules, F401 import audit backlog excluded)
         run: ruff check engine/ --select F --ignore F401

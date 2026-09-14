@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/brand/truestream_logo_circle.png" alt="TrueStream Logo" width="160" />
+<img src="assets/brand/grablytic_logo_circle.png" alt="Grablytic Logo" width="160" />
 
-# 🎬 TrueStream
+# 🎬 Grablytic
 
 ### Download from 1,000+ platforms. Best quality. No ads. No accounts. No speed limits.
 
@@ -17,7 +17,7 @@ Built with **Flutter** + **Python (yt-dlp)** — one Dart codebase for **Android
 [![Linux](https://img.shields.io/badge/Linux-Ubuntu_%7C_Fedora_%7C_Debian-FCC624?logo=linux&logoColor=black)](https://www.linux.org)
 [![CI](https://img.shields.io/badge/CI-verify.ymlpassing-brightgreen?logo=githubactions&logoColor=white)](.github/workflows/verify.yml)
 [![Version](https://img.shields.io/badge/version-0.0.1--beta-blue)](pubspec.yaml)
-[![Get it on Obtainium](https://img.shields.io/badge/Get_it_on-Obtainium-1e88e5?logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%7D)
+[![Get it on Obtainium](https://img.shields.io/badge/Get_it_on-Obtainium-1e88e5?logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%7D)
 
 [✨ Features](#-features) · [🆕 What's New](#-whats-new--september-2026) · [🚀 Quick Start](#-quick-start) · [🏗 Architecture](#-architecture) · [📚 Docs](#-documentation) · [🤝 Contributing](#-contributing)
 
@@ -27,12 +27,21 @@ Built with **Flutter** + **Python (yt-dlp)** — one Dart codebase for **Android
 
 ## 📲 Install & stay updated
 
-**[➕ Add TrueStream to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%7D)**
+**[➕ Add Grablytic to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%7D)**
 — installs straight from GitHub Releases and keeps you updated automatically
 (one tap + confirm, no account, no store).
 First install [Obtainium](https://github.com/ImranR98/Obtainium/releases),
 tap the link on your device, confirm — or in Obtainium: *Add App* → paste
-`https://github.com/OnlyXianzo/TrueStream`.
+`https://github.com/OnlyXianzo/Grablytic`.
+
+> **Renamed TrueStream → Grablytic.** The application ID changed
+> (`com.theonly.truestream` → `com.theonly.grablytic`), so Android treats
+> this as a new app: if you installed the v0.0.1 TrueStream build, install
+> Grablytic fresh via the links above, then uninstall the old app (your
+> existing `Download/TrueStream` folder keeps being used — see
+> [`docs/troubleshooting.md`](docs/troubleshooting.md#truestream--grablytic-rename-data-migration)).
+> `v0.0.1` assets below keep their original `truestream-*` filenames and
+> checksums; new releases use `grablytic-*` names.
 
 ### Which APK? (device & hardware variants)
 
@@ -40,15 +49,15 @@ tap the link on your device, confirm — or in Obtainium: *Add App* → paste
 
 | Variant | Architecture | Runtime | Target Hardware | 1-tap Obtainium | Direct APK |
 |---|---|---|---|---|---|
-| **arm64 + Deno** ✅ | ARM64-v8a | Deno | High-end & modern phones (default) | [Add arm64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | [⬇ arm64‑deno](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-arm64-deno.apk) |
-| **arm64 + Node.js** | ARM64-v8a | Node.js | Modern phones, ≈40 MB smaller download | [Add arm64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | [⬇ arm64‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-arm64-node.apk) |
-| **armv7 + Node.js** | ARMeabi-v7a | Node.js | Low-end & budget 32-bit phones (e.g. Galaxy A04e) | [Add armv7‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22armv7-node%5C%22%7D%22%7D) | [⬇ armv7‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-armv7-node.apk) |
-| **x86_64 + Deno** | x86_64 | Deno | 64-bit Android emulators & Chromebooks | [Add x86_64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-deno%5C%22%7D%22%7D) | [⬇ x86_64‑deno](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-x86_64-deno.apk) |
-| **x86_64 + Node.js** | x86_64 | Node.js | 64-bit emulators & Chromebooks (smaller) | [Add x86_64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-node%5C%22%7D%22%7D) | [⬇ x86_64‑node](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-x86_64-node.apk) |
-| **universal** | All ABIs | Both | Universal multi-ABI fallback for any Android device | [Add universal](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.truestream%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FTrueStream%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22TrueStream%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22universal%5C%22%7D%22%7D) | [⬇ universal](https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-v0.0.1-universal.apk) |
+| **arm64 + Deno** ✅ | ARM64-v8a | Deno | High-end & modern phones (default) | [Add arm64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | [⬇ arm64‑deno](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-arm64-deno.apk) |
+| **arm64 + Node.js** | ARM64-v8a | Node.js | Modern phones, ≈40 MB smaller download | [Add arm64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | [⬇ arm64‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-arm64-node.apk) |
+| **armv7 + Node.js** | ARMeabi-v7a | Node.js | Low-end & budget 32-bit phones (e.g. Galaxy A04e) | [Add armv7‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22armv7-node%5C%22%7D%22%7D) | [⬇ armv7‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-armv7-node.apk) |
+| **x86_64 + Deno** | x86_64 | Deno | 64-bit Android emulators & Chromebooks | [Add x86_64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-deno%5C%22%7D%22%7D) | [⬇ x86_64‑deno](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-x86_64-deno.apk) |
+| **x86_64 + Node.js** | x86_64 | Node.js | 64-bit emulators & Chromebooks (smaller) | [Add x86_64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-node%5C%22%7D%22%7D) | [⬇ x86_64‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-x86_64-node.apk) |
+| **universal** | All ABIs | Both | Universal multi-ABI fallback for any Android device | [Add universal](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22universal%5C%22%7D%22%7D) | [⬇ universal](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-universal.apk) |
 
 <!-- obtainium: on each release, bump the v0.0.1 segment in the direct-APK links above to the new pubspec version core. -->
-Release assets are named `truestream-v<version>-<variant>.apk` (e.g.
+Release assets are named `grablytic-v<version>-<variant>.apk` (e.g.
 `truestream-v0.0.1-arm64-deno.apk`), attached to tags like `v0.0.1`
 and built by [`build.yml`](.github/workflows/build.yml).
 Releases ship as stable GitHub Releases (not prereleases) so Obtainium's
@@ -63,42 +72,42 @@ Zero decisions — auto-detects distro (apt/dnf/zypper/pacman), arch (x64/arm64)
 verifies SHA256, installs natively:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OnlyXianzo/TrueStream/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OnlyXianzo/Grablytic/main/install.sh | bash
 ```
 
 Per-family manual equivalents (same assets the script picks):
 
 ```bash
 # Debian / Ubuntu / Mint x64 (apt resolves dependencies)
-curl -LO https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream_0.0.1_amd64.deb && sudo apt install ./truestream_0.0.1_amd64.deb
+curl -LO https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream_0.0.1_amd64.deb && sudo apt install ./truestream_0.0.1_amd64.deb
 
 # Debian / Ubuntu arm64
-curl -LO https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream_0.0.1_arm64.deb && sudo apt install ./truestream_0.0.1_arm64.deb
+curl -LO https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream_0.0.1_arm64.deb && sudo apt install ./truestream_0.0.1_arm64.deb
 
 # Fedora / RHEL x64
-sudo dnf install https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
+sudo dnf install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
 
 # openSUSE x64
-sudo zypper install https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
+sudo zypper install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
 
 # Arch / Manjaro / EndeavourOS x64 (pacman fetches remote URLs directly)
-sudo pacman -U https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
 
 # — or with your helper (same remote-file support) —
-yay -U https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
-paru -U https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
-# after AUR ingestion: paru -S truestream-bin  (yay -S truestream-bin)
+yay -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+paru -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+# after AUR ingestion: paru -S grablytic-bin  (yay -S grablytic-bin)
 ```
 
-> Full signed APT repository (`apt update && apt install truestream`, auto-updates) is next:
+> Full signed APT repository (`apt update && apt install grablytic`, auto-updates) is next:
 > `dpkg-scanpackages` index + GPG-signed Release on GitHub Pages. The one-liners above are
 > the zero-infra one-click path until then.
 
 ---
 
-## 📖 What is TrueStream?
+## 📖 What is Grablytic?
 
-TrueStream is a **privacy-first media downloader** that pulls video & audio from
+Grablytic is a **privacy-first media downloader** that pulls video & audio from
 **1,000+ sites** (YouTube, Twitch, Twitter/X, Bilibili, podcasts & more) at the
 **maximum available quality**, then merges, tags and organizes it for you.
 
@@ -151,7 +160,7 @@ TrueStream is a **privacy-first media downloader** that pulls video & audio from
 
 ### ♿ Accessibility & theming
 - ✅ **WCAG 2.2 AA** — semantic labels, 48×48 touch targets, full TalkBack/VoiceOver support.
-- 🎨 **Earth & Ethos theme** — `TrueStreamColors` tokens (no hex literals), Material 3 light/dark, Instrument Sans body + Iosevka Charon mono.
+- 🎨 **Earth & Ethos theme** — `GrablyticColors` tokens (no hex literals), Material 3 light/dark, Instrument Sans body + Iosevka Charon mono.
 
 ---
 
@@ -277,8 +286,8 @@ downloads in `threading.Thread` + cancel event · Riverpod for shared state
 | `engine/update_check` | F → P | CDN re-check |
 | `engine/set_update_channel` | F → P | stable / nightly / master |
 
-Android transport: `MethodChannel com.theonly.truestream/engine` +
-`EventChannel com.theonly.truestream/progress` + `intent/shared_url`.
+Android transport: `MethodChannel com.theonly.grablytic/engine` +
+`EventChannel com.theonly.grablytic/progress` + `intent/shared_url`.
 Desktop transport: line-delimited JSON-RPC over stdin/stdout with UUID
 correlation, 30 s timeout, auto-restart (≤3).
 
@@ -325,8 +334,8 @@ correlation, 30 s timeout, auto-restart (≤3).
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/OnlyXianzo/TrueStream.git
-cd TrueStream
+git clone https://github.com/OnlyXianzo/Grablytic.git
+cd Grablytic
 flutter pub get
 flutter run
 ```
@@ -350,8 +359,8 @@ pytest engine/tests/ -v            # 181 tests
 | Platform | Command | Output |
 |---|---|---|
 | Android | `flutter build apk --release` | `build/app/outputs/flutter-apk/app-release.apk` |
-| Windows | `flutter build windows --release` + copy `engine/truestream_engine` into bundle | `build/windows/x64/runner/Release/` |
-| Linux | `flutter build linux --release` + copy `engine/truestream_engine` into bundle | `build/linux/x64/release/bundle/` |
+| Windows | `flutter build windows --release` + copy `engine/grablytic_engine` into bundle | `build/windows/x64/runner/Release/` |
+| Linux | `flutter build linux --release` + copy `engine/grablytic_engine` into bundle | `build/linux/x64/release/bundle/` |
 
 Android notes: `minSdk 24`, ABIs `arm64-v8a` + `x86_64`, Chaquopy bundles
 CPython 3.11 + engine + `yt-dlp`/`curl_cffi` via pip block; `ffmpeg`/`deno`
@@ -428,7 +437,7 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 ## 🤝 Contributing
 
 1. Fork → branch from `main` (`feat/…`, `fix/…`).
-2. Follow [Effective Dart](https://dart.dev/effective-dart) + PEP 8, Riverpod for shared state, `TrueStreamColors` (no hex), 48×48 targets + semantics.
+2. Follow [Effective Dart](https://dart.dev/effective-dart) + PEP 8, Riverpod for shared state, `GrablyticColors` (no hex), 48×48 targets + semantics.
 3. One logical change per commit, [conventional commits](docs/contributing.md#commit-conventions).
 4. Verify: `flutter analyze` · `flutter test` · `pytest engine/tests/ -v`.
 5. PR to `main` with motivation + verification + platforms tested.
@@ -439,20 +448,20 @@ See **[docs/contributing.md](docs/contributing.md)** for the full checklist.
 
 ## 📄 License & Code of Conduct
 
-TrueStream is open source and licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0).
+Grablytic is open source and licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0).
 
 Please review our [Code of Conduct](CODE_OF_CONDUCT.md) before participating in or contributing to the project.
 
 ### ⚖️ Legal / DMCA
 
-TrueStream is a **general-purpose tool** — you are responsible for your own
+Grablytic is a **general-purpose tool** — you are responsible for your own
 use and for complying with applicable law. Copyright holders: please send
 takedown/infringement reports to **xianzo.help@gmail.com**. Full notice:
 **[DMCA.md](DMCA.md)**.
 
 <div align="center">
 
-**TrueStream** — *your media, your device, your rules.* 🎬
+**Grablytic** — *your media, your device, your rules.* 🎬
 
 
 

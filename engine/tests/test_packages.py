@@ -9,15 +9,15 @@ import stat
 
 import pytest
 
-from truestream_engine import paths as paths_mod
-from truestream_engine.paths import get_paths, set_paths
+from grablytic_engine import paths as paths_mod
+from grablytic_engine.paths import get_paths, set_paths
 
 
 def _boot():
     """The bootstrap *module* (the package also exports a `bootstrap`
     function that shadows it on attribute access)."""
     import importlib
-    return importlib.import_module("truestream_engine.bootstrap")
+    return importlib.import_module("grablytic_engine.bootstrap")
 
 
 @pytest.fixture(autouse=True)
@@ -125,13 +125,13 @@ class TestLdPath:
 class TestProbe:
     @pytest.mark.unit
     def test_probe_returns_first_line(self, tmp_path):
-        from truestream_engine.bootstrap import _probe_bin_version
+        from grablytic_engine.bootstrap import _probe_bin_version
         exe = _fake_exe(tmp_path, "ffmpeg", "ffmpeg version n7.1-test")
         assert _probe_bin_version(exe) == "ffmpeg version n7.1-test"
 
     @pytest.mark.unit
     def test_probe_missing_returns_none(self, tmp_path):
-        from truestream_engine.bootstrap import _probe_bin_version
+        from grablytic_engine.bootstrap import _probe_bin_version
         assert _probe_bin_version(str(tmp_path / "nope")) is None
 
 
@@ -207,7 +207,7 @@ class TestAndroidBootstrap:
 class TestDenoJsRuntimeFromSo:
     @pytest.mark.unit
     def test_native_lib_deno_path_accepted(self, tmp_path):
-        from truestream_engine.opts_builder import _configure_js_runtime
+        from grablytic_engine.opts_builder import _configure_js_runtime
         deno = _fake_exe(tmp_path, "libdeno.so", "deno 2.7.7")
         # detect_js_runtime() resolves deno from the global paths store.
         set_paths(
@@ -222,7 +222,7 @@ class TestDenoJsRuntimeFromSo:
 
     @pytest.mark.unit
     def test_paths_store_wins_over_env_and_which(self, tmp_path, monkeypatch):
-        from truestream_engine import po_token as pot
+        from grablytic_engine import po_token as pot
 
         deno = _fake_exe(tmp_path, "libdeno.so", '{"token": "T123"}')
         set_paths(

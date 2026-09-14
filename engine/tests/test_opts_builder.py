@@ -1,6 +1,6 @@
 import pytest
-from truestream_engine.paths import set_paths, _paths
-from truestream_engine.opts_builder import build_ydl_opts
+from grablytic_engine.paths import set_paths, _paths
+from grablytic_engine.opts_builder import build_ydl_opts
 
 
 @pytest.fixture(autouse=True)
@@ -449,7 +449,7 @@ def test_legacy_use_aria2_alias(tmp_path):
 def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
     import sys
     import types
-    import truestream_engine.opts_builder as opts_mod
+    import grablytic_engine.opts_builder as opts_mod
     deno_file = tmp_path / "deno"
     deno_file.touch()
     node_file = tmp_path / "node"

@@ -1,4 +1,4 @@
-from truestream_engine.playlist import detect_playlist
+from grablytic_engine.playlist import detect_playlist
 
 
 class TestDetectPlaylist:
@@ -38,8 +38,8 @@ class TestDetectPlaylist:
 
 class TestGetPlaylistInfo:
     def test_generator_entries_and_none_filtering(self, monkeypatch):
-        from truestream_engine.playlist import get_playlist_info
-        import truestream_engine.playlist as pl_mod
+        from grablytic_engine.playlist import get_playlist_info
+        import grablytic_engine.playlist as pl_mod
 
         def sample_generator():
             yield {"title": "Song 1", "url": "dQw4w9WgXcQ", "duration": 180}
@@ -77,8 +77,8 @@ class TestGetPlaylistInfo:
         assert res["entries"][2]["url"] == "https://youtube.com/watch?v=123"
 
     def test_thumbnail_and_playlist_index_handling(self, monkeypatch):
-        from truestream_engine.playlist import get_playlist_info
-        import truestream_engine.playlist as pl_mod
+        from grablytic_engine.playlist import get_playlist_info
+        import grablytic_engine.playlist as pl_mod
 
         def sample_generator():
             yield {
@@ -125,36 +125,36 @@ class TestBuildPlaylistItems:
         # yt-dlp playlist_items is 1-indexed (PlaylistEntries[1:10] => 0..9),
         # matching the `index` values get_playlist_info reports — no 0→1
         # adjustment. "2,4,7" must download exactly the 2nd/4th/7th entries.
-        from truestream_engine.playlist import build_playlist_items
+        from grablytic_engine.playlist import build_playlist_items
         assert build_playlist_items([2, 4, 7]) == "2,4,7"
 
     def test_produced_string_round_trips_through_ytdlp_parser(self):
         # The built string must select exactly the requested entries when
         # yt-dlp itself parses it (guards 0-vs-1-index regressions).
         from yt_dlp.utils import PlaylistEntries
-        from truestream_engine.playlist import build_playlist_items
+        from grablytic_engine.playlist import build_playlist_items
         spec = build_playlist_items([1, 3, 5])
         kinds = list(PlaylistEntries.parse_playlist_items(spec))
         assert kinds == [1, 3, 5]
 
     def test_dedupes_keeps_order(self):
-        from truestream_engine.playlist import build_playlist_items
+        from grablytic_engine.playlist import build_playlist_items
         assert build_playlist_items([3, 1, 3, 2]) == "3,1,2"
 
     def test_empty_returns_empty(self):
-        from truestream_engine.playlist import build_playlist_items
+        from grablytic_engine.playlist import build_playlist_items
         assert build_playlist_items([]) == ""
 
     def test_invalid_indices_raise(self):
         import pytest
-        from truestream_engine.playlist import build_playlist_items
+        from grablytic_engine.playlist import build_playlist_items
         for bad in (0, -2, "abc", None, 2.5):
             with pytest.raises(ValueError):
                 build_playlist_items([1, bad])
 
     def test_unavailable_entries_are_marked(self, monkeypatch):
-        from truestream_engine.playlist import get_playlist_info
-        import truestream_engine.playlist as pl_mod
+        from grablytic_engine.playlist import get_playlist_info
+        import grablytic_engine.playlist as pl_mod
 
         def sample_generator():
             yield {"title": "Good video", "url": "https://example.com/1"}
@@ -181,6 +181,6 @@ class TestBuildPlaylistItems:
             True, False, False, False, False,
         ]
         # Only available indices feed the download selector.
-        from truestream_engine.playlist import build_playlist_items
+        from grablytic_engine.playlist import build_playlist_items
         avail = [e["index"] for e in res["entries"] if e["is_available"]]
         assert build_playlist_items(avail) == "1"

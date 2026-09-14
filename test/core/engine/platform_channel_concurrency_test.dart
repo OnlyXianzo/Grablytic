@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
-import 'package:truestream/core/engine/platform_channel_engine_service.dart';
-import 'package:truestream/providers/download_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
+import 'package:grablytic/core/engine/platform_channel_engine_service.dart';
+import 'package:grablytic/providers/download_provider.dart';
 
 /// Item-2 effect proof: the Android platform-channel path for the queue
 /// gate uses the same method names / arg shapes as the desktop JSON-RPC
@@ -14,7 +14,7 @@ import 'package:truestream/providers/download_provider.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const channel = MethodChannel('com.theonly.truestream/engine');
+  const channel = MethodChannel('com.theonly.grablytic/engine');
   final calls = <MethodCall>[];
 
   setUp(() {

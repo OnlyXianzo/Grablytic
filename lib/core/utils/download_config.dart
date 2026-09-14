@@ -3,7 +3,7 @@ import 'playlist_selection.dart';
 
 /// Shared engine-config overlay built from user settings (P1).
 ///
-/// Keys match `engine/truestream_engine/config.py` DEFAULT_CFG exactly
+/// Keys match `engine/grablytic_engine/config.py` DEFAULT_CFG exactly
 /// (Dart `downloadSubtitles` → yt-dlp `writesubtitles`, etc.). Null/empty
 /// values are omitted so engine defaults survive the
 /// `{**DEFAULT_CFG, **config}` merge in `build_ydl_opts()`.
@@ -41,7 +41,7 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
 }
 
 /// Playlist-entry config overlay (03-B UI wiring). Keys match
-/// `engine/truestream_engine/config.py` (`playlist_items` /
+/// `engine/grablytic_engine/config.py` (`playlist_items` /
 /// `playlist_rev` / `playlist_rand`) and flow through `opts_builder.py`
 /// into yt-dlp (`playlist_items` / `playlistreverse` / `playlistrandom`).
 /// [selectedIndices] are the 1-based `index` values from `getPlaylistInfo`,

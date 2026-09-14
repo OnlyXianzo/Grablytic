@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
-import 'package:truestream/features/home/screens/format_picker_screen.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
+import 'package:grablytic/features/home/screens/format_picker_screen.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 class _SoundCloudMockEngine extends MockEngineService {
   Map<String, dynamic>? lastStartDownloadConfig;

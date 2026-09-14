@@ -33,8 +33,8 @@ execute on targetSdk > 28).
 ## Clone & Setup
 
 ```bash
-git clone https://github.com/OnlyXianzo/TrueStream.git
-cd TrueStream
+git clone https://github.com/OnlyXianzo/Grablytic.git
+cd Grablytic
 ```
 
 ### Flutter Dependencies
@@ -49,7 +49,7 @@ flutter pub get
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r engine/requirements.txt
-pip install -e engine/    # install truestream-engine in editable mode
+pip install -e engine/    # install grablytic-engine in editable mode
 ```
 
 > On Windows use `.venv\Scripts\activate` and `pip` as appropriate.
@@ -153,7 +153,7 @@ it alongside the release bundle, or use the bootstrapper (first-launch setup).
 flutter build windows --release
 
 # Copy the Python engine into the bundle
-xcopy /E /I engine\truestream_engine build\windows\x64\runner\Release\truestream_engine
+xcopy /E /I engine\grablytic_engine build\windows\x64\runner\Release\grablytic_engine
 ```
 
 Output: `build/windows/x64/runner/Release/`
@@ -169,7 +169,7 @@ sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev
 flutter build linux --release
 
 # Copy the Python engine into the bundle
-cp -r engine/truestream_engine build/linux/x64/release/bundle/
+cp -r engine/grablytic_engine build/linux/x64/release/bundle/
 ```
 
 Output: `build/linux/x64/release/bundle/`
@@ -227,25 +227,25 @@ Triggers on every push/PR to `main`. Runs:
 
 The `build.yml` GitHub Actions workflow produces multi-architecture binaries across platforms on manual trigger (`workflow_dispatch`):
 - **Android**:
-  - `truestream-v<ver>-arm64-deno.apk` (ARM64-v8a + Deno JS runtime — recommended default for 64-bit flagships & modern phones)
-  - `truestream-v<ver>-arm64-node.apk` (ARM64-v8a + Node.js runtime — smaller footprint for 64-bit devices)
-  - `truestream-v<ver>-armv7-node.apk` (ARMeabi-v7a + Node.js runtime — optimized for budget & low-end 32-bit devices like Samsung Galaxy A04e)
-  - `truestream-v<ver>-x86_64-deno.apk` (x86_64 + Deno runtime — 64-bit emulators & Chromebooks)
-  - `truestream-v<ver>-x86_64-node.apk` (x86_64 + Node.js runtime — smaller download for emulators)
-  - `truestream-v<ver>-universal.apk` (All ABIs bundled with both runtimes — universal fallback)
+  - `grablytic-v<ver>-arm64-deno.apk` (ARM64-v8a + Deno JS runtime — recommended default for 64-bit flagships & modern phones)
+  - `grablytic-v<ver>-arm64-node.apk` (ARM64-v8a + Node.js runtime — smaller footprint for 64-bit devices)
+  - `grablytic-v<ver>-armv7-node.apk` (ARMeabi-v7a + Node.js runtime — optimized for budget & low-end 32-bit devices like Samsung Galaxy A04e)
+  - `grablytic-v<ver>-x86_64-deno.apk` (x86_64 + Deno runtime — 64-bit emulators & Chromebooks)
+  - `grablytic-v<ver>-x86_64-node.apk` (x86_64 + Node.js runtime — smaller download for emulators)
+  - `grablytic-v<ver>-universal.apk` (All ABIs bundled with both runtimes — universal fallback)
 - **Linux** (built on `ubuntu-latest` and `ubuntu-24.04-arm`):
   - Debian packages (`.deb` for `amd64` and `arm64`)
   - RPM packages (`.rpm` for `x86_64` and `aarch64`)
   - Arch Linux packages (`.pkg.tar.zst` for `x86_64` and `aarch64`)
   - Portable release tarballs (`.tar.gz`)
 - **Windows**:
-  - 64-bit portable release zip (`truestream-windows-x64.zip`) and release bundle with engine included
+  - 64-bit portable release zip (`grablytic-windows-x64.zip`) and release bundle with engine included
 
 To trigger: go to GitHub → Actions → **Build and Release** → **Run workflow**.
 
 > Diagnostics reports stamp the Flutter SDK version via
-> `--dart-define=TRUESTREAM_FLUTTER_VERSION=...` (wired in `build.yml`; read in code
-> with `String.fromEnvironment('TRUESTREAM_FLUTTER_VERSION')`). Dev runs without the
+> `--dart-define=GRABLYTIC_FLUTTER_VERSION=...` (wired in `build.yml`; read in code
+> with `String.fromEnvironment('GRABLYTIC_FLUTTER_VERSION')`). Dev runs without the
 > flag report `unknown` — expected, not a bug.
 
 ## Platform-Specific Notes

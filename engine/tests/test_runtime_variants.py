@@ -18,8 +18,8 @@ import sys
 
 import pytest
 
-from truestream_engine import paths as paths_mod
-from truestream_engine.paths import set_paths
+from grablytic_engine import paths as paths_mod
+from grablytic_engine.paths import set_paths
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +40,7 @@ def _clean_paths(monkeypatch):
 
 def _boot():
     import importlib
-    return importlib.import_module("truestream_engine.bootstrap")
+    return importlib.import_module("grablytic_engine.bootstrap")
 
 
 def _fake_exe(tmp_path, name, version_line):
@@ -107,7 +107,7 @@ class TestSingleRuntimeVariants:
     def test_opts_builder_node_only_selects_node(self, tmp_path, monkeypatch):
         """Desktop line 461 branch: deno absent, node present → node configured."""
         import shutil
-        from truestream_engine.opts_builder import build_ydl_opts
+        from grablytic_engine.opts_builder import build_ydl_opts
         monkeypatch.delitem(sys.modules, "java.android", raising=False)
         monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
         node = tmp_path / "node"

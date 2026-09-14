@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/main.dart';
-import 'package:truestream/providers/settings_provider.dart';
-import 'package:truestream/providers/resume_provider.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
+import 'package:grablytic/main.dart';
+import 'package:grablytic/providers/settings_provider.dart';
+import 'package:grablytic/providers/resume_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
 
 class _NoopResumeNotifier extends ResumeNotifier {
   _NoopResumeNotifier(super.ref);
@@ -18,7 +18,7 @@ class _NoopResumeNotifier extends ResumeNotifier {
 }
 
 void main() {
-  group('TrueStream App', () {
+  group('Grablytic App', () {
     testWidgets('App renders onboarding text', (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({
         'onboardingCompleted': false,
@@ -30,11 +30,11 @@ void main() {
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
           ],
-          child: const TrueStreamApp(),
+          child: const GrablyticApp(),
         ),
       );
       await tester.pump(const Duration(seconds: 1));
-      expect(find.text('TrueStream'), findsOneWidget);
+      expect(find.text('Grablytic'), findsOneWidget);
     });
 
     testWidgets('Settings screen renders key sections',
@@ -51,7 +51,7 @@ void main() {
             engineProvider.overrideWith((ref) => MockEngineService()),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
-          child: const TrueStreamApp(),
+          child: const GrablyticApp(),
         ),
       );
       await tester.pumpAndSettle(const Duration(seconds: 3));
@@ -66,7 +66,7 @@ void main() {
       expect(find.text('Wi-Fi Only Downloads'), findsOneWidget);
       expect(find.text('Download folder'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);
-      expect(find.text('About TrueStream'), findsOneWidget);
+      expect(find.text('About Grablytic'), findsOneWidget);
     });
 
     testWidgets('Navigation switches between tabs correctly',
@@ -83,7 +83,7 @@ void main() {
             engineProvider.overrideWith((ref) => MockEngineService()),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
-          child: const TrueStreamApp(),
+          child: const GrablyticApp(),
         ),
       );
       await tester.pumpAndSettle(const Duration(seconds: 3));

@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
-import 'package:truestream/features/home/screens/home_screen.dart';
-import 'package:truestream/features/home/screens/search_results_screen.dart';
-import 'package:truestream/features/home/screens/format_picker_screen.dart';
-import 'package:truestream/features/home/widgets/error_recovery_card.dart';
-import 'package:truestream/providers/resume_provider.dart';
-import 'package:truestream/providers/search_provider.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
+import 'package:grablytic/features/home/screens/home_screen.dart';
+import 'package:grablytic/features/home/screens/search_results_screen.dart';
+import 'package:grablytic/features/home/screens/format_picker_screen.dart';
+import 'package:grablytic/features/home/widgets/error_recovery_card.dart';
+import 'package:grablytic/providers/resume_provider.dart';
+import 'package:grablytic/providers/search_provider.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 class _NoopResumeNotifier extends ResumeNotifier {
   _NoopResumeNotifier(super.ref);

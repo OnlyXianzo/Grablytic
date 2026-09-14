@@ -68,7 +68,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         ? '... [TRUNCATED FOR LENGTH] ...\n${_logContent.substring(_logContent.length - 15000)}'
         : _logContent;
     _copyToClipboard(
-      'Please analyze the following error logs from the TrueStream Android/desktop media downloader app.\n'
+      'Please analyze the following error logs from the Grablytic Android/desktop media downloader app.\n'
       'Explain what the bug is, why it happened, and what went wrong. Provide a formatted GitHub Issue '
       'description following standard bug report templates so I can paste it into GitHub Issues for review.\n\n'
       'SYSTEM LOG DETAILS:\n$truncated',
@@ -79,7 +79,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
 
   void _openGithubIssues() {
     Clipboard.setData(
-      const ClipboardData(text: 'https://github.com/OnlyXianzo/TrueStream/issues/new'),
+      const ClipboardData(text: 'https://github.com/OnlyXianzo/Grablytic/issues/new'),
     );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -129,7 +129,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                  'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/TrueStream/issues/new'),
+                  'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new'),
               duration: Duration(seconds: 5),
             ),
           );
@@ -173,7 +173,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   }
 
   /// Saves the selected log into the PUBLIC Downloads folder
-  /// (Download/TrueStream-logs/ via MediaStore on Android 10+), which IS
+  /// (Download/Grablytic-logs/ via MediaStore on Android 10+), which IS
   /// browsable in any file manager — unlike app-private dirs on Android
   /// 12+. Falls back to the external-app-dir export on failure.
   Future<void> _saveToDownloads() async {

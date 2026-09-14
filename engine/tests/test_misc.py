@@ -1,15 +1,15 @@
 import os
 import json
 import tempfile
-from truestream_engine.resume import scan_resume_candidates
-from truestream_engine.site_profiles import (
+from grablytic_engine.resume import scan_resume_candidates
+from grablytic_engine.site_profiles import (
     load_site_profiles,
     load_profiles_from_disk,
     save_profiles_to_disk,
 )
-from truestream_engine.po_token import generate_po_token
-from truestream_engine.bootstrap import bootstrap, _detect_js_runtime
-from truestream_engine.paths import set_paths, _paths
+from grablytic_engine.po_token import generate_po_token
+from grablytic_engine.bootstrap import bootstrap, _detect_js_runtime
+from grablytic_engine.paths import set_paths, _paths
 
 
 class TestScanResumeCandidates:
@@ -113,7 +113,7 @@ class TestBootstrap:
         import shutil
         import sys
 
-        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+        bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
         # Offline proof: any network attempt fails the test.
         monkeypatch.setattr(
             bootstrap_mod, "_resolve_latest_release",
@@ -145,7 +145,7 @@ class TestBootstrap:
         import hashlib
         import tempfile
         import urllib.request
-        from truestream_engine.bootstrap import _download_and_extract_binary
+        from grablytic_engine.bootstrap import _download_and_extract_binary
 
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as z:
@@ -183,7 +183,7 @@ class TestBootstrap:
         import hashlib
         import tempfile
         import urllib.request
-        from truestream_engine.bootstrap import _download_and_extract_binary
+        from grablytic_engine.bootstrap import _download_and_extract_binary
 
         tar_buffer = io.BytesIO()
         with tarfile.open(fileobj=tar_buffer, mode="w:gz") as t:
@@ -218,17 +218,17 @@ class TestBootstrap:
                 assert f.read() == "dummy_ffmpeg_tar_content"
 
     def test_set_update_channel(self):
-        from truestream_engine.paths import set_update_channel, get_paths
+        from grablytic_engine.paths import set_update_channel, get_paths
         res = set_update_channel("nightly")
         assert res == {"success": True}
         assert get_paths()["update_channel"] == "nightly"
 
     def test_update_check(self, tmp_path, monkeypatch):
         import sys
-        from truestream_engine.bootstrap import update_check
-        from truestream_engine.paths import set_paths
+        from grablytic_engine.bootstrap import update_check
+        from grablytic_engine.paths import set_paths
 
-        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+        bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
         monkeypatch.setattr(
             bootstrap_mod, "_resolve_latest_release",
             lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
@@ -251,10 +251,10 @@ class TestBootstrap:
     def test_bootstrap_github_binary_missing_sha256(self, tmp_path, monkeypatch):
         import shutil
         import sys
-        import truestream_engine.bootstrap as bootstrap_dummy  # ensure module is loaded
-        from truestream_engine.bootstrap import _bootstrap_github_binary
+        import grablytic_engine.bootstrap as bootstrap_dummy  # ensure module is loaded
+        from grablytic_engine.bootstrap import _bootstrap_github_binary
 
-        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+        bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
 
         # Mock resolve_latest_release to return an asset but no sha256 checksum asset
         monkeypatch.setattr(bootstrap_mod, "_resolve_latest_release", lambda repo: {
@@ -287,9 +287,9 @@ class TestBootstrap:
         import shutil
         import sys
         import urllib.request
-        from truestream_engine.bootstrap import _bootstrap_github_binary
+        from grablytic_engine.bootstrap import _bootstrap_github_binary
 
-        bootstrap_mod = sys.modules["truestream_engine.bootstrap"]
+        bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
 
         monkeypatch.setattr(bootstrap_mod, "_resolve_latest_release", lambda repo: {
             "tag_name": "v1.0.0",
@@ -344,11 +344,11 @@ class TestBootstrap:
 
     def test_downloader_ffmpeg_guard(self, monkeypatch):
         import queue
-        from truestream_engine.downloader import download_thread
-        import truestream_engine.paths
+        from grablytic_engine.downloader import download_thread
+        import grablytic_engine.paths
         
-        old_ffmpeg = truestream_engine.paths._paths.get("ffmpeg_path")
-        truestream_engine.paths._paths["ffmpeg_path"] = "/tmp/nonexistent_ffmpeg_path_12345"
+        old_ffmpeg = grablytic_engine.paths._paths.get("ffmpeg_path")
+        grablytic_engine.paths._paths["ffmpeg_path"] = "/tmp/nonexistent_ffmpeg_path_12345"
         
         import shutil
         monkeypatch.setattr(shutil, "which", lambda name: None)
@@ -366,6 +366,6 @@ class TestBootstrap:
         assert "FFmpeg binary is missing" in result["error_message"]
         
         if old_ffmpeg:
-            truestream_engine.paths._paths["ffmpeg_path"] = old_ffmpeg
+            grablytic_engine.paths._paths["ffmpeg_path"] = old_ffmpeg
         else:
-            truestream_engine.paths._paths.pop("ffmpeg_path", None)
+            grablytic_engine.paths._paths.pop("ffmpeg_path", None)

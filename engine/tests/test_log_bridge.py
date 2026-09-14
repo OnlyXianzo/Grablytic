@@ -6,8 +6,8 @@ import queue
 
 import pytest
 
-import truestream_engine.logger as logger_mod
-from truestream_engine.logger import (
+import grablytic_engine.logger as logger_mod
+from grablytic_engine.logger import (
     get_logger,
     set_global_event_callback,
 )
@@ -49,27 +49,27 @@ def _clean_bridge():
 def test_log_forwarded_to_callback_as_json(_clean_bridge):
     sink = _Sink()
     set_global_event_callback(sink)
-    log = get_logger("truestream_engine.test_bridge_new")
+    log = get_logger("grablytic_engine.test_bridge_new")
     log.info("hello bridge")
     assert len(sink.events) == 1
     ev = json.loads(sink.events[0])
     assert ev["type"] == "log"
     assert ev["level"] == "INFO"
     assert ev["message"] == "hello bridge"
-    assert ev["logger"] == "truestream_engine.test_bridge_new"
+    assert ev["logger"] == "grablytic_engine.test_bridge_new"
 
 
 def test_logger_created_after_setter_inherits_callback(_clean_bridge):
     sink = _Sink()
     set_global_event_callback(sink)
-    log = get_logger("truestream_engine.test_bridge_late")
+    log = get_logger("grablytic_engine.test_bridge_late")
     log.warn("late hello")
     assert len(sink.events) == 1
     assert json.loads(sink.events[0])["level"] == "WARN"
 
 
 def test_no_callback_no_crash(_clean_bridge):
-    log = get_logger("truestream_engine.test_bridge_none")
+    log = get_logger("grablytic_engine.test_bridge_none")
     log.info("nowhere to go")  # must not raise
     log.error("still fine")
 
@@ -77,7 +77,7 @@ def test_no_callback_no_crash(_clean_bridge):
 def test_raising_callback_is_swallowed(_clean_bridge):
     sink = _Sink(fail=True)
     set_global_event_callback(sink)
-    log = get_logger("truestream_engine.test_bridge_boom")
+    log = get_logger("grablytic_engine.test_bridge_boom")
     log.error("sink exploded")  # logging must never break the caller
 
 
@@ -85,7 +85,7 @@ def test_queue_path_still_works_alongside_callback(_clean_bridge):
     q: queue.Queue = queue.Queue()
     sink = _Sink()
     set_global_event_callback(sink)
-    log = get_logger("truestream_engine.test_bridge_both")
+    log = get_logger("grablytic_engine.test_bridge_both")
     log.set_queue(q)
     log.info("both channels")
     assert len(sink.events) == 1
@@ -93,7 +93,7 @@ def test_queue_path_still_works_alongside_callback(_clean_bridge):
 
 
 def test_set_paths_initializes_file_logging(tmp_path, monkeypatch, _clean_bridge):
-    import truestream_engine.paths as paths_mod
+    import grablytic_engine.paths as paths_mod
 
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
     data_dir = str(tmp_path / "data")
@@ -103,19 +103,19 @@ def test_set_paths_initializes_file_logging(tmp_path, monkeypatch, _clean_bridge
         ffmpeg_path=None, cache_dir=data_dir,
     )
     # Daily JSONL file logging is armed …
-    log = get_logger("truestream_engine.test_bridge_paths")
+    log = get_logger("grablytic_engine.test_bridge_paths")
     log.info("paths armed logging")
     day_files = [f for f in os.listdir(os.path.join(data_dir, "logs"))
                  if f.startswith("engine_")]
     assert day_files, "set_paths must configure the engine log dir"
     # … and so is the rotating server log.
-    from truestream_engine.persistent import server_log_path
+    from grablytic_engine.persistent import server_log_path
     assert server_log_path() is not None
     assert os.path.isfile(server_log_path())
 
 
 def test_start_download_wires_callback(monkeypatch):
-    import truestream_engine.downloader as dl_mod
+    import grablytic_engine.downloader as dl_mod
 
     seen = {}
 
@@ -143,7 +143,7 @@ def test_start_download_wires_callback(monkeypatch):
 
 
 def test_start_download_without_callback_does_not_wire(monkeypatch):
-    import truestream_engine.downloader as dl_mod
+    import grablytic_engine.downloader as dl_mod
 
     calls = []
 
@@ -209,8 +209,8 @@ class TestCallbackEndToEnd:
     def test_events_logs_and_filesize_reach_callback(
         self, tmp_path, monkeypatch, _clean_bridge
     ):
-        import truestream_engine.downloader as dl_mod
-        import truestream_engine.paths as paths_mod
+        import grablytic_engine.downloader as dl_mod
+        import grablytic_engine.paths as paths_mod
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
@@ -257,8 +257,8 @@ class TestBridgeSanitization:
     """SEC-02 (engine side): signed URL params never hit server_logs.log."""
 
     def test_bridge_event_masks_sig_before_disk(self, tmp_path):
-        from truestream_engine import persistent as persist_mod
-        from truestream_engine.persistent import (
+        from grablytic_engine import persistent as persist_mod
+        from grablytic_engine.persistent import (
             init_persistent_logging,
             bridge_event,
             server_log_path,
@@ -283,8 +283,8 @@ class TestBridgeSanitization:
             persist_mod._configured_dir = prev_dir
 
     def test_bridge_event_uninitialized_is_silent(self):
-        from truestream_engine import persistent as persist_mod
-        from truestream_engine.persistent import bridge_event
+        from grablytic_engine import persistent as persist_mod
+        from grablytic_engine.persistent import bridge_event
         import logging
 
         prev = (persist_mod._configured_dir, persist_mod._std_logger,
@@ -308,8 +308,8 @@ class TestDownloaderCrashGuard:
     """BaseException (SystemExit/GeneratorExit) must still emit terminal."""
 
     def _run(self, tmp_path, monkeypatch, ydl_cls, did):
-        import truestream_engine.downloader as dl_mod
-        import truestream_engine.paths as paths_mod
+        import grablytic_engine.downloader as dl_mod
+        import grablytic_engine.paths as paths_mod
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
@@ -367,8 +367,8 @@ class _FailingPPYDL(_FakeYDL):
 
 class TestPostprocessFailure:
     def _run(self, tmp_path, monkeypatch, url):
-        import truestream_engine.downloader as dl_mod
-        import truestream_engine.paths as paths_mod
+        import grablytic_engine.downloader as dl_mod
+        import grablytic_engine.paths as paths_mod
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
@@ -417,7 +417,7 @@ class TestPostprocessFailure:
 class TestProbeReport:
     @pytest.mark.unit
     def test_missing_binary_report(self):
-        from truestream_engine.bootstrap import _probe_report
+        from grablytic_engine.bootstrap import _probe_report
         rep = _probe_report("/nonexistent/bin/xyz")
         assert rep["ok"] is False
         assert rep["version"] is None
@@ -426,7 +426,7 @@ class TestProbeReport:
     @pytest.mark.unit
     def test_working_binary_report(self, tmp_path):
         import stat
-        from truestream_engine.bootstrap import _probe_report
+        from grablytic_engine.bootstrap import _probe_report
         exe = tmp_path / "ffmpeg"
         exe.write_text("#!/bin/sh\necho 'ffmpeg version n7.1-test'\n")
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
@@ -441,7 +441,7 @@ class TestMilestones:
 
     def _drive(self, total, steps):
         import queue as _queue
-        from truestream_engine import hooks as hooks_mod
+        from grablytic_engine import hooks as hooks_mod
         q: queue.Queue = queue.Queue()
         hook = hooks_mod.build_progress_hook(q, "mile1")
         for dl in steps:
@@ -450,7 +450,7 @@ class TestMilestones:
         return q
 
     def test_milestones_fire_once_each(self, _clean_bridge):
-        from truestream_engine import hooks as hooks_mod
+        from grablytic_engine import hooks as hooks_mod
         q = self._drive(100, [10, 30, 55, 80, 100])
         # Hook events flow; milestones go through the hooks logger.
         assert q.qsize() == 5
@@ -470,13 +470,13 @@ class TestMilestones:
 
     def test_milestone_carries_download_context(self, _clean_bridge):
         import queue as _queue
-        from truestream_engine import hooks as hooks_mod
+        from grablytic_engine import hooks as hooks_mod
         got = []
         hlog = hooks_mod._log
         orig = hlog._log
         try:
             def spy(level, message, **kw):
-                import truestream_engine.logger as lm
+                import grablytic_engine.logger as lm
                 got.append(getattr(hlog._context, "data", {}).get("download_id"))
                 return orig(level, message, **kw)
             hlog._log = spy
@@ -489,7 +489,7 @@ class TestMilestones:
         assert got and got[0] == "ctx9"
 
     def test_unknown_total_no_milestones(self, _clean_bridge):
-        from truestream_engine import hooks as hooks_mod
+        from grablytic_engine import hooks as hooks_mod
         captured = []
         hlog = hooks_mod._log
         orig = hlog.info
@@ -509,8 +509,8 @@ class TestVerboseOpts:
     def test_verbose_dumps_sanitized_opts(
         self, tmp_path, monkeypatch, _clean_bridge
     ):
-        import truestream_engine.downloader as dl_mod
-        import truestream_engine.paths as paths_mod
+        import grablytic_engine.downloader as dl_mod
+        import grablytic_engine.paths as paths_mod
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
@@ -549,7 +549,7 @@ class TestEmitDiagnostics:
 
     def test_first_failure_warns_once(self, _clean_bridge):
         import queue as _queue
-        from truestream_engine import hooks as hooks_mod
+        from grablytic_engine import hooks as hooks_mod
 
         q: queue.Queue = queue.Queue()
         log_q: queue.Queue = queue.Queue()

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 void main() {
   late SettingsNotifier n;

@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'engine_service.dart';
 
 class PlatformChannelEngineService implements EngineService {
-  final MethodChannel _channel = const MethodChannel('com.theonly.truestream/engine');
-  final EventChannel _eventChannel = const EventChannel('com.theonly.truestream/progress');
+  final MethodChannel _channel = const MethodChannel('com.theonly.grablytic/engine');
+  final EventChannel _eventChannel = const EventChannel('com.theonly.grablytic/progress');
   final _intentController = StreamController<String>.broadcast();
 
   /// SINGLE native subscription, shared by progressStream + logStream.
