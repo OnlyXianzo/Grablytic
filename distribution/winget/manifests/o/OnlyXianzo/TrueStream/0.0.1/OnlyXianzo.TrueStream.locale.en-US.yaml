@@ -4,11 +4,10 @@ PackageLocale: en-US
 Publisher: OnlyXianzo
 PublisherUrl: https://github.com/OnlyXianzo
 PublisherSupportUrl: https://github.com/OnlyXianzo/TrueStream/issues
-PrivacyUrl: https://github.com/OnlyXianzo/TrueStream/blob/main/PRIVACY.md
 Author: OnlyXianzo
 PackageName: TrueStream
 PackageUrl: https://github.com/OnlyXianzo/TrueStream
-License: MIT
+License: GPL-3.0-only
 LicenseUrl: https://github.com/OnlyXianzo/TrueStream/blob/main/LICENSE
 Copyright: Copyright (c) 2026 OnlyXianzo
 ShortDescription: Privacy-first high-performance media extractor for audio and video.

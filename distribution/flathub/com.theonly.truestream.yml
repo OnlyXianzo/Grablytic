@@ -20,6 +20,8 @@ modules:
       - install -Dm755 truestream /app/bin/truestream
       - cp -r lib/ /app/lib/
       - cp -r data/ /app/data/
+      - install -Dm644 com.theonly.truestream.desktop /app/share/applications/com.theonly.truestream.desktop
+      - install -Dm644 truestream.png /app/share/icons/hicolor/512x512/apps/com.theonly.truestream.png
       - install -Dm644 com.theonly.truestream.metainfo.xml /app/share/metainfo/com.theonly.truestream.metainfo.xml
     sources:
       - type: archive
@@ -30,5 +32,9 @@ modules:
         only-arches: [aarch64]
         url: https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-linux-arm64.tar.gz
         sha256: 0f39d9eeef6b5ac851612c43b8dbbae20f748b4e6a17541e28033f66a4a0a6d0
+      - type: file
+        path: com.theonly.truestream.desktop
+      - type: file
+        path: truestream.png
       - type: file
         path: com.theonly.truestream.metainfo.xml

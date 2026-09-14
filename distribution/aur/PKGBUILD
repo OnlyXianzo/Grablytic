@@ -5,22 +5,28 @@ pkgrel=1
 pkgdesc="Privacy-first high-performance media downloader powered by yt-dlp"
 arch=('x86_64' 'aarch64')
 url="https://github.com/OnlyXianzo/TrueStream"
-license=('MIT')
-depends=('gtk3' 'libappindicator-gtk3')
+license=('GPL3')
+depends=('gtk3' 'python' 'ffmpeg' 'aria2')
 provides=('truestream')
 conflicts=('truestream')
 
 source_x86_64=("https://github.com/OnlyXianzo/TrueStream/releases/download/v${pkgver}/truestream-${pkgver}-linux-x64.tar.gz")
 source_aarch64=("https://github.com/OnlyXianzo/TrueStream/releases/download/v${pkgver}/truestream-${pkgver}-linux-arm64.tar.gz")
+source=('truestream.desktop' 'truestream.png')
 
 sha256sums_x86_64=('ddba14063d1bb7d0d7c3e7d1f73fe2c4174cbec1f7528ef353b1f84a626f1450')
 sha256sums_aarch64=('0f39d9eeef6b5ac851612c43b8dbbae20f748b4e6a17541e28033f66a4a0a6d0')
+sha256sums=('SKIP' 'SKIP')
 
 package() {
     install -d "${pkgdir}/opt/truestream"
     cp -r "${srcdir}"/* "${pkgdir}/opt/truestream/"
     rm -f "${pkgdir}/opt/truestream"/*.tar.gz
+    rm -f "${pkgdir}/opt/truestream"/truestream.desktop "${pkgdir}/opt/truestream"/truestream.png
 
     install -d "${pkgdir}/usr/bin"
     ln -s /opt/truestream/truestream "${pkgdir}/usr/bin/truestream"
+
+    install -Dm644 "${srcdir}/truestream.desktop" "${pkgdir}/usr/share/applications/truestream.desktop"
+    install -Dm644 "${srcdir}/truestream.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/truestream.png"
 }

@@ -7,8 +7,10 @@
 ---
 
 ```markdown
-[✓] The app complies with the inclusion criteria as listed in the README https://codeberg.org/IzzyOnDroid/repodata#what-are-the-requirements-an-app-must-meet-to-be-included-with-the-repo
-[✓] The app is not already listed in the repo or issue tracker
+[x] I am the developer of the app.
+[x] The app complies with the App Inclusion Policy.
+[x] The app is not already listed in the repo or issue tracker.
+[x] The Fastlane folder is available in the app's repo.
 
 --------
 
@@ -16,7 +18,7 @@
 
 ### Link to app in another app store: None (FOSS-first distribution)
 
-### License used: MIT license (https://github.com/OnlyXianzo/TrueStream/blob/main/LICENSE)
+### License used: GPL-3.0-only (https://github.com/OnlyXianzo/TrueStream/blob/main/LICENSE)
 
 ### Category: Multimedia
 
