@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../features/home/screens/media_preview_screen.dart';
@@ -219,60 +220,73 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
-    return ListView(
-      key: const ValueKey('list'),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-      children: [
-        if (pending.isNotEmpty) ...[
-          Text(
-            'PENDING',
-            style: textTheme.labelSmall?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
+    // Lazily-built slivers: the old eager ListView(children:) constructed
+    // every row (thumbnails, progress painters) on each frame — visible
+    // stutter past ~20 items. Builders + a deeper cache keep scrolling flat.
+    Widget sectionHeader(String label, Color color) => SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Text(
+              label,
+              style: textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          ...pending.map((item) => _LibraryItem(
-                item: item,
+        );
+
+    return CustomScrollView(
+      key: const ValueKey('list'),
+      scrollCacheExtent: ScrollCacheExtent.pixels(600),
+      slivers: [
+        const SliverToBoxAdapter(child: SizedBox(height: 16)),
+        if (pending.isNotEmpty) ...[
+          sectionHeader('PENDING', colorScheme.primary),
+          SliverList.builder(
+            itemCount: pending.length,
+            itemBuilder: (context, i) => Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: _LibraryItem(
+                item: pending[i],
                 colorScheme: colorScheme,
                 isDownloading: true,
-              )),
-          const SizedBox(height: 32),
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],
         if (failed.isNotEmpty) ...[
-          Text(
-            'FAILED',
-            style: textTheme.labelSmall?.copyWith(
-              color: colorScheme.error,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...failed.map((item) => _LibraryItem(
-                item: item,
+          sectionHeader('FAILED', colorScheme.error),
+          SliverList.builder(
+            itemCount: failed.length,
+            itemBuilder: (context, i) => Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: _LibraryItem(
+                item: failed[i],
                 colorScheme: colorScheme,
                 isError: true,
-              )),
-          const SizedBox(height: 32),
-        ],
-        if (completed.isNotEmpty) ...[
-          Text(
-            'DOWNLOADED',
-            style: textTheme.labelSmall?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          ...completed.map((item) => _LibraryItem(
-                item: item,
+          const SliverToBoxAdapter(child: SizedBox(height: 20)),
+        ],
+        if (completed.isNotEmpty) ...[
+          sectionHeader('DOWNLOADED', colorScheme.primary),
+          SliverList.builder(
+            itemCount: completed.length,
+            itemBuilder: (context, i) => Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: _LibraryItem(
+                item: completed[i],
                 colorScheme: colorScheme,
                 isDownloading: false,
-              )),
+              ),
+            ),
+          ),
         ],
+        const SliverToBoxAdapter(child: SizedBox(height: 100)),
       ],
     );
   }
@@ -412,13 +426,21 @@ class _ThumbnailImage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (url == null || url!.trim().isEmpty) return fallback;
     final trimmed = url!.trim();
+    // Decode at ~2x the on-screen thumbnail size instead of full
+    // resolution: full-size decodes on scroll were the main scroll-jank
+    // source in long libraries. RepaintBoundary keeps progress animations
+    // elsewhere from repainting settled images.
+    const cacheW = 360;
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return Image.network(
-        trimmed,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        errorBuilder: (context, error, stackTrace) => fallback,
+      return RepaintBoundary(
+        child: Image.network(
+          trimmed,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          cacheWidth: cacheW,
+          errorBuilder: (context, error, stackTrace) => fallback,
+        ),
       );
     }
     final path = trimmed.startsWith('file://') ? trimmed.substring(7) : trimmed;
@@ -426,12 +448,15 @@ class _ThumbnailImage extends StatelessWidget {
     if (!file.existsSync()) {
       return fallback;
     }
-    return Image.file(
-      file,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      errorBuilder: (context, error, stackTrace) => fallback,
+    return RepaintBoundary(
+      child: Image.file(
+        file,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        cacheWidth: cacheW,
+        errorBuilder: (context, error, stackTrace) => fallback,
+      ),
     );
   }
 }

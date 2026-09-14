@@ -302,6 +302,18 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> openUrl(String url) async {
+    try {
+      final result = await _channel
+          .invokeMethod<Map>('intent/open_url', {'url': url});
+      if (result == null) return {'success': false};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> syncSchedule({
     required bool enabled,
     int intervalMinutes = 60,

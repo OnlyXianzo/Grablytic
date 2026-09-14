@@ -1,11 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/engine/engine_provider.dart';
 
-class AboutScreen extends StatelessWidget {
+/// Contact + repository surface. Tapping opens the page in whatever handles
+/// it (GitHub app if installed, else browser; mail app for email) and only
+/// falls back to clipboard copy when nothing can open it.
+class AboutScreen extends ConsumerWidget {
   const AboutScreen({super.key});
 
+  static const _repoUrl = 'https://github.com/OnlyXianzo/TrueStream';
+  static const _profileUrl = 'https://github.com/OnlyXianzo';
+  static const _feedbackEmail = 'truestream.support@gmail.com';
+
+  Future<void> _openOrCopy(BuildContext context, WidgetRef ref, String target) async {
+    bool opened = false;
+    try {
+      final res = await ref.read(engineProvider).openUrl(target);
+      opened = res['success'] == true;
+    } catch (_) {}
+    if (!context.mounted) return;
+    if (opened) return;
+    await Clipboard.setData(ClipboardData(text: target));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Nothing could open it — copied instead:\n$target')),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -86,23 +110,24 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
-                      onPressed: () {
-                        Clipboard.setData(
-                          const ClipboardData(
-                            text: 'https://github.com/OnlyXianzo/TrueStream',
-                          ),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('GitHub repository link copied to clipboard!'),
-                          ),
-                        );
-                      },
+                      onPressed: () => _openOrCopy(context, ref, _repoUrl),
                       icon: Semantics(label: 'GitHub star', child: Icon(Icons.star_border)),
-                      label: const Text('Star & Copy GitHub Link'),
+                      label: const Text('Open repository on GitHub'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: colorScheme.primary,
                         foregroundColor: colorScheme.onPrimary,
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => _openOrCopy(context, ref, _profileUrl),
+                      icon: const Icon(Icons.person_outline),
+                      label: const Text('Open @OnlyXianzo profile'),
+                      style: OutlinedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 48),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -121,18 +146,7 @@ class AboutScreen extends StatelessWidget {
               title: const Text('Send Feedback'),
               subtitle: const Text('Report bugs or request features'),
               trailing: Semantics(label: 'Open', child: Icon(Icons.chevron_right)),
-              onTap: () {
-                Clipboard.setData(
-                  const ClipboardData(
-                    text: 'feedback@theonly.com',
-                  ),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Feedback email copied to clipboard!'),
-                  ),
-                );
-              },
+              onTap: () => _openOrCopy(context, ref, 'mailto:$_feedbackEmail'),
             ),
             const Divider(),
             ListTile(

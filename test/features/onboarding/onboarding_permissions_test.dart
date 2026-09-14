@@ -134,8 +134,10 @@ void main() {
       await tester.pumpWidget(_stepHarness(prefs: prefs, engine: engine));
       await _settleStatuses(tester);
 
+      // Two genuine choices (notifications, battery). Storage is
+      // informational with a single honest ack — no fake third Skip.
       final skipFinder = find.widgetWithText(TextButton, 'Skip');
-      expect(skipFinder, findsNWidgets(3));
+      expect(skipFinder, findsNWidgets(2));
 
       // Re-query after each tap: a skipped card drops its buttons, so
       // indices shift — always take the current first.
@@ -287,11 +289,15 @@ void main() {
       expect(find.text('A couple of quick choices'), findsOneWidget);
       expect(find.text('Download alerts'), findsOneWidget);
 
-      // Skip everything, Continue still completes first-run onboarding.
-      for (var i = 0; i < 3; i++) {
+      // Skip both choices, ack the informational storage row, then
+      // Continue still completes first-run onboarding.
+      for (var i = 0; i < 2; i++) {
         await _tapVisible(tester, find.widgetWithText(TextButton, 'Skip').first);
         await tester.pump();
       }
+      await _tapVisible(
+          tester, find.widgetWithText(ElevatedButton, 'Got it'));
+      await tester.pump();
       await _tapVisible(
           tester, find.widgetWithText(ElevatedButton, 'Continue'));
       await tester.pump();

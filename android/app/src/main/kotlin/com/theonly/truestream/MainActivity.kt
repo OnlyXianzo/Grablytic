@@ -49,6 +49,13 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 4101
+
+        private val MEDIA_EXTS = setOf(
+            "mkv", "mp4", "webm", "m4v", "mov", "avi", "3gp", "3g2", "ts", "mts",
+            "mpg", "mpeg", "m4a", "mp3", "opus", "ogg", "oga", "weba", "wav",
+            "aac", "m4b", "aiff", "aif", "flac",
+        )
+        private val THUMB_EXTS = setOf("jpg", "jpeg", "png", "webp")
     }
 
     private fun handleSendText(intent: Intent?) {
@@ -153,6 +160,32 @@ class MainActivity : FlutterActivity() {
                 "intent/get_shared" -> {
                     result.success(mapOf("url" to sharedUrl))
                     sharedUrl = null
+                }
+                // Open a URL with the system resolver (ACTION_VIEW): if an
+                // app registered for the host (e.g. the GitHub app for
+                // github.com links) Android offers it, otherwise the browser.
+                // http(s) + mailto only, fail-closed. No extra dependency.
+                "intent/open_url" -> {
+                    val url = call.argument<String>("url")
+                    try {
+                        val uri = android.net.Uri.parse(url)
+                        val scheme = uri?.scheme?.lowercase()
+                        if (uri == null || (scheme != "http" && scheme != "https" && scheme != "mailto")) {
+                            result.success(mapOf("success" to false, "error" to "only http(s)/mailto URLs"))
+                        } else {
+                            val view = Intent(Intent.ACTION_VIEW, uri).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            if (view.resolveActivity(packageManager) != null) {
+                                startActivity(view)
+                                result.success(mapOf("success" to true))
+                            } else {
+                                result.success(mapOf("success" to false, "error" to "no handler"))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        result.success(mapOf("success" to false, "error" to (e.message ?: "open failed")))
+                    }
                 }
                 "paths/set" -> {
                     this.dataDir = call.argument<String>("data_dir")
@@ -286,12 +319,18 @@ class MainActivity : FlutterActivity() {
                                                     }
                                                     "finished", "error", "cancelled" -> {
                                                         when (obj.optString("event")) {
-                                                            "finished" -> {
-                                                                DownloadService.finished(
-                                                                    this@MainActivity, id,
-                                                                )
-                                                                scanRecentMedia()
-                                                            }
+                                                    "finished" -> {
+                                                        DownloadService.finished(
+                                                            this@MainActivity, id,
+                                                        )
+                                                        // Exact file first: the engine reports the
+                                                        // finished media path in the event, so scan
+                                                        // THAT file (never the thumbnail sidecar —
+                                                        // sidecars must stay out of Gallery).
+                                                        // Recursive walk below stays as fallback.
+                                                        scanFileExact(obj.optString("file_path", null))
+                                                        scanRecentMedia()
+                                                    }
                                                             "error" -> {
                                                                 val detail = obj.optString("error_message", null)
                                                                     .takeIf { it.isNotEmpty() }
@@ -678,17 +717,20 @@ class MainActivity : FlutterActivity() {
      * Files land via raw rename (yt-dlp MoveFiles), which never notifies
      * MediaStore — without this scan they exist on disk but are invisible
      * in every media browser (the "video don't get saved" report).
-     * Scans media files modified in the last 2h (cheap, idempotent,
-     * self-healing for older files on the next finish). Never throws.
+     *
+     * Two layers: [scanFileExact] hits the finished path from the engine
+     * event; this walk is the self-healing fallback. The walk MUST be
+     * recursive — real files land in Video/<name> and Audio/<name>
+     * subfolders (config.py subfolder split), which the old top-level-only
+     * listing never reached. Never throws. Never scans thumbnail sidecars.
      */
     private fun scanRecentMedia() {
         try {
-            val dir = outputDir?.let(::File)?.takeIf { it.isDirectory } ?: return
+            val root = outputDir?.let(::File)?.takeIf { it.isDirectory } ?: return
             val cutoff = System.currentTimeMillis() - 2 * 60 * 60 * 1000
-            val exts = setOf("mkv", "mp4", "webm", "m4a", "mp3", "opus", "flac", "ogg", "jpg")
-            dir.listFiles { f ->
-                f.isFile && f.extension.lowercase() in exts && f.lastModified() >= cutoff
-            }?.forEach { f ->
+            val files = ArrayList<File>()
+            collectRecentMedia(root, cutoff, files)
+            files.forEach { f ->
                 try {
                     android.media.MediaScannerConnection.scanFile(
                         applicationContext, arrayOf(f.absolutePath), null, null,
@@ -697,6 +739,56 @@ class MainActivity : FlutterActivity() {
                 }
             }
         } catch (_: Exception) {
+        }
+    }
+
+    private fun collectRecentMedia(dir: File, cutoff: Long, out: ArrayList<File>) {
+        val kids = try {
+            dir.listFiles()
+        } catch (_: Exception) {
+            null
+        } ?: return
+        for (f in kids) {
+            try {
+                if (f.isDirectory) {
+                    // Skip hidden/cache dirs ( temp segments, .tmp work files).
+                    if (!f.name.startsWith(".")) collectRecentMedia(f, cutoff, out)
+                } else if (f.isFile && f.lastModified() >= cutoff &&
+                    f.extension.lowercase() in MEDIA_EXTS &&
+                    !isThumbnailSidecar(f)
+                ) {
+                    out.add(f)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun scanFileExact(path: String?) {
+        try {
+            if (path.isNullOrEmpty()) return
+            val f = File(path)
+            if (!f.isFile) return
+            if (f.extension.lowercase() !in MEDIA_EXTS) return
+            android.media.MediaScannerConnection.scanFile(
+                applicationContext, arrayOf(f.absolutePath), null, null,
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun isThumbnailSidecar(f: File): Boolean {
+        // writethumbnail sidecars share the media basename (<name>.jpg next
+        // to <name>.mp4). A same-basename media file means "thumbnail".
+        if (f.extension.lowercase() !in THUMB_EXTS) return false
+        val base = f.nameWithoutExtension
+        val parent = try { f.parentFile } catch (_: Exception) { null } ?: return false
+        return MEDIA_EXTS.any { ext ->
+            try {
+                File(parent, "$base.$ext").isFile
+            } catch (_: Exception) {
+                false
+            }
         }
     }
 

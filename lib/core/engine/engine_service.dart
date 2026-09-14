@@ -70,6 +70,11 @@ abstract class EngineService {
   /// recovery). Returns `{'success', 'launched'}` — never throws.
   Future<Map<String, dynamic>> openNotificationSettings();
 
+  /// Open an http(s) URL with the system resolver (ACTION_VIEW on Android:
+  /// registered app wins, else browser). Returns `{'success'}` — never
+  /// throws; UI falls back to clipboard copy on `false`.
+  Future<Map<String, dynamic>> openUrl(String url);
+
   /// Synchronizes background scheduler parameters with the native platform
   /// for observed sources periodic background polling. Never throws.
   Future<Map<String, dynamic>> syncSchedule({

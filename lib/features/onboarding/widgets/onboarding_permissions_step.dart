@@ -154,7 +154,7 @@ class _OnboardingPermissionsStepState
           Text(
             'A couple of quick choices',
             style: textTheme.headlineMedium?.copyWith(
-              color: Colors.white,
+              color: colorScheme.onSurface,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
@@ -163,7 +163,9 @@ class _OnboardingPermissionsStepState
           Text(
             'TrueStream works without these — they just make downloads smoother. '
             'You can change everything later in Settings.',
-            style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
+            style: textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
@@ -320,10 +322,9 @@ class _OnboardingPermissionsStepState
       icon: Icons.folder_outlined,
       title: 'Download location',
       explanation: explanation,
+      singleAck: true,
       acceptLabel: 'Got it',
       onAccept: () => setState(() => _storageAcked = true),
-      rejectLabel: 'Skip',
-      onReject: () => setState(() => _storageAcked = true),
     );
   }
 }
