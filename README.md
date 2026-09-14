@@ -57,6 +57,34 @@ filter (`arm64-deno` / `arm64-node` / `armv7-node` / `x86_64-deno` / `x86_64-nod
 same variant. Build flags per variant:
 [`docs/building.md`](docs/building.md#release-variants-apk-size--js-runtime).
 
+### 🐧 One-command Linux install (v0.0.1)
+
+```bash
+# Debian / Ubuntu / Mint x64 (apt resolves dependencies)
+curl -LO https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream_0.0.1_amd64.deb && sudo apt install ./truestream_0.0.1_amd64.deb
+
+# Debian / Ubuntu arm64
+curl -LO https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream_0.0.1_arm64.deb && sudo apt install ./truestream_0.0.1_arm64.deb
+
+# Fedora / RHEL x64
+sudo dnf install https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
+
+# openSUSE x64
+sudo zypper install https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
+
+# Arch / Manjaro / EndeavourOS x64 (pacman fetches remote URLs directly)
+sudo pacman -U https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+
+# — or with your helper (same remote-file support) —
+yay -U https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+paru -U https://github.com/OnlyXianzo/TrueStream/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+# after AUR ingestion: paru -S truestream-bin  (yay -S truestream-bin)
+```
+
+> Full signed APT repository (`apt update && apt install truestream`, auto-updates) is next:
+> `dpkg-scanpackages` index + GPG-signed Release on GitHub Pages. The one-liners above are
+> the zero-infra one-click path until then.
+
 ---
 
 ## 📖 What is TrueStream?
