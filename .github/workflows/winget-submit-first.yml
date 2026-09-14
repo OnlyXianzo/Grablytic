@@ -1,10 +1,13 @@
 name: Submit First WinGet Manifest
 
-# One-shot bootstrap: winget-releaser only UPDATES existing packages, so the
-# very first version must be submitted as a PR to microsoft/winget-pkgs.
-# This workflow copies our hand-verified manifests (distribution/winget/...)
-# into a fork of winget-pkgs and opens the PR. Run once via workflow_dispatch,
-# then delete this file after the PR merges (auto-update takes over after).
+# One-shot bootstrap: winget-releaser only UPDATES existing packages.
+# Verified approach (winget-create README + doc/submit.md + discussion #190):
+# `wingetcreate new` is interactive by design and NOT for CI; `wingetcreate
+# submit --prtitle --token <manifest-dir>` submits EXISTING local manifests
+# non-interactively — exactly our case (hand-verified manifests in
+# distribution/winget/). Token via WINGET_CREATE_GITHUB_TOKEN env (official
+# CI guidance, avoids --token logging). Run once via workflow_dispatch, then
+# delete this file after the PR merges (winget-releaser takes over updates).
 # Requires secrets.WINGET_TOKEN (classic PAT, public_repo).
 
 on:
@@ -12,44 +15,22 @@ on:
 
 jobs:
   submit-first:
-    name: Open winget-pkgs PR for 0.0.1
-    runs-on: ubuntu-latest
+    name: Submit 0.0.1 manifests to winget-pkgs
+    runs-on: windows-latest
     if: github.repository == 'OnlyXianzo/TrueStream'
     env:
-      GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fork winget-pkgs (idempotent, wait for propagation)
-        run: |
-          gh repo fork microsoft/winget-pkgs --clone=false --remote=false || true
-          for i in $(seq 1 12); do
-            gh repo view OnlyXianzo/winget-pkgs --json name -q .name 2>/dev/null && break
-            echo "waiting for fork... ($i)"
-            sleep 10
-          done
-          gh repo view OnlyXianzo/winget-pkgs --json url -q .url
+      - name: Check WINGET_TOKEN present
+        shell: bash
+        run: '[ -n "$WINGET_CREATE_GITHUB_TOKEN" ] || { echo "::error::WINGET_TOKEN secret is not set"; exit 1; }'
 
-      - name: Clone fork and stage manifests
-        run: |
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/OnlyXianzo/winget-pkgs.git" winget-pkgs
-          DEST="winget-pkgs/manifests/o/OnlyXianzo/TrueStream/0.0.1"
-          mkdir -p "$DEST"
-          cp distribution/winget/manifests/o/OnlyXianzo/TrueStream/0.0.1/*.yaml "$DEST"/
-          ls -la "$DEST"
+      - name: Install wingetcreate
+        run: winget install --id Microsoft.WingetCreate -e --accept-source-agreements --accept-package-agreements
 
-      - name: Commit, push, open PR
-        working-directory: winget-pkgs
-        run: |
-          git config user.name "OnlyXianzo"
-          git config user.email "184820152+OnlyXianzo@users.noreply.github.com"
-          git checkout -B "OnlyXianzo.TrueStream-0.0.1"
-          git add "manifests/o/OnlyXianzo/TrueStream/0.0.1/"
-          git commit -m "New package: OnlyXianzo.TrueStream version 0.0.1" || echo "nothing to commit"
-          git push -u origin "OnlyXianzo.TrueStream-0.0.1" --force-with-lease
-          gh pr create --repo microsoft/winget-pkgs \
-            --head "OnlyXianzo:OnlyXianzo.TrueStream-0.0.1" \
-            --title "New package: OnlyXianzo.TrueStream version 0.0.1" \
-            --body "First submission for TrueStream (privacy-first media extractor, GPL-3.0). Portable x64 zip from GitHub Releases. Validation: manifests match winget-pkgs installer schema 1.6.0 (zip + portable nesting, SHA256 reconciled with release asset)." \
-          || echo "PR already exists or creation failed — check manually"
+      - name: Submit manifests
+        shell: bash
+        run: 'wingetcreate submit --prtitle "New package: OnlyXianzo.TrueStream version 0.0.1" --no-open "distribution/winget/manifests/o/OnlyXianzo/TrueStream/0.0.1"'
