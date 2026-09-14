@@ -1,0 +1,48 @@
+name: Submit First WinGet Manifest
+
+# One-shot bootstrap: winget-releaser only UPDATES existing packages, so the
+# very first version must be submitted as a PR to microsoft/winget-pkgs.
+# This workflow copies our hand-verified manifests (distribution/winget/...)
+# into a fork of winget-pkgs and opens the PR. Run once via workflow_dispatch,
+# then delete this file after the PR merges (auto-update takes over after).
+# Requires secrets.WINGET_TOKEN (classic PAT, public_repo).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  submit-first:
+    name: Open winget-pkgs PR for 0.0.1
+    runs-on: ubuntu-latest
+    if: github.repository == 'OnlyXianzo/TrueStream'
+    env:
+      GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fork winget-pkgs (idempotent)
+        run: gh repo fork microsoft/winget-pkgs --clone=false --remote=false 2>&1 | tail -n 1 || true
+
+      - name: Clone fork and stage manifests
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/OnlyXianzo/winget-pkgs.git" winget-pkgs
+          DEST="winget-pkgs/manifests/o/OnlyXianzo/TrueStream/0.0.1"
+          mkdir -p "$DEST"
+          cp distribution/winget/manifests/o/OnlyXianzo/TrueStream/0.0.1/*.yaml "$DEST"/
+          ls -la "$DEST"
+
+      - name: Commit, push, open PR
+        working-directory: winget-pkgs
+        run: |
+          git config user.name "OnlyXianzo"
+          git config user.email "184820152+OnlyXianzo@users.noreply.github.com"
+          git checkout -B "OnlyXianzo.TrueStream-0.0.1"
+          git add "manifests/o/OnlyXianzo/TrueStream/0.0.1/"
+          git commit -m "New package: OnlyXianzo.TrueStream version 0.0.1" || echo "nothing to commit"
+          git push -u origin "OnlyXianzo.TrueStream-0.0.1" --force-with-lease
+          gh pr create --repo microsoft/winget-pkgs \
+            --head "OnlyXianzo:OnlyXianzo.TrueStream-0.0.1" \
+            --title "New package: OnlyXianzo.TrueStream version 0.0.1" \
+            --body "First submission for TrueStream (privacy-first media extractor, GPL-3.0). Portable x64 zip from GitHub Releases. Validation: manifests match winget-pkgs installer schema 1.6.0 (zip + portable nesting, SHA256 reconciled with release asset)." \
+          || echo "PR already exists or creation failed — check manually"
