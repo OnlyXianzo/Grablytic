@@ -21,8 +21,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fork winget-pkgs (idempotent)
-        run: gh repo fork microsoft/winget-pkgs --clone=false --remote=false 2>&1 | tail -n 1 || true
+      - name: Fork winget-pkgs (idempotent, wait for propagation)
+        run: |
+          gh repo fork microsoft/winget-pkgs --clone=false --remote=false || true
+          for i in $(seq 1 12); do
+            gh repo view OnlyXianzo/winget-pkgs --json name -q .name 2>/dev/null && break
+            echo "waiting for fork... ($i)"
+            sleep 10
+          done
+          gh repo view OnlyXianzo/winget-pkgs --json url -q .url
 
       - name: Clone fork and stage manifests
         run: |
