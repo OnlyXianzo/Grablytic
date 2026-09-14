@@ -1,4 +1,4 @@
-from truestream_engine.paths import set_paths, get_paths, is_initialized
+from grablytic_engine.paths import set_paths, get_paths, is_initialized
 import pytest
 import os
 
@@ -40,7 +40,7 @@ def test_get_paths_returns_what_was_set():
 def test_get_paths_optional_fields_default_none(monkeypatch):
     import shutil
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
-    from truestream_engine.paths import _paths
+    from grablytic_engine.paths import _paths
     _paths["aria2c_path"] = None
     _paths["deno_path"] = None
     set_paths(
@@ -76,7 +76,7 @@ def test_set_paths_with_optional_fields():
 
 
 def test_is_initialized_false_before_set():
-    from truestream_engine.paths import _paths
+    from grablytic_engine.paths import _paths
     _paths["data_dir"] = None
     assert is_initialized() is False
 

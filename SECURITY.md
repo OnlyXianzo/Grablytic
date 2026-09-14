@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Only the latest release of TrueStream receives active security updates.
+Only the latest release of Grablytic receives active security updates.
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -10,7 +10,7 @@ Only the latest release of TrueStream receives active security updates.
 
 ## Reporting a Vulnerability
 
-We take the security and privacy of TrueStream very seriously. If you discover a potential security vulnerability, please do **NOT** open a public GitHub issue.
+We take the security and privacy of Grablytic very seriously. If you discover a potential security vulnerability, please do **NOT** open a public GitHub issue.
 
 Instead, please report it responsibly by sending an email to:
 
@@ -19,6 +19,6 @@ Instead, please report it responsibly by sending an email to:
 Please include:
 - A description of the vulnerability and its potential impact.
 - Step-by-step instructions or proof-of-concept (PoC) to reproduce the issue.
-- The operating system, device architecture, and TrueStream version tested.
+- The operating system, device architecture, and Grablytic version tested.
 
 We will acknowledge receipt of your report within 48 hours and coordinate a fix prior to any public disclosure.

@@ -1,4 +1,4 @@
-from truestream_engine.format_selector import build_format_string
+from grablytic_engine.format_selector import build_format_string
 
 
 class TestBuildFormatString:
@@ -91,8 +91,8 @@ class TestBuildFormatString:
 
 class TestGetFormatsPlaylist:
     def test_generator_entries_in_formats(self, monkeypatch):
-        from truestream_engine.formats import get_formats
-        import truestream_engine.formats as fmt_mod
+        from grablytic_engine.formats import get_formats
+        import grablytic_engine.formats as fmt_mod
 
         def gen():
             yield {

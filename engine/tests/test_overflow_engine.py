@@ -4,9 +4,9 @@ import os
 
 import pytest
 
-import truestream_engine.downloader as dl_mod
-from truestream_engine.opts_builder import build_ydl_opts
-from truestream_engine.paths import set_paths, _paths
+import grablytic_engine.downloader as dl_mod
+from grablytic_engine.opts_builder import build_ydl_opts
+from grablytic_engine.paths import set_paths, _paths
 
 
 @pytest.fixture()

@@ -18,7 +18,7 @@ fun loadKeystoreProperties(): Properties? {
 }
 
 android {
-    namespace = "com.theonly.truestream"
+    namespace = "com.theonly.grablytic"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -32,7 +32,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.theonly.truestream"
+        applicationId = "com.theonly.grablytic"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24 // Chaquopy requires minSdk >= 24

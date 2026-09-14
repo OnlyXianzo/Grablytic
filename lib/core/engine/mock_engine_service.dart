@@ -56,7 +56,7 @@ class MockEngineService implements EngineService {
           'type': 'event',
           'event': 'finished',
           'download_id': downloadId,
-          'filepath': '/storage/emulated/0/Download/TrueStream/Video.mp4',
+          'filepath': '/storage/emulated/0/Download/Grablytic/Video.mp4',
           'filesize_bytes': 52428800,
           'duration_seconds': 312,
           'title': 'Sample Video',

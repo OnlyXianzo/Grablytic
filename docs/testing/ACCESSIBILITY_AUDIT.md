@@ -1,4 +1,4 @@
-# Accessibility Audit — TrueStream
+# Accessibility Audit — Grablytic
 
 **Date:** 2026-06-10  
 **Auditor:** Agent G (Code Review & Quality Specialist)  

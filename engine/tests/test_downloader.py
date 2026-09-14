@@ -6,8 +6,8 @@ from datetime import timezone
 
 import pytest
 
-import truestream_engine.downloader as dl_mod
-from truestream_engine.paths import set_paths
+import grablytic_engine.downloader as dl_mod
+from grablytic_engine.paths import set_paths
 
 
 def _fake_ffmpeg(tmp_path):
@@ -19,7 +19,7 @@ def _fake_ffmpeg(tmp_path):
 
 @pytest.fixture()
 def _env(tmp_path, monkeypatch):
-    import truestream_engine.paths as paths_mod
+    import grablytic_engine.paths as paths_mod
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
     set_paths(
         data_dir=str(tmp_path), output_dir=str(tmp_path),

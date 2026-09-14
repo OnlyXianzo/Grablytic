@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 void main() {
   group('validateTemplateArgs (SEC-04)', () {

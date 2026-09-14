@@ -37,7 +37,7 @@ GitHub auto-reporter may already have filed a deduped issue.
 | Python | `server_logs.log` (data dir) | `RotatingFileHandler` |
 | Bootstrap | `bootstrap_progress.jsonl` (data dir) | Per-step statuses |
 | Live view | Settings → Diagnostics & Logs → Live Stream | Filter + export |
-| Export | **Export log file** button (File Logs tab) | Android: app external `log-exports/` (no permission needed); desktop: `~/Downloads/TrueStream-logs/` |
+| Export | **Export log file** button (File Logs tab) | Android: app external `log-exports/` (no permission needed); desktop: `~/Downloads/Grablytic-logs/` |
 | Full log | **Include full log** switch above the report button | Attaches up to 512 KB instead of the 100 KB tail |
 
 ## FAQ
@@ -53,3 +53,27 @@ can. So `ffmpeg`/`deno` ride app releases; desktop keeps silent CDN updates.
 **Which platforms are supported?**
 Android 8+ (API 26+, primary), Windows 10/11, Linux (Ubuntu 20.04+, Fedora
 34+, Debian 11+). iOS/Web are not supported.
+
+## TrueStream → Grablytic rename: data migration
+
+The Android application ID changed (`com.theonly.truestream` →
+`com.theonly.grablytic`), so Android treats Grablytic as a **new app**: it
+cannot auto-update an existing TrueStream install, and app-private data
+(settings DB, history) does not carry over — install Grablytic, verify it
+works, then uninstall the old app.
+
+What **is** preserved automatically:
+
+- **Download folder:** fresh installs use `Download/Grablytic`, but if a
+  legacy `Download/TrueStream` folder already exists it keeps being used
+  (see `getDefaultDownloadPath()` in `lib/providers/settings_provider.dart`).
+  Nothing is moved or deleted; you can point Settings at either folder.
+- **Linux native packages:** the `.deb` declares `Replaces:`/`Conflicts:`
+  against the old `truestream` package; the AUR package declares
+  `replaces=('truestream-bin')`. Remove any manually installed v0.0.1
+  `truestream` package if your manager does not do it automatically
+  (`install.sh --uninstall` only removes `grablytic`).
+- **Old release assets:** `v0.0.1` files keep their `truestream-*` names and
+  checksums forever (see `docs/security-scans.md`, which is intentionally
+  preserved as a historical record). `install.sh` still installs them when
+  pinned (`--version 0.0.1`) by falling back to the legacy asset names.

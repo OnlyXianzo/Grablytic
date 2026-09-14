@@ -6,21 +6,21 @@ import time
 import json
 import shutil
 
-# Ensure we can import the local truestream_engine module
+# Ensure we can import the local grablytic_engine module
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from truestream_engine import (
+from grablytic_engine import (
     set_paths,
     bootstrap,
     start_download,
     cancel_download,
     get_formats,
 )
-from truestream_engine.downloader import _active_downloads, _downloads_lock
+from grablytic_engine.downloader import _active_downloads, _downloads_lock
 
 
 def main():
-    parser = argparse.ArgumentParser(description="TrueStream CLI Engine Test Tool")
+    parser = argparse.ArgumentParser(description="Grablytic CLI Engine Test Tool")
     parser.add_argument("url", help="The media URL to download or inspect")
     parser.add_argument("--info-only", action="store_true", help="Only get available formats without downloading")
     parser.add_argument("--output-dir", default=".", help="Directory to save the download (default: current directory)")
@@ -37,8 +37,8 @@ def main():
         ffmpeg_path = "ffmpeg"  # Fallback to literal name
         
     # Set paths
-    data_dir = os.path.expanduser("~/.local/share/truestream")
-    cache_dir = os.path.expanduser("~/.cache/truestream")
+    data_dir = os.path.expanduser("~/.local/share/grablytic")
+    cache_dir = os.path.expanduser("~/.cache/grablytic")
     os.makedirs(data_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)

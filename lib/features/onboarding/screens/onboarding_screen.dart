@@ -121,7 +121,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(28),
               child: Image.asset(
-                'assets/brand/truestream_logo.png',
+                'assets/brand/grablytic_logo.png',
                 width: 96,
                 height: 96,
                 fit: BoxFit.cover,
@@ -132,7 +132,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 .fadeIn(duration: 800.ms),
             const SizedBox(height: 24),
             Text(
-              'TrueStream',
+              'Grablytic',
               style: textTheme.displayLarge?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w300,

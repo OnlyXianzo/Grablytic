@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/features/onboarding/screens/onboarding_screen.dart';
-import 'package:truestream/features/onboarding/widgets/onboarding_permissions_step.dart';
-import 'package:truestream/providers/settings_provider.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
+import 'package:grablytic/features/onboarding/screens/onboarding_screen.dart';
+import 'package:grablytic/features/onboarding/widgets/onboarding_permissions_step.dart';
+import 'package:grablytic/providers/settings_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
 
 /// Configurable fake: supported/granted matrices per permission + call
 /// counters proving accept fires the system request exactly once and
@@ -246,7 +246,7 @@ void main() {
           tester, find.widgetWithText(ElevatedButton, 'Got it'));
       await tester.pump();
       expect(
-        find.text('Got it — Downloads / TrueStream.'),
+        find.text('Got it — Downloads / Grablytic.'),
         findsOneWidget,
       );
       // Acknowledging storage fires no system request at all.
@@ -272,7 +272,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       // Beats 1-3: tap anywhere to advance.
-      await tester.tap(find.text('TrueStream'));
+      await tester.tap(find.text('Grablytic'));
       await tester.pump(const Duration(milliseconds: 900));
       await tester.tap(find.text('1,000+ sources'));
       await tester.pump(const Duration(milliseconds: 900));

@@ -69,5 +69,5 @@
 ## ♿ Accessibility & theming
 
 - WCAG 2.2 AA: semantics, 48×48 targets, screen-reader labels (see `docs/testing/ACCESSIBILITY_AUDIT.md`).
-- Material 3 light/dark (`TrueStreamColors`), Instrument Sans + Iosevka Charon Mono.
+- Material 3 light/dark (`GrablyticColors`), Instrument Sans + Iosevka Charon Mono.
 - 120 fps Impeller renderer; frame-rate audit in `test/performance/`.

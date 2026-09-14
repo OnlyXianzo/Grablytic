@@ -74,7 +74,7 @@ and can be parsed by CI tooling.
 
 ## Impeller Rendering Engine Requirements
 
-TrueStream uses Impeller as the default rendering engine. This provides
+Grablytic uses Impeller as the default rendering engine. This provides
 deterministic frame pipelines and eliminates Skia shader compilation jank.
 
 ### Device Requirements

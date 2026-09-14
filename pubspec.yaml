@@ -1,5 +1,5 @@
-name: truestream
-description: "A new Flutter project."
+name: grablytic
+description: "Grablytic — privacy-first media downloader (Flutter + yt-dlp engine)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -73,8 +73,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/brand/truestream_logo.png
-    - assets/branding/Truestream-logo.png
+    - assets/brand/grablytic_logo.png
+    - assets/branding/Grablytic-logo.png
 
   fonts:
     - family: IosevkaCharon

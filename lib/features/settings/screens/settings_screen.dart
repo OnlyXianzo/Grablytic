@@ -518,7 +518,7 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   _SettingNavItem(
                     icon: Icons.info_outline,
-                    title: 'About TrueStream',
+                    title: 'About Grablytic',
                     subtitle: 'v0.0.1-beta · The Only',
                     colorScheme: colorScheme,
                     onTap: () {
@@ -1209,7 +1209,7 @@ class _BackgroundPermissionsSectionState
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Download notifications?'),
         content: const Text(
-          'TrueStream shows download progress while downloading and an alert '
+          'Grablytic shows download progress while downloading and an alert '
           'when a file finishes or fails.\n\n'
           'Progress keeps working in the app even if you skip this.',
         ),

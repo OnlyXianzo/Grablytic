@@ -10,7 +10,7 @@ Expected behavior (Verified Approach):
 
 import queue as _queue
 
-import truestream_engine.downloader as dl_mod
+import grablytic_engine.downloader as dl_mod
 
 
 def _reset():

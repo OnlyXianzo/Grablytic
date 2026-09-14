@@ -1,6 +1,6 @@
 /// Playlist-selection helpers (03-B UI wiring).
 ///
-/// Dart mirror of `engine/truestream_engine/playlist.py`:
+/// Dart mirror of `engine/grablytic_engine/playlist.py`:
 /// - [isPlaylistUrl] mirrors `detect_playlist` (same match set, so the UI
 ///   routes exactly the URLs the engine treats as playlists).
 /// - [buildPlaylistItemsString] mirrors `build_playlist_items`: the values

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/app_logger.dart';
-import 'package:truestream/core/utils/log_buffer.dart';
+import 'package:grablytic/core/utils/app_logger.dart';
+import 'package:grablytic/core/utils/log_buffer.dart';
 
 void main() {
   group('AppLogger redaction (SEC-02)', () {

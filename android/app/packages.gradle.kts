@@ -1,10 +1,10 @@
-// TrueStream native binary packages (Android).
+// Grablytic native binary packages (Android).
 //
 // Why this exists: on targetSdk > 28 Android refuses to execute binaries the
 // app downloads itself at runtime (SDK28 exec restriction). The only files the
 // OS will run are ones shipped inside an APK's jniLibs — either ours or a
 // helper app's. Helper apps would force the user through a system install
-// prompt (REQUEST_INSTALL_PACKAGES), so TrueStream bundles instead: zero
+// prompt (REQUEST_INSTALL_PACKAGES), so Grablytic bundles instead: zero
 // extra permissions, zero prompts, works offline on first run.
 //
 // Binaries:
@@ -53,7 +53,7 @@ val ffmpegAarDigest = "e12402803f7a61802fded6bd021422688cb7a03e924068a1aec983dae
 val ffmpegVersion = "0.17.2"
 
 tasks.register("downloadNativePackages") {
-    group = "truestream"
+    group = "grablytic"
     description = "Fetch verified ffmpeg/deno/nodejs jniLibs."
     onlyIf { !project.hasProperty("skipNativePackages") }
     doLast {

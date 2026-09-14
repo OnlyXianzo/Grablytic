@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/features/settings/screens/settings_screen.dart';
-import 'package:truestream/features/settings/screens/observed_sources_screen.dart';
-import 'package:truestream/providers/settings_provider.dart';
-import 'package:truestream/providers/resume_provider.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
+import 'package:grablytic/features/settings/screens/settings_screen.dart';
+import 'package:grablytic/features/settings/screens/observed_sources_screen.dart';
+import 'package:grablytic/providers/settings_provider.dart';
+import 'package:grablytic/providers/resume_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
 
 class _NoopResumeNotifier extends ResumeNotifier {
   _NoopResumeNotifier(super.ref);
@@ -109,7 +109,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(pkgHeader, findsOneWidget);
       expect(find.text('App logs & diagnostics'), findsOneWidget);
-      expect(find.text('About TrueStream'), findsOneWidget);
+      expect(find.text('About Grablytic'), findsOneWidget);
     });
 
     testWidgets('Toggling switch updates SharedPreferences key',

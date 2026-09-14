@@ -26,7 +26,7 @@ enum _CardDecision { loading, ask, granted, skipped, denied, unsupported }
 ///    AppShell prompt never double-asks.
 /// 3. Download location — informational: scoped storage means there is no
 ///    runtime storage permission to request; files live in
-///    Download/TrueStream.
+///    Download/Grablytic.
 ///
 /// Denial never blocks: [onFinished] (wired to `completeOnboarding`) is
 /// always available, and everything remains changeable in Settings.
@@ -161,7 +161,7 @@ class _OnboardingPermissionsStepState
           ),
           const SizedBox(height: 8),
           Text(
-            'TrueStream works without these — they just make downloads smoother. '
+            'Grablytic works without these — they just make downloads smoother. '
             'You can change everything later in Settings.',
             style: textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
@@ -193,7 +193,7 @@ class _OnboardingPermissionsStepState
   }
 
   Widget _notificationCard(TextTheme textTheme) {
-    const explanation = 'TrueStream downloads in the background. With '
+    const explanation = 'Grablytic downloads in the background. With '
         'notifications on, you get progress updates and an alert when a '
         'file finishes or fails — even with the app closed. Without them, '
         'progress still shows inside the app.';
@@ -255,7 +255,7 @@ class _OnboardingPermissionsStepState
 
   Widget _batteryCard(TextTheme textTheme) {
     const explanation = 'Android can pause apps to save battery (Doze). '
-        'Exempting TrueStream lets downloads keep running with the screen '
+        'Exempting Grablytic lets downloads keep running with the screen '
         'off instead of stalling overnight.';
     switch (_battery) {
       case _CardDecision.loading:
@@ -305,7 +305,7 @@ class _OnboardingPermissionsStepState
   }
 
   Widget _storageCard(TextTheme textTheme) {
-    const explanation = 'Finished files save to the TrueStream folder in '
+    const explanation = 'Finished files save to the Grablytic folder in '
         'your Downloads. Android gives each app its own storage space, so '
         'there is no extra permission to grant — this just tells you where '
         'to find everything.';
@@ -315,7 +315,7 @@ class _OnboardingPermissionsStepState
         title: 'Download location',
         explanation: explanation,
         confirmed: true,
-        statusText: 'Got it — Downloads / TrueStream.',
+        statusText: 'Got it — Downloads / Grablytic.',
       );
     }
     return PermissionExplainerCard(

@@ -9,7 +9,7 @@ import '../../../core/engine/engine_provider.dart';
 class AboutScreen extends ConsumerWidget {
   const AboutScreen({super.key});
 
-  static const _repoUrl = 'https://github.com/OnlyXianzo/TrueStream';
+  static const _repoUrl = 'https://github.com/OnlyXianzo/Grablytic';
   static const _profileUrl = 'https://github.com/OnlyXianzo';
   static const _feedbackEmail = 'truestream.support@gmail.com';
 
@@ -51,7 +51,7 @@ class AboutScreen extends ConsumerWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(24),
                     child: Image.asset(
-                      'assets/brand/truestream_logo.png',
+                      'assets/brand/grablytic_logo.png',
                       width: 96,
                       height: 96,
                       fit: BoxFit.cover,
@@ -59,7 +59,7 @@ class AboutScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'TrueStream',
+                    'Grablytic',
                     style: textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colorScheme.primary,
@@ -100,7 +100,7 @@ class AboutScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'TrueStream is a local-first, zero-knowledge open source media acquisition engine. We do not track, collect, or store any of your data.',
+                      'Grablytic is a local-first, zero-knowledge open source media acquisition engine. We do not track, collect, or store any of your data.',
                       style: textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
@@ -157,7 +157,7 @@ class AboutScreen extends ConsumerWidget {
               onTap: () {
                 showLicensePage(
                   context: context,
-                  applicationName: 'TrueStream',
+                  applicationName: 'Grablytic',
                   applicationVersion: '0.0.1-beta',
                   applicationIcon: Padding(
                     padding: const EdgeInsets.all(8.0),

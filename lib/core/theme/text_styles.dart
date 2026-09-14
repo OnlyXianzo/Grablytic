@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-extension TrueStreamTextStyles on TextTheme {
+extension GrablyticTextStyles on TextTheme {
   TextStyle get mono => const TextStyle(
     fontFamily: 'IosevkaCharonMono',
     fontSize: 13,

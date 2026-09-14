@@ -1,4 +1,4 @@
-from truestream_engine.config import DEFAULT_CFG
+from grablytic_engine.config import DEFAULT_CFG
 
 
 def test_default_config_has_required_keys():

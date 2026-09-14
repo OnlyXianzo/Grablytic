@@ -1,17 +1,17 @@
 # DMCA / Copyright Notice
 
-TrueStream respects the intellectual property rights of others, and we expect
-our users to do the same. This page explains what TrueStream is, what we ask
+Grablytic respects the intellectual property rights of others, and we expect
+our users to do the same. This page explains what Grablytic is, what we ask
 of users, and how copyright holders can contact us.
 
 This is a good-faith notice, not legal advice and not a binding legal
 document. It does not create a formal repeat-infringer or counter-notification
-procedure — TrueStream is a client-side tool and hosts no user content to take
+procedure — Grablytic is a client-side tool and hosts no user content to take
 down (see below).
 
-## What TrueStream is
+## What Grablytic is
 
-TrueStream is a **general-purpose media tool**: a graphical interface and
+Grablytic is a **general-purpose media tool**: a graphical interface and
 automation layer built on top of the open-source
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) engine, which supports thousands of
 sites. Like the video recorders before it, a general-purpose downloading tool
@@ -26,18 +26,18 @@ https://www.eff.org/deeplinks/2020/11/github-reinstates-youtube-dl-after-riaas-a
 
 Whether a particular download is lawful depends on **your** local laws, the
 source site's terms of service, and the rights attached to the specific
-content. TrueStream cannot make that determination for you.
+content. Grablytic cannot make that determination for you.
 
 - ✅ Downloading your **own** uploads, Creative Commons / public-domain works,
   or anything you have permission to save is generally fine.
 - ⚠️ Downloading copyrighted material **without permission** may infringe
   copyright in your jurisdiction — even if the software technically allows it.
-- **You are responsible for your own use** of TrueStream and for complying
+- **You are responsible for your own use** of Grablytic and for complying
   with applicable law.
 
 ## Non-affiliation
 
-TrueStream is an independent open-source project. It is **not affiliated
+Grablytic is an independent open-source project. It is **not affiliated
 with, endorsed by, or sponsored by** YouTube, Google, Twitch, or any other
 platform it can access, nor by the yt-dlp project itself. All trademarks and
 platform names belong to their respective owners.
@@ -45,7 +45,7 @@ platform names belong to their respective owners.
 ## Reporting copyright concerns
 
 If you are a copyright holder (or authorized to act for one) and believe
-TrueStream itself — this repository, its releases, or its documentation —
+Grablytic itself — this repository, its releases, or its documentation —
 contains material that infringes your rights, please contact us:
 
 - 📧 **xianzo.help@gmail.com**
@@ -66,7 +66,7 @@ To help us act quickly, please include:
 We will review every legitimate report sent to the address above in good
 faith and take appropriate action — which may include removing or modifying
 the material at issue, depending on what the review finds. Please note that
-because TrueStream runs entirely on the user's own device, we have no ability
+because Grablytic runs entirely on the user's own device, we have no ability
 to remove or disable content on third-party platforms or on users' devices;
 reports should therefore concern material in this project itself.
 

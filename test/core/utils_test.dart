@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils.dart';
+import 'package:grablytic/core/utils.dart';
 
 void main() {
   group('formatBytes', () {

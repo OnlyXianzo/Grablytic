@@ -3,7 +3,7 @@
 > Last updated: **2026-09-11** — reflects bundled jniLibs binaries, `DownloadService`,
 > Kotlin-callback event delivery, JS runtimes, persistent logging + GitHub auto-report.
 
-TrueStream uses a layered architecture with a Flutter frontend and a Python
+Grablytic uses a layered architecture with a Flutter frontend and a Python
 download engine. The frontend and engine communicate through a platform-specific
 IPC layer. Android adds a Kotlin native layer (binary resolution + keep-alive +
 event bridge) between Flutter and Python.
@@ -28,7 +28,7 @@ event bridge) between Flutter and Python.
 | Persistence | SharedPreferences + SQLite | Settings/presets/playlists/auth in prefs; download history in SQLite (`sqflite` + `sqflite_common_ffi` on desktop). |
 | Logging | `AppLogger` (Dart) + `logger`/`persistent` (Python) | Buffered 30 s flush, `app_logs.txt` mirror, `RotatingFileHandler` (`server_logs.log`), traced IPC, global handlers, Riverpod/nav/engine observers. |
 | Crash reporting | `GithubReporter` (Dart) + `github_notifier` (Python) | Search-based dedup so the same crash isn't filed twice. |
-| Fonts | Instrument Sans (body) / Iosevka Charon Mono (mono) | Typography via Google Fonts + TrueStreamTextStyles extension. |
+| Fonts | Instrument Sans (body) / Iosevka Charon Mono (mono) | Typography via Google Fonts + GrablyticTextStyles extension. |
 
 ## Layered Architecture
 
@@ -117,11 +117,11 @@ event bridge) between Flutter and Python.
 │  │  Android:           │    │  Desktop:                │       │
 │  │  MethodChannel      │    │  JSON-RPC over stdin/    │       │
 │  │  "com.theonly.      │    │  stdout subprocess IPC   │       │
-│  │  truestream/engine"  │    │  (UTF-8, \n delimited)   │       │
+│  │  grablytic/engine"  │    │  (UTF-8, \n delimited)   │       │
 │  │                     │    │                          │       │
 │  │  EventChannel       │    │  Progress events:        │       │
 │  │  "com.theonly.      │    │  {"type":"event",...}    │       │
-│  │  truestream/progress"│    │  multiplexed on stdout   │       │
+│  │  grablytic/progress"│    │  multiplexed on stdout   │       │
 │  │                     │    │                          │       │
 │  │  Kotlin callback:   │    │  + {"type":"log",...}    │       │
 │  │  onEvent(json)      │    │  filtered to logStream   │       │
@@ -242,14 +242,14 @@ abstract class EngineService {
 ### Platform Implementations
 
 1. **`PlatformChannelEngineService`** (Android via Chaquopy):
-   - MethodChannel `com.theonly.truestream/engine` — request/response
-   - EventChannel `com.theonly.truestream/progress` — streaming progress events
+   - MethodChannel `com.theonly.grablytic/engine` — request/response
+   - EventChannel `com.theonly.grablytic/progress` — streaming progress events
    - Kotlin `EngineEventListener.onEvent(json)` — direct hook → Flutter path (no polling)
    - `MethodCallHandler` for `intent/shared_url` — receives share intents from Kotlin
    - All payloads serialized as JSON strings, decoded by Python via `jsonDecode`
 
 2. **`DesktopEngineService`** (Windows/Linux via JSON stdin/stdout):
-   - Spawns `python -m truestream_engine` as a managed subprocess
+   - Spawns `python -m grablytic_engine` as a managed subprocess
    - `.venv` detection in `engine/` directory first, falls back to `python3`
    - JSON-RPC over line-delimited stdin/stdout with UUID request IDs
    - `_pending` map of `Completer`s for request/response correlation
@@ -336,31 +336,31 @@ Log lines interleaved on stdout:
 
 | Module | File | Responsibility |
 |---|---|---|
-| `paths` | `engine/truestream_engine/paths.py` | Global path store. `set_paths()`, `get_paths()`, `is_initialized()`. Injects binary directories to PATH, prepends site-packages to sys.path for dynamic yt-dlp updates. |
-| `config` | `engine/truestream_engine/config.py` | `DEFAULT_CFG` dict: format, container, quality ceiling, subtitles, SponsorBlock, sections, retries, network, auth, archive, playlist, live. |
-| `opts_builder` | `engine/truestream_engine/opts_builder.py` | `build_ydl_opts()` — merges config with paths, validated aria2c opts (native for DASH/HLS), canonical PP chain (EmbedSubtitle → ModifyChapters → Metadata), `updatetime: False`, `writethumbnail`, sections via `download_range_func`, JS runtime via `_configure_js_runtime()`. |
-| `format_selector` | `engine/truestream_engine/format_selector.py` | `build_format_string()` — tiered format string: explicit ID > audio-only > quality ceiling cascade (AV1 → VP9 → H264). Muxed-stream support for non-YouTube. |
-| `site_profiles` | `engine/truestream_engine/site_profiles.py` | 6 built-in profiles (YouTube 1080p, YouTube 4K, Podcast Audio, Lossless FLAC, Opus Compact, Twitter/X Video). CDN-fetchable overrides. |
-| `downloader` | `engine/truestream_engine/downloader.py` | `start_download()` spawns `threading.Thread` → `download_thread()`. Creates `YoutubeDL` with built opts, progress hook + cancel check. `_active_downloads` updated in place; terminal `finished` carries `filesize_bytes`; errors carry `suggests_vpn`. Accepts `event_callback`. |
-| `hooks` | `engine/truestream_engine/hooks.py` | `build_progress_hook()` — yt-dlp progress hook → queue **or** `callback.onEvent(json)`. 99 % cap on streaming progress; `filesize_bytes` on finished. `pp_key`-keyed stage lookup with real PP names. |
-| `errors` | `engine/truestream_engine/errors.py` | `TrueStreamError` with typed error codes (ERROR_GEO_BLOCKED, ERROR_RATE_LIMITED, …) + recoverable flag + suggests_vpn. `classify_error()` matches exception text against keyword map. `ERROR_CANCELLED` maps to `cancelled` event on desktop. |
-| `formats` | `engine/truestream_engine/formats.py` | `get_formats()` — extract info without downloading, parse format list into structured objects with codec/resolution/bitrate. Returns recommended video/audio format IDs. |
-| `playlist` | `engine/truestream_engine/playlist.py` | `get_playlist_info()` — flat-extract playlist entries with generator guards, expanded video IDs, deleted-entry marking, storage sanitization. |
-| `search` | `engine/truestream_engine/search.py` | `search()` — flat-extract YouTube (`ytsearch{N}:`) and SoundCloud (`scsearch{N}:`) results via yt-dlp search extractors with entry normalization and error classification. |
-| `bootstrap` | `engine/truestream_engine/bootstrap.py` | CDN manifest fetch, SHA-256-or-fail, Zip/Tar-Slip-hardened extraction, parallel ffmpeg/aria2c/deno fetch, uv venv + yt-dlp install (desktop), Android fail-closed + bundled-jniLibs fallback with live `--version` probes, QuickJS + Deno detection. |
-| `resume` | `engine/truestream_engine/resume.py` | `scan_resume_candidates()` — scans cache dir for .part files, checks age vs 24h expiry, recovers URL from .info.json metadata, sanitizes storage paths. |
-| `scheduler_check` | `engine/truestream_engine/scheduler_check.py` | Pure helper functions (`parse_atom_feed_entries`, `filter_unseen_videos`) for lightweight YouTube Atom RSS XML feed parsing and video deduplication without heavy extractor overhead. |
-| `po_token` | `engine/truestream_engine/po_token.py` | Allowlisted JS (`verify_js_code`), `detect_js_runtime()` (paths module first), QuickJS-context + Deno-subprocess generation. |
-| `logger` | `engine/truestream_engine/logger.py` | 5-level structured logger, daily rotation, IPC queue forwarding, thread-local context, trace timing, exception logging with tracebacks. |
-| `persistent` | `engine/truestream_engine/persistent.py` | `RotatingFileHandler` (`server_logs.log`), `traced_request` IPC middleware. |
-| `github_notifier` | `engine/truestream_engine/github_notifier.py` | Crash search-based dedup + auto-report pipeline. |
+| `paths` | `engine/grablytic_engine/paths.py` | Global path store. `set_paths()`, `get_paths()`, `is_initialized()`. Injects binary directories to PATH, prepends site-packages to sys.path for dynamic yt-dlp updates. |
+| `config` | `engine/grablytic_engine/config.py` | `DEFAULT_CFG` dict: format, container, quality ceiling, subtitles, SponsorBlock, sections, retries, network, auth, archive, playlist, live. |
+| `opts_builder` | `engine/grablytic_engine/opts_builder.py` | `build_ydl_opts()` — merges config with paths, validated aria2c opts (native for DASH/HLS), canonical PP chain (EmbedSubtitle → ModifyChapters → Metadata), `updatetime: False`, `writethumbnail`, sections via `download_range_func`, JS runtime via `_configure_js_runtime()`. |
+| `format_selector` | `engine/grablytic_engine/format_selector.py` | `build_format_string()` — tiered format string: explicit ID > audio-only > quality ceiling cascade (AV1 → VP9 → H264). Muxed-stream support for non-YouTube. |
+| `site_profiles` | `engine/grablytic_engine/site_profiles.py` | 6 built-in profiles (YouTube 1080p, YouTube 4K, Podcast Audio, Lossless FLAC, Opus Compact, Twitter/X Video). CDN-fetchable overrides. |
+| `downloader` | `engine/grablytic_engine/downloader.py` | `start_download()` spawns `threading.Thread` → `download_thread()`. Creates `YoutubeDL` with built opts, progress hook + cancel check. `_active_downloads` updated in place; terminal `finished` carries `filesize_bytes`; errors carry `suggests_vpn`. Accepts `event_callback`. |
+| `hooks` | `engine/grablytic_engine/hooks.py` | `build_progress_hook()` — yt-dlp progress hook → queue **or** `callback.onEvent(json)`. 99 % cap on streaming progress; `filesize_bytes` on finished. `pp_key`-keyed stage lookup with real PP names. |
+| `errors` | `engine/grablytic_engine/errors.py` | `GrablyticError` with typed error codes (ERROR_GEO_BLOCKED, ERROR_RATE_LIMITED, …) + recoverable flag + suggests_vpn. `classify_error()` matches exception text against keyword map. `ERROR_CANCELLED` maps to `cancelled` event on desktop. |
+| `formats` | `engine/grablytic_engine/formats.py` | `get_formats()` — extract info without downloading, parse format list into structured objects with codec/resolution/bitrate. Returns recommended video/audio format IDs. |
+| `playlist` | `engine/grablytic_engine/playlist.py` | `get_playlist_info()` — flat-extract playlist entries with generator guards, expanded video IDs, deleted-entry marking, storage sanitization. |
+| `search` | `engine/grablytic_engine/search.py` | `search()` — flat-extract YouTube (`ytsearch{N}:`) and SoundCloud (`scsearch{N}:`) results via yt-dlp search extractors with entry normalization and error classification. |
+| `bootstrap` | `engine/grablytic_engine/bootstrap.py` | CDN manifest fetch, SHA-256-or-fail, Zip/Tar-Slip-hardened extraction, parallel ffmpeg/aria2c/deno fetch, uv venv + yt-dlp install (desktop), Android fail-closed + bundled-jniLibs fallback with live `--version` probes, QuickJS + Deno detection. |
+| `resume` | `engine/grablytic_engine/resume.py` | `scan_resume_candidates()` — scans cache dir for .part files, checks age vs 24h expiry, recovers URL from .info.json metadata, sanitizes storage paths. |
+| `scheduler_check` | `engine/grablytic_engine/scheduler_check.py` | Pure helper functions (`parse_atom_feed_entries`, `filter_unseen_videos`) for lightweight YouTube Atom RSS XML feed parsing and video deduplication without heavy extractor overhead. |
+| `po_token` | `engine/grablytic_engine/po_token.py` | Allowlisted JS (`verify_js_code`), `detect_js_runtime()` (paths module first), QuickJS-context + Deno-subprocess generation. |
+| `logger` | `engine/grablytic_engine/logger.py` | 5-level structured logger, daily rotation, IPC queue forwarding, thread-local context, trace timing, exception logging with tracebacks. |
+| `persistent` | `engine/grablytic_engine/persistent.py` | `RotatingFileHandler` (`server_logs.log`), `traced_request` IPC middleware. |
+| `github_notifier` | `engine/grablytic_engine/github_notifier.py` | Crash search-based dedup + auto-report pipeline. |
 
 ### `__main__.py` — Entry Point
 
-The desktop IPC entry point (`python -m truestream_engine`):
+The desktop IPC entry point (`python -m grablytic_engine`):
 1. Starts a daemon thread (`poll_queues`) that drains download progress/result queues
 2. Enters a persistent JSON-RPC stdin loop, dispatching to module functions by method name
-3. Supports CLI mode for one-shot commands (e.g., `python -m truestream_engine bootstrap`)
+3. Supports CLI mode for one-shot commands (e.g., `python -m grablytic_engine bootstrap`)
 
 ## Data Flow — Complete Download Lifecycle
 
@@ -446,11 +446,11 @@ source filters, tap-to-expand, auto-scroll, export).
 ## Theme System
 
 Colors follow the "Earth & Ethos" palette defined in DESIGN.md tokens.
-`TrueStreamColors` provides light and dark color constants used by `AppTheme`.
+`GrablyticColors` provides light and dark color constants used by `AppTheme`.
 
 - `AppTheme.light()` and `AppTheme.dark()` build Material 3 `ThemeData` from `ColorScheme`
 - Typography wraps `GoogleFonts.instrumentSansTextTheme(base)` for body text
-- Monospace text uses `TrueStreamTextStyles.mono` extension on `TextTheme` (Iosevka Charon Mono)
+- Monospace text uses `GrablyticTextStyles.mono` extension on `TextTheme` (Iosevka Charon Mono)
 
 ## Accessibility
 
@@ -504,12 +504,12 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 **Build workflow** (`build.yml`):
 - Manual trigger (`workflow_dispatch`)
 - **Android matrix** (parallel builds on `ubuntu-latest`):
-  - ARM64-v8a + Deno APK (`truestream-v<ver>-arm64-deno.apk`, recommended default for modern 64-bit phones)
-  - ARM64-v8a + Node.js APK (`truestream-v<ver>-arm64-node.apk`, smaller download for 64-bit phones)
-  - ARMeabi-v7a + Node.js APK (`truestream-v<ver>-armv7-node.apk`, budget & low-end 32-bit phones like Samsung Galaxy A04e)
-  - x86_64 + Deno APK (`truestream-v<ver>-x86_64-deno.apk`, 64-bit emulators & Chromebooks)
-  - x86_64 + Node.js APK (`truestream-v<ver>-x86_64-node.apk`, lightweight 64-bit emulator build)
-  - Universal APK (`truestream-v<ver>-universal.apk`, multi-ABI fallback covering ARMv7, ARM64, and x86_64 with both runtimes)
+  - ARM64-v8a + Deno APK (`grablytic-v<ver>-arm64-deno.apk`, recommended default for modern 64-bit phones)
+  - ARM64-v8a + Node.js APK (`grablytic-v<ver>-arm64-node.apk`, smaller download for 64-bit phones)
+  - ARMeabi-v7a + Node.js APK (`grablytic-v<ver>-armv7-node.apk`, budget & low-end 32-bit phones like Samsung Galaxy A04e)
+  - x86_64 + Deno APK (`grablytic-v<ver>-x86_64-deno.apk`, 64-bit emulators & Chromebooks)
+  - x86_64 + Node.js APK (`grablytic-v<ver>-x86_64-node.apk`, lightweight 64-bit emulator build)
+  - Universal APK (`grablytic-v<ver>-universal.apk`, multi-ABI fallback covering ARMv7, ARM64, and x86_64 with both runtimes)
 - **Linux matrix** (`ubuntu-latest` for x64, `ubuntu-24.04-arm` for arm64):
   - Debian packages (`.deb` via `dpkg-deb`)
   - RedHat / openSUSE packages (`.rpm` via `alien`)
@@ -517,7 +517,7 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
   - Portable release tarballs (`.tar.gz`)
   - Python engine bundled directly alongside each release
 - **Windows** (`windows-latest`):
-  - 64-bit portable release zip (`truestream-windows-x64.zip`) + release bundle with Python engine included
+  - 64-bit portable release zip (`grablytic-windows-x64.zip`) + release bundle with Python engine included
 
 **Verification workflow** (`verify.yml`):
 - On push/PR to main
@@ -538,7 +538,7 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 - `.venv` at `engine/.venv/` or project root `.venv/` auto-detected by `DesktopEngineService`
 - Falls back to system `python3` if no venv found
 - `PYTHONPATH` extended with `engine/` directory for module discovery in development
-- Production bundles include the `truestream_engine` directory as a resource
+- Production bundles include the `grablytic_engine` directory as a resource
 
 ## Performance
 

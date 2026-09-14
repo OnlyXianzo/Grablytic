@@ -167,7 +167,7 @@ class DownloadHistoryDb {
 
   Future<Database> _initDb() async {
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'truestream.db');
+    final path = p.join(dir.path, 'grablytic.db');
     return openDatabase(
       path,
       version: 4,

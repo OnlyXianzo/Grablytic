@@ -16,7 +16,7 @@ final engineProvider = Provider<EngineService>((ref) {
 
   final settings = ref.read(settingsProvider);
   final initialOutputDir = settings.downloadPath == '/Internal/Videos'
-      ? '$_appDir/TrueStream'
+      ? '$_appDir/Grablytic'
       : settings.downloadPath;
   // ytdlnis parity: cookies only reach yt-dlp when the master switch is
   // on (per-site toggles are merged into the file by the Cookies screen).
@@ -41,7 +41,7 @@ final engineProvider = Provider<EngineService>((ref) {
     if (previous?.downloadPath != next.downloadPath ||
         previous?.cookiesPath != next.cookiesPath ||
         previous?.useCookies != next.useCookies) {      final outputDir = next.downloadPath == '/Internal/Videos'
-          ? '$_appDir/TrueStream'
+          ? '$_appDir/Grablytic'
           : next.downloadPath;
       engine.setPaths({
         'data_dir': _appDir,

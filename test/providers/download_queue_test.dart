@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
-import 'package:truestream/providers/download_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
+import 'package:grablytic/providers/download_provider.dart';
 
 DownloadNotifier _notifier() => DownloadNotifier(MockEngineService());
 

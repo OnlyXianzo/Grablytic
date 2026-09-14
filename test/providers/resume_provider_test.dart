@@ -1,10 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:truestream/core/engine/engine_provider.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
-import 'package:truestream/providers/resume_provider.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
+import 'package:grablytic/providers/resume_provider.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 ResumeCandidate _c({String? url = 'https://x.test/v', bool expired = false}) =>
     ResumeCandidate(

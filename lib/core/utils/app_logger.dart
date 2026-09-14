@@ -490,7 +490,7 @@ class AppLogger {
   /// Android: app-specific external dir, e.g.
   /// `.../Android/data/APP_ID/files/log-exports/` — writable with NO
   /// (scoped storage forbids raw writes to public Download on API 30+).
-  /// Desktop: `~/Downloads/TrueStream-logs/`. Never throws — returns an
+  /// Desktop: `~/Downloads/Grablytic-logs/`. Never throws — returns an
   /// error description string starting with `ERROR:` on failure.
   static Future<String> exportLogFile(File src) async {
     try {
@@ -505,7 +505,7 @@ class AppLogger {
       } else {
         final dl = await getDownloadsDirectory();
         base = dl ?? Directory(_logsDirPath ?? '.');
-        sub = 'TrueStream-logs';
+        sub = 'Grablytic-logs';
       }
       final destDir = Directory('${base.path}/$sub');
       await destDir.create(recursive: true);
@@ -515,11 +515,11 @@ class AppLogger {
           '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
       final name = src.path.split('/').last;
       // 1s timestamp resolution → same-second exports must not overwrite.
-      var dest = File('${destDir.path}/truestream-$stamp-$name');
+      var dest = File('${destDir.path}/grablytic-$stamp-$name');
       var n = 1;
       while (await dest.exists()) {
         n++;
-        dest = File('${destDir.path}/truestream-$stamp-$name-$n');
+        dest = File('${destDir.path}/grablytic-$stamp-$name-$n');
       }
       await src.copy(dest.path);
       return dest.path;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/features/home/widgets/download_sparkline.dart';
+import 'package:grablytic/features/home/widgets/download_sparkline.dart';
 
 void main() {
   testWidgets('renders empty samples without crashing', (tester) async {

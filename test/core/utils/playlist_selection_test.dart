@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/download_config.dart';
-import 'package:truestream/core/utils/playlist_selection.dart';
+import 'package:grablytic/core/utils/download_config.dart';
+import 'package:grablytic/core/utils/playlist_selection.dart';
 
 void main() {
   group('isPlaylistUrl (mirrors engine detect_playlist)', () {

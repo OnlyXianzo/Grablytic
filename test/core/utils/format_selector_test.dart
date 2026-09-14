@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/format_selector.dart';
+import 'package:grablytic/core/utils/format_selector.dart';
 
 Map<String, dynamic> _v(String id, int? height, String vcodec, {num? tbr, num? fps}) => {
       'format_id': id,

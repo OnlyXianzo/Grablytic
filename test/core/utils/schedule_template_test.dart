@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/command_template.dart';
-import 'package:truestream/core/utils/schedule_guard.dart';
-import 'package:truestream/providers/settings_provider.dart';
+import 'package:grablytic/core/utils/command_template.dart';
+import 'package:grablytic/core/utils/schedule_guard.dart';
+import 'package:grablytic/providers/settings_provider.dart';
 
 void main() {
   group('parseTemplateConfig (safe subset)', () {

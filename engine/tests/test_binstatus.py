@@ -5,13 +5,13 @@ import stat
 
 import pytest
 
-from truestream_engine import paths as paths_mod
-from truestream_engine.paths import set_paths
+from grablytic_engine import paths as paths_mod
+from grablytic_engine.paths import set_paths
 
 
 def _boot():
     import importlib
-    return importlib.import_module("truestream_engine.bootstrap")
+    return importlib.import_module("grablytic_engine.bootstrap")
 
 
 @pytest.fixture(autouse=True)
@@ -219,13 +219,13 @@ class TestVersionFloor:
 class TestTmplConfine:
     @pytest.mark.unit
     def test_good_templates_pass(self):
-        from truestream_engine.opts_builder import _is_safe_outtmpl
+        from grablytic_engine.opts_builder import _is_safe_outtmpl
         assert _is_safe_outtmpl("%(uploader)s - %(title)s.%(ext)s") is True
         assert _is_safe_outtmpl("%(uploader)s/%(title)s.%(ext)s") is True
 
     @pytest.mark.unit
     def test_escape_attempts_rejected(self):
-        from truestream_engine.opts_builder import _is_safe_outtmpl
+        from grablytic_engine.opts_builder import _is_safe_outtmpl
         assert _is_safe_outtmpl("/etc/cron.d/%(title)s") is False
         assert _is_safe_outtmpl("C:\\Windows\\%(title)s") is False
         assert _is_safe_outtmpl("../../%(title)s") is False
@@ -237,8 +237,8 @@ class TestTmplConfine:
 
     @pytest.mark.unit
     def test_builder_falls_back_to_default(self):
-        from truestream_engine.opts_builder import build_ydl_opts
-        from truestream_engine.config import DEFAULT_CFG
+        from grablytic_engine.opts_builder import build_ydl_opts
+        from grablytic_engine.config import DEFAULT_CFG
         opts = build_ydl_opts(config={"output_tmpl": "/abs/evil"})
         assert opts["outtmpl"] == {"default": DEFAULT_CFG["output_tmpl"]}
         opts = build_ydl_opts(config={"output_tmpl": "%(title)s.%(ext)s"})

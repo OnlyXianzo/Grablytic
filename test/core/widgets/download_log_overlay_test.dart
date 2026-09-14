@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/log_buffer.dart';
-import 'package:truestream/core/utils/log_entry.dart';
-import 'package:truestream/features/home/widgets/download_log_overlay.dart';
-import 'package:truestream/providers/log_provider.dart';
+import 'package:grablytic/core/utils/log_buffer.dart';
+import 'package:grablytic/core/utils/log_entry.dart';
+import 'package:grablytic/features/home/widgets/download_log_overlay.dart';
+import 'package:grablytic/providers/log_provider.dart';
 
 LogEntry _engineLine(String id, String message) {
   return LogEntry(
     timestamp: DateTime(2026, 9, 12, 12, 0, 0),
     level: LogLevel.info,
-    logger: 'truestream_engine.downloader',
+    logger: 'grablytic_engine.downloader',
     message: message,
     context: {'download_id': id},
     source: 'engine',

@@ -109,7 +109,7 @@ class DesktopEngineService implements EngineService {
     final executable = await ensureDependencies(await _resolvePythonPath());
 
     // Set up PYTHONPATH environment variable to include the executable directory
-    // and development paths so python can always find 'truestream_engine'.
+    // and development paths so python can always find 'grablytic_engine'.
     final env = Map<String, String>.from(Platform.environment);
     final pythonPaths = <String>[];
 
@@ -120,7 +120,7 @@ class DesktopEngineService implements EngineService {
     // Add development directory paths
     final currentDir = Directory.current.path;
     pythonPaths.add('$currentDir/engine');
-    pythonPaths.add('$currentDir/Project-TrueStream/engine');
+    pythonPaths.add('$currentDir/Project-Grablytic/engine');
 
     if (env.containsKey('PYTHONPATH')) {
       pythonPaths.add(env['PYTHONPATH']!);
@@ -131,7 +131,7 @@ class DesktopEngineService implements EngineService {
 
     _process = await Process.start(
       executable,
-      ['-m', 'truestream_engine'],
+      ['-m', 'grablytic_engine'],
       workingDirectory: _workingDirectory,
       environment: env,
       runInShell: false,
@@ -245,7 +245,7 @@ class DesktopEngineService implements EngineService {
   }
 
   Future<String> _installYtDlpViaUv(String uvPath) async {
-    final venvDir = _dataDir != null ? '$_dataDir/venv' : '${Directory.systemTemp.path}/truestream-venv';
+    final venvDir = _dataDir != null ? '$_dataDir/venv' : '${Directory.systemTemp.path}/grablytic-venv';
     final venvPython = Platform.isWindows
         ? '$venvDir\\Scripts\\python.exe'
         : '$venvDir/bin/python';
@@ -458,7 +458,7 @@ class DesktopEngineService implements EngineService {
     required String displayName,
   }) async {
     // Desktop has direct filesystem access: plain copy into
-    // ~/Downloads/TrueStream-logs/. Never throws (contract).
+    // ~/Downloads/Grablytic-logs/. Never throws (contract).
     try {
       final src = File(sourcePath);
       if (!await src.exists()) return {'success': false};
@@ -469,7 +469,7 @@ class DesktopEngineService implements EngineService {
         final home = Platform.environment['HOME'] ??
             Platform.environment['USERPROFILE'] ??
             '.';
-        base = Directory('$home/Downloads/TrueStream-logs');
+        base = Directory('$home/Downloads/Grablytic-logs');
       } catch (_) {
         return {'success': false};
       }

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from truestream_engine.config import coerce_config, DEFAULT_CFG
+from grablytic_engine.config import coerce_config, DEFAULT_CFG
 
 
 class FakeHashMapProxy:
@@ -53,8 +53,8 @@ class TestCoerceConfig:
     def test_opts_builder_accepts_string_config(self, tmp_path, monkeypatch):
         import os
         import shutil
-        from truestream_engine import paths as paths_mod
-        from truestream_engine.opts_builder import build_ydl_opts
+        from grablytic_engine import paths as paths_mod
+        from grablytic_engine.opts_builder import build_ydl_opts
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         monkeypatch.setattr(
@@ -87,9 +87,9 @@ class TestStringConfigEndToEnd:
     ):
         import queue
         import stat
-        import truestream_engine.downloader as dl_mod
-        import truestream_engine.paths as paths_mod
-        from truestream_engine.logger import set_global_event_callback
+        import grablytic_engine.downloader as dl_mod
+        import grablytic_engine.paths as paths_mod
+        from grablytic_engine.logger import set_global_event_callback
 
         class _Sink:
             def __init__(self):

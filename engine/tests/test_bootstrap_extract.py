@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from truestream_engine.bootstrap import (
+from grablytic_engine.bootstrap import (
     _download_and_extract_binary,
     _safe_extract_tar,
     _safe_extract_zip,

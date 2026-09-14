@@ -1,15 +1,15 @@
-from truestream_engine.errors import TrueStreamError, classify_error
+from grablytic_engine.errors import GrablyticError, classify_error
 
 
-class TestTrueStreamError:
+class TestGrablyticError:
     def test_holds_fields(self):
-        err = TrueStreamError("ERROR_TEST", "something went wrong", recoverable=True)
+        err = GrablyticError("ERROR_TEST", "something went wrong", recoverable=True)
         assert err.error_type == "ERROR_TEST"
         assert err.message == "something went wrong"
         assert err.recoverable is True
 
     def test_to_dict(self):
-        err = TrueStreamError("ERROR_TEST", "msg", True)
+        err = GrablyticError("ERROR_TEST", "msg", True)
         d = err.to_dict()
         assert d == {
             "error_type": "ERROR_TEST",
@@ -19,7 +19,7 @@ class TestTrueStreamError:
         }
 
     def test_suggests_vpn(self):
-        err = TrueStreamError("ERROR_GEO_BLOCKED", "msg", True)
+        err = GrablyticError("ERROR_GEO_BLOCKED", "msg", True)
         assert err.suggests_vpn is True
         assert err.to_dict()["suggests_vpn"] is True
 

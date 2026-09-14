@@ -1,4 +1,4 @@
-"""JSON-RPC IPC contract tests for `python -m truestream_engine`.
+"""JSON-RPC IPC contract tests for `python -m grablytic_engine`.
 
 Drives main()'s stdin loop with canned requests (no subprocess, no
 network): proves request/response envelopes, method dispatch, and the
@@ -14,12 +14,12 @@ import pytest
 
 def _main_mod():
     import importlib
-    return importlib.import_module("truestream_engine.__main__")
+    return importlib.import_module("grablytic_engine.__main__")
 
 
 def _run_lines(monkeypatch, capsys, lines, argv=None):
     mod = _main_mod()
-    monkeypatch.setattr(sys, "argv", ["truestream_engine", *(argv or [])])
+    monkeypatch.setattr(sys, "argv", ["grablytic_engine", *(argv or [])])
     monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(lines) + "\n"))
     mod.main()
     out, _ = capsys.readouterr()

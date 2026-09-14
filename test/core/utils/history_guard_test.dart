@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/database/download_history_db.dart';
-import 'package:truestream/core/utils/history_guard.dart';
+import 'package:grablytic/core/database/download_history_db.dart';
+import 'package:grablytic/core/utils/history_guard.dart';
 
 DownloadRecord _r(String url, {String status = 'completed', String format = 'mkv'}) =>
     DownloadRecord(id: url.hashCode.toString(), url: url, title: 't', status: status, format: format);

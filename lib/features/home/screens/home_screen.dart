@@ -179,7 +179,7 @@ class _HeroSection extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               Semantics(
-                label: 'TrueStream download icon',
+                label: 'Grablytic download icon',
                 child: Icon(
                   Icons.cloud_download_outlined,
                   size: 64,

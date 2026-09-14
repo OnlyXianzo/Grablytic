@@ -17,7 +17,7 @@ jobs:
   submit-first:
     name: Submit 0.0.1 manifests to winget-pkgs
     runs-on: windows-latest
-    if: github.repository == 'OnlyXianzo/TrueStream'
+    if: github.repository == 'OnlyXianzo/Grablytic'
     env:
       WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:
@@ -33,4 +33,4 @@ jobs:
 
       - name: Submit manifests
         shell: bash
-        run: 'wingetcreate submit --prtitle "New package: OnlyXianzo.TrueStream version 0.0.1" --no-open "distribution/winget/manifests/o/OnlyXianzo/TrueStream/0.0.1"'
+        run: 'wingetcreate submit --prtitle "New package: OnlyXianzo.Grablytic version 0.0.1" --no-open "distribution/winget/manifests/o/OnlyXianzo/Grablytic/0.0.1"'

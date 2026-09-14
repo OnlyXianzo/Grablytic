@@ -1,5 +1,11 @@
 # TrueStream v0.0.1 — VirusTotal scan record
 
+> **Historical record (pre-rename).** These `v0.0.1` artifacts were released
+> under the TrueStream name/application ID before the rename to Grablytic.
+> File names, hashes, and verdicts below are frozen and intentionally
+> unchanged. New releases use `grablytic-*` names and get their own scan
+> record.
+
 All 15 release binaries scanned via the VirusTotal API v3 (URL scans + hash
 lookups) on 2026-09-14. **Verdict on every package: 0 malicious, 0 suspicious.**
 

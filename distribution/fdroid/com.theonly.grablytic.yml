@@ -1,0 +1,38 @@
+Categories:
+  - Multimedia
+  - Internet
+License: GPL-3.0-only
+AuthorName: OnlyXianzo
+AuthorEmail: xianzo.help@gmail.com
+SourceCode: https://github.com/OnlyXianzo/Grablytic
+IssueTracker: https://github.com/OnlyXianzo/Grablytic/issues
+Changelog: https://github.com/OnlyXianzo/Grablytic/releases
+
+AutoName: Grablytic
+Summary: Privacy-first media downloader powered by yt-dlp & dual JS runtimes
+Description: |-
+  Grablytic is a modern cross-platform media downloader powered by yt-dlp,
+  featuring fluid Flutter UI, zero telemetry, and multi-format extraction.
+
+RepoType: git
+Repo: https://github.com/OnlyXianzo/Grablytic.git
+
+Builds:
+  # Rename transition: tag v0.0.1 sources still carry application ID
+  # com.theonly.truestream, which does not match this metadata. Point `commit`
+  # at the first post-rename release tag (which carries
+  # com.theonly.grablytic) before submitting upstream.
+  - versionName: 0.0.1
+    versionCode: 2
+    commit: v0.0.1
+    subdir: android
+    gradle:
+      - assembleRelease
+    prebuild:
+      - sed -i -e '/signingConfigs/d' app/build.gradle.kts
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags
+CurrentVersion: 0.0.1
+CurrentVersionCode: 2

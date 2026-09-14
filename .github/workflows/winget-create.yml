@@ -10,7 +10,7 @@ jobs:
     name: Submit WinGet Manifest
     runs-on: windows-latest
     # Fork-safe: only run upstream (forks lack WINGET_TOKEN; the check step below fails fast there).
-    if: github.repository == 'OnlyXianzo/TrueStream'
+    if: github.repository == 'OnlyXianzo/Grablytic'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
       - name: Submit package to Windows Package Manager Community Repository
         uses: vedantmgoyal2009/winget-releaser@v2
         with:
-          identifier: OnlyXianzo.TrueStream
+          identifier: OnlyXianzo.Grablytic
           version: ${{ github.event.release.tag_name || '0.0.1' }}
           installers-regex: '\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}

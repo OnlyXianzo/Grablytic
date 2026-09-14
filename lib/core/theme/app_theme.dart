@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-class TrueStreamColors {
-  TrueStreamColors._();
+class GrablyticColors {
+  GrablyticColors._();
 
   // Light tokens — Earth & Ethos
   static const lightSurface = Color(0xFFfdf9f6);
@@ -109,36 +109,36 @@ class AppTheme {
   static ThemeData light() {
     final colorScheme = ColorScheme(
       brightness: Brightness.light,
-      primary: TrueStreamColors.lightPrimary,
-      onPrimary: TrueStreamColors.lightOnPrimary,
-      primaryContainer: TrueStreamColors.lightPrimaryContainer,
-      onPrimaryContainer: TrueStreamColors.lightOnPrimaryContainer,
-      secondary: TrueStreamColors.lightSecondary,
-      onSecondary: TrueStreamColors.lightOnSecondary,
-      secondaryContainer: TrueStreamColors.lightSecondaryContainer,
-      onSecondaryContainer: TrueStreamColors.lightOnSecondaryContainer,
-      tertiary: TrueStreamColors.lightTertiary,
-      onTertiary: TrueStreamColors.lightOnTertiary,
-      tertiaryContainer: TrueStreamColors.lightTertiaryContainer,
-      onTertiaryContainer: TrueStreamColors.lightOnTertiaryContainer,
-      error: TrueStreamColors.lightError,
-      onError: TrueStreamColors.lightOnError,
-      errorContainer: TrueStreamColors.lightErrorContainer,
-      onErrorContainer: TrueStreamColors.lightOnErrorContainer,
-      surface: TrueStreamColors.lightSurface,
-      onSurface: TrueStreamColors.lightOnSurface,
-      onSurfaceVariant: TrueStreamColors.lightOnSurfaceVariant,
-      outline: TrueStreamColors.lightOutline,
-      outlineVariant: TrueStreamColors.lightOutlineVariant,
-      inverseSurface: TrueStreamColors.lightInverseSurface,
-      inversePrimary: TrueStreamColors.lightInversePrimary,
-      surfaceTint: TrueStreamColors.lightSurfaceTint,
+      primary: GrablyticColors.lightPrimary,
+      onPrimary: GrablyticColors.lightOnPrimary,
+      primaryContainer: GrablyticColors.lightPrimaryContainer,
+      onPrimaryContainer: GrablyticColors.lightOnPrimaryContainer,
+      secondary: GrablyticColors.lightSecondary,
+      onSecondary: GrablyticColors.lightOnSecondary,
+      secondaryContainer: GrablyticColors.lightSecondaryContainer,
+      onSecondaryContainer: GrablyticColors.lightOnSecondaryContainer,
+      tertiary: GrablyticColors.lightTertiary,
+      onTertiary: GrablyticColors.lightOnTertiary,
+      tertiaryContainer: GrablyticColors.lightTertiaryContainer,
+      onTertiaryContainer: GrablyticColors.lightOnTertiaryContainer,
+      error: GrablyticColors.lightError,
+      onError: GrablyticColors.lightOnError,
+      errorContainer: GrablyticColors.lightErrorContainer,
+      onErrorContainer: GrablyticColors.lightOnErrorContainer,
+      surface: GrablyticColors.lightSurface,
+      onSurface: GrablyticColors.lightOnSurface,
+      onSurfaceVariant: GrablyticColors.lightOnSurfaceVariant,
+      outline: GrablyticColors.lightOutline,
+      outlineVariant: GrablyticColors.lightOutlineVariant,
+      inverseSurface: GrablyticColors.lightInverseSurface,
+      inversePrimary: GrablyticColors.lightInversePrimary,
+      surfaceTint: GrablyticColors.lightSurfaceTint,
     );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: TrueStreamColors.lightSurface,
+      scaffoldBackgroundColor: GrablyticColors.lightSurface,
       textTheme: _buildTextTheme(colorScheme),
     );
   }
@@ -146,36 +146,36 @@ class AppTheme {
   static ThemeData dark() {
     final colorScheme = ColorScheme(
       brightness: Brightness.dark,
-      primary: TrueStreamColors.darkPrimary,
-      onPrimary: TrueStreamColors.darkOnPrimary,
-      primaryContainer: TrueStreamColors.darkPrimaryContainer,
-      onPrimaryContainer: TrueStreamColors.darkOnPrimaryContainer,
-      secondary: TrueStreamColors.darkSecondary,
-      onSecondary: TrueStreamColors.darkOnSecondary,
-      secondaryContainer: TrueStreamColors.darkSecondaryContainer,
-      onSecondaryContainer: TrueStreamColors.darkOnSecondaryContainer,
-      tertiary: TrueStreamColors.darkTertiary,
-      onTertiary: TrueStreamColors.darkOnTertiary,
-      tertiaryContainer: TrueStreamColors.darkTertiaryContainer,
-      onTertiaryContainer: TrueStreamColors.darkOnTertiaryContainer,
-      error: TrueStreamColors.darkError,
-      onError: TrueStreamColors.darkOnError,
-      errorContainer: TrueStreamColors.darkErrorContainer,
-      onErrorContainer: TrueStreamColors.darkOnErrorContainer,
-      surface: TrueStreamColors.darkSurface,
-      onSurface: TrueStreamColors.darkOnSurface,
-      onSurfaceVariant: TrueStreamColors.darkOnSurfaceVariant,
-      outline: TrueStreamColors.darkOutline,
-      outlineVariant: TrueStreamColors.darkOutlineVariant,
-      inverseSurface: TrueStreamColors.darkInverseSurface,
-      inversePrimary: TrueStreamColors.darkInversePrimary,
-      surfaceTint: TrueStreamColors.darkSurfaceTint,
+      primary: GrablyticColors.darkPrimary,
+      onPrimary: GrablyticColors.darkOnPrimary,
+      primaryContainer: GrablyticColors.darkPrimaryContainer,
+      onPrimaryContainer: GrablyticColors.darkOnPrimaryContainer,
+      secondary: GrablyticColors.darkSecondary,
+      onSecondary: GrablyticColors.darkOnSecondary,
+      secondaryContainer: GrablyticColors.darkSecondaryContainer,
+      onSecondaryContainer: GrablyticColors.darkOnSecondaryContainer,
+      tertiary: GrablyticColors.darkTertiary,
+      onTertiary: GrablyticColors.darkOnTertiary,
+      tertiaryContainer: GrablyticColors.darkTertiaryContainer,
+      onTertiaryContainer: GrablyticColors.darkOnTertiaryContainer,
+      error: GrablyticColors.darkError,
+      onError: GrablyticColors.darkOnError,
+      errorContainer: GrablyticColors.darkErrorContainer,
+      onErrorContainer: GrablyticColors.darkOnErrorContainer,
+      surface: GrablyticColors.darkSurface,
+      onSurface: GrablyticColors.darkOnSurface,
+      onSurfaceVariant: GrablyticColors.darkOnSurfaceVariant,
+      outline: GrablyticColors.darkOutline,
+      outlineVariant: GrablyticColors.darkOutlineVariant,
+      inverseSurface: GrablyticColors.darkInverseSurface,
+      inversePrimary: GrablyticColors.darkInversePrimary,
+      surfaceTint: GrablyticColors.darkSurfaceTint,
     );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: TrueStreamColors.darkSurface,
+      scaffoldBackgroundColor: GrablyticColors.darkSurface,
       textTheme: _buildTextTheme(colorScheme),
     );
   }

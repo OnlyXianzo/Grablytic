@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from truestream_engine.logger import (
+from grablytic_engine.logger import (
     DEBUG,
     ERROR,
     FATAL,
@@ -515,7 +515,7 @@ class TestGlobalPropagation:
     def _clean_globals(self):
         """Order-independent: late-binding globals may be set by other
         modules' tests (e.g. set_paths arms logging)."""
-        import truestream_engine.logger as logger_mod
+        import grablytic_engine.logger as logger_mod
         prev_cb, prev_dir = (
             logger_mod._global_event_callback,
             logger_mod._global_log_dir,

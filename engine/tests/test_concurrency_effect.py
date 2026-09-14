@@ -4,7 +4,7 @@ Android rides this same engine backstop through the new Chaquopy
 handlers, which call these exact functions).
 """
 
-import truestream_engine.downloader as dl_mod
+import grablytic_engine.downloader as dl_mod
 
 
 def _reset():

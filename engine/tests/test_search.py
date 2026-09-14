@@ -1,6 +1,6 @@
 import pytest
-from truestream_engine.search import _build_search_url, search
-import truestream_engine.search as search_mod
+from grablytic_engine.search import _build_search_url, search
+import grablytic_engine.search as search_mod
 
 
 class TestBuildSearchUrl:

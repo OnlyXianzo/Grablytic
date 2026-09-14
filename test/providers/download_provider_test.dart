@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/engine/mock_engine_service.dart';
-import 'package:truestream/providers/download_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
+import 'package:grablytic/providers/download_provider.dart';
 
 DownloadNotifier _notifier({DateTime Function()? clock}) =>
     DownloadNotifier(MockEngineService(), clock: clock);
@@ -222,11 +222,11 @@ void main() {
         'event': 'finished',
         'download_id': 'dl-1',
         'filesize_bytes': 10240,
-        'file_path': '/storage/emulated/0/Download/TrueStream/video.mkv',
+        'file_path': '/storage/emulated/0/Download/Grablytic/video.mkv',
       });
       final item = n.state.single;
       expect(item.status, 'completed');
-      expect(item.filePath, '/storage/emulated/0/Download/TrueStream/video.mkv');
+      expect(item.filePath, '/storage/emulated/0/Download/Grablytic/video.mkv');
       expect(item.downloadedBytes, 10240);
       expect(item.totalBytes, 10240);
     });

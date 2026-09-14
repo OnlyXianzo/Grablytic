@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truestream/core/utils/cookie_store.dart';
+import 'package:grablytic/core/utils/cookie_store.dart';
 
 void main() {
   group('NetscapeCookie', () {
