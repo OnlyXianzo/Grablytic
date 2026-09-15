@@ -15,7 +15,7 @@ on:
 
 jobs:
   submit-first:
-    name: Submit 0.0.1 manifests to winget-pkgs
+    name: Submit 0.0.2 manifests to winget-pkgs
     runs-on: windows-latest
     if: github.repository == 'OnlyXianzo/Grablytic'
     env:
@@ -33,4 +33,4 @@ jobs:
 
       - name: Submit manifests
         shell: bash
-        run: 'wingetcreate submit --prtitle "New package: OnlyXianzo.Grablytic version 0.0.1" --no-open "distribution/winget/manifests/o/OnlyXianzo/Grablytic/0.0.1"'
+        run: 'wingetcreate submit --prtitle "New package: OnlyXianzo.Grablytic version 0.0.2" --no-open "distribution/winget/manifests/o/OnlyXianzo/Grablytic/0.0.2"'
