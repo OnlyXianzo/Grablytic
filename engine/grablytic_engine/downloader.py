@@ -406,15 +406,41 @@ class YDLogger:
         self.logger.error(msg, extra=extra)
 
 
+def _drain_public(prog_q) -> list:
+    """Snapshot buffered progress events using only the public Queue API.
+
+    T3-8: the old prog_q.mutex/prog_q.queue reach-through depended on
+    CPython internals (and scaled the locked section with playlist size).
+    Drain + restore preserves every item in order; a producer racing us
+    only perturbs best-effort ordering, never loses items — we re-queue
+    exactly what we drained. Queues without a public drain interface
+    yield an empty snapshot (same fallback as before).
+    """
+    items: list = []
+    get = getattr(prog_q, "get_nowait", None)
+    put = getattr(prog_q, "put", None)
+    if not callable(get) or not callable(put):
+        return items
+    while True:
+        try:
+            items.append(get())
+        except _queue.Empty:
+            break
+        except Exception:
+            break
+    for it in items:
+        try:
+            put(it)
+        except Exception:
+            break
+    return items
+
+
 def _last_known_file_info(prog_q) -> tuple[int, str | None]:
     """Best-effort final size and file path from buffered progress-hook events."""
     last_bytes = 0
     last_file = None
-    try:
-        with prog_q.mutex:
-            items = list(prog_q.queue)
-    except Exception:
-        return 0, None
+    items = _drain_public(prog_q)
     for raw in items:
         try:
             ev = json.loads(raw) if isinstance(raw, str) else raw
