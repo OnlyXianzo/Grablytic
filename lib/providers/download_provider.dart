@@ -211,12 +211,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             d.status == 'queued'));
   }
 
-  /// Update max concurrent downloads dynamically (1 to 5).
-  Future<void> setMaxConcurrent(int maxConcurrent) async {
-    try {
-      await _engine.setConcurrency(maxConcurrent);
-    } catch (_) {}
-  }
+  /// Legacy alias for [syncConcurrency] (kept for API stability — one
+  /// external caller may still reference it). Canonical path is
+  /// [syncConcurrency]; both forward identically to the engine backstop.
+  Future<void> setMaxConcurrent(int maxConcurrent) =>
+      syncConcurrency(maxConcurrent);
 
   /// Push the user's concurrency preference to the engine backstop
   /// (desktop JSON-RPC + Android Chaquopy handlers; never throws).
