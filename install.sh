@@ -23,23 +23,27 @@ need() { command -v "$1" >/dev/null 2>&1 || { log "missing required tool: $1"; e
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--version X.Y.Z] [--uninstall] [--dry-run] [--help]
+Usage: install.sh [--version X.Y.Z] [--uninstall] [--dry-run] [--no-verify] [--help]
   --version X.Y.Z  install a pinned release (default: latest GitHub release)
   --uninstall      remove grablytic with the native package manager
                    (pre-rename v0.0.1 used package name `truestream` —
                    remove that one manually if present)
   --dry-run        print every action without executing (also: DRY_RUN=1)
+  --no-verify      install even when no checksum digest is published
+                   (you accept TLS-only as your trust model — NOT recommended)
   --help           this text
 One-liner: curl -fsSL https://raw.githubusercontent.com/OnlyXianzo/Grablytic/main/install.sh | bash
 EOF
 }
 
 UNINSTALL=0
+NO_VERIFY="${NO_VERIFY:-0}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --version)   VERSION="${2:?missing version}"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
+    --no-verify) NO_VERIFY=1; shift ;;
     --help|-h)   usage; exit 0 ;;
     *) log "unknown flag: $1"; usage; exit 1 ;;
   esac
@@ -137,8 +141,21 @@ if [ -n "$DIGEST" ] && [ "$DRY_RUN" != "1" ]; then
   log "SHA256 verified."
 elif [ "$DRY_RUN" = "1" ]; then
   log "dry-run: skipping hash check + install"
+elif [ "${NO_VERIFY:-0}" = "1" ]; then
+  log "WARNING: no digest published for $FILE — installing unverified (--no-verify / NO_VERIFY=1 was set)."
+  log "WARNING: you are trusting TLS alone for a binary that will execute on your system."
 else
-  log "warning: no digest published for $FILE, installing unverified (TLS only)."
+  log "ERROR: no SHA256 digest published for $FILE in release $TAG."
+  log "Refusing to install an unverified binary. This is a downloader that"
+  log "executes ffmpeg/aria2c/deno — TLS alone is not an acceptable trust model."
+  log ""
+  log "Options:"
+  log "  1. Wait for the release maintainer to publish a digest."
+  log "  2. Override: NO_VERIFY=1 install.sh  (you accept the risk)"
+  log "  3. Download manually and verify the checksum yourself:"
+  log "     curl -fsSL -o '$FILE' '$URL'"
+  log "     sha256sum '$FILE'   # compare against a trusted source"
+  exit 1
 fi
 
 if [ "$PM" = "apt" ]; then
