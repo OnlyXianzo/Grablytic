@@ -247,4 +247,53 @@ void main() {
       expect(n.state.single.status, 'downloading');
     });
   });
+
+  group('T1-3 honest cancelling state', () {
+    DownloadNotifier downloading() {
+      final n = _notifier();
+      n.addDownload(DownloadItem(
+          id: 'dl-c', title: 't', url: 'https://x.test/v'));
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'downloading',
+        'download_id': 'dl-c',
+        'downloaded_bytes': 10,
+        'total_bytes': 100,
+        'speed': 1000,
+      });
+      expect(n.state.single.status, 'downloading');
+      return n;
+    }
+
+    test('cancel marks cancelling, not cancelled', () {
+      final n = downloading();
+      n.cancelDownload('dl-c');
+      final item = n.state.single;
+      expect(item.status, 'cancelling');
+      expect(item.speed, 0);
+      // No premature terminal claims: error fields untouched until the
+      // terminal event arrives.
+      expect(item.errorType, isNull);
+    });
+
+    test('terminal cancelled event finalizes a cancelling item', () {
+      final n = downloading();
+      n.cancelDownload('dl-c');
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'cancelled',
+        'download_id': 'dl-c',
+      });
+      final item = n.state.single;
+      expect(item.status, 'cancelled');
+      expect(item.errorType, 'ERROR_CANCELLED');
+    });
+
+    test('cancelling counts as active (no retry/delete races)', () {
+      final n = downloading();
+      n.cancelDownload('dl-c');
+      expect(n.isActive('https://x.test/v'), isTrue);
+      expect(n.isActiveId('dl-c'), isTrue);
+    });
+  });
 }
