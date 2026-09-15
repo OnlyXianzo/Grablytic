@@ -3,6 +3,7 @@ import threading
 import time
 import os
 import queue as _queue
+from collections import deque
 from datetime import datetime, timezone
 
 from yt_dlp import YoutubeDL
@@ -369,10 +370,16 @@ _PATH_PATTERNS = [
 class YDLogger:
     """yt-dlp logger bridge. Collects error lines and tracks output file paths."""
 
+    # T3-9: bound the tail — ignoreerrors playlists can log thousands of
+    # entries. Most-recent retained (diagnostically relevant). output_files
+    # is deliberately NOT capped: eviction there would break legit
+    # big-playlist file discovery at completion time.
+    MAX_ERRORS = 200
+
     def __init__(self, logger: EngineLogger | None = None, download_id: str | None = None):
         self.logger = logger if logger is not None else log
         self.download_id = download_id
-        self.errors: list[str] = []
+        self.errors: deque[str] = deque(maxlen=self.MAX_ERRORS)
         self.output_files: list[str] = []
 
     def _extract_path(self, msg):

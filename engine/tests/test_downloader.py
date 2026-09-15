@@ -198,3 +198,16 @@ class TestSafeUrlScoping:
         assert res["success"] is False
         assert res["error_type"] == "ERROR_UNKNOWN"
         assert res["error_message"] == "boom-before-safe_url"
+
+
+class TestErrorLogCap:
+    @pytest.mark.unit
+    def test_ydlogger_errors_bounded_most_recent_kept(self):
+        """T3-9: ignoreerrors playlists must not grow YDLogger.errors
+        without bound — cap retains the most recent (diagnostically
+        relevant) tail."""
+        logger = dl_mod.YDLogger()
+        for i in range(3000):
+            logger.error(f"boom {i}")
+        assert len(logger.errors) <= 200
+        assert logger.errors[-1] == "boom 2999"
