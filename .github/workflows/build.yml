@@ -21,8 +21,16 @@ on:
         type: boolean
 
 jobs:
+  # TEARDOWN-6: manual dispatches used to build+publish without ever running
+  # verify (analyze + flutter test + pytest + coverage gate). Reuse the
+  # verify workflow as a gate: no build job starts unless it is green.
+  verify:
+    name: Verify (gate)
+    uses: ./.github/workflows/verify.yml
+
   android:
     name: Build Android (${{ matrix.variant }})
+    needs: [verify]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -133,6 +141,7 @@ jobs:
 
   linux:
     name: Build Linux (${{ matrix.arch }} - deb, rpm, arch, tar.gz)
+    needs: [verify]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -313,6 +322,7 @@ jobs:
 
   windows:
     name: Build Windows App (x64)
+    needs: [verify]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
