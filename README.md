@@ -49,12 +49,12 @@ tap the link on your device, confirm — or in Obtainium: *Add App* → paste
 
 | Variant | Architecture | Runtime | Target Hardware | 1-tap Obtainium | Direct APK |
 |---|---|---|---|---|---|
-| **arm64 + Deno** ✅ | ARM64-v8a | Deno | High-end & modern phones (default) | [Add arm64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | [⬇ arm64‑deno](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-arm64-deno.apk) |
-| **arm64 + Node.js** | ARM64-v8a | Node.js | Modern phones, ≈40 MB smaller download | [Add arm64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | [⬇ arm64‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-arm64-node.apk) |
-| **armv7 + Node.js** | ARMeabi-v7a | Node.js | Low-end & budget 32-bit phones (e.g. Galaxy A04e) | [Add armv7‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22armv7-node%5C%22%7D%22%7D) | [⬇ armv7‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-armv7-node.apk) |
-| **x86_64 + Deno** | x86_64 | Deno | 64-bit Android emulators & Chromebooks | [Add x86_64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-deno%5C%22%7D%22%7D) | [⬇ x86_64‑deno](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-x86_64-deno.apk) |
-| **x86_64 + Node.js** | x86_64 | Node.js | 64-bit emulators & Chromebooks (smaller) | [Add x86_64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-node%5C%22%7D%22%7D) | [⬇ x86_64‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-x86_64-node.apk) |
-| **universal** | All ABIs | Both | Universal multi-ABI fallback for any Android device | [Add universal](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22universal%5C%22%7D%22%7D) | [⬇ universal](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-v0.0.1-universal.apk) |
+| **arm64 + Deno** ✅ | ARM64-v8a | Deno | High-end & modern phones (default) | [Add arm64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | [⬇ arm64‑deno](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-v0.0.2-arm64-deno.apk) |
+| **arm64 + Node.js** | ARM64-v8a | Node.js | Modern phones, ≈40 MB smaller download | [Add arm64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | [⬇ arm64‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-v0.0.2-arm64-node.apk) |
+| **armv7 + Node.js** | ARMeabi-v7a | Node.js | Low-end & budget 32-bit phones (e.g. Galaxy A04e) | [Add armv7‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22armv7-node%5C%22%7D%22%7D) | [⬇ armv7‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-v0.0.2-armv7-node.apk) |
+| **x86_64 + Deno** | x86_64 | Deno | 64-bit Android emulators & Chromebooks | [Add x86_64‑Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-deno%5C%22%7D%22%7D) | [⬇ x86_64‑deno](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-v0.0.2-x86_64-deno.apk) |
+| **x86_64 + Node.js** | x86_64 | Node.js | 64-bit emulators & Chromebooks (smaller) | [Add x86_64‑Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-node%5C%22%7D%22%7D) | [⬇ x86_64‑node](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-v0.0.2-x86_64-node.apk) |
+| **universal** | All ABIs | Both | Universal multi-ABI fallback for any Android device | [Add universal](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22universal%5C%22%7D%22%7D) | [⬇ universal](https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-v0.0.2-universal.apk) |
 
 <!-- obtainium: on each release, bump the v0.0.1 segment in the direct-APK links above to the new pubspec version core. -->
 Release assets are named `grablytic-v<version>-<variant>.apk` (e.g.
@@ -66,7 +66,7 @@ filter (`arm64-deno` / `arm64-node` / `armv7-node` / `x86_64-deno` / `x86_64-nod
 same variant. Build flags per variant:
 [`docs/building.md`](docs/building.md#release-variants-apk-size--js-runtime).
 
-### 🐧 One-command Linux install (v0.0.1)
+### 🐧 One-command Linux install (v0.0.2)
 
 Zero decisions — auto-detects distro (apt/dnf/zypper/pacman), arch (x64/arm64),
 verifies SHA256, installs natively:
@@ -79,16 +79,16 @@ Per-family manual equivalents (same assets the script picks):
 
 ```bash
 # Debian / Ubuntu / Mint x64 (apt resolves dependencies)
-curl -LO https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream_0.0.1_amd64.deb && sudo apt install ./truestream_0.0.1_amd64.deb
+curl -LO https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic_0.0.2_amd64.deb && sudo apt install ./grablytic_0.0.2_amd64.deb
 
 # Debian / Ubuntu arm64
-curl -LO https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream_0.0.1_arm64.deb && sudo apt install ./truestream_0.0.1_arm64.deb
+curl -LO https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic_0.0.2_arm64.deb && sudo apt install ./grablytic_0.0.2_arm64.deb
 
 # Fedora / RHEL x64
-sudo dnf install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
+sudo dnf install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-0.0.2-1.x86_64.rpm
 
 # openSUSE x64
-sudo zypper install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1.x86_64.rpm
+sudo zypper install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-0.0.2-1.x86_64.rpm
 
 # Arch / Manjaro / EndeavourOS x64 (pacman fetches remote URLs directly)
 sudo pacman -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
