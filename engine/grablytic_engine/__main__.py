@@ -143,7 +143,10 @@ def main():
 
             res = None
             if method == "paths/set":
-                set_paths(
+                # T0-2: forward set_paths' verdict — it fails closed on
+                # non-absolute roots / untrusted binaries. The old code
+                # always answered success, hiding rejections from the UI.
+                res = set_paths(
                     data_dir=params["data_dir"],
                     output_dir=params["output_dir"],
                     ffmpeg_path=params.get("ffmpeg_path"),
@@ -166,7 +169,6 @@ def main():
                     init_persistent_logging(data_dir + "/logs")
                 except Exception:
                     pass
-                res = {"success": True}
             else:
                 # Request/response middleware boundary (STEP 3B): latency,
                 # sanitized payloads and full tracebacks via traced_request.

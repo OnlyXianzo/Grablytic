@@ -7,11 +7,19 @@ from grablytic_engine.opts_builder import build_ydl_opts
 def reset_paths(monkeypatch):
     import shutil
     import os
+    # T0-2: admission now gates on isfile AND X_OK — simulate both bits for
+    # the fake system binaries (mirrors test_paths.py mock_isfile).
     original_isfile = os.path.isfile
+    original_access = os.access
     monkeypatch.setattr(
         os.path,
         "isfile",
         lambda path: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_isfile(path)
+    )
+    monkeypatch.setattr(
+        os,
+        "access",
+        lambda path, mode: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_access(path, mode)
     )
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     _paths["data_dir"] = None
@@ -49,10 +57,11 @@ def test_ffmpeg_path_added():
 def test_aria2c_wired_when_enabled(tmp_path):
     dummy = tmp_path / "aria2c"
     dummy.touch()
+    dummy.chmod(0o755)
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"aria2c_enabled": True, "aria2c_chunks": 5})
     assert isinstance(opts["external_downloader"], dict)
-    assert opts["external_downloader"]["default"] == "aria2c"
+    assert opts["external_downloader"]["default"] == str(dummy)
     assert opts["external_downloader"]["dash"] == "native"
     assert "-x5" in opts["external_downloader_args"]
 
@@ -60,6 +69,7 @@ def test_aria2c_wired_when_enabled(tmp_path):
 def test_aria2c_not_wired_when_disabled(tmp_path):
     dummy = tmp_path / "aria2c"
     dummy.touch()
+    dummy.chmod(0o755)
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"aria2c_enabled": False})
     assert "external_downloader" not in opts
@@ -73,6 +83,7 @@ def test_aria2c_without_path_not_enabled():
 def test_aria2c_max_speed_applied(tmp_path):
     dummy = tmp_path / "aria2c"
     dummy.touch()
+    dummy.chmod(0o755)
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={
         "aria2c_enabled": True,
@@ -80,7 +91,7 @@ def test_aria2c_max_speed_applied(tmp_path):
         "aria2c_max_speed": "10M",
     })
     assert isinstance(opts["external_downloader"], dict)
-    assert opts["external_downloader"]["default"] == "aria2c"
+    assert opts["external_downloader"]["default"] == str(dummy)
     assert opts["external_downloader"]["dash"] == "native"
     assert "-x8" in opts["external_downloader_args"]
     assert "--max-download-limit=10M" in opts["external_downloader_args"]
@@ -89,6 +100,7 @@ def test_aria2c_max_speed_applied(tmp_path):
 def _aria2c_args(tmp_path, **cfg):
     dummy = tmp_path / "aria2c"
     dummy.touch()
+    dummy.chmod(0o755)
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"aria2c_enabled": True, **cfg})
     return opts["external_downloader_args"]
@@ -385,6 +397,7 @@ def test_storage_sanitization_options():
 def test_js_runtime_configured_with_deno(tmp_path):
     deno_file = tmp_path / "deno"
     deno_file.touch()
+    deno_file.chmod(0o755)
     _paths["deno_path"] = str(deno_file)
     opts = build_ydl_opts()
     assert "js_runtimes" in opts
@@ -441,9 +454,10 @@ def test_write_flags_enabled():
 def test_legacy_use_aria2_alias(tmp_path):
     dummy = tmp_path / "aria2c"
     dummy.touch()
+    dummy.chmod(0o755)
     _paths["aria2c_path"] = str(dummy)
     opts = build_ydl_opts(config={"use_aria2": True})
-    assert opts["external_downloader"]["default"] == "aria2c"
+    assert opts["external_downloader"]["default"] == str(dummy)
 
 
 def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
@@ -452,8 +466,10 @@ def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
     import grablytic_engine.opts_builder as opts_mod
     deno_file = tmp_path / "deno"
     deno_file.touch()
+    deno_file.chmod(0o755)
     node_file = tmp_path / "node"
     node_file.touch()
+    node_file.chmod(0o755)
     _paths["deno_path"] = str(deno_file)
     _paths["nodejs_path"] = str(node_file)
     fake_java = types.ModuleType("java.android")
@@ -468,8 +484,10 @@ def test_desktop_keeps_deno_first(tmp_path):
     sys.modules.pop("java.android", None)
     deno_file = tmp_path / "deno"
     deno_file.touch()
+    deno_file.chmod(0o755)
     node_file = tmp_path / "node"
     node_file.touch()
+    node_file.chmod(0o755)
     _paths["deno_path"] = str(deno_file)
     _paths["nodejs_path"] = str(node_file)
     opts = build_ydl_opts()
