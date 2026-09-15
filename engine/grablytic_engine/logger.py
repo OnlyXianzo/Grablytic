@@ -118,14 +118,9 @@ class EngineLogger:
         print(f"[{level_name}] [{self.name}] {message}", file=sys.stderr)
 
         if level >= self._min_level and self._log_dir:
-            date_str = now.strftime("%Y-%m-%d")
-            log_file = os.path.join(self._log_dir, f"engine_{date_str}.txt")
-            try:
-                os.makedirs(self._log_dir, exist_ok=True)
-                with open(log_file, "a") as f:
-                    f.write(json.dumps(event, default=str) + "\n")
-            except Exception:
-                pass
+            _write_daily_line(self._log_dir, now,
+                              json.dumps(event, default=str) + "\n",
+                              level=level, force_flush=level >= ERROR)
 
         if level >= self._min_level and self._queue is not None:
             try:
@@ -209,6 +204,72 @@ class EngineLogger:
 
 
 _loggers: dict[str, EngineLogger] = {}
+
+# Loop-2 I/O shield: open/write/close per DEBUG line was 3 syscalls × tens
+# of Hz × downloads on low-end eMMC (visible I/O jitter). Cached handles
+# with a 5 s flush cadence (immediate on ERROR+) cut syscalls ~100x with the
+# same durability for triage (crash lines always force-flush). Keyed by real
+# path; guarded by one lock; closed at interpreter exit. Never raises.
+_file_sinks: dict[str, Any] = {}
+_file_sinks_lock = threading.Lock()
+_FILE_FLUSH_INTERVAL_S = 5.0
+
+
+def _write_daily_line(log_dir: str, now: datetime, line: str, *, level: int = INFO,
+                      force_flush: bool = False) -> None:
+    # Durability contract: INFO and above are write-through (flushed every
+    # line) so triage/report/export readers never see a stale file. DEBUG —
+    # the per-block flood — rides the 64 KiB buffer with a 5 s flush cadence.
+    # Either way there is exactly one write syscall per line and no open/close
+    # churn (the old code paid open+write+close per line).
+    try:
+        date_str = now.strftime("%Y-%m-%d")
+        os.makedirs(log_dir, exist_ok=True)
+        path = os.path.realpath(os.path.join(log_dir, f"engine_{date_str}.txt"))
+        with _file_sinks_lock:
+            sink = _file_sinks.get(path)
+            if sink is None or sink.get("closed", False):
+                sink = {"fh": open(path, "a", buffering=1 << 16),
+                        "last_flush": _time_monotonic(),
+                        "closed": False}
+                _file_sinks[path] = sink
+            sink["fh"].write(line)
+            if (force_flush or level >= INFO
+                    or _time_monotonic() - sink["last_flush"] >= _FILE_FLUSH_INTERVAL_S):
+                sink["fh"].flush()
+                sink["last_flush"] = _time_monotonic()
+    except Exception:
+        pass
+
+
+def _time_monotonic() -> float:
+    return time.monotonic()
+
+
+def close_log_sinks() -> None:
+    """Flush + close all cached daily handles. Idempotent, never raises."""
+    try:
+        with _file_sinks_lock:
+            items = list(_file_sinks.items())
+            _file_sinks.clear()
+        for _, sink in items:
+            try:
+                sink["fh"].flush()
+            except Exception:
+                pass
+            try:
+                sink["fh"].close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+try:
+    import atexit as _atexit
+    _atexit.register(close_log_sinks)
+except Exception:
+    pass
 
 # Module-global push callback (Android/Chaquopy). Stored here so loggers
 # created AFTER the setter ran inherit it via get_logger().
