@@ -461,13 +461,13 @@ def build_ydl_opts(
     from grablytic_engine.logger import get_logger as _get_logger
     _log = _get_logger("grablytic_engine.opts_builder")
     try:
-        frags = max(1, min(16, int(cfg.get("concurrent_fragments", 4))))
+        frags = max(1, min(16, int(cfg.get("concurrent_fragments", 2))))
     except (ValueError, TypeError):
         _log.warn(
             "Ignoring invalid concurrent_fragments value: "
             f"{cfg.get('concurrent_fragments')!r}"
         )
-        frags = 4
+        frags = 2
     opts["concurrent_fragment_downloads"] = frags
     try:
         timeout = int(cfg.get("socket_timeout", 30))

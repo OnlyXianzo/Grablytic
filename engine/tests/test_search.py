@@ -188,3 +188,34 @@ class TestSearch:
         res = search("busy query")
         assert res["success"] is False
         assert res["error_type"] == "ERROR_RATE_LIMITED"
+
+    def test_search_configures_js_runtime(self, tmp_path, monkeypatch):
+        """Loop-4: search used a dead import name, silently running with no
+        JS runtime (slower/missing formats). Must match the download path."""
+        from grablytic_engine.paths import _paths
+        deno_file = tmp_path / "deno"
+        deno_file.touch()
+        deno_file.chmod(0o755)
+        monkeypatch.setitem(_paths, "deno_path", str(deno_file))
+
+        seen = {}
+
+        class MockYDL:
+            def __init__(self, opts):
+                seen.update(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def extract_info(self, url, download=False):
+                return {"_type": "playlist", "entries": []}
+
+        monkeypatch.setattr(search_mod, "YoutubeDL", MockYDL)
+        res = search("some query")
+        assert res["success"] is True
+        assert "js_runtimes" in seen
+        assert seen["js_runtimes"]["deno"]["path"] == str(deno_file)
+        assert "ejs:github" in seen.get("remote_components", [])

@@ -107,7 +107,8 @@ ParsedTemplate parseTemplateConfig(String args) {
     } else if (t == '--concurrent-fragments' || t.startsWith('--concurrent-fragments=')) {
       final v = splitFlag(t, '--concurrent-fragments');
       final n = int.tryParse(v ?? '');
-      config['concurrent_fragments'] = n == null ? 4 : n.clamp(1, 16);
+      // Loop-4 low-end default (engine DEFAULT_CFG is 2 as well).
+      config['concurrent_fragments'] = n == null ? 2 : n.clamp(1, 16);
       if (n == null) ignored.add(t);
     } else if (t == '--socket-timeout' || t.startsWith('--socket-timeout=')) {
       final v = splitFlag(t, '--socket-timeout');
