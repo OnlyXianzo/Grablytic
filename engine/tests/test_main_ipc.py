@@ -111,6 +111,20 @@ def test_malformed_line_does_not_kill_loop(monkeypatch, capsys):
 
 
 @pytest.mark.unit
+def test_malformed_line_error_keeps_null_id(monkeypatch, capsys):
+    """T1-8: even an unparseable line must produce an error envelope that
+    keeps its (null) request ID — the client correlates every error by id,
+    never a bare id-less failure."""
+    resps = _run_lines(monkeypatch, capsys, [
+        "this is not json {{{",
+    ])
+    assert len(resps) == 1
+    assert resps[0]["id"] is None
+    assert resps[0]["error"]["success"] is False
+    assert resps[0]["error"]["error_type"] == "ERROR_INTERNAL"
+
+
+@pytest.mark.unit
 def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
     """T1-7 / HQ1: Prove that under 5 concurrent downloads and simultaneous
     main-thread responses, _stdout_lock guarantees zero interleaved or
