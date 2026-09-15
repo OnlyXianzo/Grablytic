@@ -22,6 +22,23 @@ def _is_safe_outtmpl(tmpl) -> bool:
     return True
 
 
+def _clamped_int(config, key: str, default: int, lo: int, hi: int) -> int:
+    """Coerce an IPC numeric param to [lo, hi], falling back to default with
+    a warning. T3-10: unguarded int() turned garbage into a dead thread and
+    absurd values into eternal hangs."""
+    from grablytic_engine.logger import get_logger
+    log = get_logger("grablytic_engine.opts_builder")
+    try:
+        val = int(config.get(key, default))
+    except (ValueError, TypeError):
+        log.warn(f"Ignoring invalid {key} value: {config.get(key)!r}")
+        return default
+    if val < lo or val > hi:
+        log.warn(f"Ignoring out-of-range {key} value: {config.get(key)!r}")
+        return default
+    return val
+
+
 def _parse_section_ranges(specs: list) -> list[tuple[float, float]]:
     """Parse section specs into [(start, end)] seconds tuples.
 
@@ -87,7 +104,14 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
         max_speed = str(config.get("aria2c_max_speed") or "").strip()
         if max_speed:
             if re.match(r"^\d+[KkMmGg]?$", max_speed):
-                args.append(f"--max-download-limit={max_speed}")
+                # T3-10: a zero limit throttles the download to nothing —
+                # reject it like any other invalid value.
+                if int(max_speed.rstrip("KkMmGg")) == 0:
+                    log.warn(
+                        f"Ignoring zero aria2c_max_speed value: {max_speed!r}"
+                    )
+                else:
+                    args.append(f"--max-download-limit={max_speed}")
             else:
                 log.warn(
                     f"Ignoring invalid aria2c_max_speed value: {max_speed!r}"
@@ -170,8 +194,8 @@ def build_ydl_opts(
         # yt-dlp CLI --no-mtime maps to `updatetime: False`; `no_mtime` is
         # not a recognized YoutubeDL param and is silently ignored (#7).
         "updatetime": False,
-        "retries": int(cfg["retries"]),
-        "fragment_retries": int(cfg["fragment_retries"]),
+        "retries": _clamped_int(cfg, "retries", 10, 0, 30),
+        "fragment_retries": _clamped_int(cfg, "fragment_retries", 10, 0, 100),
         "windowsfilenames": True,
         "trim_file_name": 160,
     }
@@ -430,11 +454,11 @@ def build_ydl_opts(
     opts["concurrent_fragment_downloads"] = frags
     try:
         timeout = int(cfg.get("socket_timeout", 30))
-        if timeout > 0:
+        if 1 <= timeout <= 300:
             opts["socket_timeout"] = timeout
         else:
             _log.warn(
-                "Ignoring non-positive socket_timeout value: "
+                "Ignoring out-of-range socket_timeout value: "
                 f"{cfg.get('socket_timeout')!r}"
             )
     except (ValueError, TypeError):
