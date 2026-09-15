@@ -30,6 +30,7 @@ class DownloadOverflowButton extends ConsumerWidget {
   bool get _isActive =>
       item.status == 'downloading' ||
       item.status == 'pending' ||
+      item.status == 'cancelling' ||
       item.status == 'queued';
 
   bool get _isTerminal =>

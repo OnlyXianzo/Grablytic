@@ -198,6 +198,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         d.url == url &&
         (d.status == 'downloading' ||
             d.status == 'pending' ||
+            d.status == 'cancelling' ||
             d.status == 'queued'));
   }
 
@@ -206,6 +207,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         d.id == id &&
         (d.status == 'downloading' ||
             d.status == 'pending' ||
+            d.status == 'cancelling' ||
             d.status == 'queued'));
   }
 
@@ -672,6 +674,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     // explains instead of silently failing.
     if (item.status == 'downloading' ||
         item.status == 'pending' ||
+        item.status == 'cancelling' ||
         item.status == 'queued') {
       AppLogger.warn('Retry blocked: $id is still active (${item.status})',
           tag: 'download');
@@ -781,6 +784,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final item = state[index];
     if (item.status == 'downloading' ||
         item.status == 'pending' ||
+        item.status == 'cancelling' ||
         item.status == 'queued') {
       AppLogger.warn('Delete blocked: $id is still active (${item.status})',
           tag: 'download');
@@ -818,20 +822,20 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
   void cancelDownload(String id) {
     _engine.cancelDownload(id);
+    // T1-3: honest intermediate — the worker may still be winding down
+    // (extractor/merge/socket/aria2c are hook-blind). The terminal
+    // 'cancelled' event finalizes this; error fields are set there, not here.
     state = [
       for (final d in state)
         if (d.id != id)
           d
         else
           d.copyWith(
-            status: 'cancelled',
+            status: 'cancelling',
             speed: 0,
             eta: -1,
             clearStage: true,
             clearStageLabel: true,
-            errorType: 'ERROR_CANCELLED',
-            errorMessage: 'Download cancelled',
-            recoveryAction: 'none',
           ),
     ];
   }
