@@ -1,6 +1,6 @@
 # Maintainer: OnlyXianzo <xianzo.help@gmail.com>
 pkgname=grablytic-bin
-pkgver=0.0.1
+pkgver=0.0.2
 pkgrel=1
 pkgdesc="Privacy-first high-performance media downloader powered by yt-dlp"
 arch=('x86_64' 'aarch64')
@@ -15,11 +15,9 @@ source_x86_64=("https://github.com/OnlyXianzo/Grablytic/releases/download/v${pkg
 source_aarch64=("https://github.com/OnlyXianzo/Grablytic/releases/download/v${pkgver}/grablytic-${pkgver}-linux-arm64.tar.gz")
 source=('grablytic.desktop' 'grablytic.png')
 
-# Rename transition: no grablytic-* release assets exist yet (v0.0.1 shipped
-# as truestream-*; sums recorded in docs/security-scans.md). Fill these from
-# the first Grablytic release before submitting to the AUR.
-sha256sums_x86_64=('SKIP')
-sha256sums_aarch64=('SKIP')
+# Sums verified against the v0.0.2 GitHub release assets.
+sha256sums_x86_64=('f7d2b31876574637ad7e9c21598c39a8db8811484f77cf1a1425b4e6f928b9f7')
+sha256sums_aarch64=('eb81d8a69d485428f16e120a20ec7283e11e92d107035d62580843ac27cf299e')
 sha256sums=('SKIP' 'SKIP')
 
 package() {
