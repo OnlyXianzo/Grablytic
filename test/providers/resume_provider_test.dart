@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -53,6 +55,50 @@ void main() {
       final url = await n.resumeDownload(_c(expired: true));
       expect(url, isNull);
       expect(n.state.value, hasLength(1));
+    });
+  });
+
+  group('ResumeNotifier dismiss/deleteFileOnly (BRUTAL-6 info.json)', () {
+    Future<Directory> seedMidPartFiles() async {
+      final dir = await Directory.systemTemp.createTemp('resume-info');
+      addTearDown(() async {
+        try {
+          await dir.delete(recursive: true);
+        } catch (_) {}
+      });
+      await File('${dir.path}/my.part.video.f137.part').writeAsString('x');
+      await File('${dir.path}/my.part.video.f137.info.json').writeAsString('{}');
+      return dir;
+    }
+
+    ResumeCandidate midPart(String dirPath) => ResumeCandidate(
+          filename: 'my.part.video.f137.part',
+          filepath: '$dirPath/my.part.video.f137.part',
+          sizeBytes: 1,
+          ageSeconds: 60,
+          likelyUrl: 'https://x.test/v',
+          expired: false,
+        );
+
+    test('RED: dismiss deletes sibling info.json when .part appears mid-name',
+        () async {
+      final dir = await seedMidPartFiles();
+      final n = await _notifierWith([midPart(dir.path)]);
+      await n.dismiss(midPart(dir.path));
+      expect(File('${dir.path}/my.part.video.f137.part').existsSync(), isFalse);
+      expect(File('${dir.path}/my.part.video.f137.info.json').existsSync(),
+          isFalse);
+      expect(n.state.value, isEmpty);
+    });
+
+    test('RED: deleteFileOnly deletes sibling info.json when .part appears mid-name',
+        () async {
+      final dir = await seedMidPartFiles();
+      final n = await _notifierWith([midPart(dir.path)]);
+      await n.deleteFileOnly(midPart(dir.path));
+      expect(File('${dir.path}/my.part.video.f137.part').existsSync(), isFalse);
+      expect(File('${dir.path}/my.part.video.f137.info.json').existsSync(),
+          isFalse);
     });
   });
 }
