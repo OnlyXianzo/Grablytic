@@ -38,5 +38,5 @@ Powered by an embedded Python extraction core with yt-dlp and dual JS runtimes (
 • Fluid, Responsive UI: Modern dark-mode interface built with Flutter.
 • Hardware-Optimized: Native Bionic C/C++ libraries tailored per Android ABI (arm64-v8a, armeabi-v7a, x86_64).
 • Fastlane Structure: Metadata present in repo under `fastlane/metadata/android/en-US/`.
-• Releases Tagged: Tag `v0.0.1` has pre-compiled signed release APKs (e.g. `truestream-v0.0.1-universal.apk` or `truestream-v0.0.1-arm64-deno.apk`).
+• Releases Tagged: Tag `v0.0.2` has pre-compiled signed release APKs (e.g. `grablytic-v0.0.2-universal.apk` or `grablytic-v0.0.2-arm64-deno.apk`).
 ```
