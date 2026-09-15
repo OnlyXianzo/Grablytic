@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'engine_codec.dart';
 import 'engine_service.dart';
 
 class PlatformChannelEngineService implements EngineService {
@@ -16,7 +17,7 @@ class PlatformChannelEngineService implements EngineService {
 
   PlatformChannelEngineService() {
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'intent/shared_url') {
+      if (call.method == EngineMethods.sharedUrlInbound) {
         final arguments = call.arguments;
         final map = arguments is Map ? Map<String, dynamic>.from(arguments) : null;
         final url = map?['url'] as String?;
@@ -33,14 +34,14 @@ class PlatformChannelEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> bootstrap() async {
-    final result = await _channel.invokeMethod<String>('engine/bootstrap');
+    final result = await _channel.invokeMethod<String>(EngineMethods.bootstrap);
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
   Future<void> setPaths(Map<String, dynamic> paths) async {
-    await _channel.invokeMethod('paths/set', paths);
+    await _channel.invokeMethod(EngineMethods.setPaths, paths);
   }
 
   @override
@@ -50,23 +51,23 @@ class PlatformChannelEngineService implements EngineService {
     required Map<String, dynamic> config,
     required String networkType,
   }) async {
-    final result = await _channel.invokeMethod<String>('download/start', {
+    final result = await _channel.invokeMethod<String>(EngineMethods.startDownload, {
       'url': url,
       'download_id': downloadId,
       'config': config,
       'network_type': networkType,
     });
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
   Future<Map<String, dynamic>> cancelDownload(String downloadId) async {
-    final result = await _channel.invokeMethod<String>('download/cancel', {
+    final result = await _channel.invokeMethod<String>(EngineMethods.cancelDownload, {
       'download_id': downloadId,
     });
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
@@ -100,12 +101,12 @@ class PlatformChannelEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) async {
-    final result = await _channel.invokeMethod<String>('formats/get', {
+    final result = await _channel.invokeMethod<String>(EngineMethods.getFormats, {
       'url': url,
       'config': config,
     });
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
@@ -113,12 +114,12 @@ class PlatformChannelEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) async {
-    final result = await _channel.invokeMethod<String>('playlist/info', {
+    final result = await _channel.invokeMethod<String>(EngineMethods.playlistInfo, {
       'url': url,
       'config': config,
     });
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
@@ -128,20 +129,20 @@ class PlatformChannelEngineService implements EngineService {
     int limit = 20,
     required Map<String, dynamic> config,
   }) async {
-    final result = await _channel.invokeMethod<String>('search/query', {
+    final result = await _channel.invokeMethod<String>(EngineMethods.searchQuery, {
       'query': query,
       'site': site,
       'limit': limit,
       'config': config,
     });
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
   Future<String?> getSharedUrl() async {
     try {
-      final result = await _channel.invokeMethod<Map>('intent/get_shared');
+      final result = await _channel.invokeMethod<Map>(EngineMethods.getSharedUrl);
       return result?['url'] as String?;
     } catch (_) {
       return null;
@@ -150,34 +151,38 @@ class PlatformChannelEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir}) async {
-    final result = await _channel.invokeMethod<String>('resume/scan', {
+    final result = await _channel.invokeMethod<String>(EngineMethods.scanResume, {
       'cache_dir': cacheDir,
     });
     if (result == null) return {};
-    return Map<String, dynamic>.from(jsonDecode(result) as Map);
+    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
   Future<Map<String, dynamic>> updateCheck() async {
     try {
-      final result = await _channel.invokeMethod<String>('engine/update_check');
+      final result = await _channel.invokeMethod<String>(EngineMethods.updateCheck);
       if (result == null) return {};
-      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+      return EngineEnvelope.decodeResponse(result);
     } catch (_) {
-      return {'success': false, 'error_type': 'ERROR_UNKNOWN', 'error_message': 'Not available on this platform'};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_UNKNOWN',
+          message: 'Not available on this platform');
     }
   }
 
   @override
   Future<Map<String, dynamic>> setUpdateChannel(String channel) async {
     try {
-      final result = await _channel.invokeMethod<String>('engine/set_update_channel', {
+      final result = await _channel.invokeMethod<String>(EngineMethods.setUpdateChannel, {
         'channel': channel,
       });
       if (result == null) return {};
-      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+      return EngineEnvelope.decodeResponse(result);
     } catch (_) {
-      return {'success': false, 'error_type': 'ERROR_UNKNOWN', 'error_message': 'Not available on this platform'};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_UNKNOWN',
+          message: 'Not available on this platform');
     }
   }
 
@@ -197,57 +202,86 @@ class PlatformChannelEngineService implements EngineService {
   }) async {
     try {
       final result = await _channel.invokeMethod<Map>(
-        'log/export_to_downloads',
+        EngineMethods.exportLog,
         {'source_path': sourcePath, 'display_name': displayName},
       );
-      if (result == null) return {'success': false};
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
   @override
   Future<Map<String, dynamic>> batteryExemptionStatus() async {
     try {
-      final result = await _channel.invokeMethod<Map>('system/battery_status');
-      if (result == null) return {'success': false};
+      final result = await _channel.invokeMethod<Map>(EngineMethods.batteryStatus);
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false, 'supported': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT',
+          message: 'Native call failed',
+          extra: {'supported': false});
     }
   }
 
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async {
     try {
-      final result = await _channel.invokeMethod<Map>('system/battery_request');
-      if (result == null) return {'success': false};
+      final result = await _channel.invokeMethod<Map>(EngineMethods.batteryRequest);
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
   @override
   Future<Map<String, dynamic>> notificationPermissionStatus() async {
     try {
-      final result = await _channel.invokeMethod<Map>('system/notification_status');
-      if (result == null) return {'success': false};
+      final result = await _channel.invokeMethod<Map>(EngineMethods.notificationStatus);
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false, 'supported': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT',
+          message: 'Native call failed',
+          extra: {'supported': false});
     }
   }
 
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() async {
     try {
-      final result = await _channel.invokeMethod<Map>('system/notification_request');
-      if (result == null) return {'success': false};
+      final result = await _channel.invokeMethod<Map>(EngineMethods.notificationRequest);
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
@@ -255,11 +289,16 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> queueStatus() async {
     try {
       final result =
-          await _channel.invokeMethod<String>('download/queue_status', {});
-      if (result == null) return {'success': false};
-      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+          await _channel.invokeMethod<String>(EngineMethods.queueStatus, {});
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
+      return EngineEnvelope.decodeResponse(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
@@ -267,13 +306,18 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async {
     try {
       final result =
-          await _channel.invokeMethod<String>('download/set_concurrency', {
+          await _channel.invokeMethod<String>(EngineMethods.setConcurrency, {
         'max_concurrent': maxConcurrent,
       });
-      if (result == null) return {'success': false};
-      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
+      return EngineEnvelope.decodeResponse(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
@@ -281,11 +325,16 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> clearArchive() async {
     try {
       final result =
-          await _channel.invokeMethod<String>('download/clear_archive', {});
-      if (result == null) return {'success': false};
-      return Map<String, dynamic>.from(jsonDecode(result) as Map);
+          await _channel.invokeMethod<String>(EngineMethods.clearArchive, {});
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
+      return EngineEnvelope.decodeResponse(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
@@ -293,11 +342,16 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> openNotificationSettings() async {
     try {
       final result = await _channel
-          .invokeMethod<Map>('system/notification_settings', {});
-      if (result == null) return {'success': false};
+          .invokeMethod<Map>(EngineMethods.notificationSettings, {});
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
@@ -305,11 +359,16 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> openUrl(String url) async {
     try {
       final result = await _channel
-          .invokeMethod<Map>('intent/open_url', {'url': url});
-      if (result == null) return {'success': false};
+          .invokeMethod<Map>(EngineMethods.openUrl, {'url': url});
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 
@@ -321,7 +380,7 @@ class PlatformChannelEngineService implements EngineService {
     bool requiresCharging = false,
   }) async {
     try {
-      final result = await _channel.invokeMethod<Map>('schedule/sync', {
+      final result = await _channel.invokeMethod<Map>(EngineMethods.syncSchedule, {
         'enabled': enabled,
         'interval_minutes': intervalMinutes,
         'wifi_only': wifiOnly,
@@ -330,7 +389,8 @@ class PlatformChannelEngineService implements EngineService {
       if (result == null) return {'success': true};
       return Map<String, dynamic>.from(result);
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
     }
   }
 }

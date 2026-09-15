@@ -169,6 +169,7 @@ class _DownloadSmoother {
   DateTime? lastEmitAt;
   DateTime? lastHeartbeatAt;
   int lastEta = -1;
+  int heartbeatFailStreak = 0;
 }
 
 class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
@@ -505,6 +506,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     }
 
     // Throttled heartbeat to SQLite (~5s cadence) for DB-driven resume continuity.
+    // BRUTAL-6: failures are logged (first + every 12th ≈ 1/min) instead of
+    // swallowed — a broken DB silently kills resume continuity otherwise.
     if (downloaded > 0 || total > 0) {
       if (s.lastHeartbeatAt == null ||
           now.difference(s.lastHeartbeatAt!) >= const Duration(seconds: 5)) {
@@ -517,7 +520,16 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               progress: total > 0 ? (downloaded / total).clamp(0.0, 0.99) : 0.0,
               now: now.toIso8601String(),
             )
-            .catchError((_) => 0);
+            .then((_) => s.heartbeatFailStreak = 0)
+            .catchError((e) {
+          s.heartbeatFailStreak++;
+          if (s.heartbeatFailStreak == 1 || s.heartbeatFailStreak % 12 == 0) {
+            AppLogger.warn(
+                'History heartbeat failed (streak ${s.heartbeatFailStreak}): $e',
+                tag: 'download');
+          }
+          return 0;
+        });
       }
     }
 
@@ -557,8 +569,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         totalBytes: item.totalBytes > 0 ? item.totalBytes : null,
         updatedAt: DateTime.now().toIso8601String(),
       );
-      DownloadHistoryDb.instance.insert(record).catchError((_) => 0);
-    } catch (_) {}
+      DownloadHistoryDb.instance.insert(record).catchError((e) {
+        // BRUTAL-6: never throw (state is source of truth), but never go
+        // silent either — a failing insert means history diverges from UI.
+        AppLogger.warn('History persist failed for ${item.id}: $e',
+            tag: 'download');
+        return 0;
+      });
+    } catch (e) {
+      AppLogger.warn('History persist build failed for ${item.id}: $e',
+          tag: 'download');
+    }
   }
 
   /// Sweeps lingering active/queued downloads in SQLite to 'interrupted' on

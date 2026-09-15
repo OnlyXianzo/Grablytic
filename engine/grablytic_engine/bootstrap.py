@@ -153,14 +153,28 @@ def _save_manifest(cache_dir: str, manifest: dict) -> None:
         pass
 
 
+# BRUTAL-2b: the manifest is a load-modify-save cycle. Concurrent writers
+# interleaving load() -> save() lose updates (last-writer-wins). The file
+# write itself is atomic (os.replace), but the READ-MODIFY pair needs a
+# process-wide lock. Single engine process (incl. Chaquopy), so an
+# in-process lock is sufficient; readers keep lock-free atomic reads.
+_manifest_lock = threading.Lock()
+
+
+def _update_manifest(cache_dir: str, mutate) -> None:
+    """Load, mutate in place, and save the manifest atomically vs writers."""
+    with _manifest_lock:
+        manifest = _load_manifest(cache_dir)
+        mutate(manifest)
+        _save_manifest(cache_dir, manifest)
+
+
 def _record_binary_sha(cache_dir: str, dest_path: str) -> None:
     """Record the SHA-256 of a freshly extracted binary in the manifest."""
     real_dest = os.path.realpath(dest_path)
     sha = _calculate_sha256(real_dest)
     if sha:
-        manifest = _load_manifest(cache_dir)
-        manifest[real_dest] = sha
-        _save_manifest(cache_dir, manifest)
+        _update_manifest(cache_dir, lambda m: m.__setitem__(real_dest, sha))
 
 
 def _record_archive_sha(
@@ -174,12 +188,14 @@ def _record_archive_sha(
     """
     if not archive_sha:
         return
-    manifest = _load_manifest(cache_dir)
-    manifest[f"archive:{binary_name}"] = {
-        "archive_name": archive_name,
-        "archive_sha256": archive_sha,
-    }
-    _save_manifest(cache_dir, manifest)
+
+    def _mutate(manifest):
+        manifest[f"archive:{binary_name}"] = {
+            "archive_name": archive_name,
+            "archive_sha256": archive_sha,
+        }
+
+    _update_manifest(cache_dir, _mutate)
 
 
 def _installed_archive_sha(cache_dir: str, binary_name: str) -> str:
