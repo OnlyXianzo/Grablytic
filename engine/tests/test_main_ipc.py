@@ -108,3 +108,139 @@ def test_malformed_line_does_not_kill_loop(monkeypatch, capsys):
             "cache_dir": "/tmp/x"}}),
     ])
     assert _by_id(resps, "s1")["result"] == {"success": True}
+
+
+@pytest.mark.unit
+def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
+    """T1-7 / HQ1: Prove that under 5 concurrent downloads and simultaneous
+    main-thread responses, _stdout_lock guarantees zero interleaved or
+    corrupted JSON lines reach stdout.
+    """
+    import queue as _q
+    import threading
+    import time
+    mod = _main_mod()
+
+    assert hasattr(mod, "_stdout_lock"), "Missing _stdout_lock in __main__.py!"
+
+    # Thread-safe buffer capturing stdout chunks
+    buffer_lock = threading.Lock()
+    captured_chunks = []
+
+    class _MockStdout:
+        def write(self, s):
+            with buffer_lock:
+                captured_chunks.append(s)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(sys, "stdout", _MockStdout())
+
+    # Setup 5 concurrent active downloads in downloader
+    from grablytic_engine.downloader import _active_downloads, _downloads_lock
+    _active_downloads.clear()
+
+    download_ids = [f"dl-concurrent-{i}" for i in range(5)]
+    queues = []
+
+    with _downloads_lock:
+        for did in download_ids:
+            prog_q = _q.Queue()
+            res_q = _q.Queue()
+            queues.append((prog_q, res_q))
+            _active_downloads[did] = {
+                "progress_queue": prog_q,
+                "result_queue": res_q,
+                "url": f"https://example.com/{did}",
+                "cancel_event": threading.Event(),
+            }
+
+    stop_event = threading.Event()
+
+    # 5 producer threads pushing progress events at high frequency
+    def _producer(did, prog_q, count=200):
+        for seq in range(count):
+            if stop_event.is_set():
+                break
+            payload = json.dumps({
+                "type": "event",
+                "event": "downloading",
+                "download_id": did,
+                "sequence": seq,
+                "payload": "X" * 100,  # Long payload increases interleaving probability
+            })
+            prog_q.put(payload)
+
+    # 1 thread simultaneously emitting responses via _write_stdout_line
+    def _response_writer(count=200):
+        for seq in range(count):
+            if stop_event.is_set():
+                break
+            res = json.dumps({
+                "id": f"req-{seq}",
+                "result": {"status": "ok", "padding": "Y" * 120},
+            })
+            mod._write_stdout_line(res)
+
+    # 1 thread draining queues via mod._write_stdout_line (simulating poll_queues loop)
+    def _poll_drain():
+        while not stop_event.is_set():
+            for did in download_ids:
+                with _downloads_lock:
+                    info = _active_downloads.get(did, {})
+                    pq = info.get("progress_queue")
+                if pq:
+                    while not pq.empty():
+                        try:
+                            ev = pq.get_nowait()
+                            mod._write_stdout_line(ev)
+                        except Exception:
+                            break
+            time.sleep(0.001)
+
+    threads = []
+    # Start 5 concurrent producers
+    for did, (pq, rq) in zip(download_ids, queues):
+        t = threading.Thread(target=_producer, args=(did, pq, 150))
+        threads.append(t)
+
+    # Start response writer
+    resp_thread = threading.Thread(target=_response_writer, args=(150,))
+    threads.append(resp_thread)
+
+    # Start poll drain thread
+    poll_thread = threading.Thread(target=_poll_drain)
+    threads.append(poll_thread)
+
+    for t in threads:
+        t.start()
+
+    # Wait for producers and response writer to finish
+    for t in threads[:-1]:
+        t.join(timeout=10)
+
+    # Allow poll thread a moment to drain remaining items
+    time.sleep(0.2)
+    stop_event.set()
+    poll_thread.join(timeout=5)
+
+    with _downloads_lock:
+        _active_downloads.clear()
+
+    # Verify that captured output consists of 100% valid JSON lines
+    full_output = "".join(captured_chunks)
+    lines = [line.strip() for line in full_output.splitlines() if line.strip()]
+
+    assert len(lines) > 500, f"Expected >500 lines, got {len(lines)}"
+
+    # Crucial assertion: Every single line must parse cleanly without JSONDecodeError!
+    for idx, line in enumerate(lines):
+        try:
+            parsed = json.loads(line)
+            assert isinstance(parsed, dict)
+        except json.JSONDecodeError as exc:
+            pytest.fail(
+                f"Interleaved/corrupted JSON line detected at line {idx}: {line!r}\nError: {exc}"
+            )
+

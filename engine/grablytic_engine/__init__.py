@@ -10,6 +10,7 @@ from grablytic_engine.downloader import (
     get_queue_status,
     set_max_concurrent,
     clear_download_archive,
+    shutdown_downloads,
 )
 from grablytic_engine.hooks import build_progress_hook
 from grablytic_engine.errors import classify_error, GrablyticError
@@ -47,6 +48,7 @@ __all__ = [
     "get_queue_status",
     "set_max_concurrent",
     "clear_download_archive",
+    "shutdown_downloads",
     "build_progress_hook",
     "classify_error",
     "GrablyticError",

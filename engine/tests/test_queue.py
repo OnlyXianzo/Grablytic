@@ -147,3 +147,113 @@ def test_concurrency_clamped_1_to_5():
         assert dl_mod.get_queue_status()["max_concurrent"] == 3
     finally:
         dl_mod.set_max_concurrent(2)
+
+
+def test_register_before_start_race(monkeypatch):
+    """T1-1: Prove that _active_downloads is populated BEFORE t.start() runs.
+    
+    A fast cancel issued during t.start() must find the download in
+    _active_downloads and succeed, rather than hitting NOT_FOUND.
+    """
+    _reset()
+    seen_in_active_during_start = []
+    cancel_result_during_start = []
+
+    class _VerifyingThread:
+        def __init__(self, *args, **kwargs):
+            self.download_id = kwargs.get("args", (None, None))[1]
+
+        def start(self):
+            # Inside start(), the download MUST already be registered in _active_downloads
+            with dl_mod._downloads_lock:
+                registered = self.download_id in dl_mod._active_downloads
+                seen_in_active_during_start.append(registered)
+            # A fast cancel issued in this exact window must find it
+            res = dl_mod.cancel_download(self.download_id)
+            cancel_result_during_start.append(res)
+
+    monkeypatch.setattr(dl_mod.threading, "Thread", _VerifyingThread)
+    r = dl_mod.start_download(url="https://x.test/1", download_id="race-1")
+    try:
+        assert r["success"] is True
+        assert len(seen_in_active_during_start) == 1
+        assert seen_in_active_during_start[0] is True, (
+            "Registration happened after start()! Classic register-after-start race."
+        )
+        assert len(cancel_result_during_start) == 1
+        assert cancel_result_during_start[0]["success"] is True
+        assert cancel_result_during_start[0].get("error_type") != "ERROR_DOWNLOAD_NOT_FOUND"
+    finally:
+        dl_mod._active_downloads.pop("race-1", None)
+
+
+def test_pump_queue_cancel_loss_window_terminal_cancelled(monkeypatch):
+    """T1-2 / HQ2: Prove that cancelling between pop and spawn in _pump_queue
+    results in a terminal 'cancelled' event delivered to the caller, and
+    no phantom download thread is spawned.
+    """
+    import json
+    _reset()
+    events_received = []
+
+    class _Callback:
+        def onEvent(self, event_json):
+            events_received.append(json.loads(event_json))
+
+    cb_obj = _Callback()
+
+    threads_spawned = []
+    real_spawn_thread = dl_mod._spawn_thread
+
+    def _intercept_spawn(entry):
+        if entry["download_id"] == "q-loss-3":
+            # Cancel issued right after pop in _pump_queue, before thread spawn
+            res = dl_mod.cancel_download("q-loss-3")
+            assert res["success"] is True
+            assert res.get("cancelled") is True
+            assert res.get("error_type") != "ERROR_DOWNLOAD_NOT_FOUND"
+        t = real_spawn_thread(entry)
+        if t is not None:
+            threads_spawned.append(entry["download_id"])
+        return t
+
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+    monkeypatch.setattr(dl_mod, "_spawn_thread", _intercept_spawn)
+
+    # 1. Fill slots
+    dl_mod.start_download(url="https://x.test/1", download_id="q-loss-1")
+    dl_mod.start_download(url="https://x.test/2", download_id="q-loss-2")
+
+    # 2. Queue the 3rd item with event_callback
+    q = dl_mod.start_download(
+        url="https://x.test/3",
+        download_id="q-loss-3",
+        event_callback=cb_obj,
+    )
+    assert q.get("queued") is True
+    assert any(ev.get("event") == "queued" for ev in events_received)
+
+    try:
+        # 3. Free a slot and trigger _pump_queue()
+        import datetime
+        dl_mod._active_downloads["q-loss-1"]["finished_at"] = (
+            datetime.datetime.now(datetime.timezone.utc)
+        )
+        dl_mod._pump_queue()
+
+        # 4. Verify the terminal event received by the caller
+        terminal_events = [ev for ev in events_received if ev.get("event") == "cancelled"]
+        assert len(terminal_events) == 1, f"Expected terminal 'cancelled' event, got: {events_received}"
+        term = terminal_events[0]
+        assert term["download_id"] == "q-loss-3"
+        assert term["error_type"] == "ERROR_CANCELLED"
+        assert "cancelled by user" in term.get("error_message", "").lower()
+
+        # 5. Prove no phantom thread was spawned for q-loss-3
+        assert "q-loss-3" not in threads_spawned
+    finally:
+        for did in ("q-loss-1", "q-loss-2", "q-loss-3"):
+            dl_mod._active_downloads.pop(did, None)
+        dl_mod._pending_queue.clear()
+
+
