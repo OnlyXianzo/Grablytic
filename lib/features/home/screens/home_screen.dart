@@ -26,8 +26,11 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final downloads = ref.watch(downloadProvider);
-    final recentDownloads = downloads.take(3).toList();
+    // Loop-3 O(1) rebuilds: structural ids only (add/status-flip/remove).
+    // Progress ticks no longer rebuild this screen; each card watches its
+    // own item via [downloadItemProvider] and rebuilds alone.
+    final sections = ref.watch(downloadSectionsProvider);
+    final recentIds = sections.allIds.take(3).toList();
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -56,7 +59,7 @@ class HomeScreen extends ConsumerWidget {
               const _ResumeScanSection(),
               const SizedBox(height: 40),
               // Your Library header
-              if (recentDownloads.isNotEmpty) ...[
+              if (recentIds.isNotEmpty) ...[
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -67,60 +70,21 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Download cards
-                ...recentDownloads.expand((item) {
+                // Download cards (id-driven: each card subscribes to its own
+                // item; the error tile moved inside _DownloadCard so this
+                // parent never needs item fields and stays tick-silent).
+                ...recentIds.expand((id) {
                   final tiles = <Widget>[
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
-                      child: _DownloadCard(
-                        item: item,
-                        colorScheme: colorScheme,
+                      child: RepaintBoundary(
+                        child: _DownloadCardWithError(
+                          id: id,
+                          colorScheme: colorScheme,
+                        ),
                       ),
                     ),
                   ];
-                  if (item.status == 'error') {
-                    tiles.add(
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: ErrorRecoveryCard(
-                          errorType: item.errorType,
-                          errorMessage: item.errorMessage,
-                          onRetry: () {
-                            ref.read(downloadProvider.notifier).retryDownload(item.id);
-                          },
-                          onOpenCookies: () {
-                            final siteName = _deriveSiteName(item.url);
-                            final loginUrl = _deriveLoginUrl(item.url);
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => CookieWebViewScreen(
-                                  loginUrl: loginUrl,
-                                  siteName: siteName,
-                                ),
-                              ),
-                            );
-                          },
-                          onOpenProxy: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const SettingsScreen(),
-                              ),
-                            );
-                          },
-                          onPickFormat: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => FormatPickerScreen(
-                                  url: item.url,
-                                  title: item.title,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    );
-                  }
                   return tiles;
                 }),
               ]               else ...[
@@ -380,6 +344,70 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DownloadCardWithError extends ConsumerWidget {
+  final String id;
+  final ColorScheme colorScheme;
+
+  const _DownloadCardWithError({required this.id, required this.colorScheme});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Own-item subscription: rebuilds only when THIS item changes
+    // (progress ticks for other ids deliver the identical instance and are
+    // skipped by Riverpod). Null = removed mid-frame: render nothing.
+    final item = ref.watch(downloadItemProvider(id));
+    if (item == null) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _DownloadCard(item: item, colorScheme: colorScheme),
+        if (item.status == 'error')
+          Padding(
+            // Matches the pre-Loop-3 sibling spacing (16 between card and
+            // tile); the outer bottom:16 is preserved by the caller.
+            padding: const EdgeInsets.only(top: 16),
+            child: ErrorRecoveryCard(
+              errorType: item.errorType,
+              errorMessage: item.errorMessage,
+              onRetry: () {
+                ref.read(downloadProvider.notifier).retryDownload(item.id);
+              },
+              onOpenCookies: () {
+                final siteName = _deriveSiteName(item.url);
+                final loginUrl = _deriveLoginUrl(item.url);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CookieWebViewScreen(
+                      loginUrl: loginUrl,
+                      siteName: siteName,
+                    ),
+                  ),
+                );
+              },
+              onOpenProxy: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const SettingsScreen(),
+                  ),
+                );
+              },
+              onPickFormat: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => FormatPickerScreen(
+                      url: item.url,
+                      title: item.title,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 }

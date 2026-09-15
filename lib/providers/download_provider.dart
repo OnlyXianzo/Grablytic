@@ -940,3 +940,95 @@ final downloadProvider =
 });
 
 final sharedUrlProvider = StateProvider<String?>((ref) => null);
+
+/// Structural snapshot of the download list: ordered ids per section.
+///
+/// Loop-3 O(1) rebuild fix: progress ticks replace the `downloadProvider`
+/// list every second, which rebuilt Home + Library + Playlist screens in
+/// full. Sections change only on structural events (add / status flip /
+/// remove), so screens watching THIS rebuild only then. Value equality
+/// (joined id strings) lets Riverpod suppress tick-driven notifications.
+/// Cards watch [downloadItemProvider] per id instead.
+class DownloadSections {
+  final List<String> allIds;
+  final List<String> pendingIds;
+  final List<String> failedIds;
+  final List<String> completedIds;
+
+  const DownloadSections({
+    required this.allIds,
+    required this.pendingIds,
+    required this.failedIds,
+    required this.completedIds,
+  });
+
+  factory DownloadSections.fromList(List<DownloadItem> items) {
+    final pending = <String>[];
+    final failed = <String>[];
+    final completed = <String>[];
+    final all = <String>[];
+    for (final d in items) {
+      all.add(d.id);
+      // Buckets mirror the Library's long-standing partition exactly
+      // (downloading|pending|paused → pending; error|cancelled → failed;
+      // completed → completed). Transient states (queued/cancelling/
+      // interrupted) belong to no bucket — same as before this change —
+      // while allIds still drives Home, so no item ever vanishes there.
+      switch (d.status) {
+        case 'downloading':
+        case 'pending':
+        case 'paused':
+          pending.add(d.id);
+        case 'error':
+        case 'cancelled':
+          failed.add(d.id);
+        case 'completed':
+          completed.add(d.id);
+        default:
+          break;
+      }
+    }
+    return DownloadSections(
+      allIds: List.unmodifiable(all),
+      pendingIds: List.unmodifiable(pending),
+      failedIds: List.unmodifiable(failed),
+      completedIds: List.unmodifiable(completed),
+    );
+  }
+
+  String _key(List<String> ids) => ids.join(',');
+
+  @override
+  bool operator ==(Object other) =>
+      other is DownloadSections &&
+      _key(allIds) == _key(other.allIds) &&
+      _key(pendingIds) == _key(other.pendingIds) &&
+      _key(failedIds) == _key(other.failedIds) &&
+      _key(completedIds) == _key(other.completedIds);
+
+  @override
+  int get hashCode => Object.hash(
+        _key(allIds),
+        _key(pendingIds),
+        _key(failedIds),
+        _key(completedIds),
+      );
+}
+
+/// Structural-only view: notifies on add/status-flip/remove, silent on
+/// progress ticks. Screens partition/watch this; cards watch items by id.
+final downloadSectionsProvider = Provider<DownloadSections>((ref) {
+  return DownloadSections.fromList(ref.watch(downloadProvider));
+});
+
+/// Per-item view. Unchanged items keep the IDENTICAL instance across ticks
+/// (handleProgressEvent only copyWith's the ticking id), so a Consumer of
+/// this family rebuilds only when its own item actually changes.
+final downloadItemProvider =
+    Provider.family<DownloadItem?, String>((ref, id) {
+  final items = ref.watch(downloadProvider);
+  for (final d in items) {
+    if (d.id == id) return d;
+  }
+  return null;
+});
