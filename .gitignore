@@ -59,6 +59,8 @@ build/
 
 # Agent private workspace — never commit
 .agents/
+session_app_work
+session_*
 graphify-out/
 .codegraph/
 
