@@ -296,4 +296,88 @@ void main() {
       expect(n.isActiveId('dl-c'), isTrue);
     });
   });
+
+  group('smoother eviction (no per-download leak)', () {
+    DownloadNotifier downloadingSeeded(String id) {
+      final n = _notifier();
+      n.addDownload(DownloadItem(id: id, title: 't', url: 'https://x.test/$id'));
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'downloading',
+        'download_id': id,
+        'downloaded_bytes': 10,
+        'total_bytes': 100,
+        'speed': 1000,
+      });
+      expect(n.smootherCount, 1);
+      return n;
+    }
+
+    test('finished evicts the smoother', () {
+      final n = downloadingSeeded('dl-1');
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'finished',
+        'download_id': 'dl-1',
+        'filesize_bytes': 100,
+      });
+      expect(n.state.single.status, 'completed');
+      expect(n.smootherCount, 0);
+    });
+
+    test('error evicts the smoother', () {
+      final n = downloadingSeeded('dl-1');
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'error',
+        'download_id': 'dl-1',
+        'error_type': 'ERROR_NETWORK',
+        'error_message': 'boom',
+      });
+      expect(n.state.single.status, 'error');
+      expect(n.smootherCount, 0);
+    });
+
+    test('cancelled evicts the smoother', () {
+      final n = downloadingSeeded('dl-1');
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'cancelled',
+        'download_id': 'dl-1',
+      });
+      expect(n.state.single.status, 'cancelled');
+      expect(n.smootherCount, 0);
+    });
+
+    test('removeFromHistory evicts the smoother', () async {
+      final n = downloadingSeeded('dl-1');
+      await n.removeFromHistory('dl-1');
+      expect(n.state, isEmpty);
+      expect(n.smootherCount, 0);
+    });
+
+    test('100 completed downloads retain zero smoothers', () {
+      final n = _notifier();
+      for (var i = 0; i < 100; i++) {
+        final id = 'dl-$i';
+        n.addDownload(DownloadItem(id: id, title: 't', url: 'https://x.test/$id'));
+        n.handleProgressEvent({
+          'type': 'event',
+          'event': 'downloading',
+          'download_id': id,
+          'downloaded_bytes': 10,
+          'total_bytes': 100,
+          'speed': 1000,
+        });
+        n.handleProgressEvent({
+          'type': 'event',
+          'event': 'finished',
+          'download_id': id,
+          'filesize_bytes': 100,
+        });
+      }
+      expect(n.state, hasLength(100));
+      expect(n.smootherCount, 0);
+    });
+  });
 }
