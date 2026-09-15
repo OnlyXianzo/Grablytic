@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 import os
 import queue as _queue
 from datetime import datetime, timezone
@@ -175,9 +176,64 @@ def _pump_queue() -> None:
                 pass
 
 
+# ── Lazy cleanup thread and graceful shutdown (T1-6) ───────────────────
+
+# Store real Thread reference at import time so test monkeypatching of
+# threading.Thread for download workers does not hijack the internal cleanup loop.
+_real_Thread = threading.Thread
+_cleanup_thread: threading.Thread | None = None
+_cleanup_stop_event = threading.Event()
+_shutdown_lock = threading.Lock()
+_is_shutting_down = False
+
+
+def _is_alive(t) -> bool:
+    """Safe check whether a thread (or mock object) is alive."""
+    if t is None:
+        return False
+    fn = getattr(t, "is_alive", None)
+    if callable(fn):
+        try:
+            return bool(fn())
+        except Exception:
+            return False
+    return False
+
+
+def _ensure_cleanup_thread() -> None:
+    """Lazily start the background cleanup loop only when downloads exist.
+    Avoids spinning an import-time background thread in tests and Chaquopy.
+    """
+    global _cleanup_thread
+    with _downloads_lock:
+        if _cleanup_thread is None or not _is_alive(_cleanup_thread):
+            _cleanup_stop_event.clear()
+            _cleanup_thread = _real_Thread(
+                target=_cleanup_loop,
+                daemon=True,
+                name="grablytic-cleanup",
+            )
+            _cleanup_thread.start()
+
+
+def stop_cleanup_thread() -> None:
+    """Stop the background cleanup loop (used on shutdown and in test cleanup)."""
+    global _cleanup_thread
+    _cleanup_stop_event.set()
+    with _downloads_lock:
+        t = _cleanup_thread
+        _cleanup_thread = None
+    if t and _is_alive(t) and threading.current_thread() != t:
+        join_fn = getattr(t, "join", None)
+        if callable(join_fn):
+            try:
+                join_fn(timeout=2.0)
+            except Exception:
+                pass
+
+
 def _cleanup_loop():
-    import time
-    while True:
+    while not _cleanup_stop_event.is_set():
         try:
             now = datetime.now(timezone.utc)
             to_remove = []
@@ -192,15 +248,83 @@ def _cleanup_loop():
                         # Failsafe: clean up after 30 seconds regardless of read status
                         elif (now - fin_at).total_seconds() > 30:
                             to_remove.append(did)
-                
+
                 for did in to_remove:
                     _active_downloads.pop(did, None)
         except Exception:
             pass
-        time.sleep(1.0)
+        _cleanup_stop_event.wait(1.0)
 
 
-threading.Thread(target=_cleanup_loop, daemon=True).start()
+def shutdown_downloads(timeout: float = 5.0) -> dict:
+    """Gracefully shut down all active downloads on engine/interpreter exit.
+
+    T1-6 fix: Prevents mid-write daemon thread kills that leave corrupt .part
+    files.
+    1. Sets cancel_event for all active downloads to request clean exit.
+    2. Clears pending queue so queued items never spawn.
+    3. Joins active download threads up to timeout seconds.
+    4. Stops the cleanup loop.
+    5. Returns dict with 'joined' and 'timed_out' download IDs.
+    """
+    global _is_shutting_down
+    with _shutdown_lock:
+        _is_shutting_down = True
+
+    # Stop the cleanup loop
+    _cleanup_stop_event.set()
+
+    with _downloads_lock:
+        _pending_queue.clear()
+        active = [
+            (did, info) for did, info in list(_active_downloads.items())
+            if not info.get("finished_at")
+        ]
+        # Signal cooperative cancellation to all in-flight downloads
+        for did, info in active:
+            try:
+                info["cancel_event"].set()
+            except Exception:
+                pass
+
+    deadline = time.time() + timeout
+    joined = []
+    timed_out = []
+
+    for did, info in active:
+        t = info.get("thread")
+        if t and _is_alive(t) and threading.current_thread() != t:
+            remaining = max(0.05, deadline - time.time())
+            join_fn = getattr(t, "join", None)
+            if callable(join_fn):
+                try:
+                    join_fn(timeout=remaining)
+                except Exception:
+                    pass
+            if _is_alive(t):
+                timed_out.append(did)
+            else:
+                joined.append(did)
+        else:
+            joined.append(did)
+
+    return {
+        "success": True,
+        "joined": joined,
+        "timed_out": timed_out,
+    }
+
+
+def reset_shutdown_for_tests() -> None:
+    """Reset shutdown state so subsequent tests can start downloads."""
+    global _is_shutting_down
+    with _shutdown_lock:
+        _is_shutting_down = False
+    _cleanup_stop_event.clear()
+
+
+import atexit as _atexit
+_atexit.register(shutdown_downloads)
 
 
 
@@ -662,6 +786,16 @@ def start_download(
     result_queue: _queue.Queue = _queue.Queue()
     cancel_event: threading.Event = threading.Event()
 
+    # Reject admission if engine is currently shutting down
+    with _shutdown_lock:
+        if _is_shutting_down:
+            return {
+                "success": False,
+                "download_id": download_id,
+                "error_type": "ERROR_SHUTTING_DOWN",
+                "error_message": "Engine is shutting down",
+            }
+
     # Live engine-log delivery on Android/Chaquopy: push type:log events
     # through the same Kotlin callback the progress hooks use. The desktop
     # queue path is untouched (event_callback is None there).
@@ -670,6 +804,9 @@ def start_download(
             set_global_event_callback(event_callback)
         except Exception:
             pass
+
+    # Ensure background cleanup is active for this download
+    _ensure_cleanup_thread()
 
     with _downloads_lock:
         existing = _active_downloads.get(download_id)
