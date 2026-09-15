@@ -203,7 +203,11 @@ jobs:
           mkdir -p pkg_deb/usr/share/applications
           mkdir -p pkg_deb/usr/share/icons/hicolor/512x512/apps
 
-          cat << EOF > pkg_deb/DEBIAN/control
+          # dpkg control files accept no `#` comments and backticks would
+          # execute under an unquoted heredoc — keep this body literal-only.
+          # (Replaces/Conflicts takes over a manually installed pre-rename
+          # v0.0.1 `truestream` package instead of orphaning it alongside.)
+          cat << 'EOF' > pkg_deb/DEBIAN/control
           Package: grablytic
           Version: ${{ env.GRABLYTIC_RELEASE_VERSION }}
           Section: video
@@ -211,8 +215,6 @@ jobs:
           Architecture: ${{ matrix.deb_arch }}
           Maintainer: OnlyXianzo <184820152+OnlyXianzo@users.noreply.github.com>
           Depends: libgtk-3-0, python3, ffmpeg, aria2
-          # Rename takeover: replace a manually installed pre-rename v0.0.1
-          # `truestream` package instead of leaving it orphaned alongside.
           Replaces: truestream
           Conflicts: truestream
           Description: Fast, beautiful, privacy-first media downloader
