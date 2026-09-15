@@ -22,7 +22,7 @@ event bridge) between Flutter and Python.
 | Keep-alive (Android) | `DownloadService` (`dataSync` FGS) | Ongoing progress notification, `START_NOT_STICKY`, `onTimeout` stop. Covers process *survival*; process *death* still needs DB resume (follow-up). |
 | JS runtime (Android) | Deno `.so` (primary) · QuickJS (`python-quickjs`) | Executes YouTube's EJS challenges + PO Token generation. Priority: deno > node > quickjs. |
 | JS runtime (Desktop) | Deno (bootstrapped via GitHub releases) | V8-based runtime for YouTube JS decryption. Downloaded on first run, SHA-256 gated. |
-| Challenge scripts | `yt-dlp-ejs` + `remote_components=ejs:github` | Solver scripts auto-fetched; only SHA-256-allowlisted JS ever executes. |
+| Challenge scripts | `yt-dlp-ejs` + `remote_components=ejs:github` (only when a JS runtime is configured; never without one) | Solver scripts auto-fetched; integrity gated by yt-dlp's own SHA3-512 + version pin (`ejs.py`), NOT by our SHA-256 stub allowlist (`po_token.verify_js_code` covers only the two inert local stubs). |
 | Media processing | FFmpeg (static binary / jniLibs `.so`) | Muxing DASH streams, audio extraction, subtitle/thumbnail embedding, chapter splitting/cutting. |
 | Download accelerator | aria2c (static binary) | Parallel fragments (`-x1..16`, validated). **Never** for DASH/HLS (native downloader instead — CVE-2026-50574). |
 | Persistence | SharedPreferences + SQLite | Settings/presets/playlists/auth in prefs; download history in SQLite (`sqflite` + `sqflite_common_ffi` on desktop). |
@@ -418,10 +418,13 @@ node > quickjs**, resolved by `_configure_js_runtime()` with absolute paths:
 - Android: bundled `libdeno.so` (via `BinaryPackageManager` → `deno_path`)
   wins; QuickJS binding is the lightweight fallback.
 - Desktop: bootstrapped Deno binary (SHA-256 gated) or system `deno`/`node`.
-- `remote_components = ["ejs:github"]` always set so challenge scripts
-  stay fresh without app updates.
-- PO Tokens generated via `po_token.generate_po_token()` (allowlisted stubs;
-  real challenge scripts arrive via `yt-dlp-ejs`).
+- `remote_components = ["ejs:github"]` set only when a JS runtime is
+  actually configured (never on the no-runtime path), so challenge scripts
+  stay fresh without app updates without pointless unfetchable requests.
+- PO Tokens generated via `po_token.generate_po_token()` (inert allowlisted
+  stubs returning null; real challenge scripts arrive via `yt-dlp-ejs` and
+  are covered by yt-dlp's hash/version pin, not our stub list — see
+  `po_token.py` module docstring for the trust boundary).
 - Extractor args use `player_client = ["default", "mweb"]` — never force a
   single client (multi-client returns 31+ formats incl. AV1/VP9).
 

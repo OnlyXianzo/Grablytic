@@ -1,3 +1,29 @@
+"""PO-Token helpers + JS execution trust boundary (read before extending).
+
+What IS gated here: the two local stub scripts below (`verify_js_code`
+SHA-256 allowlist). Both stubs are inert by design — they return null and
+the download falls back to no token. The gate proves "this exact stub ran",
+nothing more.
+
+What is NOT gated here (HQ5 answer): the real YouTube challenge solver.
+Whenever `_configure_js_runtime` selects a runtime it also sets
+`remote_components=["ejs:github"]`, so yt-dlp fetches the EJS solver bundle
+(LIB+CORE) from github.com/yt-dlp/ejs releases and executes it (plus
+YouTube-player JS as input data) in deno/node. That code NEVER passes
+through `verify_js_code`. Its integrity gate is yt-dlp's OWN check in
+`yt_dlp/extractor/youtube/jsc/_builtin/ejs.py`: pinned SCRIPT_VERSION plus
+a SHA3-512 hash pin per script variant (cache purged on mismatch), with
+deliberate dev-only bypasses (`youtube-ejs:dev/repo/script_version`
+extractor args — we never set those). Deno runs the solver with no
+`--allow-*` flags (default-deny); Node's permission model is explicitly NOT
+a security boundary for malicious code (nodejs.org/api/permissions).
+
+Do NOT cite this module's allowlist as covering the EJS path (that was the
+T0-6 "theater" finding). Follow-ups, not this push: preferring a vendored
+`yt-dlp-ejs` package over the network fetch; auditing `youtube-ejs` arg
+reachability through our extractor-args plumbing.
+"""
+
 import os
 import shutil
 import hashlib
@@ -7,7 +33,7 @@ from grablytic_engine.logger import get_logger
 
 log = get_logger("grablytic_engine.po_token")
 
-# Strict allowlist of SHA-256 hashes of approved JS scripts
+# SHA-256 allowlist of the two inert local stub scripts (NOT the EJS solver).
 QUICKJS_STUB_SCRIPT = """
             // PO Token generation — YouTube's PoToken.generate()
             // This requires the actual YouTube challenge script loaded at runtime
@@ -28,7 +54,11 @@ APPROVED_JS_HASHES = {
 
 
 def verify_js_code(code: str) -> None:
-    """Cryptographically verify the JavaScript code against the allowlist of approved hashes."""
+    """Allowlist check for the two local stub scripts ONLY.
+
+    Raises ValueError unless `code` is byte-identical to an approved stub.
+    This says nothing about the EJS remote solver (see module docstring).
+    """
     code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
     if code_hash not in APPROVED_JS_HASHES:
         raise ValueError("Security Violation: Attempted evaluation of untrusted JavaScript code.")
