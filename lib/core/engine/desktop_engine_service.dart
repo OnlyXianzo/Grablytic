@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
 import 'engine_service.dart';
@@ -33,11 +34,35 @@ class DesktopEngineService implements EngineService {
         _workingDirectory = workingDirectory,
         _dataDir = dataDir;
 
+  @visibleForTesting
+  void restart() => _restart();
+
+  @visibleForTesting
+  Process? get process => _process;
+
+  @visibleForTesting
+  set processForTesting(Process? p) => _process = p;
+
+  @visibleForTesting
+  void attachProcessForTesting(Process p) {
+    _process = p;
+    _running = true;
+    p.exitCode.then((code) {
+      _running = false;
+      if (!_disposed && code != 0 && _process == p) {
+        _restart();
+      }
+    });
+  }
+
   void dispose() {
     _disposed = true;
     _stdoutSubscription?.cancel();
     _stderrSubscription?.cancel();
-    _process?.kill();
+    final oldProcess = _process;
+    _process = null;
+    _running = false;
+    oldProcess?.kill();
     _progressController.close();
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
@@ -149,9 +174,10 @@ class DesktopEngineService implements EngineService {
       AppLogger.warn(line, tag: 'engine-stderr');
     });
 
-    _process!.exitCode.then((code) {
+    final currentProcess = _process!;
+    currentProcess.exitCode.then((code) {
       _running = false;
-      if (!_disposed && code != 0) {
+      if (!_disposed && code != 0 && _process == currentProcess) {
         _restart();
       }
     });
@@ -163,8 +189,10 @@ class DesktopEngineService implements EngineService {
   void _restart() {
     _stdoutSubscription?.cancel();
     _stderrSubscription?.cancel();
+    final oldProcess = _process;
     _process = null;
     _running = false;
+    oldProcess?.kill();
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Engine process exited'));
