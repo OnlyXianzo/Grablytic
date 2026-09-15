@@ -18,10 +18,16 @@
 name: Verification
 
 on:
+  # T4-5: every branch + every PR, not just main. Feature branches must
+  # prove green before merge, not after.
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
+  workflow_call:
+
+# One run per ref: a new push supersedes the previous run on that branch.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   flutter_verify:
@@ -50,29 +56,38 @@ jobs:
           path: coverage/lcov.info
 
   python_verify:
-    name: Python Engine Tests
+    name: Python Engine Tests (3.11 / 3.12)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install uv
         run: pip install uv
 
       - name: Install dependencies & engine
-        # ruff pinned: new releases add rules that would otherwise
-        # break this gate without any repo change.
-        run: uv pip install --system yt-dlp pytest pytest-cov "ruff==0.16.7" -e engine/
+        run: uv pip install --system yt-dlp pytest pytest-cov -e engine/
 
       - name: Run engine tests with coverage ratchet
         run: pytest engine/tests/ -q --cov=engine/grablytic_engine --cov-report=term --cov-fail-under=75
 
-      - name: Ruff correctness gate (F rules, F401 import audit backlog excluded)
-        run: ruff check engine/ --select F --ignore F401
+      # astral-sh/ruff-action (pinned): prebuilt binary, no pip build.
+      # Gate unchanged: correctness rules (F, minus F401 import audit
+      # backlog). New releases add rules, so the pin is load-bearing.
+      - name: Ruff correctness gate
+        uses: astral-sh/ruff-action@v4
+        with:
+          version: "0.16.7"
+          src: "engine/"
+          args: "check --select F --ignore F401 --output-format=github"
 
   docs_links:
     name: Docs Link Check
@@ -99,3 +114,33 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  workflow_lint:
+    name: Workflow YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse every workflow as YAML + check required keys
+        run: |
+          python3 - <<'EOF'
+          import sys
+          import yaml
+          from pathlib import Path
+          failed = False
+          for path in sorted(Path(".github/workflows").glob("*.yml")):
+              try:
+                  doc = yaml.safe_load(path.read_text())
+              except yaml.YAMLError as e:
+                  print(f"::error file={path}::YAML parse error: {e}")
+                  failed = True
+                  continue
+              # NOTE: YAML 1.1 parses the `on:` key as boolean True.
+              on = doc.get("on", doc.get(True))
+              if not isinstance(doc, dict) or on is None or "jobs" not in doc:
+                  print(f"::error file={path}::missing top-level 'on'/'jobs' keys")
+                  failed = True
+                  continue
+              print(f"OK: {path} ({len(doc['jobs'])} jobs)")
+          sys.exit(1 if failed else 0)
+          EOF
