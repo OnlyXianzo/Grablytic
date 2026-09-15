@@ -79,11 +79,13 @@ jobs:
       - name: Run engine tests with coverage ratchet
         run: pytest engine/tests/ -q --cov=engine/grablytic_engine --cov-report=term --cov-fail-under=75
 
-      # astral-sh/ruff-action (pinned): prebuilt binary, no pip build.
+      # astral-sh/ruff-action, pinned to immutable commit SHA (upstream
+      # carries no `v4` moving tag — `.../ruff-action@v4` fails to resolve).
       # Gate unchanged: correctness rules (F, minus F401 import audit
-      # backlog). New releases add rules, so the pin is load-bearing.
+      # backlog). The ruff VERSION pin is load-bearing (new releases add
+      # rules); the ACTION pin is supply-chain hygiene.
       - name: Ruff correctness gate
-        uses: astral-sh/ruff-action@v4
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
         with:
           version: "0.16.7"
           src: "engine/"
