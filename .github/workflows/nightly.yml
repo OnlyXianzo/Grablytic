@@ -37,6 +37,7 @@ jobs:
       suffix: ${{ steps.stamp.outputs.suffix }}
       datestamp: ${{ steps.stamp.outputs.datestamp }}
       sha: ${{ steps.stamp.outputs.sha }}
+      has_ftl: ${{ steps.gate.outputs.has_ftl }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +49,11 @@ jobs:
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "suffix=-nightly-$DATESTAMP-$SHA" >> $GITHUB_OUTPUT
           echo "Nightly suffix: -nightly-$DATESTAMP-$SHA"
+
+      # secrets context is illegal in jobs.<id>.if — expose as an output.
+      - id: gate
+        run: |
+          echo "has_ftl=${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}" >> $GITHUB_OUTPUT
 
   verify:
     name: Verify (gate)
@@ -129,7 +135,7 @@ jobs:
   ftl-robo:
     name: Firebase Test Lab Robo (physical)
     needs: [prep, build]
-    if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    if: ${{ needs.prep.outputs.has_ftl == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
