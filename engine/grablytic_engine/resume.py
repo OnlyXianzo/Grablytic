@@ -3,6 +3,18 @@ import time
 import json
 
 
+def _strip_part_suffix(path: str) -> str:
+    """Remove one trailing '.part' only.
+
+    str.replace() would strip EVERY occurrence, mangling names like
+    'my.part.video.f137.part' into 'my.video.f137' and missing the
+    sibling .info.json.
+    """
+    if path.endswith(".part"):
+        return path[: -len(".part")]
+    return path
+
+
 def scan_resume_candidates(cache_dir: str) -> dict:
     candidates = []
     now = time.time()
@@ -24,9 +36,9 @@ def scan_resume_candidates(cache_dir: str) -> dict:
         age = now - stat.st_mtime
         
         likely_url = None
-        info_path = filepath.replace(".part", "") + ".info.json"
+        info_path = _strip_part_suffix(filepath) + ".info.json"
         if not os.path.exists(info_path):
-            base, _ = os.path.splitext(filepath.replace(".part", ""))
+            base, _ = os.path.splitext(_strip_part_suffix(filepath))
             info_path = base + ".info.json"
 
         if os.path.exists(info_path):

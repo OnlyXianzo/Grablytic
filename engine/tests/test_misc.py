@@ -61,6 +61,30 @@ class TestScanResumeCandidates:
             assert len(result["candidates"]) == 1
             assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
+    def test_recovers_url_when_part_appears_mid_filename(self):
+        # Regression: str.replace(".part", "") stripped EVERY occurrence,
+        # so "my.part.video.f137.part" looked up "my.video.f137.info.json".
+        with tempfile.TemporaryDirectory() as tmpdir:
+            part_path = os.path.join(tmpdir, "my.part.video.f137.part")
+            info_path = os.path.join(tmpdir, "my.part.video.f137.info.json")
+            open(part_path, "w").close()
+            with open(info_path, "w", encoding="utf-8") as f:
+                json.dump({"webpage_url": "https://youtube.com/watch?v=abc123"}, f)
+            result = scan_resume_candidates(tmpdir)
+            assert len(result["candidates"]) == 1
+            assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=abc123"
+
+    def test_recovers_url_for_fragment_style_names(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            part_path = os.path.join(tmpdir, "video.f302.mp4.part")
+            info_path = os.path.join(tmpdir, "video.f302.mp4.info.json")
+            open(part_path, "w").close()
+            with open(info_path, "w", encoding="utf-8") as f:
+                json.dump({"url": "https://youtube.com/watch?v=frag9"}, f)
+            result = scan_resume_candidates(tmpdir)
+            assert len(result["candidates"]) == 1
+            assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=frag9"
+
 
 class TestSiteProfiles:
     def test_load_default_profiles(self):
