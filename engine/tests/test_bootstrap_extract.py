@@ -10,6 +10,10 @@ from grablytic_engine.bootstrap import (
     _download_and_extract_binary,
     _safe_extract_tar,
     _safe_extract_zip,
+    _calculate_sha256,
+    _load_manifest,
+    _record_binary_sha,
+    _verify_binary_against_manifest,
 )
 
 
@@ -127,3 +131,68 @@ class TestWiredExtraction:
                 "https://example.com/tool.zip", sha,
                 str(tmp_path / "bin" / "tool"), str(tmp_path),
             )
+
+
+# ── Exploit-proof tests (T0-5: trojaned-binary trust gap) ─────────────
+
+
+class TestBinaryManifestVerification:
+    """Verify that _bootstrap_github_binary does NOT blindly trust existing
+    binaries. An existing binary must match the manifest to be trusted."""
+
+    @pytest.mark.unit
+    def test_unrecorded_binary_is_not_trusted(self, tmp_path):
+        """A binary with no manifest entry must NOT be trusted."""
+        cache_dir = str(tmp_path / "cache")
+        import os
+        os.makedirs(cache_dir, exist_ok=True)
+        binary = tmp_path / "bin" / "ffmpeg"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(b"#!/bin/sh\necho trojaned")
+        binary.chmod(0o755)
+        assert not _verify_binary_against_manifest(cache_dir, str(binary))
+
+    @pytest.mark.unit
+    def test_tampered_binary_is_not_trusted(self, tmp_path):
+        """A binary whose content differs from the manifest must NOT be trusted."""
+        cache_dir = str(tmp_path / "cache")
+        import os
+        os.makedirs(cache_dir, exist_ok=True)
+        binary = tmp_path / "bin" / "ffmpeg"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        # Record the legitimate binary
+        binary.write_bytes(b"legitimate binary content")
+        _record_binary_sha(cache_dir, str(binary))
+        assert _verify_binary_against_manifest(cache_dir, str(binary))
+        # Now trojan it
+        binary.write_bytes(b"trojaned binary content")
+        assert not _verify_binary_against_manifest(cache_dir, str(binary))
+
+    @pytest.mark.unit
+    def test_legitimate_binary_is_trusted(self, tmp_path):
+        """A binary matching its manifest entry IS trusted."""
+        cache_dir = str(tmp_path / "cache")
+        import os
+        os.makedirs(cache_dir, exist_ok=True)
+        binary = tmp_path / "bin" / "ffmpeg"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(b"real ffmpeg binary content")
+        _record_binary_sha(cache_dir, str(binary))
+        assert _verify_binary_against_manifest(cache_dir, str(binary))
+
+    @pytest.mark.unit
+    def test_manifest_persists_across_loads(self, tmp_path):
+        """Manifest survives save/load cycle."""
+        cache_dir = str(tmp_path / "cache")
+        import os
+        os.makedirs(cache_dir, exist_ok=True)
+        binary = tmp_path / "bin" / "ffmpeg"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(b"persistent binary")
+        _record_binary_sha(cache_dir, str(binary))
+        # Reload from disk
+        manifest = _load_manifest(cache_dir)
+        real_path = os.path.realpath(str(binary))
+        assert real_path in manifest
+        assert manifest[real_path] == _calculate_sha256(str(binary))
+
