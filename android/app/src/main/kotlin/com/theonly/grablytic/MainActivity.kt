@@ -36,7 +36,10 @@ class MainActivity : FlutterActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var methodChannel: MethodChannel? = null
-    private var sharedUrl: String? = null
+    // T2-6: FIFO of share URLs (was a single nullable var — two rapid
+    // shares overwrote, the second silently lost). Bounded: overflow evicts
+    // the oldest. Thread-safe for onNewIntent vs method-channel threads.
+    private val sharedUrls = java.util.concurrent.ConcurrentLinkedQueue<String>()
     private var py: Python? = null
     private val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, EngineEventListener>()
 
@@ -49,6 +52,8 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 4101
+        // T2-6: backlog bound for rapid shares (mirrors Dart _maxPendingShares).
+        private const val MAX_QUEUED_SHARES = 50
 
         private val MEDIA_EXTS = setOf(
             "mkv", "mp4", "webm", "m4v", "mov", "avi", "3gp", "3g2", "ts", "mts",
@@ -69,9 +74,11 @@ class MainActivity : FlutterActivity() {
             val urlRegex = "(https?://[\\w\\d:#@%/;$~()'*&+-=\\?\\.\\!\\[\\]]+)".toRegex()
             val match = urlRegex.find(sharedText)
             if (match != null) {
-                sharedUrl = match.value
+                val url = match.value
+                while (sharedUrls.size >= MAX_QUEUED_SHARES) sharedUrls.poll()
+                sharedUrls.offer(url)
                 scope.launch(Dispatchers.Main) {
-                    methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to sharedUrl))
+                    methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to url))
                 }
             }
         }
@@ -158,8 +165,9 @@ class MainActivity : FlutterActivity() {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "intent/get_shared" -> {
-                    result.success(mapOf("url" to sharedUrl))
-                    sharedUrl = null
+                    // Pops one URL per call (null when empty) so the Dart
+                    // drain loop collects every queued share, in order.
+                    result.success(mapOf("url" to sharedUrls.poll()))
                 }
                 // Open a URL with the system resolver (ACTION_VIEW): if an
                 // app registered for the host (e.g. the GitHub app for
