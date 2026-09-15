@@ -4,6 +4,16 @@ import 'package:grablytic/providers/download_provider.dart';
 
 DownloadNotifier _notifier() => DownloadNotifier(MockEngineService());
 
+class _RecordingEngine extends MockEngineService {
+  final setConcurrencyCalls = <int>[];
+
+  @override
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async {
+    setConcurrencyCalls.add(maxConcurrent);
+    return super.setConcurrency(maxConcurrent);
+  }
+}
+
 void main() {
   group('Download queue (Milestone 1)', () {
     test('queued event flips pending to queued', () {
@@ -66,6 +76,15 @@ void main() {
     test('syncConcurrency never throws', () async {
       final n = _notifier();
       await n.syncConcurrency(3);
+    });
+
+    test('setMaxConcurrent forwards to the engine (single impl)', () async {
+      // TEARDOWN-5: setMaxConcurrent duplicated syncConcurrency's body.
+      // Both must forward identically; syncConcurrency is canonical.
+      final mock = _RecordingEngine();
+      final n = DownloadNotifier(mock);
+      await n.setMaxConcurrent(4);
+      expect(mock.setConcurrencyCalls, [4]);
     });
   });
 }
