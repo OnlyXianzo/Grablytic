@@ -258,9 +258,12 @@ def build_ydl_opts(
         )
         opts["download_archive"] = archive
 
-    sleep = cfg.get("sleep_interval", "0")
-    if sleep != "0":
-        opts["sleep_interval"] = int(sleep)
+    # TEARDOWN-4: same guard as retries/fragments (T3-10) — a bare int()
+    # here turned a settings typo into a ValueError that killed the whole
+    # download start path. Garbage/out-of-range falls back to 0 (omitted).
+    sleep = _clamped_int(cfg, "sleep_interval", 0, 0, 3600)
+    if sleep:
+        opts["sleep_interval"] = sleep
 
     if cfg.get("no_playlist"):
         opts["noplaylist"] = True
