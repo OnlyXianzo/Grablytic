@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version tag to submit (e.g. v0.0.2). Required for manual runs: releases created by GITHUB_TOKEN do not fire the release trigger.'
+        required: false
+        default: ''
 
 jobs:
   winget:
@@ -25,6 +30,6 @@ jobs:
         uses: vedantmgoyal2009/winget-releaser@v2
         with:
           identifier: OnlyXianzo.Grablytic
-          version: ${{ github.event.release.tag_name || '0.0.1' }}
+          version: ${{ inputs.version || github.event.release.tag_name || '0.0.2' }}
           installers-regex: '\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
