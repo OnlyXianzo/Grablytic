@@ -211,3 +211,44 @@ class TestErrorLogCap:
             logger.error(f"boom {i}")
         assert len(logger.errors) <= 200
         assert logger.errors[-1] == "boom 2999"
+
+
+class TestPublicQueueScan:
+    @pytest.mark.unit
+    def test_last_known_uses_only_public_queue_api(self):
+        """T3-8: terminal filesize scan must not reach into CPython
+        internals (prog_q.mutex/prog_q.queue). A queue exposing only the
+        public API works, and every drained item is restored in order."""
+        import json as _json
+
+        class _PublicOnlyQueue:
+            def __init__(self):
+                self._items = []
+
+            def put(self, it):
+                self._items.append(it)
+
+            def get_nowait(self):
+                if not self._items:
+                    raise queue.Empty
+                return self._items.pop(0)
+
+        q = _PublicOnlyQueue()
+        assert not hasattr(q, "mutex") and not hasattr(q, "queue")
+        for i, name in enumerate(["a.mkv", "b.mkv", "c.mkv"]):
+            q.put(_json.dumps({
+                "filesize_bytes": (i + 1) * 1000,
+                "filename": f"/tmp/{name}",
+            }))
+        size, path = dl_mod._last_known_file_info(q)
+        assert size == 3000
+        assert path == "/tmp/c.mkv"
+        # Nothing lost, order preserved.
+        rest = []
+        try:
+            while True:
+                rest.append(q.get_nowait())
+        except queue.Empty:
+            pass
+        assert len(rest) == 3
+        assert _json.loads(rest[0])["filename"] == "/tmp/a.mkv"
