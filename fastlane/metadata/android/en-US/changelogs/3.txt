@@ -1,0 +1,4 @@
+Grablytic v0.0.2 (Build 3):
+• New play-mark brand across app, launchers, and store listings.
+• TrueStream → Grablytic identity (new application ID — fresh install).
+• Support contact moved to xianzo.help@gmail.com.
