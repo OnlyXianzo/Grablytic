@@ -11,7 +11,7 @@ class AboutScreen extends ConsumerWidget {
 
   static const _repoUrl = 'https://github.com/OnlyXianzo/Grablytic';
   static const _profileUrl = 'https://github.com/OnlyXianzo';
-  static const _feedbackEmail = 'truestream.support@gmail.com';
+  static const _feedbackEmail = 'xianzo.help@gmail.com';
 
   Future<void> _openOrCopy(BuildContext context, WidgetRef ref, String target) async {
     bool opened = false;
