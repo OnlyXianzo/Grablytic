@@ -479,7 +479,13 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
         opts["remote_components"] = ["ejs:github"]
         return
 
-    opts["remote_components"] = ["ejs:github"]
+    # T0-6: no usable JS runtime → request NO remote solver. yt-dlp's default
+    # is deny (`remote_components=()` upstream); the old fallthrough enabled
+    # `ejs:github` unconditionally, triggering a solver fetch nothing could
+    # execute. (With a runtime present, the branches above opt in — and the
+    # integrity of that fetched solver is yt-dlp's own SHA3-512 + version pin
+    # in yt_dlp/extractor/youtube/jsc/_builtin/ejs.py, NOT our stub gate in
+    # po_token.py, which covers only local inert stubs. See HQ5.)
 
 
 def shutil_which(cmd):
