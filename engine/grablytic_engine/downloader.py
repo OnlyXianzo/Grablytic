@@ -759,25 +759,48 @@ def clear_download_archive(archive_path: str | None = None) -> dict:
     re-downloaded (recovery for delete-file-then-redownload when the archive
     still lists the video — Seal #2065 workaround made explicit).
 
-    Scope: removes exactly one resolved file inside the engine data dir (or
-    the explicit archive_path when given). Never deletes directories.
-    Returns {'success', 'removed': bool, 'path': str|None} — never raises.
+    Scope: removes exactly one resolved file **strictly inside** the engine
+    data dir. When ``archive_path`` is given it is resolved and verified to
+    be contained in ``data_dir`` via real-path containment (symlink-safe,
+    not substring prefix). Rejects paths outside data_dir, directories,
+    and non-files. Returns {'success', 'removed': bool, 'path': str|None}.
+    Never raises.
     """
     try:
         import os as _os
-        path = archive_path
-        if not path:
-            try:
-                data_dir = get_paths().get("data_dir")
-            except Exception:
-                data_dir = None
-            if not data_dir:
-                return {"success": False, "removed": False, "path": None,
-                        "error_message": "Data dir not configured"}
-            path = _os.path.join(data_dir, "download_archive.txt")
-        # Confine: regular file only, never a directory.
+
+        # Always need data_dir for containment checks.
+        try:
+            data_dir = get_paths().get("data_dir")
+        except Exception:
+            data_dir = None
+        if not data_dir:
+            return {"success": False, "removed": False, "path": None,
+                    "error_message": "Data dir not configured"}
+
+        resolved_data_dir = _os.path.realpath(data_dir)
+
+        if archive_path:
+            path = _os.path.realpath(archive_path)
+        else:
+            path = _os.path.realpath(
+                _os.path.join(data_dir, "download_archive.txt")
+            )
+
+        # ── Containment gate ──────────────────────────────────────────
+        # Verify the resolved path is strictly inside the resolved
+        # data_dir.  Use os.path.commonpath to avoid the classic
+        # "/data/dir_evil" matching prefix "/data/dir" substring bug.
+        # Also reject paths that resolve to data_dir itself (must be a
+        # *child*, not the dir).
+        if not path.startswith(resolved_data_dir + _os.sep):
+            return {"success": False, "removed": False, "path": None,
+                    "error_message": "Path escapes data directory"}
+
+        # Regular file only, never a directory or special file.
         if not _os.path.isfile(path):
             return {"success": True, "removed": False, "path": path}
+
         _os.remove(path)
         return {"success": True, "removed": True, "path": path}
     except Exception as exc:
