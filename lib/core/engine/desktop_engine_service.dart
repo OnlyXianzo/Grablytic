@@ -8,6 +8,28 @@ import 'engine_service.dart';
 
 const _uuid = Uuid();
 
+/// Backoff before the next engine start after [consecutiveFailures]
+/// abnormal exits: 1s, 2s, 4s, capped at 8s. Zero/negative → zero delay
+/// so the normal first-start path is unaffected. Pure policy, unit-tested
+/// without spawning processes.
+@visibleForTesting
+Duration desktopRestartBackoff(int consecutiveFailures) {
+  if (consecutiveFailures <= 0) return Duration.zero;
+  final shift = (consecutiveFailures - 1).clamp(0, 3);
+  return Duration(seconds: 1 << shift);
+}
+
+/// Whether a stale last-exit timestamp should reset the crash counter.
+/// Exits spaced further than [window] apart are independent incidents, not
+/// a crash loop. Pure predicate, unit-tested.
+@visibleForTesting
+bool shouldResetCrashCounter({
+  required DateTime? lastExitAt,
+  required DateTime now,
+  Duration window = const Duration(minutes: 5),
+}) =>
+    lastExitAt == null || now.difference(lastExitAt) > window;
+
 class DesktopEngineService implements EngineService {
   final String _pythonPath;
   final String? _workingDirectory;
@@ -25,6 +47,17 @@ class DesktopEngineService implements EngineService {
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 3;
   static const _requestTimeout = Duration(seconds: 30);
+
+  /// Abnormal exits inside [_crashWindow] accumulate here. Unlike
+  /// [_reconnectAttempts] (reset on every successful start), this is only
+  /// reset by the time-window check in [_ensureRunning] — otherwise an
+  /// engine that starts fine then dies instantly would loop forever.
+  int _consecutiveAbnormalExits = 0;
+  DateTime? _lastAbnormalExitAt;
+  static const _crashWindow = Duration(minutes: 5);
+
+  @visibleForTesting
+  int get consecutiveAbnormalExits => _consecutiveAbnormalExits;
 
   DesktopEngineService({
     String pythonPath = 'python',
@@ -114,6 +147,16 @@ class DesktopEngineService implements EngineService {
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       throw Exception('Engine failed to start after $_maxReconnectAttempts attempts');
     }
+    // Crash-loop breaker: exits spaced wider than the window are
+    // independent incidents; rapid ones accumulate and refuse to restart.
+    if (shouldResetCrashCounter(
+        lastExitAt: _lastAbnormalExitAt, now: DateTime.now(), window: _crashWindow)) {
+      _consecutiveAbnormalExits = 0;
+    }
+    if (_consecutiveAbnormalExits >= _maxReconnectAttempts) {
+      throw Exception(
+          'Engine crashed $_consecutiveAbnormalExits times in quick succession; refusing to restart');
+    }
 
     if (_startFuture != null) {
       await _startFuture;
@@ -130,6 +173,10 @@ class DesktopEngineService implements EngineService {
 
   Future<void> _doEnsureRunning() async {
     _reconnectAttempts++;
+    // Back off after abnormal exits so a crash-looping engine cannot
+    // hot-spin process spawns. Zero crashes → zero delay (normal path).
+    final backoff = desktopRestartBackoff(_consecutiveAbnormalExits);
+    if (backoff > Duration.zero) await Future.delayed(backoff);
 
     final executable = await ensureDependencies(await _resolvePythonPath());
 
@@ -193,6 +240,11 @@ class DesktopEngineService implements EngineService {
     _process = null;
     _running = false;
     oldProcess?.kill();
+    // Count the abnormal exit for the crash-loop breaker in
+    // [_ensureRunning]. Deliberately NOT reset on next successful start —
+    // only the time-window check resets it (see _ensureRunning).
+    _consecutiveAbnormalExits++;
+    _lastAbnormalExitAt = DateTime.now();
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Engine process exited'));
