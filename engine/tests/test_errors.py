@@ -103,3 +103,41 @@ class TestClassifyError:
         exc = Exception("file sharing violation")
         err = classify_error(exc)
         assert err.error_type == "ERROR_FILE_LOCKED"
+
+
+class TestClassifyPrecision:
+    """T3-14 engine half: precise classification (no substring false
+    positives, no congestion→VPN misdirection) + sanitized messages."""
+
+    def test_drm_filename_not_drm(self):
+        err = classify_error(Exception("ERROR: file 'mydrmvideo.mkv' not found"))
+        assert err.error_type != "ERROR_DRM"
+
+    def test_drm_word_still_detected(self):
+        err = classify_error(Exception("This video is DRM protected"))
+        assert err.error_type == "ERROR_DRM"
+        assert err.recoverable is False
+
+    def test_timeout_is_network_not_ssl(self):
+        err = classify_error(Exception("Connection timed out after 30 seconds"))
+        assert err.error_type == "ERROR_NETWORK"
+        assert err.suggests_vpn is False
+
+    def test_dns_is_network_not_ssl(self):
+        err = classify_error(Exception("Name or service not known"))
+        assert err.error_type == "ERROR_NETWORK"
+        assert err.suggests_vpn is False
+
+    def test_genuine_ssl_stays_ssl(self):
+        err = classify_error(Exception("certificate verify failed: self signed"))
+        assert err.error_type == "ERROR_SSL_BLOCKED"
+        assert err.suggests_vpn is True
+
+    def test_proxy_creds_scrubbed_from_message(self):
+        err = classify_error(Exception("Failed: http://user:s3cret@proxy:8080/"))
+        assert "s3cret" not in err.message
+        assert err.message
+
+    def test_giant_message_capped(self):
+        err = classify_error(Exception("x" * 5000))
+        assert len(err.message) <= 520
