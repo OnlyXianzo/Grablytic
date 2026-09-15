@@ -547,3 +547,30 @@ def test_thumbnails_opt_out_writes_no_thumbnail():
     assert "EmbedThumbnail" not in keys
     # Metadata PP must still exist (independent feature).
     assert "FFmpegMetadata" in keys
+
+
+class TestNumericGuards:
+    """T3-10: unguarded int() on IPC params killed threads (UNKNOWN) or hung
+    forever; 0-speed throttled downloads to zero (DoS)."""
+
+    def test_garbage_retries_fall_back(self):
+        opts = build_ydl_opts(config={"retries": "abc", "fragment_retries": "xyz"})
+        assert opts["retries"] == 10
+        assert opts["fragment_retries"] == 10
+
+    def test_absurd_retries_clamped(self):
+        opts = build_ydl_opts(config={"retries": 10 ** 9, "fragment_retries": 10 ** 9})
+        assert 0 <= opts["retries"] <= 30
+        assert 0 <= opts["fragment_retries"] <= 100
+
+    def test_absurd_socket_timeout_omitted(self):
+        # Out-of-range falls back to omission (yt-dlp default applies),
+        # matching the established invalid-value contract above.
+        opts = build_ydl_opts(config={"socket_timeout": 10 ** 9})
+        assert "socket_timeout" not in opts
+
+    def test_zero_speed_rejected(self, tmp_path):
+        args = _aria2c_args(tmp_path, aria2c_max_speed="0")
+        assert not any(a.startswith("--max-download-limit") for a in args)
+        args = _aria2c_args(tmp_path, aria2c_max_speed="0K")
+        assert not any(a.startswith("--max-download-limit") for a in args)
