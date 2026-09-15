@@ -85,6 +85,42 @@ class TestScanResumeCandidates:
             assert len(result["candidates"]) == 1
             assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=frag9"
 
+    def test_caps_candidates_at_limit_freshest_first(self):
+        import time as _time
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = int(_time.time()) - 1000
+            for i in range(55):
+                path = os.path.join(tmpdir, f"v{i:03d}.mp4.part")
+                open(path, "w").close()
+                os.utime(path, (base + i, base + i))
+            result = scan_resume_candidates(tmpdir)
+            assert result["total"] == 55
+            assert result["truncated"] is True
+            assert len(result["candidates"]) == 50
+            # Freshest first: v054 newest, v005 oldest kept.
+            assert result["candidates"][0]["filename"] == "v054.mp4.part"
+            assert result["candidates"][-1]["filename"] == "v005.mp4.part"
+
+    def test_no_truncation_under_limit_reports_totals(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "a.part"), "w").close()
+            result = scan_resume_candidates(tmpdir)
+            assert result["total"] == 1
+            assert result["truncated"] is False
+            assert len(result["candidates"]) == 1
+
+    def test_expired_flags_survive_scan(self):
+        # The UI renders expired rows distinctly; the scan must keep
+        # flagging, never silently drop.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "old.part")
+            with open(path, "w") as f:
+                f.write("data")
+            os.utime(path, (1000, 1000))
+            result = scan_resume_candidates(tmpdir)
+            assert result["candidates"][0]["expired"] is True
+            assert result["total"] == 1
+
 
 class TestSiteProfiles:
     def test_load_default_profiles(self):

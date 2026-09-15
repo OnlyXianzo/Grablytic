@@ -3,6 +3,7 @@ import threading
 import time
 import os
 import queue as _queue
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 
@@ -50,6 +51,29 @@ def set_max_concurrent(n) -> dict:
         n = _DEFAULT_MAX_CONCURRENT
     _max_concurrent = max(1, min(_ABSOLUTE_MAX_CONCURRENT, n))
     return {"success": True, "max_concurrent": _max_concurrent}
+
+
+def _new_slot_token() -> str:
+    """Unique generation identity for one slot admission (BRUTAL-2a)."""
+    return uuid.uuid4().hex
+
+
+def _close_own_slot(download_id: str, slot_token) -> bool:
+    """Stamp finished_at only if the entry still belongs to this generation.
+
+    Returns True when this caller owned (and just closed) the slot. A stale
+    worker whose id was reused, or a watchdog firing after a fast retry,
+    gets False and must not emit, stamp, or pump. Legacy records without a
+    token match token None (today's unconditional stamp behavior).
+    """
+    with _downloads_lock:
+        info = _active_downloads.get(download_id)
+        if info is None:
+            return False
+        if info.get("slot_token") != slot_token:
+            return False
+        info["finished_at"] = datetime.now(timezone.utc)
+        return True
 
 
 def _running_count() -> int:
@@ -103,9 +127,11 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
     download_id = entry["download_id"]
 
     if cancel_event.is_set():
+        # BRUTAL-2a: close only our own generation (helper locks internally).
         with _downloads_lock:
-            if download_id in _active_downloads:
-                _active_downloads[download_id]["finished_at"] = datetime.now(timezone.utc)
+            rec = _active_downloads.get(download_id)
+            own_token = rec.get("slot_token") if isinstance(rec, dict) else None
+        _close_own_slot(download_id, own_token)
         terminal = json.dumps({
             "type": "event",
             "event": "cancelled",
@@ -141,13 +167,18 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                 "audio_only": _is_audio_mode(entry.get("config")),
                 "thread": None,  # set after start
                 "started_at": datetime.now(timezone.utc),
+                "slot_token": _new_slot_token(),
             }
+        # BRUTAL-2a: generation identity is fixed at registration (before
+        # start) so the worker's finally-block can prove ownership even if
+        # the entry is replaced under the same id mid-flight.
+        slot_token = _active_downloads[download_id].get("slot_token")
     t = threading.Thread(
         target=download_thread,
         args=(entry["url"], download_id, entry["config"],
               entry["network_type"], entry["progress_queue"],
               entry["result_queue"], cancel_event,
-              entry["event_callback"]),
+              entry["event_callback"], slot_token),
         daemon=True,
     )
     t.start()
@@ -179,6 +210,7 @@ def _pump_queue() -> None:
                 "audio_only": _is_audio_mode(entry.get("config")),
                 "thread": None,
                 "started_at": datetime.now(timezone.utc),
+                "slot_token": _new_slot_token(),
             }
         try:
             _spawn_thread(entry)
@@ -268,6 +300,16 @@ def _cleanup_loop():
                     fin_at = info.get("finished_at")
                     if fin_at:
                         res_q = info.get("result_queue")
+                        # NOTE (BRUTAL-2c audit): Queue.empty() is safe HERE
+                        # because (a) this whole scan runs under
+                        # _downloads_lock, same lock as admission, so no
+                        # entry swap can interleave the check and the pop;
+                        # (b) every admission mints FRESH queue objects, so a
+                        # reused id can never append to this res_q; (c) the
+                        # worker always puts its terminal BEFORE stamping
+                        # finished_at, so empty()==True on a finished entry
+                        # means the result was read (or never existed) — it
+                        # cannot mean "result still in flight".
                         # Clean up immediately if the result has been read by client
                         if res_q and res_q.empty():
                             to_remove.append(did)
@@ -522,6 +564,7 @@ def download_thread(
     result_queue: _queue.Queue | None = None,
     cancel_event: threading.Event | None = None,
     event_callback=None,
+    slot_token=None,
 ):
     with download_context(download_id):
         # Android bridge delivers config as a JSON string (Chaquopy Maps are
@@ -834,14 +877,17 @@ def download_thread(
                 })
         finally:
             log.clear_context()
-            with _downloads_lock:
-                if download_id in _active_downloads:
-                    _active_downloads[download_id]["finished_at"] = datetime.now(timezone.utc)
-            # Free the slot, then promote the next FIFO-parked entry (if any).
-            try:
-                _pump_queue()
-            except Exception:
-                pass
+            # BRUTAL-2a: stamp + promote only our own generation. A stale
+            # worker exiting after a same-id retry must not mark the fresh
+            # download terminal (cleanup would reap it mid-flight) nor
+            # over-admit via an extra pump.
+            owned = _close_own_slot(download_id, slot_token)
+            if owned:
+                # Free the slot, then promote the next FIFO-parked entry (if any).
+                try:
+                    _pump_queue()
+                except Exception:
+                    pass
 
 
 def start_download(
@@ -957,6 +1003,7 @@ def start_download(
                 "audio_only": audio_only,
                 "thread": None,
                 "started_at": datetime.now(timezone.utc),
+                "slot_token": _new_slot_token(),
             }
 
     entry = {

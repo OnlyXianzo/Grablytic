@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'engine_codec.dart';
 import 'engine_service.dart';
 
 class MockEngineService implements EngineService {
@@ -324,19 +325,31 @@ class MockEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> batteryExemptionStatus() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> notificationPermissionStatus() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> queueStatus() async => {
@@ -358,11 +371,17 @@ class MockEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> openNotificationSettings() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> openUrl(String url) async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> syncSchedule({

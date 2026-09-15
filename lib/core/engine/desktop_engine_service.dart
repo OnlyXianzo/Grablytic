@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
+import 'engine_codec.dart';
 import 'engine_service.dart';
 
 const _uuid = Uuid();
@@ -293,7 +294,13 @@ class DesktopEngineService implements EngineService {
       } else {
         completer.complete(data['result'] as Map<String, dynamic>? ?? {});
       }
-    } catch (_) {}
+    } catch (e) {
+      // BRUTAL-6: malformed engine stdout lines used to vanish. Protocol
+      // violations are engine bugs — surface them (truncated) instead.
+      final preview = line.length > 200 ? '${line.substring(0, 200)}…' : line;
+      AppLogger.warn('Engine protocol: unparseable stdout line: $preview',
+          tag: 'engine');
+    }
   }
 
   Future<bool> _hasYtDlp(String pythonPath) async {
@@ -393,11 +400,11 @@ class DesktopEngineService implements EngineService {
     final completer = Completer<Map<String, dynamic>>();
     _pending[id] = completer;
 
-    final request = jsonEncode({
-      'id': id,
-      'method': method,
-      'params': params,
-    });
+    final request = EngineEnvelope.encodeRequest(
+      id: id,
+      method: method,
+      params: params,
+    );
 
     final previousQueue = _requestQueue;
     final currentTask = () async {
@@ -432,13 +439,13 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> bootstrap() async {
-    return _sendRequest('engine/bootstrap', {});
+    return _sendRequest(EngineMethods.bootstrap, {});
   }
 
   @override
   Future<void> setPaths(Map<String, dynamic> paths) async {
     _dataDir = paths['data_dir'] as String?;
-    await _sendRequest('paths/set', paths);
+    await _sendRequest(EngineMethods.setPaths, paths);
   }
 
   @override
@@ -448,7 +455,7 @@ class DesktopEngineService implements EngineService {
     required Map<String, dynamic> config,
     required String networkType,
   }) async {
-    return _sendRequest('download/start', {
+    return _sendRequest(EngineMethods.startDownload, {
       'url': url,
       'download_id': downloadId,
       'config': config,
@@ -458,7 +465,7 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> cancelDownload(String downloadId) async {
-    return _sendRequest('download/cancel', {
+    return _sendRequest(EngineMethods.cancelDownload, {
       'download_id': downloadId,
     });
   }
@@ -475,7 +482,7 @@ class DesktopEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) async {
-    return _sendRequest('formats/get', {
+    return _sendRequest(EngineMethods.getFormats, {
       'url': url,
       'config': config,
     });
@@ -486,7 +493,7 @@ class DesktopEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) async {
-    return _sendRequest('playlist/info', {
+    return _sendRequest(EngineMethods.playlistInfo, {
       'url': url,
       'config': config,
     });
@@ -499,7 +506,7 @@ class DesktopEngineService implements EngineService {
     int limit = 20,
     required Map<String, dynamic> config,
   }) async {
-    return _sendRequest('search/query', {
+    return _sendRequest(EngineMethods.searchQuery, {
       'query': query,
       'site': site,
       'limit': limit,
@@ -515,19 +522,19 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir}) async {
-    return _sendRequest('resume/scan', {
+    return _sendRequest(EngineMethods.scanResume, {
       'cache_dir': cacheDir,
     });
   }
 
   @override
   Future<Map<String, dynamic>> updateCheck() async {
-    return _sendRequest('engine/update_check', {});
+    return _sendRequest(EngineMethods.updateCheck, {});
   }
 
   @override
   Future<Map<String, dynamic>> setUpdateChannel(String channel) async {
-    return _sendRequest('engine/set_update_channel', {
+    return _sendRequest(EngineMethods.setUpdateChannel, {
       'channel': channel,
     });
   }
@@ -541,7 +548,10 @@ class DesktopEngineService implements EngineService {
     // ~/Downloads/Grablytic-logs/. Never throws (contract).
     try {
       final src = File(sourcePath);
-      if (!await src.exists()) return {'success': false};
+      if (!await src.exists()) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT', message: 'Log file not found');
+      }
       Directory base;
       try {
         // path_provider is intentionally NOT imported here to keep the
@@ -551,7 +561,9 @@ class DesktopEngineService implements EngineService {
             '.';
         base = Directory('$home/Downloads/Grablytic-logs');
       } catch (_) {
-        return {'success': false};
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'Could not resolve Downloads folder');
       }
       await base.create(recursive: true);
       var dest = File('${base.path}/$displayName');
@@ -563,62 +575,84 @@ class DesktopEngineService implements EngineService {
       await src.copy(dest.path);
       return {'success': true, 'path': dest.path};
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
     }
   }
 
   @override
   Future<Map<String, dynamic>> batteryExemptionStatus() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> notificationPermissionStatus() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> queueStatus() async {
     try {
-      return await _sendRequest('download/queue_status', {});
+      return await _sendRequest(EngineMethods.queueStatus, {});
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
     }
   }
 
   @override
   Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async {
     try {
-      return await _sendRequest('download/set_concurrency', {
+      return await _sendRequest(EngineMethods.setConcurrency, {
         'max_concurrent': maxConcurrent,
       });
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
     }
   }
 
   @override
   Future<Map<String, dynamic>> clearArchive() async {
     try {
-      return await _sendRequest('download/clear_archive', {});
+      return await _sendRequest(EngineMethods.clearArchive, {});
     } catch (_) {
-      return {'success': false};
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
     }
   }
 
   @override
   Future<Map<String, dynamic>> openNotificationSettings() async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> openUrl(String url) async =>
-      {'success': false, 'supported': false};
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
 
   @override
   Future<Map<String, dynamic>> syncSchedule({
