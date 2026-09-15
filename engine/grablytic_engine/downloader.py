@@ -139,17 +139,28 @@ def _pump_queue() -> None:
             if _running_count() >= _max_concurrent or not _pending_queue:
                 return
             entry = _pending_queue.pop(0)
-            if entry["download_id"] in _active_downloads:
+            did = entry["download_id"]
+            if did in _active_downloads and not _active_downloads[did].get("finished_at"):
                 # Superseded (cancelled/replaced) while parked — skip.
                 continue
+            # T1-2 fix: Atomically move from _pending_queue into _active_downloads
+            # under the exact same lock so there is no window where the ID is in neither.
+            _active_downloads[did] = {
+                "cancel_event": entry["cancel_event"],
+                "progress_queue": entry["progress_queue"],
+                "result_queue": entry["result_queue"],
+                "url": entry["url"],
+                "thread": None,
+                "started_at": datetime.now(timezone.utc),
+            }
         try:
             _spawn_thread(entry)
-            if entry.get("event_callback") is not None:
+            if entry.get("event_callback") is not None and not entry["cancel_event"].is_set():
                 try:
                     _emit_event(entry["event_callback"], json.dumps({
                         "type": "event",
                         "event": "downloading",
-                        "download_id": entry["download_id"],
+                        "download_id": did,
                         "promoted_from_queue": True,
                     }))
                 except Exception:
