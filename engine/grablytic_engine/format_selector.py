@@ -1,6 +1,47 @@
+import re
+
+# T0-3: allowlist for a SINGLE concrete yt-dlp format ID. The `format`
+# option is a selector-expression language (`/ + , ( )` are structural,
+# `[...]` opens filters, `all`/`mergeall` amplify one download into many —
+# cf. YoutubeDL.build_format_selector, ALLOWED_OPS). Interpolating an
+# IPC-supplied ID verbatim lets one config value become a whole expression
+# (fallback chains, multi-download, filter predicates). So an explicit ID
+# must match this class and nothing else; anything richer is rejected and
+# the caller fails closed to the auto ladder. `-` stays legal (the standard
+# intra-ID join delimiter, e.g. `247-dashy`); `.`/`_` cover `sb0`-style and
+# `hls_aac_160k`-style IDs. There is no upstream canonical regex (format IDs
+# are extractor-specific free text) — this gate is novel defense-in-depth,
+# not copied practice, and is deliberately narrower than the wild.
+_FORMAT_ID_RE = re.compile(r"[A-Za-z0-9_.\-]{1,64}\Z")
+
+# Bare selector atoms that never select by ID: `all`/`mergeall` download
+# many formats (availability/cost amplification), the rest select a keyword
+# instead of the concrete ID. Only the amplifying two are rejected — a
+# coincidental `best` still resolves to *something* safe (single stream),
+# while `all` must never be reachable from an explicit-ID slot.
+_AMPLIFYING_KEYWORDS = frozenset({"all", "mergeall"})
+
+
+def is_safe_format_id(value) -> bool:
+    """True iff `value` is a single concrete format ID (never an expression)."""
+    if not isinstance(value, str):
+        return False
+    if not _FORMAT_ID_RE.match(value):
+        return False
+    if value.lower() in _AMPLIFYING_KEYWORDS:
+        return False
+    return True
+
+
 def build_format_string(cfg: dict) -> str:
-    explicit_vid = cfg.get("explicit_format_id")
-    explicit_aid = cfg.get("explicit_audio_format_id")
+    raw_vid = cfg.get("explicit_format_id")
+    raw_aid = cfg.get("explicit_audio_format_id")
+    # T0-3: validate BEFORE interpolation — an invalid ID is treated as
+    # absent, so a smuggled expression can never reach the `f"{vid}+{aid}"`
+    # join below. `format_code` (deliberate raw power-user override) is
+    # untouched by this gate by design.
+    explicit_vid = raw_vid if is_safe_format_id(raw_vid) else None
+    explicit_aid = raw_aid if is_safe_format_id(raw_aid) else None
 
     if explicit_vid and explicit_aid:
         return f"{explicit_vid}+{explicit_aid}/{explicit_vid}/best"

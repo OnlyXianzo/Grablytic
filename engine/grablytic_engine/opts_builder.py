@@ -127,8 +127,16 @@ def build_ydl_opts(
         tmpl = DEFAULT_CFG["output_tmpl"]
 
     fmt = override_format or build_format_string(cfg)
-    explicit_vid = cfg.get("explicit_format_id")
-    explicit_aid = cfg.get("explicit_audio_format_id")
+    # T0-3: an explicit audio ID must be a VALIDATED single ID before it may
+    # influence mode selection — otherwise `explicit_audio_format_id: "all"`
+    # would both inject the selector and flip the download into extract-audio.
+    from grablytic_engine.format_selector import is_safe_format_id as _safe_fmt_id
+    _raw_vid = cfg.get("explicit_format_id")
+    _raw_aid = cfg.get("explicit_audio_format_id")
+    explicit_vid = _raw_vid if _safe_fmt_id(_raw_vid) else None
+    explicit_aid = _raw_aid if _safe_fmt_id(_raw_aid) else None
+    if (_raw_vid and not explicit_vid) or (_raw_aid and not explicit_aid):
+        _tmpl_log.warn("Ignoring unsafe explicit format ID, using auto ladder")
     has_audio_only_explicit = bool(explicit_aid) and not bool(explicit_vid)
     is_audio = override_audio if override_audio is not None else (bool(cfg.get("audio_only")) or has_audio_only_explicit)
     container = override_container or cfg["container"]
@@ -269,15 +277,17 @@ def build_ydl_opts(
         opts["extractor_args"].setdefault("youtube", {})
         opts["extractor_args"]["youtube"]["po_token"] = [paths["po_token"]]
 
-    if cfg.get("explicit_format_id"):
-        vid = cfg["explicit_format_id"]
-        aid = cfg.get("explicit_audio_format_id")
-        if aid:
-            opts["format"] = f"{vid}+{aid}"
+    # T0-3: `explicit_vid`/`explicit_aid` above are already allowlisted —
+    # this join can only ever produce `<id>`, `<id>+<id>`, never an injected
+    # expression. Invalid IDs were warned about at mode-selection time and
+    # are simply absent here, so `fmt` (auto ladder) survives untouched.
+    if explicit_vid:
+        if explicit_aid:
+            opts["format"] = f"{explicit_vid}+{explicit_aid}"
         else:
-            opts["format"] = vid
-    elif cfg.get("explicit_audio_format_id"):
-        opts["format"] = cfg["explicit_audio_format_id"]
+            opts["format"] = explicit_vid
+    elif explicit_aid:
+        opts["format"] = explicit_aid
 
     # Post-processing — only one of merge/remux, never both
     if paths.get("ffmpeg_path"):
