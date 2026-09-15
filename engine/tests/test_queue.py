@@ -147,3 +147,42 @@ def test_concurrency_clamped_1_to_5():
         assert dl_mod.get_queue_status()["max_concurrent"] == 3
     finally:
         dl_mod.set_max_concurrent(2)
+
+
+def test_register_before_start_race(monkeypatch):
+    """T1-1: Prove that _active_downloads is populated BEFORE t.start() runs.
+    
+    A fast cancel issued during t.start() must find the download in
+    _active_downloads and succeed, rather than hitting NOT_FOUND.
+    """
+    _reset()
+    seen_in_active_during_start = []
+    cancel_result_during_start = []
+
+    class _VerifyingThread:
+        def __init__(self, *args, **kwargs):
+            self.download_id = kwargs.get("args", (None, None))[1]
+
+        def start(self):
+            # Inside start(), the download MUST already be registered in _active_downloads
+            with dl_mod._downloads_lock:
+                registered = self.download_id in dl_mod._active_downloads
+                seen_in_active_during_start.append(registered)
+            # A fast cancel issued in this exact window must find it
+            res = dl_mod.cancel_download(self.download_id)
+            cancel_result_during_start.append(res)
+
+    monkeypatch.setattr(dl_mod.threading, "Thread", _VerifyingThread)
+    r = dl_mod.start_download(url="https://x.test/1", download_id="race-1")
+    try:
+        assert r["success"] is True
+        assert len(seen_in_active_during_start) == 1
+        assert seen_in_active_during_start[0] is True, (
+            "Registration happened after start()! Classic register-after-start race."
+        )
+        assert len(cancel_result_during_start) == 1
+        assert cancel_result_during_start[0]["success"] is True
+        assert cancel_result_during_start[0].get("error_type") != "ERROR_DOWNLOAD_NOT_FOUND"
+    finally:
+        dl_mod._active_downloads.pop("race-1", None)
+
