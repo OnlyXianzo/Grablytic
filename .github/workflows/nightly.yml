@@ -1,0 +1,113 @@
+# Nightly build — full matrix on schedule, rolling `nightly` GitHub release.
+#
+# Standard artifact naming system (single source of truth for this repo):
+#   Android:  grablytic-v<ver>-nightly-<YYYYMMDD>-<sha>-<variant>.apk
+#             e.g. grablytic-v0.0.2-nightly-20260916-abc1234-arm64-deno.apk
+#   Linux:    grablytic-<ver>-nightly-<YYYYMMDD>-<sha>-linux-<arch>.tar.gz
+#             grablytic-<ver>-nightly-<YYYYMMDD>-<sha>-1-<arch>.pkg.tar.zst
+#             (.deb/.rpm keep native conventions + nightly suffix where placed)
+#   Windows:  grablytic-windows-x64-nightly-<YYYYMMDD>-<sha>.zip
+# Release builds use the identical scheme with an empty suffix, so release
+# asset names are unchanged (Obtainium-safe).
+#
+# Pipeline: verify (reused) must pass before any build starts — a red tree
+# produces no nightly and uploads nothing. The rolling `nightly` tag is
+# refreshed in place (old dated assets deleted first); it is a prerelease.
+# Keystore signing flows through automatically when KEYSTORE_BASE64 is set.
+
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  prep:
+    name: Compute Nightly Suffix
+    runs-on: ubuntu-latest
+    outputs:
+      suffix: ${{ steps.stamp.outputs.suffix }}
+      datestamp: ${{ steps.stamp.outputs.datestamp }}
+      sha: ${{ steps.stamp.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: stamp
+        run: |
+          DATESTAMP=$(date -u +%Y%m%d)
+          SHA=$(git rev-parse --short HEAD)
+          echo "datestamp=$DATESTAMP" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "suffix=-nightly-$DATESTAMP-$SHA" >> $GITHUB_OUTPUT
+          echo "Nightly suffix: -nightly-$DATESTAMP-$SHA"
+
+  verify:
+    name: Verify (gate)
+    needs: [prep]
+    uses: ./.github/workflows/verify.yml
+
+  build:
+    name: Build Matrix
+    needs: [prep, verify]
+    uses: ./.github/workflows/build.yml
+    with:
+      asset_suffix: ${{ needs.prep.outputs.suffix }}
+      publish_to_release: false
+    secrets: inherit
+
+  publish-nightly:
+    name: Publish Rolling Nightly Release
+    needs: [prep, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all nightly artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: nightly-artifacts
+
+      - name: Stage nightly assets
+        run: |
+          mkdir -p nightly_assets
+          find nightly-artifacts -type f \( -name "*.apk" -o -name "*.deb" -o -name "*.rpm" -o -name "*.pkg.tar.zst" -o -name "*.tar.gz" -o -name "*.zip" \) | while read -r file; do
+            fname=$(basename "$file")
+            echo "Staging: $fname"
+            cp "$file" "nightly_assets/$fname"
+          done
+          echo "=== Nightly Assets (${{ needs.prep.outputs.suffix }}) ==="
+          ls -lh nightly_assets/
+
+      - name: Refresh rolling nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUFFIX: ${{ needs.prep.outputs.suffix }}
+          DATESTAMP: ${{ needs.prep.outputs.datestamp }}
+          SHA: ${{ needs.prep.outputs.sha }}
+        run: |
+          if ! gh release view nightly >/dev/null 2>&1; then
+            gh release create nightly nightly_assets/* \
+              --title "Grablytic Nightly $DATESTAMP ($SHA)" \
+              --notes "Rolling nightly build from main @ $SHA. Pre-release: expect rough edges." \
+              --prerelease
+          else
+            # Dated names accumulate — clear last night's assets first.
+            for asset in $(gh release view nightly --json assets -q '.assets[].name'); do
+              gh release delete-asset nightly "$asset" --yes
+            done
+            gh release upload nightly nightly_assets/* --clobber
+            gh release edit nightly \
+              --title "Grablytic Nightly $DATESTAMP ($SHA)" \
+              --notes "Rolling nightly build from main @ $SHA. Pre-release: expect rough edges." \
+              --prerelease
+          fi
