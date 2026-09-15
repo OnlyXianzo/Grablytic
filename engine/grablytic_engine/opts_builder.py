@@ -67,7 +67,11 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     aria_path = get_paths().get("aria2c_path")
     # use_aria2 is the legacy alias — honor either flag.
     aria_on = config.get("aria2c_enabled") or config.get("use_aria2")
-    if aria_on and aria_path and os.path.isfile(aria_path):
+    # T0-2: re-validate at the exec site (admission in set_paths is not the
+    # last word — _paths can hold placeholders or legacy values). isfile +
+    # X_OK, same bar as yt-dlp's own _find_exe (F_OK|X_OK).
+    if (aria_on and aria_path and os.path.isfile(aria_path)
+            and os.access(aria_path, os.X_OK)):
         # Defense in depth: external_downloader_args is passed verbatim to
         # the child argv (no shell involved), so clamp/validate config values
         # instead of trusting them blindly.
@@ -89,8 +93,15 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
                     f"Ignoring invalid aria2c_max_speed value: {max_speed!r}"
                 )
         # CVE-2026-50574: Avoid using aria2c for DASH/HLS fragmented manifests
+        # T0-2: pin the ABSOLUTE validated binary, not the bare name "aria2c".
+        # Verified against installed yt-dlp (downloader/__init__.py +
+        # external.py): the dict value flows to get_external_downloader
+        # (basename→Aria2cFD class lookup works with a path) and then to
+        # available(path)→check_executable→Popen([exe,...]) — the exact file
+        # is exec'd with zero PATH lookup. The old bare name resolved via the
+        # process PATH that set_paths used to pollute with explicit dirnames.
         opts["external_downloader"] = {
-            "default": "aria2c",
+            "default": aria_path,
             "dash": "native",
             "hls": "native",
         }
@@ -182,8 +193,13 @@ def build_ydl_opts(
         ]
         opts["keepvideo"] = False
 
-    if paths.get("ffmpeg_path"):
-        opts["ffmpeg_location"] = paths["ffmpeg_path"]
+    # T0-2: ffmpeg_location is an exec sink (yt-dlp spawns it for every
+    # merge/extract). Re-check isfile+X_OK here — never trust the store blind.
+    _ffmpeg = paths.get("ffmpeg_path")
+    if _ffmpeg:
+        import os as _os
+        if _os.path.isfile(_ffmpeg) and _os.access(_ffmpeg, _os.X_OK):
+            opts["ffmpeg_location"] = _ffmpeg
 
     cookies = paths.get("cookies_path")
     if cookies:
@@ -440,20 +456,26 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
     import os
     from grablytic_engine.po_token import detect_js_runtime
 
+    # T0-2: runtime paths are exec sinks (yt-dlp spawns deno/node for EJS
+    # challenge solving). isfile+X_OK at every branch; shutil.which results
+    # are already X_OK-gated by construction.
+    def _is_exec(p) -> bool:
+        return bool(p) and os.path.isfile(p) and os.access(p, os.X_OK)
+
     # Android: Node first. Rationale: ytdlnis treats Node as the workhorse
     # (their Deno bundle has the same missing-deps fate as ours —
     # libsqlite3.so; Node links cleanly on Bionic). Desktop keeps the
     # yt-dlp-recommended Deno-first order.
     if _is_android_app():
         node_path = paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
-        if node_path and os.path.isfile(node_path):
+        if _is_exec(node_path):
             opts["js_runtimes"] = {"node": {"path": node_path}}
             opts["remote_components"] = ["ejs:github"]
             return
 
     # Prioritize explicit deno_path first (e.g. bundled libdeno.so on Android)
     deno_path = paths.get("deno_path") or os.environ.get("DENO_PATH") or shutil_which("deno")
-    if deno_path and os.path.isfile(deno_path):
+    if _is_exec(deno_path):
         opts["js_runtimes"] = {"deno": {"path": deno_path}}
         opts["remote_components"] = ["ejs:github"]
         return
@@ -462,7 +484,7 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
     runtime_name = runtime_info["name"]
 
     if runtime_name == "deno":
-        if deno_path and os.path.isfile(deno_path):
+        if _is_exec(deno_path):
             opts["js_runtimes"] = {"deno": {"path": deno_path}}
             opts["remote_components"] = ["ejs:github"]
             return
@@ -474,7 +496,7 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
             return
 
     node_path = paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
-    if node_path and os.path.isfile(node_path):
+    if _is_exec(node_path):
         opts["js_runtimes"] = {"node": {"path": node_path}}
         opts["remote_components"] = ["ejs:github"]
         return
