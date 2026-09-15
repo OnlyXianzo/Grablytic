@@ -943,6 +943,8 @@ def start_download(
 
 def cancel_download(download_id: str) -> dict:
     queued_entry = None
+    worker_thread = None
+    worker_alive = False
     with _downloads_lock:
         for i, e in enumerate(_pending_queue):
             if e["download_id"] == download_id:
@@ -955,11 +957,13 @@ def cancel_download(download_id: str) -> dict:
                 "error_type": "ERROR_DOWNLOAD_NOT_FOUND",
                 "error_message": f"No active download with ID: {download_id}",
             }
-        if info:
+        if info and not info.get("finished_at"):
             try:
                 info["cancel_event"].set()
             except Exception:
                 pass
+            worker_thread = info.get("thread")
+            worker_alive = _worker_thread_alive(info)
 
     if queued_entry is not None:
         # Dequeued before a thread ever spawned: deliver a terminal
@@ -988,11 +992,126 @@ def cancel_download(download_id: str) -> dict:
             except Exception:
                 pass
 
+    if worker_alive:
+        # T1-3: a live worker may sit hook-blind (extractor hang, merge
+        # wait, stalled socket, aria2c child) for an unbounded time, so the
+        # old unconditional `cancelled: True` lied. Report the honest
+        # intermediate; the terminal `cancelled` arrives via the normal
+        # channel on worker exit, or via the watchdog below on a wedge.
+        _start_cancel_watchdog(download_id, worker_thread)
+        return {
+            "success": True,
+            "download_id": download_id,
+            "cancelled": False,
+            "cancelling": True,
+        }
     return {
         "success": True,
         "download_id": download_id,
         "cancelled": True,
+        "cancelling": False,
     }
+
+
+# T1-3: bound on "cancelling". A worker wedged where no yt-dlp progress hook
+# ever fires again would otherwise leave the UI in "cancelling" forever.
+# CPython threads cannot be killed, and Popen-handle interposition was
+# rejected (yt-dlp helper-thread births misattribute kills across
+# downloads). So on expiry: free the slot (finished_at stamp — the exact
+# mechanism of the worker finally-block, keeping _cleanup_loop's invariant)
+# and emit a presumed-stopped terminal. A late real terminal from the worker
+# is benign (Dart treats duplicate cancelled idempotently; res_q leftovers
+# drain via _cleanup_loop's 30s failsafe). Monkeypatchable in tests.
+_CANCEL_WATCHDOG_SECONDS = 120.0
+
+
+def _worker_thread_alive(info) -> bool:
+    """True only for a provably-live worker thread.
+
+    Pre-spawn entries (thread None) and thread doubles without is_alive
+    (test NoopThreads) report False → legacy terminal path, which T1-2 pins.
+    Only a real live thread takes the honest `cancelling` intermediate.
+    """
+    th = info.get("thread") if isinstance(info, dict) else None
+    if th is None:
+        return False
+    is_alive = getattr(th, "is_alive", None)
+    if not callable(is_alive):
+        return False
+    try:
+        return bool(is_alive())
+    except Exception:
+        return False
+
+
+def _start_cancel_watchdog(download_id: str, worker_thread) -> None:
+    """Daemon watchdog: presumed-stopped terminal + slot release on a wedge."""
+    def _watch():
+        try:
+            join = getattr(worker_thread, "join", None)
+            if callable(join):
+                try:
+                    join(timeout=_CANCEL_WATCHDOG_SECONDS)
+                except Exception:
+                    pass
+            try:
+                if not bool(worker_thread.is_alive()):
+                    return  # worker exited; its own terminal stands
+            except Exception:
+                return
+        except Exception:
+            return
+        presumed_message = (
+            "Download cancelled by user "
+            f"(worker did not stop within {int(_CANCEL_WATCHDOG_SECONDS)}s; "
+            "presumed stopped)"
+        )
+        with _downloads_lock:
+            info = _active_downloads.get(download_id)
+            if info is None:
+                return
+            if info.get("finished_at"):
+                return  # worker terminal won the race
+            if info.get("thread") is not worker_thread:
+                return  # slot reused under the same id; not ours to close
+            info["finished_at"] = datetime.now(timezone.utc)
+            cb = info.get("event_callback")
+            res_q = info.get("result_queue")
+        terminal = json.dumps({
+            "type": "event",
+            "event": "cancelled",
+            "download_id": download_id,
+            "error_type": "ERROR_CANCELLED",
+            "error_message": presumed_message,
+        })
+        if cb is not None:
+            try:
+                _emit_event(cb, terminal)
+            except Exception:
+                pass
+        elif res_q is not None:
+            try:
+                res_q.put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_CANCELLED",
+                    "error_message": presumed_message,
+                })
+            except Exception:
+                pass
+        # A wedged worker never reaches its finally-block, so promote the
+        # next queued entry here (same call the finally-block makes).
+        try:
+            _pump_queue()
+        except Exception:
+            pass
+
+    try:
+        t = threading.Thread(target=_watch, daemon=True,
+                             name=f"cancel-watchdog-{download_id}")
+        t.start()
+    except Exception:
+        pass
 
 
 def clear_download_archive(archive_path: str | None = None) -> dict:
