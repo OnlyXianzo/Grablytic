@@ -26,6 +26,15 @@ abstract class EngineService {
   Future<String?> getSharedUrl();
   Stream<String> get sharedUrlStream;
   Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir});
+
+  /// Records the outcome of one resume try so the engine can strike-count
+  /// repeated failures (`exhausted` at 3). Never throws — returns
+  /// `{'success', 'attempts'}`.
+  Future<Map<String, dynamic>> reportResumeAttempt({
+    required String cacheDir,
+    required String filepath,
+    required bool success,
+  });
   Future<Map<String, dynamic>> updateCheck();
   Future<Map<String, dynamic>> setUpdateChannel(String channel);
   Stream<Map<String, dynamic>> get logStream;

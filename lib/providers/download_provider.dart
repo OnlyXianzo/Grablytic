@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show File;
 
@@ -8,6 +9,7 @@ import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
+import 'resume_provider.dart';
 
 const _uuid = Uuid();
 
@@ -177,6 +179,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   final DateTime Function() _clock;
   final Map<String, _DownloadSmoother> _smoothers = {};
 
+  /// Outcome hook for the resume strike loop (BRUTAL-5): invoked with the
+  /// terminal item's URL on finished/error (never on user-cancel). Wired to
+  /// ResumeNotifier.reportAttempt in downloadProvider; null in tests that
+  /// don't cover it. Must never throw.
+  final Future<void> Function({required String url, required bool success})?
+      onDownloadOutcome;
+
   /// Drops transient smoother state for [id]. Called on every terminal
   /// transition and on history removal so long sessions cannot accumulate
   /// one [_DownloadSmoother] per completed download.
@@ -188,9 +197,19 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   @visibleForTesting
   int get smootherCount => _smoothers.length;
 
-  DownloadNotifier(this._engine, {DateTime Function()? clock})
+  DownloadNotifier(this._engine, {DateTime Function()? clock, this.onDownloadOutcome})
       : _clock = clock ?? DateTime.now,
         super([]);
+
+  void _reportResumeOutcome(String url, bool success) {
+    final cb = onDownloadOutcome;
+    if (cb == null) return;
+    unawaited(Future(() async {
+      try {
+        await cb(url: url, success: success);
+      } catch (_) {}
+    }));
+  }
 
   List<DownloadItem> get completed =>
       state.where((d) => d.status == 'completed').toList();
@@ -400,6 +419,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ];
       final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
       _persistRecord(item);
+      _reportResumeOutcome(item.url, true);
       _dropSmoother(downloadId);
     } else if (eventType == 'error') {
       final errorType = event['error_type'] as String?;
@@ -427,6 +447,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ];
       final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
       _persistRecord(item);
+      _reportResumeOutcome(item.url, false);
       _dropSmoother(downloadId);
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
@@ -895,7 +916,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 final downloadProvider =
     StateNotifierProvider<DownloadNotifier, List<DownloadItem>>((ref) {
   final engine = ref.watch(engineProvider);
-  final notifier = DownloadNotifier(engine);
+  final notifier = DownloadNotifier(
+    engine,
+    // Resume strike loop (BRUTAL-5): terminal outcomes feed the engine's
+    // per-file attempt counter; unresumed URLs are ignored downstream.
+    onDownloadOutcome: ({required String url, required bool success}) =>
+        ref.read(resumeProvider.notifier).reportAttempt(url: url, success: success),
+  );
   // Auto-sweep and restore interrupted downloads across process restart / LMK
   notifier.restoreInterruptedDownloads();
   final subscription = engine.progressStream.listen(

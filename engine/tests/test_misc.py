@@ -121,6 +121,62 @@ class TestScanResumeCandidates:
             assert result["candidates"][0]["expired"] is True
             assert result["total"] == 1
 
+    def test_finds_part_files_in_subdirectories(self):
+        import grablytic_engine.resume as resume_mod
+        with tempfile.TemporaryDirectory() as tmpdir:
+            nested = os.path.join(tmpdir, "frags", "session1")
+            os.makedirs(nested)
+            open(os.path.join(tmpdir, "top.part"), "w").close()
+            open(os.path.join(nested, "deep.part"), "w").close()
+            result = resume_mod.scan_resume_candidates(tmpdir)
+            names = {c["filename"] for c in result["candidates"]}
+            assert names == {"top.part", "deep.part"}
+            assert result["total"] == 2
+
+    def test_recursive_walk_can_be_disabled(self):
+        import grablytic_engine.resume as resume_mod
+        with tempfile.TemporaryDirectory() as tmpdir:
+            nested = os.path.join(tmpdir, "sub")
+            os.makedirs(nested)
+            open(os.path.join(nested, "deep.part"), "w").close()
+            result = resume_mod.scan_resume_candidates(tmpdir, recursive=False)
+            assert result["total"] == 0
+
+    def test_failed_attempts_mark_exhausted_at_three(self):
+        import grablytic_engine.resume as resume_mod
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "flaky.part")
+            open(path, "w").close()
+            for _ in range(2):
+                r = resume_mod.report_resume_attempt(tmpdir, path, False)
+                assert r["success"] is True
+            result = resume_mod.scan_resume_candidates(tmpdir)
+            assert result["candidates"][0]["attempts"] == 2
+            assert result["candidates"][0]["exhausted"] is False
+            resume_mod.report_resume_attempt(tmpdir, path, False)
+            result = resume_mod.scan_resume_candidates(tmpdir)
+            assert result["candidates"][0]["attempts"] == 3
+            assert result["candidates"][0]["exhausted"] is True
+
+    def test_successful_attempt_clears_strike_count(self):
+        import grablytic_engine.resume as resume_mod
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "ok.part")
+            open(path, "w").close()
+            resume_mod.report_resume_attempt(tmpdir, path, False)
+            r = resume_mod.report_resume_attempt(tmpdir, path, True)
+            assert r["success"] is True
+            assert r["attempts"] == 0
+            result = resume_mod.scan_resume_candidates(tmpdir)
+            assert result["candidates"][0]["attempts"] == 0
+            assert result["candidates"][0]["exhausted"] is False
+
+    def test_attempt_report_rejects_paths_outside_cache(self):
+        import grablytic_engine.resume as resume_mod
+        with tempfile.TemporaryDirectory() as tmpdir:
+            r = resume_mod.report_resume_attempt(tmpdir, "/etc/passwd", False)
+            assert r["success"] is False
+
 
 class TestSiteProfiles:
     def test_load_default_profiles(self):

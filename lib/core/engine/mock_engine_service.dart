@@ -307,6 +307,20 @@ class MockEngineService implements EngineService {
     };
   }
 
+  /// Test seam: every reportResumeAttempt call lands here for assertions.
+  final List<Map<String, dynamic>> reportedAttempts = [];
+
+  @override
+  Future<Map<String, dynamic>> reportResumeAttempt({
+    required String cacheDir,
+    required String filepath,
+    required bool success,
+  }) async {
+    reportedAttempts.add(
+        {'cacheDir': cacheDir, 'filepath': filepath, 'success': success});
+    return {'success': true, 'attempts': success ? 0 : 1};
+  }
+
   @override
   Future<Map<String, dynamic>> setUpdateChannel(String channel) async {
     return {'success': true};

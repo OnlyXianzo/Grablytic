@@ -10,6 +10,7 @@ from grablytic_engine import (
     get_playlist_info,
     search,
     scan_resume_candidates,
+    report_resume_attempt,
     start_download,
     cancel_download,
     get_queue_status,
@@ -218,7 +219,18 @@ def main():
                             config=params.get("config"),
                         )
                     elif method == "resume/scan":
-                        return scan_resume_candidates(params["cache_dir"])
+                        return scan_resume_candidates(
+                            params["cache_dir"],
+                            limit=params.get("limit", 50),
+                            recursive=params.get("recursive", True),
+                            max_attempts=params.get("max_attempts", 3),
+                        )
+                    elif method == "resume/report":
+                        return report_resume_attempt(
+                            params["cache_dir"],
+                            params["filepath"],
+                            params.get("success", False),
+                        )
                     elif method == "engine/update_check":
                         return update_check()
                     elif method == "engine/set_update_channel":

@@ -159,6 +159,24 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> reportResumeAttempt({
+    required String cacheDir,
+    required String filepath,
+    required bool success,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<String>(
+        EngineMethods.resumeReport,
+        {'cache_dir': cacheDir, 'filepath': filepath, 'success': success},
+      );
+      return EngineEnvelope.decodeResponse(result);
+    } catch (_) {
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> updateCheck() async {
     try {
       final result = await _channel.invokeMethod<String>(EngineMethods.updateCheck);
