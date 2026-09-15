@@ -17,6 +17,7 @@ from grablytic_engine import (
     clear_download_archive,
     set_update_channel,
     update_check,
+    shutdown_downloads,
 )
 from grablytic_engine.downloader import _active_downloads, _downloads_lock
 from grablytic_engine.logger import get_logger, set_global_queue, set_global_log_dir
@@ -266,6 +267,12 @@ def main():
                 }
             }
             _write_stdout_line(json.dumps(err_res))
+
+    # Gracefully shut down any in-flight downloads on EOF/exit
+    try:
+        shutdown_downloads(timeout=5.0)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
