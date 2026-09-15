@@ -111,3 +111,47 @@ def test_diff_new_entries():
     assert len(diff) == 2
     assert diff[0]["id"] == "vid2"
     assert diff[1]["id"] == "vid3"
+
+
+def test_parse_youtube_rss_rejects_entity_declarations(monkeypatch):
+    """T3-16: billion-laughs needs <!ENTITY — YouTube Atom never carries
+    one, so refuse entity-bearing feeds outright (no defusedxml dep needed
+    on Chaquopy) instead of handing them to expat. Proved by spy: the XML
+    parser must never see the payload."""
+    import xml.etree.ElementTree as _ET
+
+    calls = []
+    real_fromstring = _ET.fromstring
+
+    def _spy(text, *args, **kwargs):
+        calls.append(text)
+        return real_fromstring(text, *args, **kwargs)
+
+    monkeypatch.setattr(_ET, "fromstring", _spy)
+    laugh = (
+        '<?xml version="1.0"?>'
+        '<!DOCTYPE feed [<!ENTITY a "xxxxxxxxxx">'
+        '<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+        '<feed xmlns="http://www.w3.org/2005/Atom"><title>&b;</title></feed>'
+    )
+    assert parse_youtube_rss(laugh) == []
+    assert calls == []
+
+
+def test_parse_youtube_rss_rejects_oversize(monkeypatch):
+    """T3-16: feeds are KBs — a multi-MB blob is never legitimate and must
+    not reach the parser."""
+    import xml.etree.ElementTree as _ET
+
+    calls = []
+    real_fromstring = _ET.fromstring
+
+    def _spy(text, *args, **kwargs):
+        calls.append(len(text))
+        return real_fromstring(text, *args, **kwargs)
+
+    monkeypatch.setattr(_ET, "fromstring", _spy)
+    big = "<feed>" + ("<entry>x</entry>" * 200000) + "</feed>"
+    assert len(big) > 2 * 1024 * 1024
+    assert parse_youtube_rss(big) == []
+    assert calls == []
