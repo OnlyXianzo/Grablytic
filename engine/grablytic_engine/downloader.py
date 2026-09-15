@@ -70,25 +70,64 @@ def get_queue_status() -> dict:
         }
 
 
-def _spawn_thread(entry: dict) -> threading.Thread:
+def _spawn_thread(entry: dict) -> threading.Thread | None:
+    # T1-1 fix: register in the active map BEFORE starting the thread.
+    # Without this, a fast cancel/finish between t.start() and map
+    # registration hits NOT_FOUND while the thread is already running.
+    cancel_event = entry["cancel_event"]
+    download_id = entry["download_id"]
+
+    if cancel_event.is_set():
+        with _downloads_lock:
+            if download_id in _active_downloads:
+                _active_downloads[download_id]["finished_at"] = datetime.now(timezone.utc)
+        terminal = json.dumps({
+            "type": "event",
+            "event": "cancelled",
+            "download_id": download_id,
+            "error_type": "ERROR_CANCELLED",
+            "error_message": "Download cancelled by user",
+        })
+        cb = entry.get("event_callback")
+        if cb is not None:
+            try:
+                _emit_event(cb, terminal)
+            except Exception:
+                pass
+        else:
+            try:
+                entry["result_queue"].put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_CANCELLED",
+                    "error_message": "Download cancelled by user",
+                })
+            except Exception:
+                pass
+        return None
+
+    with _downloads_lock:
+        if download_id not in _active_downloads:
+            _active_downloads[download_id] = {
+                "cancel_event": cancel_event,
+                "progress_queue": entry["progress_queue"],
+                "result_queue": entry["result_queue"],
+                "url": entry["url"],
+                "thread": None,  # set after start
+                "started_at": datetime.now(timezone.utc),
+            }
     t = threading.Thread(
         target=download_thread,
-        args=(entry["url"], entry["download_id"], entry["config"],
+        args=(entry["url"], download_id, entry["config"],
               entry["network_type"], entry["progress_queue"],
-              entry["result_queue"], entry["cancel_event"],
+              entry["result_queue"], cancel_event,
               entry["event_callback"]),
         daemon=True,
     )
     t.start()
     with _downloads_lock:
-        _active_downloads[entry["download_id"]] = {
-            "cancel_event": entry["cancel_event"],
-            "progress_queue": entry["progress_queue"],
-            "result_queue": entry["result_queue"],
-            "url": entry["url"],
-            "thread": t,
-            "started_at": datetime.now(timezone.utc),
-        }
+        if download_id in _active_downloads:
+            _active_downloads[download_id]["thread"] = t
     return t
 
 
@@ -677,6 +716,16 @@ def start_download(
                 "thread_started": False,
                 "queued": True,
                 "position": position,
+            }
+        else:
+            # T1-1: Atomically register in _active_downloads under lock before releasing lock
+            _active_downloads[download_id] = {
+                "cancel_event": cancel_event,
+                "progress_queue": progress_queue,
+                "result_queue": result_queue,
+                "url": url,
+                "thread": None,
+                "started_at": datetime.now(timezone.utc),
             }
 
     entry = {
