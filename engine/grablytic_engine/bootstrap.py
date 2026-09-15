@@ -163,6 +163,40 @@ def _record_binary_sha(cache_dir: str, dest_path: str) -> None:
         _save_manifest(cache_dir, manifest)
 
 
+def _record_archive_sha(
+    cache_dir: str, binary_name: str, archive_name: str, archive_sha: str
+) -> None:
+    """Record which upstream ARCHIVE a binary was installed from.
+
+    T4-8: update_check must compare archive-to-archive (the remote digest
+    covers the archive, never the extracted binary). Keyed per binary so
+    ffmpeg/deno/aria2c track independently.
+    """
+    if not archive_sha:
+        return
+    manifest = _load_manifest(cache_dir)
+    manifest[f"archive:{binary_name}"] = {
+        "archive_name": archive_name,
+        "archive_sha256": archive_sha,
+    }
+    _save_manifest(cache_dir, manifest)
+
+
+def _installed_archive_sha(cache_dir: str, binary_name: str) -> str:
+    """Archive SHA recorded at install time, or '' when unknown."""
+    try:
+        manifest = _load_manifest(cache_dir or "")
+    except Exception:
+        return ""
+    if not isinstance(manifest, dict):
+        return ""
+    rec = manifest.get(f"archive:{binary_name}")
+    if not isinstance(rec, dict):
+        return ""
+    sha = rec.get("archive_sha256")
+    return sha if isinstance(sha, str) else ""
+
+
 def _verify_binary_against_manifest(cache_dir: str, dest_path: str) -> bool:
     """Check an existing binary against the manifest. Returns True if valid."""
     real_dest = os.path.realpath(dest_path)
@@ -427,6 +461,8 @@ def _download_and_extract_binary(
         if os.name != "nt" and os.path.isfile(dest_path):
             os.chmod(dest_path, 0o755)
 
+        return sha256_actual
+
 
 def _probe_report(bin_path: str, timeout: int = 8) -> dict:
     """Best-effort `--version` probe with full diagnostics.
@@ -547,6 +583,15 @@ def _bootstrap_github_binary(
             # T0-5: record the extracted binary's SHA in the manifest so
             # future runs can verify it hasn't been replaced/trojaned.
             _record_binary_sha(cache_dir, dest_path)
+            # T4-8: record the installed ARCHIVE digest so update_check
+            # compares archive-to-archive (binary bytes never equal it).
+            # Keyed by logical binary name (matches update_check targets).
+            _record_archive_sha(
+                cache_dir,
+                name,
+                archive_name,
+                expected_sha,
+            )
             return True, version_str
 
         return False, None
@@ -989,13 +1034,18 @@ def update_check() -> dict:
         except Exception:
             pass
 
-        if current_sha and latest_sha and current_sha != latest_sha:
+        # T4-8: compare ARCHIVE to ARCHIVE. The old code compared the local
+        # BINARY sha against the remote ARCHIVE sha — unequal by
+        # construction, so up_to_date could never be reported.
+        installed_sha = _installed_archive_sha(paths.get("cache_dir"), name)
+        if installed_sha and latest_sha and installed_sha != latest_sha:
             update_available = True
 
         binaries_status.append({
             "name": name,
             "current_sha256": current_sha,
             "manifest_sha256": latest_sha,
+            "installed_archive_sha256": installed_sha,
             "update_available": update_available,
         })
         if update_available:

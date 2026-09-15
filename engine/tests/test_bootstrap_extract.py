@@ -196,3 +196,88 @@ class TestBinaryManifestVerification:
         assert real_path in manifest
         assert manifest[real_path] == _calculate_sha256(str(binary))
 
+
+
+class _FakeResp:
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self._data
+
+
+class TestUpdateCheckMeaningful:
+    """T4-8: comparing the local BINARY sha against the remote ARCHIVE sha
+    could never match (perpetual update_available=True). Installed archive
+    shas are recorded at install time; the check compares archive-to-archive."""
+
+    ARCHIVE = "ffmpeg-test.tar.gz"
+    REMOTE_SHA = "a" * 64
+    OLD_SHA = "b" * 64
+
+    def _release(self):
+        return {"tag_name": "v9", "assets": [
+            {"name": self.ARCHIVE,
+             "browser_download_url": f"https://x.test/{self.ARCHIVE}"},
+            {"name": self.ARCHIVE + ".sha256",
+             "browser_download_url": f"https://x.test/{self.ARCHIVE}.sha256"},
+        ]}
+
+    def _env(self, tmp_path, monkeypatch):
+        import grablytic_engine.paths as paths_mod
+        import sys as _sys
+        boot = _sys.modules["grablytic_engine.bootstrap"]
+        fake_bin = tmp_path / "ffmpeg"
+        fake_bin.write_bytes(b"fake-binary-bytes")
+        paths_mod.set_paths(
+            data_dir=str(tmp_path), output_dir=str(tmp_path),
+            ffmpeg_path=str(fake_bin), cache_dir=str(tmp_path),
+        )
+        monkeypatch.setattr(
+            boot, "_get_asset_substring", lambda name, key: self.ARCHIVE)
+        monkeypatch.setattr(
+            boot, "_resolve_latest_release", lambda repo: self._release())
+        monkeypatch.setattr(
+            "urllib.request.urlopen",
+            lambda req, timeout=10: _FakeResp(
+                f"{self.REMOTE_SHA}  {self.ARCHIVE}\n".encode()),
+        )
+        return boot
+
+    @pytest.mark.unit
+    def test_same_archive_sha_means_no_update(self, tmp_path, monkeypatch):
+        import sys as _sys
+        boot = _sys.modules["grablytic_engine.bootstrap"]
+        self._env(tmp_path, monkeypatch)
+        boot._record_archive_sha(
+            str(tmp_path), "ffmpeg", self.ARCHIVE, self.REMOTE_SHA)
+        res = boot.update_check()
+        assert res["success"] is True
+        ffmpeg = next(b for b in res["binaries"] if b["name"] == "ffmpeg")
+        assert ffmpeg["update_available"] is False
+
+    @pytest.mark.unit
+    def test_different_archive_sha_means_update(self, tmp_path, monkeypatch):
+        import sys as _sys
+        boot = _sys.modules["grablytic_engine.bootstrap"]
+        self._env(tmp_path, monkeypatch)
+        boot._record_archive_sha(
+            str(tmp_path), "ffmpeg", self.ARCHIVE, self.OLD_SHA)
+        res = boot.update_check()
+        ffmpeg = next(b for b in res["binaries"] if b["name"] == "ffmpeg")
+        assert ffmpeg["update_available"] is True
+
+    @pytest.mark.unit
+    def test_missing_record_means_no_update_claim(self, tmp_path, monkeypatch):
+        import sys as _sys
+        boot = _sys.modules["grablytic_engine.bootstrap"]
+        self._env(tmp_path, monkeypatch)
+        res = boot.update_check()
+        ffmpeg = next(b for b in res["binaries"] if b["name"] == "ffmpeg")
+        assert ffmpeg["update_available"] is False
