@@ -3,6 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../core/engine/engine_provider.dart';
 
+/// Remove ONE trailing '.part' only (BRUTAL-6 info.json).
+///
+/// replaceAll mangles names like 'my.part.video.f137.part' into
+/// 'my.info.json.video.f137.info.json', orphaning the real sibling
+/// '.info.json' on dismiss/delete. Mirrors the engine's _strip_part_suffix
+/// (TEARDOWN-3).
+String stripPartSuffix(String path) =>
+    path.endsWith('.part') ? path.substring(0, path.length - 5) : path;
+
 class ResumeCandidate {
   final String filename;
   final String filepath;
@@ -67,7 +76,7 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
       if (await file.exists()) {
         await file.delete();
       }
-      final infoFile = File(candidate.filepath.replaceAll('.part', '.info.json'));
+      final infoFile = File('${stripPartSuffix(candidate.filepath)}.info.json');
       if (await infoFile.exists()) {
         await infoFile.delete();
       }
@@ -82,7 +91,7 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
       if (await file.exists()) {
         await file.delete();
       }
-      final infoFile = File(candidate.filepath.replaceAll('.part', '.info.json'));
+      final infoFile = File('${stripPartSuffix(candidate.filepath)}.info.json');
       if (await infoFile.exists()) {
         await infoFile.delete();
       }

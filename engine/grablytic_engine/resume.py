@@ -15,13 +15,27 @@ def _strip_part_suffix(path: str) -> str:
     return path
 
 
-def scan_resume_candidates(cache_dir: str) -> dict:
+def scan_resume_candidates(cache_dir: str, limit: int = 50) -> dict:
+    """Scan for interrupted (.part) downloads.
+
+    Contract (Dart home_screen renders `expired` rows distinctly and only
+    offers resume for fresh ones with a URL): expired entries are FLAGGED,
+    never dropped. Freshest-first, capped at `limit` with `total`/`truncated`
+    so the UI can say "showing 50 of 132". Additive keys only — older Dart
+    builds ignore the extras.
+    """
     candidates = []
     now = time.time()
     max_age = 86400  # 24h
 
     if not os.path.isdir(cache_dir):
-        return {"success": True, "candidates": []}
+        return {"success": True, "candidates": [], "total": 0, "truncated": False}
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, limit)
 
     for entry in os.listdir(cache_dir):
         if not entry.endswith(".part"):
@@ -58,4 +72,14 @@ def scan_resume_candidates(cache_dir: str) -> dict:
             "expired": age > max_age,
         })
 
-    return {"success": True, "candidates": candidates}
+    # Freshest first so a cap drops the stalest, never the newest. Expired
+    # rows stay in the payload (flagged) while they fit — the UI decides.
+    candidates.sort(key=lambda c: c["age_seconds"])
+    total = len(candidates)
+    truncated = total > limit
+    return {
+        "success": True,
+        "candidates": candidates[:limit],
+        "total": total,
+        "truncated": truncated,
+    }
