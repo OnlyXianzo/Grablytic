@@ -636,7 +636,11 @@ class _DownloadCard extends StatelessWidget {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: item.progress,
+                          // Loop-4: indeterminate while post-processing
+                          // (merging/embedding has no progress callback;
+                          // a stuck 99% reads as frozen — ytdlnis v1.7.5
+                          // shipped the same fix for the same complaint).
+                          value: item.stage != null ? null : item.progress,
                           backgroundColor: colorScheme.surfaceContainerHighest,
                           valueColor: AlwaysStoppedAnimation(
                               colorScheme.primaryContainer),

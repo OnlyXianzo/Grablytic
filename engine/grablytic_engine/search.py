@@ -59,8 +59,8 @@ def search(
         opts["proxy"] = cfg["proxy"]
 
     try:
-        from grablytic_engine.opts_builder import _apply_js_runtime
-        _apply_js_runtime(opts, paths)
+        from grablytic_engine.opts_builder import _configure_js_runtime
+        _configure_js_runtime(opts, paths)
     except Exception:
         pass
 

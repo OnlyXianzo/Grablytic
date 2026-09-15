@@ -420,8 +420,10 @@ def test_js_runtime_configured_with_deno(tmp_path):
 
 
 def test_fragment_and_socket_defaults_applied():
+    # Loop-4 low-end default: 2 fragment threads (was 4). Mobile sweet spot
+    # is 1-3; 2 active downloads now cost 4 threads instead of 8.
     opts = build_ydl_opts()
-    assert opts["concurrent_fragment_downloads"] == 4
+    assert opts["concurrent_fragment_downloads"] == 2
     assert opts["socket_timeout"] == 30
 
 
@@ -442,7 +444,7 @@ def test_fragment_clamped_to_sane_range():
 def test_fragment_and_socket_invalid_fall_back():
     opts = build_ydl_opts(
         config={"concurrent_fragments": "lots", "socket_timeout": "soon"})
-    assert opts["concurrent_fragment_downloads"] == 4
+    assert opts["concurrent_fragment_downloads"] == 2
     assert "socket_timeout" not in opts
 
 
