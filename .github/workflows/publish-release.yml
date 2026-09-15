@@ -15,11 +15,17 @@ on:
 permissions:
   contents: write
   actions: read
+  # Keyless (OIDC) cosign signing needs a GitHub ID token.
+  id-token: write
 
 jobs:
   publish:
     name: Upload Artifacts to Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,7 +39,7 @@ jobs:
           echo "=== Downloaded Artifacts ==="
           find downloaded_artifacts -type f
 
-      - name: Flatten and upload release assets
+      - name: Stage release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -49,5 +55,44 @@ jobs:
           echo "=== Final Assets to Upload ==="
           ls -lh release_assets/
 
+      # Keyless supply-chain signatures (BRUTAL-4 follow-up): each asset gets
+      # a Sigstore bundle (Fulcio cert + Rekor transparency entry) bound to
+      # this workflow's OIDC identity — no long-lived keys to rotate or leak.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.3'
+
+      - name: Sign release assets (keyless OIDC)
+        run: |
+          for asset in release_assets/*; do
+            [ -f "$asset" ] || continue
+            echo "Signing: $asset"
+            cosign sign-blob --yes --bundle "$asset.sigstore" "$asset"
+          done
+          echo "=== Signature bundles ==="
+          ls -lh release_assets/*.sigstore
+
+      - name: Verify signatures (fail closed)
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          for asset in release_assets/*; do
+            case "$asset" in
+              *.sigstore) continue ;;
+            esac
+            [ -f "$asset.sigstore" ] || { echo "MISSING bundle for $asset"; exit 1; }
+            cosign verify-blob \
+              --bundle "$asset.sigstore" \
+              --certificate-identity-regexp "^https://github.com/$REPO/" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$asset"
+          done
+          echo "All signatures verify against this repo's workflow identity."
+
+      - name: Flatten and upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           echo "Uploading assets to release ${{ github.event.inputs.tag_name }}..."
           gh release upload "${{ github.event.inputs.tag_name }}" release_assets/* --repo "${{ github.repository }}" --clobber

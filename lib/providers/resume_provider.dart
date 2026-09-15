@@ -112,11 +112,33 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
   /// resumable (missing URL or expired stream URLs). Keeping the
   /// engine restart in the format flow preserves yt-dlp `continuedl`
   /// resume-by-filename without inventing Range logic here.
+  ///
+  /// Stashes url -> filepath so [reportAttempt] can strike-count the outcome
+  /// (BRUTAL-5); the stash is one-shot per resume tap.
+  final Map<String, String> _resumeOrigins = {};
+
   Future<String?> resumeDownload(ResumeCandidate candidate) async {
     final url = candidate.likelyUrl;
     if (url == null || url.isEmpty || candidate.expired) return null;
+    _resumeOrigins[url] = candidate.filepath;
     removeCandidateFromList(candidate);
     return url;
+  }
+
+  /// Records one resume outcome for a previously stashed [url].
+  /// Unknown urls (normal downloads) are a silent no-op. Never throws.
+  /// [cacheDir] overrides directory resolution (tests; production passes
+  /// nothing and the temp dir is resolved like [scan] does).
+  Future<void> reportAttempt(
+      {required String url, required bool success, String? cacheDir}) async {
+    final filepath = _resumeOrigins.remove(url);
+    if (filepath == null) return;
+    try {
+      final dir = cacheDir ?? (await getTemporaryDirectory()).path;
+      final engine = _ref.read(engineProvider);
+      await engine.reportResumeAttempt(
+          cacheDir: dir, filepath: filepath, success: success);
+    } catch (_) {}
   }
 }
 

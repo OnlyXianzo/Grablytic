@@ -423,4 +423,64 @@ void main() {
       expect(n.state.single.downloadedBytes, 5678);
     });
   });
+
+  group('resume outcome reporting (BRUTAL-5 strike loop)', () {
+    DownloadNotifier notifierWithRecorder(List<Map<String, Object>> out) =>
+        DownloadNotifier(
+          MockEngineService(),
+          onDownloadOutcome:
+              ({required String url, required bool success}) async {
+            out.add({'url': url, 'success': success});
+          },
+        );
+
+    test('RED: error terminal reports success:false for the item url',
+        () async {
+      final out = <Map<String, Object>>[];
+      final n = notifierWithRecorder(out);
+      _seed(n);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'error',
+        'download_id': 'dl-1',
+        'error_type': 'ERROR_NETWORK',
+        'error_message': 'boom',
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(out, [
+        {'url': 'https://x.test/v', 'success': false}
+      ]);
+    });
+
+    test('RED: finished terminal reports success:true for the item url',
+        () async {
+      final out = <Map<String, Object>>[];
+      final n = notifierWithRecorder(out);
+      _seed(n);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'finished',
+        'download_id': 'dl-1',
+        'filesize_bytes': 100,
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(out, [
+        {'url': 'https://x.test/v', 'success': true}
+      ]);
+    });
+
+    test('RED: cancelled terminal reports nothing (user action, not failure)',
+        () async {
+      final out = <Map<String, Object>>[];
+      final n = notifierWithRecorder(out);
+      _seed(n);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'cancelled',
+        'download_id': 'dl-1',
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(out, isEmpty);
+    });
+  });
 }

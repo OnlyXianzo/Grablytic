@@ -566,6 +566,23 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "resume/report" -> {
+                    val cacheDir = call.argument<String>("cache_dir")
+                    val filepath = call.argument<String>("filepath")
+                    val success = call.argument<Boolean>("success") ?: false
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val python = py ?: return@launch
+                            val engine = python.getModule("grablytic_engine")
+                            val reportResult = engine.callAttr(
+                                "report_resume_attempt", cacheDir, filepath, success)
+                            val jsonStr = pyJson(reportResult)
+                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) { result.error("ERROR_RESUME_FAILED", e.message, null) }
+                        }
+                    }
+                }
                 "system/battery_status" -> {
                     result.success(mapOf("success" to true, "supported" to true, "exempt" to batteryExempt()))
                 }

@@ -37,6 +37,7 @@ jobs:
       suffix: ${{ steps.stamp.outputs.suffix }}
       datestamp: ${{ steps.stamp.outputs.datestamp }}
       sha: ${{ steps.stamp.outputs.sha }}
+      has_ftl: ${{ steps.gate.outputs.has_ftl }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +49,12 @@ jobs:
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "suffix=-nightly-$DATESTAMP-$SHA" >> $GITHUB_OUTPUT
           echo "Nightly suffix: -nightly-$DATESTAMP-$SHA"
+
+      # secrets context is illegal in jobs.<id>.if — expose as an output.
+      # Skips the Robo job cleanly until FIREBASE_SERVICE_ACCOUNT is set.
+      - id: gate
+        run: |
+          echo "has_ftl=${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}" >> $GITHUB_OUTPUT
 
   verify:
     name: Verify (gate)
@@ -122,8 +129,41 @@ jobs:
           name: doze-diagnostics${{ needs.prep.outputs.suffix }}
           path: doze-out/
 
-  # Option 2 (physical-device Robo crawl via Firebase Test Lab) deferred —
-  # re-add ftl-robo here when needed (secret-gated via prep outputs).
+  # Physical-device Robo crawl via Firebase Test Lab (free Spark tier:
+  # 15 runs/day incl. 5 physical) — install/launch smoke with no pre-written
+  # tests. Secret-gated: skips cleanly until the FIREBASE_SERVICE_ACCOUNT
+  # repo secret (service-account JSON key) exists. One-time human setup:
+  # Firebase project + service account with Firebase Test Lab Admin.
+  ftl-robo:
+    name: Firebase Test Lab Robo (physical)
+    needs: [prep, build]
+    if: ${{ needs.prep.outputs.has_ftl == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download arm64 nightly APK
+        uses: actions/download-artifact@v4
+        with:
+          pattern: grablytic-arm64-deno-*
+          path: ftl-apk
+          merge-multiple: true
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Robo crawl on physical device
+        run: |
+          APK=$(ls ftl-apk/*.apk | head -n 1)
+          gcloud firebase test android run \
+            --type robo \
+            --app "$APK" \
+            --device model=panther,version=33 \
+            --timeout 5m
+
   publish-nightly:
     name: Publish Rolling Nightly Release
     needs: [prep, build]

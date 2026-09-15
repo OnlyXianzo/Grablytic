@@ -528,6 +528,24 @@ class DesktopEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> reportResumeAttempt({
+    required String cacheDir,
+    required String filepath,
+    required bool success,
+  }) async {
+    try {
+      return await _sendRequest(EngineMethods.resumeReport, {
+        'cache_dir': cacheDir,
+        'filepath': filepath,
+        'success': success,
+      });
+    } catch (_) {
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> updateCheck() async {
     return _sendRequest(EngineMethods.updateCheck, {});
   }

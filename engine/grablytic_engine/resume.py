@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import threading
 
 
 def _strip_part_suffix(path: str) -> str:
@@ -15,13 +16,111 @@ def _strip_part_suffix(path: str) -> str:
     return path
 
 
-def scan_resume_candidates(cache_dir: str, limit: int = 50) -> dict:
+# Strike store for resume attempts (BRUTAL-5 attempts>=3). Keyed by
+# realpath so renames/case variants cannot fork counters. Same-process
+# lock discipline as the bootstrap manifest (single engine process).
+_attempts_lock = threading.Lock()
+_ATTEMPTS_FILENAME = "resume_attempts.json"
+_DEFAULT_MAX_ATTEMPTS = 3
+
+
+def _attempts_path(cache_dir: str) -> str:
+    return os.path.join(cache_dir, _ATTEMPTS_FILENAME)
+
+
+def _load_attempts(cache_dir: str) -> dict:
+    try:
+        with open(_attempts_path(cache_dir), "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+        return {}
+
+
+def _save_attempts(cache_dir: str, attempts: dict) -> None:
+    path = _attempts_path(cache_dir)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(attempts, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def _contained_path(cache_dir: str, filepath: str) -> str | None:
+    """Realpath of filepath if strictly inside cache_dir, else None."""
+    try:
+        base = os.path.realpath(cache_dir)
+        real = os.path.realpath(filepath)
+    except OSError:
+        return None
+    if real == base or not real.startswith(base + os.sep):
+        return None
+    return real
+
+
+def report_resume_attempt(cache_dir: str, filepath: str, success) -> dict:
+    """Record the outcome of one resume try for filepath.
+
+    success=True clears the strike count (file completed); falsy increments
+    it. Paths escaping cache_dir are rejected. Never raises.
+    """
+    try:
+        if not os.path.isdir(cache_dir):
+            return {"success": False, "error_message": "Unknown cache dir"}
+        real = _contained_path(cache_dir, filepath)
+        if real is None:
+            return {"success": False, "error_message": "Path escapes cache dir"}
+        ok = bool(success) if not isinstance(success, str) else success.strip().lower() in (
+            "1", "true", "yes",
+        )
+        with _attempts_lock:
+            attempts = _load_attempts(cache_dir)
+            if ok:
+                attempts.pop(real, None)
+                count = 0
+            else:
+                rec = attempts.get(real)
+                count = (rec.get("attempts", 0) if isinstance(rec, dict) else 0) + 1
+                attempts[real] = {"attempts": count, "updated": int(time.time())}
+            _save_attempts(cache_dir, attempts)
+        return {"success": True, "attempts": count}
+    except Exception as exc:
+        return {"success": False, "error_message": str(exc)[:200]}
+
+
+def _iter_part_files(cache_dir: str, recursive: bool):
+    """Yield .part file paths (top level, or full walk without followlinks)."""
+    if not recursive:
+        try:
+            entries = os.listdir(cache_dir)
+        except OSError:
+            return
+        for entry in entries:
+            if entry.endswith(".part"):
+                yield os.path.join(cache_dir, entry)
+        return
+    for root, _dirs, files in os.walk(cache_dir, followlinks=False):
+        for name in files:
+            if name.endswith(".part"):
+                yield os.path.join(root, name)
+
+
+def scan_resume_candidates(
+    cache_dir: str,
+    limit: int = 50,
+    recursive: bool = True,
+    max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
+) -> dict:
     """Scan for interrupted (.part) downloads.
 
     Contract (Dart home_screen renders `expired` rows distinctly and only
     offers resume for fresh ones with a URL): expired entries are FLAGGED,
     never dropped. Freshest-first, capped at `limit` with `total`/`truncated`
-    so the UI can say "showing 50 of 132". Additive keys only — older Dart
+    so the UI can say "showing 50 of 132". Each candidate also carries its
+    strike `attempts` and `exhausted` (>= max_attempts failed resume tries,
+    recorded via report_resume_attempt). Additive keys only — older Dart
     builds ignore the extras.
     """
     candidates = []
@@ -36,19 +135,26 @@ def scan_resume_candidates(cache_dir: str, limit: int = 50) -> dict:
     except (TypeError, ValueError):
         limit = 50
     limit = max(1, limit)
+    try:
+        max_attempts = int(max_attempts)
+    except (TypeError, ValueError):
+        max_attempts = _DEFAULT_MAX_ATTEMPTS
+    max_attempts = max(1, max_attempts)
+    if not isinstance(recursive, bool):
+        recursive = True
 
-    for entry in os.listdir(cache_dir):
-        if not entry.endswith(".part"):
-            continue
+    with _attempts_lock:
+        strikes = _load_attempts(cache_dir)
 
-        filepath = os.path.join(cache_dir, entry)
+    for filepath in _iter_part_files(cache_dir, recursive):
+        entry = os.path.basename(filepath)
         try:
             stat = os.stat(filepath)
         except OSError:
             continue
 
         age = now - stat.st_mtime
-        
+
         likely_url = None
         info_path = _strip_part_suffix(filepath) + ".info.json"
         if not os.path.exists(info_path):
@@ -63,6 +169,12 @@ def scan_resume_candidates(cache_dir: str, limit: int = 50) -> dict:
             except Exception:
                 pass
 
+        try:
+            real = os.path.realpath(filepath)
+        except OSError:
+            real = filepath
+        rec = strikes.get(real)
+        attempts = rec.get("attempts", 0) if isinstance(rec, dict) else 0
         candidates.append({
             "filename": entry,
             "filepath": filepath,
@@ -70,6 +182,8 @@ def scan_resume_candidates(cache_dir: str, limit: int = 50) -> dict:
             "age_seconds": int(age),
             "likely_url": likely_url,
             "expired": age > max_age,
+            "attempts": attempts,
+            "exhausted": attempts >= max_attempts,
         })
 
     # Freshest first so a cap drops the stalest, never the newest. Expired

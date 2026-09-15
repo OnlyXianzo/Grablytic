@@ -355,6 +355,16 @@ class TracedEngineService implements EngineService {
           () => _inner.scanResumeCandidates(cacheDir: cacheDir));
 
   @override
+  Future<Map<String, dynamic>> reportResumeAttempt(
+          {required String cacheDir,
+          required String filepath,
+          required bool success}) =>
+      _traced(
+          'resume/report',
+          () => _inner.reportResumeAttempt(
+              cacheDir: cacheDir, filepath: filepath, success: success));
+
+  @override
   Future<Map<String, dynamic>> updateCheck() =>
       _traced('engine/update_check', _inner.updateCheck);
 

@@ -101,4 +101,62 @@ void main() {
           isFalse);
     });
   });
+
+  group('ResumeNotifier.reportAttempt (BRUTAL-5 strike loop)', () {
+    test('RED: report without a prior resumeDownload is a silent no-op',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final mock = MockEngineService();
+      final container = ProviderContainer(overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        engineProvider.overrideWith((ref) => mock),
+      ]);
+      addTearDown(container.dispose);
+      final n = container.read(resumeProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      await n.reportAttempt(url: 'https://x.test/never', success: false);
+      expect(mock.reportedAttempts, isEmpty);
+    });
+
+    test('RED: resumeDownload stashes origin; reportAttempt forwards once',
+        () async {
+      final dir = await Directory.systemTemp.createTemp('resume-rep');
+      addTearDown(() async {
+        try {
+          await dir.delete(recursive: true);
+        } catch (_) {}
+      });
+      final partPath = '${dir.path}/v.part';
+      await File(partPath).writeAsString('x');
+      final cand = ResumeCandidate(
+        filename: 'v.part',
+        filepath: partPath,
+        sizeBytes: 1,
+        ageSeconds: 60,
+        likelyUrl: 'https://x.test/v',
+        expired: false,
+      );
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final mock = MockEngineService();
+      final container = ProviderContainer(overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        engineProvider.overrideWith((ref) => mock),
+      ]);
+      addTearDown(container.dispose);
+      final n = container.read(resumeProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      n.state = const AsyncValue.data([]);
+      final url = await n.resumeDownload(cand);
+      expect(url, 'https://x.test/v');
+      await n.reportAttempt(url: url!, success: false, cacheDir: dir.path);
+      expect(mock.reportedAttempts, hasLength(1));
+      expect(mock.reportedAttempts.single['filepath'], partPath);
+      expect(mock.reportedAttempts.single['success'], isFalse);
+      // One-shot: second report for the same url is a no-op.
+      await n.reportAttempt(url: url, success: false);
+      expect(mock.reportedAttempts, hasLength(1));
+    });
+  });
 }

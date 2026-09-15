@@ -20,6 +20,7 @@ void main() {
         EngineMethods.getSharedUrl,
         EngineMethods.sharedUrlInbound,
         EngineMethods.scanResume,
+        EngineMethods.resumeReport,
         EngineMethods.exportLog,
         EngineMethods.updateCheck,
         EngineMethods.setUpdateChannel,
@@ -31,7 +32,7 @@ void main() {
         EngineMethods.openUrl,
         EngineMethods.syncSchedule,
       };
-      expect(ids, hasLength(23));
+      expect(ids, hasLength(24));
       expect(ids.every((id) => id.isNotEmpty), isTrue);
     });
 
@@ -42,6 +43,7 @@ void main() {
       expect(EngineMethods.startDownload, 'download/start');
       expect(EngineMethods.cancelDownload, 'download/cancel');
       expect(EngineMethods.scanResume, 'resume/scan');
+      expect(EngineMethods.resumeReport, 'resume/report');
       expect(EngineMethods.bootstrap, 'engine/bootstrap');
       expect(EngineMethods.updateCheck, 'engine/update_check');
       expect(EngineMethods.setPaths, 'paths/set');
