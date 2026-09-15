@@ -169,8 +169,37 @@ void main() {
       });
     });
 
-    group('malformed events', () {
-      test('are silently dropped (missing ts field)', () async {
+    group('debug flood gate (Loop-1 hang fix)', () {
+      test('DEBUG engine entries are file-only, never buffered', () async {
+        ingester.start(controller.stream);
+
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:00',
+          'level': 'DEBUG',
+          'logger': 'downloader',
+          'message': '[download] 43.2% of 3.79GiB at 10MiB/s',
+          'download_id': 'dl-debug-1',
+        });
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:01',
+          'level': 'INFO',
+          'logger': 'downloader',
+          'message': 'milestone',
+          'download_id': 'dl-debug-1',
+        });
+
+        await Future<void>.delayed(Duration.zero);
+
+        // UI buffer (overlays/sheets/lists rebuild off this) sees INFO only.
+        expect(buffer.entries, hasLength(1));
+        expect(buffer.entries.single.message, 'milestone');
+        expect(buffer.getEntriesForDownload('dl-debug-1'), hasLength(1));
+      });
+    });
+
+    group('malformed events', () {      test('are silently dropped (missing ts field)', () async {
         ingester.start(controller.stream);
 
         controller.add({

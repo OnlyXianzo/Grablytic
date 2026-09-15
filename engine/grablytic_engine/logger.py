@@ -50,6 +50,17 @@ class EngineLogger:
         self._event_callback = None
         self._log_dir: str | None = None
         self._min_level: int = DEBUG
+        # Bridge gate (Loop-1 hang fix): the Chaquopy/EventChannel callback
+        # feeds the Flutter UI thread (LogBuffer + overlay rebuilds). yt-dlp
+        # emits per-block DEBUG at tens of Hz per download; forwarding all
+        # of it hung flagships with 10+ queued items (63k lines/7.5MB per
+        # field session). INFO+ crosses the bridge; DEBUG stays in the file
+        # log + in-memory queue (desktop drain), so diagnostics lose nothing.
+        # Deliberately NOT per-download: loggers are process-global shared
+        # singletons, so a per-download verbose flag would race across
+        # concurrent downloads. Verbose users read DEBUG via Diagnostics →
+        # File Logs (same bytes, zero UI cost).
+        self._bridge_min_level: int = INFO
 
     def set_context(self, **kwargs: Any) -> None:
         if not hasattr(self._context, 'data'):
@@ -75,6 +86,10 @@ class EngineLogger:
 
     def set_min_level(self, level: int) -> None:
         self._min_level = level
+
+    def set_bridge_min_level(self, level: int) -> None:
+        """Floor for the UI bridge callback (file + queue unaffected)."""
+        self._bridge_min_level = level
 
     def _log(self, level: int, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
         ctx = getattr(self._context, 'data', {}).copy() if hasattr(self._context, 'data') else {}
@@ -123,8 +138,10 @@ class EngineLogger:
         # EventChannel. Falls back to the module-global callback so loggers
         # created before the setter ran still deliver. Never raises — a
         # logging path must not break downloads (or tests without Chaquopy).
+        # Gated on _bridge_min_level (default INFO): DEBUG rides the file +
+        # queue only, never the UI thread.
         cb = self._event_callback if self._event_callback is not None else _global_event_callback
-        if cb is not None:
+        if cb is not None and level >= self._bridge_min_level:
             try:
                 cb.onEvent(json.dumps(event, default=str))
             except Exception:
@@ -201,6 +218,9 @@ _global_event_callback = None
 # before some lazily-created loggers exist (Android calls it directly).
 _global_log_dir: str | None = None
 
+# Module-global bridge floor (see EngineLogger._bridge_min_level).
+_global_bridge_min_level: int = INFO
+
 
 def get_logger(name: str) -> EngineLogger:
     if name not in _loggers:
@@ -209,6 +229,7 @@ def get_logger(name: str) -> EngineLogger:
             _loggers[name].set_event_callback(_global_event_callback)
         if _global_log_dir is not None:
             _loggers[name].set_log_dir(_global_log_dir)
+        _loggers[name].set_bridge_min_level(_global_bridge_min_level)
     return _loggers[name]
 
 
@@ -235,5 +256,19 @@ def set_global_event_callback(cb) -> None:
     for logger in _loggers.values():
         try:
             logger.set_event_callback(cb)
+        except Exception:
+            pass
+
+
+def set_global_bridge_min_level(level: int) -> None:
+    """Floor for the UI bridge callback on all loggers (present + future).
+
+    File + queue delivery are unaffected at any setting. Never raises.
+    """
+    global _global_bridge_min_level
+    _global_bridge_min_level = level
+    for logger in _loggers.values():
+        try:
+            logger.set_bridge_min_level(level)
         except Exception:
             pass
