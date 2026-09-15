@@ -156,8 +156,8 @@ void main() {
       downloadId: 'dl-live',
     ));
 
-    await tester.pump();
-    await tester.pump();
+    // Loop-3: live updates batch at ~500 ms (was setState per event).
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.textRange.ofSubstring('Incoming live fragment downloaded'), findsOneWidget);
     expect(find.text('No logs recorded for this download yet'), findsNothing);

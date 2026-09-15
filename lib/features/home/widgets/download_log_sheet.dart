@@ -61,6 +61,10 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
   bool _isLoadingDisk = false;
   List<LogEntry> _diskFallbackEntries = [];
   int? _expandedIndex;
+  // Loop-3: batch live updates at ~2 Hz (was setState per log event) and
+  // cap rendered rows — a 500-row RichText rebuild at tens of Hz janked.
+  Timer? _batch;
+  static const int _maxRenderedRows = 200;
 
   @override
   void initState() {
@@ -73,10 +77,14 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
     final buffer = ref.read(logBufferProvider);
     _streamSub = buffer.streamForDownload(widget.downloadId).listen((_) {
       if (!mounted) return;
-      setState(() {});
-      if (_autoScroll) {
-        _scrollToBottom();
-      }
+      _batch ??= Timer(const Duration(milliseconds: 500), () {
+        _batch = null;
+        if (!mounted) return;
+        setState(() {});
+        if (_autoScroll) {
+          _scrollToBottom();
+        }
+      });
     });
   }
 
@@ -131,12 +139,13 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
   }
 
   void _scrollToBottom() {
+    // Loop-3: jumpTo, not animateTo — a 200 ms animation per live event
+    // piled overlapping animations at tens of Hz. Instant follow is calmer
+    // and cheaper; the full log stays available via scrollback/copy.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
+        _scrollController.jumpTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
         );
       }
     });
@@ -144,6 +153,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
 
   @override
   void dispose() {
+    _batch?.cancel();
     _streamSub?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
@@ -424,11 +434,34 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: cs.outlineVariant.withAlpha(60)),
                         ),
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          itemCount: entries.length,
-                          itemBuilder: (context, index) {
-                            final entry = entries[index];
+                        child: Column(
+                          children: [
+                            if (entries.length > _maxRenderedRows)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'Showing last $_maxRenderedRows of ${entries.length} lines — copy all for the full log',
+                                  style: tt.mono.copyWith(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                              ),
+                            Expanded(
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                // Loop-3 clamp: render the tail only. The full
+                                // list stays in the buffer for copy/search.
+                                itemCount: entries.length > _maxRenderedRows
+                                    ? _maxRenderedRows
+                                    : entries.length,
+                                itemBuilder: (context, index) {
+                                  final entry = entries[
+                                      entries.length -
+                                          (entries.length > _maxRenderedRows
+                                              ? _maxRenderedRows
+                                              : entries.length) +
+                                          index];
                             final isExpanded = _expandedIndex == index;
                             final col = _levelColor(entry.level, cs);
 
@@ -504,7 +537,10 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                             );
                           },
                         ),
-                      ),
+                              ),
+                            ],
+                          ),
+                        ),
           ),
         ],
       ),
