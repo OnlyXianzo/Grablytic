@@ -61,6 +61,29 @@ def _running_count() -> int:
     return count
 
 
+def _is_audio_mode(config) -> bool:
+    """True when this download produces an audio-only artifact. Never raises
+    (Chaquopy proxies / garbage configs fall back to video mode)."""
+    try:
+        return bool((config or {}).get("audio_only", False))
+    except Exception:
+        return False
+
+
+def _find_live_url_holder(url: str, audio_only: bool):
+    """ID of a live (non-terminal) active-or-queued download for the same
+    (url, audio-mode), or None. Caller must hold _downloads_lock. T1-5."""
+    for did, info in _active_downloads.items():
+        if info.get("finished_at"):
+            continue
+        if info.get("url") == url and bool(info.get("audio_only", False)) == audio_only:
+            return did
+    for e in _pending_queue:
+        if e.get("url") == url and _is_audio_mode(e.get("config")) == audio_only:
+            return e.get("download_id")
+    return None
+
+
 def get_queue_status() -> dict:
     with _downloads_lock:
         return {
@@ -114,6 +137,7 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                 "progress_queue": entry["progress_queue"],
                 "result_queue": entry["result_queue"],
                 "url": entry["url"],
+                "audio_only": _is_audio_mode(entry.get("config")),
                 "thread": None,  # set after start
                 "started_at": datetime.now(timezone.utc),
             }
@@ -151,6 +175,7 @@ def _pump_queue() -> None:
                 "progress_queue": entry["progress_queue"],
                 "result_queue": entry["result_queue"],
                 "url": entry["url"],
+                "audio_only": _is_audio_mode(entry.get("config")),
                 "thread": None,
                 "started_at": datetime.now(timezone.utc),
             }
@@ -483,6 +508,7 @@ def download_thread(
                 "progress_queue": prog_q,
                 "result_queue": res_q,
                 "url": url,
+                "audio_only": _is_audio_mode(config),
                 "started_at": datetime.now(timezone.utc),
             })
             _active_downloads[download_id] = existing
@@ -833,6 +859,19 @@ def start_download(
                     "error_type": "ERROR_ALREADY_ACTIVE",
                     "error_message": "Download already queued for this ID",
                 }
+        # T1-5: same URL under a different ID must not download twice.
+        # Keyed on (url, audio-mode) so explicit "extract audio" re-fetches
+        # (different artifact) still pass; terminal entries never block.
+        audio_only = _is_audio_mode(config)
+        holder = _find_live_url_holder(url, audio_only)
+        if holder is not None:
+            return {
+                "success": False,
+                "download_id": download_id,
+                "error_type": "ERROR_DUPLICATE_URL",
+                "error_message": f"URL already downloading under ID {holder}",
+                "existing_download_id": holder,
+            }
         queued = _running_count() >= _max_concurrent
         if queued:
             entry = {
@@ -872,6 +911,7 @@ def start_download(
                 "progress_queue": progress_queue,
                 "result_queue": result_queue,
                 "url": url,
+                "audio_only": audio_only,
                 "thread": None,
                 "started_at": datetime.now(timezone.utc),
             }
