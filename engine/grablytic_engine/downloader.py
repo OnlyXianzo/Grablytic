@@ -684,18 +684,24 @@ def download_thread(
                     single = opts.get("playlist_items") in (None, "1")
                 if single and ydl_logger.errors:
                     last = ydl_logger.errors[-1]
+                    # AARAV-1: any logger.error on a single item used to
+                    # surface as ERROR_POSTPROCESS_FAILED — including format
+                    # resolution failures that never reached post-processing.
+                    # Classify the real message instead (Dart maps every
+                    # known type; unknowns fall back safely).
+                    err = classify_error(Exception(last))
                     log.error(
-                        f"Post-processing failed, failing item: {last[:200]}",
+                        f"Download failed, failing item: {last[:200]}",
                         extra={"download_id": download_id},
                     )
                     terminal_event = json.dumps({
                         "type": "event",
                         "event": "error",
                         "download_id": download_id,
-                        "error_type": "ERROR_POSTPROCESS_FAILED",
-                        "error_message": f"Processing failed: {last[:200]}",
-                        "recoverable": True,
-                        "suggests_vpn": False,
+                        "error_type": err.error_type,
+                        "error_message": err.message,
+                        "recoverable": err.recoverable,
+                        "suggests_vpn": err.suggests_vpn,
                     })
                     if event_callback is not None:
                         _emit_event(event_callback, terminal_event)
@@ -703,10 +709,10 @@ def download_thread(
                         res_q.put({
                             "success": False,
                             "download_id": download_id,
-                            "error_type": "ERROR_POSTPROCESS_FAILED",
-                            "error_message": f"Processing failed: {last[:200]}",
-                            "recoverable": True,
-                            "suggests_vpn": False,
+                            "error_type": err.error_type,
+                            "error_message": err.message,
+                            "recoverable": err.recoverable,
+                            "suggests_vpn": err.suggests_vpn,
                         })
                     return
                 log.info("Download completed", extra={"download_id": download_id})

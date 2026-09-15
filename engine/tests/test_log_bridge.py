@@ -400,7 +400,10 @@ class TestPostprocessFailure:
         errs = [json.loads(r) for r in sink.events
                 if json.loads(r).get("event") == "error"]
         assert len(errs) == 1
-        assert errs[0]["error_type"] == "ERROR_POSTPROCESS_FAILED"
+        # AARAV-1: the real message is classified now — a genuine ffmpeg
+        # failure maps to ERROR_FFMPEG_MISSING (terminality preserved,
+        # precision improved; Dart falls back safely for unmapped types).
+        assert errs[0]["error_type"] == "ERROR_FFMPEG_MISSING"
         assert errs[0]["recoverable"] is True
 
     def test_playlist_keeps_lenient_finished(

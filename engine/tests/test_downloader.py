@@ -252,3 +252,33 @@ class TestPublicQueueScan:
             pass
         assert len(rest) == 3
         assert _json.loads(rest[0])["filename"] == "/tmp/a.mkv"
+
+
+class TestErrorTaxonomy:
+    @pytest.mark.unit
+    def test_format_failure_not_mislabeled_postprocess(self, _env, monkeypatch):
+        """AARAV-1: a format-resolution failure swallowed by ignoreerrors
+        must not surface as ERROR_POSTPROCESS_FAILED — classify it."""
+
+        class FakeYDL:
+            def __init__(self, opts):
+                self.logger = opts.get("logger")
+
+            def add_progress_hook(self, hook):
+                pass
+
+            def download(self, urls):
+                self.logger.error(
+                    "[soundcloud] 159813448: Requested format is not available")
+                return 0
+
+        monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYDL)
+        res_q: queue.Queue = queue.Queue()
+        dl_mod.download_thread(
+            url="https://soundcloud.com/x/y", download_id="tax1",
+            result_queue=res_q,
+        )
+        res = res_q.get(timeout=10)
+        assert res["success"] is False
+        assert res["error_type"] == "ERROR_FORMAT_UNAVAILABLE"
+        assert "not available" in res["error_message"]
