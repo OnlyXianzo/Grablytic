@@ -257,3 +257,76 @@ def test_pump_queue_cancel_loss_window_terminal_cancelled(monkeypatch):
         dl_mod._pending_queue.clear()
 
 
+
+
+def _cleanup(*ids):
+    for did in ids:
+        dl_mod._active_downloads.pop(did, None)
+    dl_mod._pending_queue.clear()
+
+
+class TestUrlDedup:
+    """T1-5: same URL under N different IDs must not download N times."""
+
+    def test_duplicate_url_while_active_rejected(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+        try:
+            r1 = dl_mod.start_download(url="https://x.test/dup", download_id="dup-1")
+            assert r1["success"] is True
+            r2 = dl_mod.start_download(url="https://x.test/dup", download_id="dup-2")
+            assert r2["success"] is False
+            assert r2["error_type"] == "ERROR_DUPLICATE_URL"
+            assert r2.get("existing_download_id") == "dup-1"
+            # First download unaffected.
+            assert "dup-1" in dl_mod._active_downloads
+            assert "dup-2" not in dl_mod._active_downloads
+        finally:
+            _cleanup("dup-1", "dup-2")
+
+    def test_duplicate_url_while_queued_rejected(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+        try:
+            dl_mod.start_download(url="https://x.test/a", download_id="dq-1")
+            dl_mod.start_download(url="https://x.test/b", download_id="dq-2")
+            q = dl_mod.start_download(url="https://x.test/c", download_id="dq-3")
+            assert q.get("queued") is True
+            r = dl_mod.start_download(url="https://x.test/c", download_id="dq-4")
+            assert r["success"] is False
+            assert r["error_type"] == "ERROR_DUPLICATE_URL"
+            assert r.get("existing_download_id") == "dq-3"
+        finally:
+            _cleanup("dq-1", "dq-2", "dq-3", "dq-4")
+
+    def test_same_url_audio_extract_allowed_alongside_video(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+        try:
+            r1 = dl_mod.start_download(url="https://x.test/m", download_id="m-vid")
+            assert r1["success"] is True
+            # Extract-audio re-fetch is an explicit user action producing a
+            # different artifact — must not be blocked as a duplicate.
+            r2 = dl_mod.start_download(
+                url="https://x.test/m", download_id="m-aud",
+                config={"audio_only": True},
+            )
+            assert r2["success"] is True, r2
+        finally:
+            _cleanup("m-vid", "m-aud")
+
+    def test_same_url_readmitted_after_finish(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+        import datetime
+        try:
+            r1 = dl_mod.start_download(url="https://x.test/r", download_id="re-1")
+            assert r1["success"] is True
+            # Terminal entries awaiting cleanup must not block re-download.
+            dl_mod._active_downloads["re-1"]["finished_at"] = (
+                datetime.datetime.now(datetime.timezone.utc)
+            )
+            r2 = dl_mod.start_download(url="https://x.test/r", download_id="re-2")
+            assert r2["success"] is True, r2
+        finally:
+            _cleanup("re-1", "re-2")
