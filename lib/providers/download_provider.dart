@@ -1,6 +1,7 @@
 import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:io' show File;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../core/database/download_history_db.dart';
@@ -174,6 +175,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   final EngineService _engine;
   final DateTime Function() _clock;
   final Map<String, _DownloadSmoother> _smoothers = {};
+
+  /// Drops transient smoother state for [id]. Called on every terminal
+  /// transition and on history removal so long sessions cannot accumulate
+  /// one [_DownloadSmoother] per completed download.
+  void _dropSmoother(String id) {
+    _smoothers.remove(id);
+  }
+
+  /// Test-only surface: number of retained smoother entries.
+  @visibleForTesting
+  int get smootherCount => _smoothers.length;
 
   DownloadNotifier(this._engine, {DateTime Function()? clock})
       : _clock = clock ?? DateTime.now,
@@ -381,6 +393,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ];
       final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
       _persistRecord(item);
+      _dropSmoother(downloadId);
     } else if (eventType == 'error') {
       final errorType = event['error_type'] as String?;
       final errorMessage = event['error_message'] as String?;
@@ -407,6 +420,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ];
       final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
       _persistRecord(item);
+      _dropSmoother(downloadId);
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
       state = [
@@ -427,6 +441,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ];
       final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
       _persistRecord(item);
+      _dropSmoother(downloadId);
     }
   }
 
@@ -769,6 +784,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// Remove the history row only — the file on disk is left untouched.
   Future<void> removeFromHistory(String id) async {
     state = state.where((d) => d.id != id).toList();
+    _dropSmoother(id);
     try {
       await DownloadHistoryDb.instance.delete(id);
     } catch (_) {}
@@ -802,6 +818,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       } catch (_) {}
     }
     state = state.where((d) => d.id != id).toList();
+    _dropSmoother(id);
     try {
       await DownloadHistoryDb.instance.delete(id);
     } catch (_) {}
