@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -35,6 +36,12 @@ class _AppShellState extends ConsumerState<AppShell> {
   // Guards against stacking duplicate share sheets when intents arrive in
   // quick succession (cold-start getSharedUrl + stream event for one share).
   bool _shareSheetOpen = false;
+  // T2-6: FIFO of share URLs awaiting a sheet. A second share arriving
+  // while a sheet is open used to be silently dropped (single-var native
+  // slot + open-guard with no backlog). Bounded like the native side.
+  final ListQueue<String> _pendingShareUrls = ListQueue();
+  static const int _maxPendingShares = 50;
+  bool _sharePumping = false;
 
   @override
   void initState() {
@@ -53,16 +60,42 @@ class _AppShellState extends ConsumerState<AppShell> {
   void _initSharedUrlListening() {
     final engine = ref.read(engineProvider);
     _intentSubscription = engine.sharedUrlStream.listen((url) {
-      _handleSharedUrl(url);
+      _enqueueSharedUrl(url);
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final sharedUrl = await engine.getSharedUrl();
-      if (sharedUrl != null && sharedUrl.isNotEmpty) {
-        _handleSharedUrl(sharedUrl);
+      // Drain every queued cold-start share, not just the first one.
+      for (var i = 0; i < _maxPendingShares; i++) {
+        final sharedUrl = await engine.getSharedUrl();
+        if (sharedUrl == null || sharedUrl.isEmpty) break;
+        _enqueueSharedUrl(sharedUrl);
       }
       _checkBatteryPrompt();
     });
+  }
+
+  /// Enqueue a share URL and drive the sheet pump. Each URL is consumed
+  /// exactly once, in arrival order; overflow evicts the oldest.
+  void _enqueueSharedUrl(String url) {
+    if (url.isEmpty || !mounted) return;
+    if (_pendingShareUrls.length >= _maxPendingShares) {
+      _pendingShareUrls.removeFirst();
+    }
+    _pendingShareUrls.addLast(url);
+    _pumpShareQueue();
+  }
+
+  Future<void> _pumpShareQueue() async {
+    if (_sharePumping || _shareSheetOpen) return;
+    if (_pendingShareUrls.isEmpty || !mounted) return;
+    _sharePumping = true;
+    try {
+      await _handleSharedUrl(_pendingShareUrls.removeFirst());
+    } finally {
+      _sharePumping = false;
+    }
+    // Chain consecutive auto-starts (no sheet opened to chain off).
+    if (mounted && !_shareSheetOpen) _pumpShareQueue();
   }
 
   Future<void> _checkBatteryPrompt() async {
@@ -225,6 +258,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     _shareSheetOpen = true;
     showShareIntentSheet<void>(context, url).whenComplete(() {
       _shareSheetOpen = false;
+      // A share that arrived while this sheet was open goes next.
+      _pumpShareQueue();
     });
   }
 
