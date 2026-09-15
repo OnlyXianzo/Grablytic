@@ -422,6 +422,7 @@ class _DownloadCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDownloading = item.status == 'downloading';
+    final isCancelling = item.status == 'cancelling';
     final isQueued = item.status == 'queued' || item.status == 'pending';
     final isError = item.status == 'error';
     final isInterrupted = item.status == 'interrupted';
@@ -488,7 +489,16 @@ class _DownloadCard extends StatelessWidget {
                                     size: 32,
                                   ),
                                 )
-                          : Semantics(
+                              : isCancelling
+                                  ? Semantics(
+                                      label: 'Cancelling',
+                                      child: Icon(
+                                        Icons.cancel_outlined,
+                                        color: colorScheme.onSurfaceVariant,
+                                        size: 32,
+                                      ),
+                                    )
+                                  : Semantics(
                               label: isError ? 'Error' : 'Completed',
                               child: Icon(
                                   isError
@@ -609,6 +619,22 @@ class _DownloadCard extends StatelessWidget {
                       DownloadLogOverlay(
                         downloadId: item.id,
                         visible: isDownloading,
+                      ),
+                    ] else if (isCancelling) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.cancel_outlined,
+                              size: 14,
+                              color: colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Cancelling — waiting for worker to stop',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ] else if (isQueued) ...[
                       const SizedBox(height: 8),
