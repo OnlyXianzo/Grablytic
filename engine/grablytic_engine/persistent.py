@@ -42,34 +42,80 @@ _flush_thread: threading.Thread | None = None
 _flush_stop = threading.Event()
 
 
-def sanitize(obj: Any) -> Any:
+def sanitize(obj: Any, _seen: set[int] | None = None) -> Any:
     """Deep-copy *obj* with sensitive values replaced by ***REDACTED***.
 
-    Handles dicts, lists/tuples and strings (query-string token masking).
+    Handles dicts, lists/tuples and strings (query-string token masking +
+    URL userinfo passwords). Mapping-like proxies (Chaquopy Java maps are
+    not `dict` instances) are redacted via duck-typed `.items()`. Cyclic
+    structures terminate with a ***CYCLIC*** marker instead of RecursionError.
     Never mutates the caller's object — the engine keeps working with the
     original while only the redacted copy hits disk / GitHub.
     """
+    if _seen is None:
+        _seen = set()
     if isinstance(obj, dict):
+        if id(obj) in _seen:
+            return "***CYCLIC***"
+        _seen.add(id(obj))
         redacted: dict[Any, Any] = {}
         for k, v in obj.items():
             lk = str(k).lower()
             if any(s in lk for s in _SENSITIVE_SUBSTRINGS):
                 redacted[k] = "***REDACTED***"
             else:
-                redacted[k] = sanitize(v)
+                redacted[k] = sanitize(v, _seen)
         return redacted
     if isinstance(obj, (list, tuple)):
-        cleaned = [sanitize(v) for v in obj]
+        if id(obj) in _seen:
+            return "***CYCLIC***"
+        _seen.add(id(obj))
+        cleaned = [sanitize(v, _seen) for v in obj]
         return type(obj)(cleaned) if isinstance(obj, tuple) else cleaned
     if isinstance(obj, str) and len(obj) > 8:
         # Mask token= / sig= / key= query params, keep names for debugging.
         import re
-        return re.sub(
+        masked = re.sub(
             r"((?:token|sig|key|auth)[=:][\"']?)([^\"'&\s,}]+)",
             r"\1***REDACTED***",
             obj,
             flags=re.IGNORECASE,
         )
+        # T3-15: mask user:password@host userinfo (proxy creds in URLs).
+        # Greedy to the last @ before / or whitespace, so passwords
+        # containing @ are fully masked; user-only form stays untouched.
+        def _mask_userinfo(m: "re.Match[str]") -> str:
+            userinfo = m.group(2)
+            if ":" not in userinfo:
+                return m.group(0)
+            return f"{m.group(1)}{userinfo.split(':', 1)[0]}:***REDACTED***@"
+
+        masked = re.sub(
+            r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@",
+            _mask_userinfo,
+            masked,
+        )
+        return masked
+    if isinstance(obj, (bytes, bytearray)):
+        return obj
+    # Duck-typed mappings (e.g. Chaquopy Java-map proxies).
+    items = getattr(obj, "items", None)
+    if callable(items):
+        try:
+            pairs = list(items())
+        except Exception:
+            return obj
+        out: dict[Any, Any] = {}
+        for k, v in pairs:
+            try:
+                lk = str(k).lower()
+            except Exception:
+                lk = ""
+            if any(s in lk for s in _SENSITIVE_SUBSTRINGS):
+                out[k] = "***REDACTED***"
+            else:
+                out[k] = sanitize(v, _seen)
+        return out
     return obj
 
 
