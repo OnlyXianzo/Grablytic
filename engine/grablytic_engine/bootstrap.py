@@ -120,6 +120,60 @@ def _calculate_sha256(filepath: str) -> str:
         return ""
 
 
+# ── Binary integrity manifest ─────────────────────────────────────────
+# After extracting a binary from a verified archive, we store its SHA-256
+# in a JSON manifest keyed by real dest_path. On subsequent runs,
+# _bootstrap_github_binary verifies the on-disk binary against this
+# manifest before trusting it — closing the trojaned-cache trust gap
+# where a pre-planted malicious binary was trusted forever (audit T0-5).
+
+
+def _manifest_path(cache_dir: str) -> str:
+    return os.path.join(cache_dir, "binary_manifest.json")
+
+
+def _load_manifest(cache_dir: str) -> dict:
+    path = _manifest_path(cache_dir)
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_manifest(cache_dir: str, manifest: dict) -> None:
+    path = _manifest_path(cache_dir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(manifest, f, indent=2)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def _record_binary_sha(cache_dir: str, dest_path: str) -> None:
+    """Record the SHA-256 of a freshly extracted binary in the manifest."""
+    real_dest = os.path.realpath(dest_path)
+    sha = _calculate_sha256(real_dest)
+    if sha:
+        manifest = _load_manifest(cache_dir)
+        manifest[real_dest] = sha
+        _save_manifest(cache_dir, manifest)
+
+
+def _verify_binary_against_manifest(cache_dir: str, dest_path: str) -> bool:
+    """Check an existing binary against the manifest. Returns True if valid."""
+    real_dest = os.path.realpath(dest_path)
+    manifest = _load_manifest(cache_dir)
+    expected = manifest.get(real_dest)
+    if not expected:
+        return False  # No record → untrusted
+    actual = _calculate_sha256(real_dest)
+    return actual == expected
+
+
 def _get_yt_dlp_version() -> str:
     try:
         from yt_dlp import version as yt_dlp_version
@@ -425,7 +479,15 @@ def _bootstrap_github_binary(
         return False, None
 
     if os.path.isfile(dest_path) and os.access(dest_path, os.X_OK):
-        return True, None
+        # T0-5: verify existing binary against the manifest instead of
+        # trusting it blindly. A trojaned binary planted here would
+        # otherwise be trusted forever.
+        if _verify_binary_against_manifest(cache_dir, dest_path):
+            return True, None
+        log.warn(
+            f"Bootstrap {name}: existing binary at {dest_path} failed "
+            f"manifest verification — re-downloading from trusted source"
+        )
 
     is_android = _is_android_app()
     if is_android:
@@ -482,6 +544,9 @@ def _bootstrap_github_binary(
         )
 
         if os.path.isfile(dest_path):
+            # T0-5: record the extracted binary's SHA in the manifest so
+            # future runs can verify it hasn't been replaced/trojaned.
+            _record_binary_sha(cache_dir, dest_path)
             return True, version_str
 
         return False, None
