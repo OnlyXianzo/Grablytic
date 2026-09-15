@@ -488,6 +488,10 @@ def download_thread(
             _active_downloads[download_id] = existing
 
         log.set_context(download_id=download_id)
+        # T1-9: bound before try — the except-handler below logs safe_url,
+        # so a failure before its in-try assignment must not raise
+        # UnboundLocalError and mask the real error.
+        safe_url = "<url>"
         try:
             # Never log raw URLs: share/clipboard links routinely carry
             # signed query params (sig/lsig). Host + path is enough to

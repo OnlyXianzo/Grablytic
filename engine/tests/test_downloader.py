@@ -175,3 +175,26 @@ class TestFindThumbnailPath:
         assert finished, "expected a terminal finished callback event"
         assert finished[0]["thumbnail_path"] == str(sidecar)
         assert finished[0]["file_path"] == str(target_file)
+
+
+class TestSafeUrlScoping:
+    @pytest.mark.unit
+    def test_failure_before_safe_url_assignment_reports_real_error(self, _env):
+        """T1-9: the worker's except-handler logs safe_url, which is bound
+        inside try. A failure before that assignment must surface the REAL
+        error — never NameError (previously masked as
+        ERROR_DOWNLOADER_CRASH "Downloader stopped unexpectedly (NameError)")."""
+
+        class _SplitBoom(str):
+            def split(self, *args, **kwargs):
+                raise RuntimeError("boom-before-safe_url")
+
+        res_q: queue.Queue = queue.Queue()
+        dl_mod.download_thread(
+            url=_SplitBoom("https://x.test/v"), download_id="safeurl1",
+            result_queue=res_q,
+        )
+        res = res_q.get(timeout=10)
+        assert res["success"] is False
+        assert res["error_type"] == "ERROR_UNKNOWN"
+        assert res["error_message"] == "boom-before-safe_url"
