@@ -31,22 +31,21 @@ from drop shadows.
 
 ## 2. Brand and logo
 
-The Grablytic mark is a white geometric `T` folded into a hexagonal tile,
-set on a terracotta paper field, with a soft-serif `Grablytic` wordmark
-below it in paper white.
+The Grablytic mark is a white geometric play-mark — an angular play
+triangle folded into a hexagonal `G` form — set on a terracotta paper
+field, with a soft-serif `Grablytic` wordmark below it in paper white.
 
 - **Canonical asset (repo):** `assets/branding/Grablytic-logo.png`
-- **TODO (rename):** the current PNGs (`assets/brand/grablytic_logo*.png`,
-  `assets/branding/Grablytic-logo.png`, launcher `mipmap-*`, store icons)
-  are pre-rename artwork carrying the old "T" mark/wordmark — file names were
-  updated for consistency but the artwork itself still needs a real redesign,
-  not a rename. Do not ship a release with new binaries + old mark without
-  resolving this.
+- **TODO (launcher/small-size pass):** the new play-mark artwork
+  (`Grablytic-logo-square.jpg` source, 4032×4200) ships full-bleed with a
+  photographic vignette — legible large, but verify 48 dp launcher and
+  16 dp favicon rendering on-device; flatten to a solid Terracotta Deep
+  field if the vignette muddies small sizes.
 - **Field:** Terracotta Deep (see §3) with visible paper grain. Never
   flat-red, never gradient.
 - **Mark / wordmark:** Paper White `#FFFFFF` on terracotta; Espresso
   `#1C1B1A` on paper. Never terracotta-on-terracotta.
-- **Clearspace:** height of the `T` bar on all four sides. Nothing enters it.
+- **Clearspace:** height of the mark's top edge on all four sides. Nothing enters it.
 - **Minimum sizes:** 32 dp app bar / splash icon, 120 dp hero, 16 dp favicon
   floor (mark only, no wordmark below 48 dp).
 - **Do:** place on paper cream, terracotta deep, or espresso. Use the full
