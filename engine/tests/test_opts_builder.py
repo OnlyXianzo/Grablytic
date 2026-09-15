@@ -213,6 +213,19 @@ def test_sleep_interval():
     assert opts["sleep_interval"] == 5
 
 
+def test_sleep_interval_garbage_is_ignored_not_fatal():
+    # Regression [TEARDOWN-4]: bare int() turned a settings typo into a
+    # ValueError out of build_ydl_opts, killing the download start path.
+    opts = build_ydl_opts(config={"sleep_interval": "abc"})
+    assert "sleep_interval" not in opts
+
+
+def test_sleep_interval_out_of_range_is_ignored():
+    assert "sleep_interval" not in build_ydl_opts(config={"sleep_interval": "-5"})
+    assert "sleep_interval" not in build_ydl_opts(config={"sleep_interval": "99999"})
+    assert "sleep_interval" not in build_ydl_opts(config={"sleep_interval": "1.5"})
+
+
 def test_embed_thumbnail_adds_postprocessors():
     opts = build_ydl_opts(config={"embedthumbnail": True, "addmetadata": False})
     pps = opts.get("postprocessors", [])
