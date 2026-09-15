@@ -1,7 +1,24 @@
 name: Build and Release
 
+# Asset naming standard (see nightly.yml header for the full scheme):
+#   grablytic-v<ver>[<suffix>]-<variant>.apk  (release: suffix empty —
+#   names are byte-identical to v0.0.1/v0.0.2 releases, Obtainium-safe)
+# Linux tar/pkg and Windows zip take the same optional suffix; .deb/.rpm
+# keep native conventions untouched.
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      asset_suffix:
+        description: 'Inserted after the version in every asset name (e.g. -nightly-20260916-abc1234). Empty = release names.'
+        required: false
+        default: ''
+        type: string
+      publish_to_release:
+        description: 'Run the Publish Release Assets job (version-tagged GitHub release).'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   android:
@@ -106,13 +123,13 @@ jobs:
       - name: Prepare APK output
         run: |
           mkdir -p dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}-${{ matrix.variant }}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-${{ matrix.variant }}.apk"
 
       - name: Upload Android Artifact (${{ matrix.variant }})
         uses: actions/upload-artifact@v4
         with:
-          name: grablytic-${{ matrix.variant }}
-          path: dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}-${{ matrix.variant }}.apk
+          name: grablytic-${{ matrix.variant }}${{ inputs.asset_suffix }}
+          path: dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-${{ matrix.variant }}.apk
 
   linux:
     name: Build Linux (${{ matrix.arch }} - deb, rpm, arch, tar.gz)
@@ -193,7 +210,7 @@ jobs:
       - name: Package Tarball (.tar.gz)
         run: |
           mkdir -p dist/linux
-          tar -czvf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
+          tar -czvf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
 
       - name: Package Debian (.deb)
         run: |
@@ -286,7 +303,7 @@ jobs:
           depend = aria2
           EOF
 
-          tar --zstd -cf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
+          tar --zstd -cf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
 
       - name: Upload Linux Packages (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
@@ -332,13 +349,13 @@ jobs:
       - name: Package Windows ZIP
         run: |
           mkdir dist\windows
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\windows\grablytic-windows-x64.zip
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\windows\grablytic-windows-x64${{ inputs.asset_suffix }}.zip"
 
       - name: Upload Windows Portable Zip
         uses: actions/upload-artifact@v4
         with:
-          name: grablytic-windows-x64-zip
-          path: dist\windows\grablytic-windows-x64.zip
+          name: grablytic-windows-x64-zip${{ inputs.asset_suffix }}
+          path: dist\windows\grablytic-windows-x64${{ inputs.asset_suffix }}.zip
 
       - name: Upload Windows Release Bundle
         uses: actions/upload-artifact@v4
@@ -348,6 +365,10 @@ jobs:
 
   publish-release:
     name: Publish Release Assets
+    # Skipped when reused by nightly (which publishes to the rolling tag
+    # itself). `!= false` keeps manual dispatch behavior unchanged, since
+    # workflow_dispatch runs carry no workflow_call inputs.
+    if: ${{ inputs.publish_to_release != false }}
     needs: [android, linux, windows]
     runs-on: ubuntu-latest
     permissions:
