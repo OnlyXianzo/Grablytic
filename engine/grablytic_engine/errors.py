@@ -43,6 +43,8 @@ _ERROR_MAP = {
     "HTTP Error 429": ("ERROR_RATE_LIMITED", True),
     "HTTP Error 403": ("ERROR_FORBIDDEN", True),
     "no video formats found": ("ERROR_FORMAT_UNAVAILABLE", True),
+    "requested format is not available": ("ERROR_FORMAT_UNAVAILABLE", True),
+    "ffmpeg not found": ("ERROR_FFMPEG_MISSING", True),
 }
 
 # T3-14: "drm" as a bare substring false-positives on filenames
