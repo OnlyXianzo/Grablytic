@@ -1,10 +1,46 @@
 import json
 import queue as _queue
+import time as _time
 
 from grablytic_engine.logger import get_logger
 
 
 _log = get_logger("grablytic_engine.hooks")
+
+# Loop-2 source throttle (mirrors yt-dlp --progress-delta, which yt-dlp only
+# applies to its own console output, not to progress_hooks): per-block hook
+# ticks at 8k-32k per stream serialize json + JNI + Dart decode + rebuilds.
+# Emit at most ~1/s or on >=1% movement; counters are absolute so dropped
+# ticks lose nothing, and bars interpolate between samples.
+_PROGRESS_MIN_INTERVAL_S = 1.0
+_PROGRESS_MIN_PCT_DELTA = 1.0
+
+# Loop-2 retention bound: the queue's only contract is latest-known-bytes at
+# finish (_drain_public). Unbounded growth retained tens of thousands of JSON
+# strings per large download on Android (nothing drains until finish), then
+# an O(n) drain+restore paused the merge. Drop-oldest keeps memory constant.
+_QUEUE_MAXSIZE = 500
+
+
+def _put_bounded(q: _queue.Queue, item: str) -> None:
+    """Enqueue without ever blocking the download thread.
+
+    Rare terminal events (stream_finished/error) must not wedge behind a
+    full queue of progress ticks: evict oldest and retry. Never raises.
+    """
+    try:
+        q.put_nowait(item)
+        return
+    except Exception:
+        pass
+    try:
+        q.get_nowait()
+    except Exception:
+        pass
+    try:
+        q.put_nowait(item)
+    except Exception:
+        pass
 
 # Set on the first failed callback delivery per process. Every delivery
 # fault is otherwise silent by design — but total silence is exactly how
@@ -59,6 +95,8 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
     # fixed cost of ≤3 log lines per download — never per-fragment spam.
     # Closure-local: yt-dlp invokes hooks on the download thread.
     _milestones = [25, 50, 75]
+    # Loop-2 sampler state (closure-local, same thread as the hook).
+    _sample = {"next_t": 0.0, "last_pct": -1.0}
 
     def progress_hook(d: dict):
         status = d.get("status", "")
@@ -74,6 +112,15 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
                         _log.info(f"reached {hit}% ({downloaded}/{total} bytes)", extra={"download_id": download_id})
                     except Exception:
                         pass
+            # Loop-2 gate: admit first tick, then ≥1s or ≥1% movement.
+            # Unknown totals (pct<0) admit on time only.
+            pct_f = (downloaded * 100.0 / total) if total > 0 else -1.0
+            now = _time.monotonic()
+            if not (now >= _sample["next_t"]
+                    or abs(pct_f - _sample["last_pct"]) >= _PROGRESS_MIN_PCT_DELTA):
+                return
+            _sample["next_t"] = now + _PROGRESS_MIN_INTERVAL_S
+            _sample["last_pct"] = pct_f
             event_json = json.dumps({
                 "type": "event",
                 "event": "downloading",
@@ -90,12 +137,9 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
             })
             # Dual-write: the queue feeds _last_known_bytes() (terminal
             # filesize contract) even on the live-callback path; the
-            # callback feeds Kotlin/Flutter. Unbounded queues here are
-            # freed with the download thread, and put() never blocks.
-            try:
-                queue.put(event_json)
-            except Exception:
-                pass
+            # callback feeds Kotlin/Flutter. Bounded drop-oldest (Loop-2):
+            # never blocks, never grows without bound.
+            _put_bounded(queue, event_json)
             _emit_event(event_callback, event_json)
 
         elif status == "finished":
@@ -116,12 +160,9 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
             })
             # Dual-write: the queue feeds _last_known_bytes() (terminal
             # filesize contract) even on the live-callback path; the
-            # callback feeds Kotlin/Flutter. Unbounded queues here are
-            # freed with the download thread, and put() never blocks.
-            try:
-                queue.put(event_json)
-            except Exception:
-                pass
+            # callback feeds Kotlin/Flutter. Bounded drop-oldest (Loop-2):
+            # never blocks, never grows without bound.
+            _put_bounded(queue, event_json)
             _emit_event(event_callback, event_json)
 
         elif status == "error":
@@ -135,12 +176,9 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
             })
             # Dual-write: the queue feeds _last_known_bytes() (terminal
             # filesize contract) even on the live-callback path; the
-            # callback feeds Kotlin/Flutter. Unbounded queues here are
-            # freed with the download thread, and put() never blocks.
-            try:
-                queue.put(event_json)
-            except Exception:
-                pass
+            # callback feeds Kotlin/Flutter. Bounded drop-oldest (Loop-2):
+            # never blocks, never grows without bound.
+            _put_bounded(queue, event_json)
             _emit_event(event_callback, event_json)
 
     return progress_hook
@@ -162,12 +200,9 @@ def build_postprocessor_hook(queue: _queue.Queue, download_id: str, event_callba
             })
             # Dual-write: the queue feeds _last_known_bytes() (terminal
             # filesize contract) even on the live-callback path; the
-            # callback feeds Kotlin/Flutter. Unbounded queues here are
-            # freed with the download thread, and put() never blocks.
-            try:
-                queue.put(event_json)
-            except Exception:
-                pass
+            # callback feeds Kotlin/Flutter. Bounded drop-oldest (Loop-2):
+            # never blocks, never grows without bound.
+            _put_bounded(queue, event_json)
             _emit_event(event_callback, event_json)
 
     return postprocessor_hook

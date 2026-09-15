@@ -10,6 +10,7 @@ import grablytic_engine.logger as logger_mod
 from grablytic_engine.logger import (
     DEBUG,
     INFO,
+    close_log_sinks,
     get_logger,
     set_global_bridge_min_level,
     set_global_event_callback,
@@ -42,6 +43,7 @@ def _clean_bridge():
     yield
     set_global_event_callback(None)
     set_global_bridge_min_level(INFO)
+    close_log_sinks()
     for lg in logger_mod._loggers.values():
         lg.set_event_callback(None)
         lg.set_queue(None)
@@ -641,3 +643,27 @@ class TestEmitDiagnostics:
             hooks_mod._log.set_queue(None)
             hooks_mod._callback_failed_once = False
             hooks_mod._log.clear_context()
+
+
+class TestBatchedDailyWriter:
+    @pytest.mark.unit
+    def test_error_force_flushes_without_close(self, tmp_path, _clean_bridge):
+        log = get_logger("grablytic_engine.test_writer_flush")
+        log.set_log_dir(str(tmp_path))
+        log.error("boom happened")
+        files = [p for p in tmp_path.rglob("engine_*.txt")]
+        assert files, "ERROR must be visible on disk immediately"
+        assert "boom happened" in files[0].read_text()
+
+    @pytest.mark.unit
+    def test_debug_buffered_until_close(self, tmp_path, _clean_bridge):
+        log = get_logger("grablytic_engine.test_writer_buffered")
+        log.set_log_dir(str(tmp_path))
+        for i in range(5):
+            log.debug(f"tick {i}")
+        close_log_sinks()
+        files = [p for p in tmp_path.rglob("engine_*.txt")]
+        assert files
+        content = files[0].read_text()
+        for i in range(5):
+            assert f"tick {i}" in content
