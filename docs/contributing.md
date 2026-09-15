@@ -37,7 +37,7 @@ Please note that this project is released with a Contributor [Code of Conduct](.
 - Keep functions focused on a single responsibility. Each module in `engine/grablytic_engine/` owns one concern.
 - Use `set_paths()` to inject all binary paths. Never hardcode paths.
 - Extraction of zips/tars: always go through `_safe_extract_zip` / `_safe_extract_tar` (Zip-Slip/Tar-Slip guards). Never call `extractall()` directly.
-- JS execution: only SHA-256-allowlisted snippets via `verify_js_code()`. Never eval remote/fetched JS.
+- JS execution: local snippets must be SHA-256-allowlisted via `verify_js_code()` (covers only the two inert PO-token stubs). Remote/fetched JS (the `ejs:github` challenge solver) is NOT covered by that gate — its integrity is yt-dlp's SHA3-512 + version pin; never claim otherwise (T0-6).
 - Time: always use timezone-aware UTC datetimes.
 - Run `pytest engine/tests/ -v` before committing — all **181 tests** must pass.
 
