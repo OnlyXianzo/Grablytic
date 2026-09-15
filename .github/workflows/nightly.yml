@@ -63,6 +63,99 @@ jobs:
       publish_to_release: false
     secrets: inherit
 
+  # Option 1 (free, no hardware): boot an emulator with KVM, install the
+  # x86_64 nightly APK, force Doze, and capture power diagnostics. Proves
+  # install/boot/Doze-survival + records wake-lock holder state for T2-1.
+  doze-emulator:
+    name: Emulator Doze + Install Smoke (API 34)
+    needs: [prep, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download x86_64 nightly APK
+        uses: actions/download-artifact@v4
+        with:
+          pattern: grablytic-x86_64-deno-*
+          path: apk
+          merge-multiple: true
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Boot emulator, install, force Doze, capture diagnostics
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            APK=$(ls apk/*.apk | head -n 1)
+            echo "Installing $APK"
+            adb install -r "$APK"
+            adb shell monkey -p com.theonly.grablytic -c android.intent.category.LAUNCHER 1
+            sleep 20
+            echo "--- forcing Doze ---"
+            adb shell dumpsys battery unplug
+            adb shell dumpsys deviceidle force-idle
+            adb shell dumpsys deviceidle get deep || true
+            sleep 30
+            mkdir -p doze-out
+            adb shell dumpsys batterystats > doze-out/batterystats.txt || true
+            grep -i "grablytic\|PARTIAL_WAKE_LOCK\|WifiLock" doze-out/batterystats.txt | head -n 20 || true
+            adb shell dumpsys activity services com.theonly.grablytic > doze-out/services.txt || true
+            adb logcat -d > doze-out/logcat.txt || true
+            echo "--- fatal crash scan ---"
+            if grep -i "FATAL EXCEPTION.*grablytic\|AndroidRuntime.*grablytic" doze-out/logcat.txt | head -n 5; then
+              echo "FATAL crashes found — failing the job"
+              exit 1
+            fi
+            echo "no fatal crashes; diagnostics captured"
+
+      - name: Upload Doze diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doze-diagnostics${{ needs.prep.outputs.suffix }}
+          path: doze-out/
+
+  # Option 2 (free Spark tier: 15 runs/day incl. 5 physical): Robo crawl on
+  # a real device — install/launch smoke with no pre-written tests.
+  # SETUP (one-time, human): create a Firebase project, add a service
+  # account with Firebase Test Lab Admin, store its JSON key as the
+  # FIREBASE_SERVICE_ACCOUNT repo secret. Job skips cleanly until then.
+  ftl-robo:
+    name: Firebase Test Lab Robo (physical)
+    needs: [prep, build]
+    if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download arm64 nightly APK
+        uses: actions/download-artifact@v4
+        with:
+          pattern: grablytic-arm64-deno-*
+          path: ftl-apk
+          merge-multiple: true
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Robo crawl on physical device
+        run: |
+          APK=$(ls ftl-apk/*.apk | head -n 1)
+          gcloud firebase test android run \
+            --type robo \
+            --app "$APK" \
+            --device model=panther,version=33 \
+            --timeout 5m
+
   publish-nightly:
     name: Publish Rolling Nightly Release
     needs: [prep, build]
