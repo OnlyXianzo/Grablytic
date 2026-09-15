@@ -17,6 +17,7 @@ from grablytic_engine import (
     clear_download_archive,
     set_update_channel,
     update_check,
+    shutdown_downloads,
 )
 from grablytic_engine.downloader import _active_downloads, _downloads_lock
 from grablytic_engine.logger import get_logger, set_global_queue, set_global_log_dir
@@ -29,6 +30,21 @@ from grablytic_engine.persistent import (
 
 log = get_logger("grablytic_engine.main")
 _log_queue: _queue_module.Queue | None = None
+_stdout_lock = threading.Lock()
+
+
+def _write_stdout_line(line_str: str) -> None:
+    """Atomically write and flush a line to stdout under _stdout_lock.
+
+    Prevents interleaved JSON output between the background poll_queues
+    thread and main request/response handling. Interleaved JSON lines
+    corrupt the client/Dart JSON parser.
+    """
+    if not line_str.endswith("\n"):
+        line_str += "\n"
+    with _stdout_lock:
+        sys.stdout.write(line_str)
+        sys.stdout.flush()
 
 
 def poll_queues():
@@ -37,7 +53,7 @@ def poll_queues():
             while not _log_queue.empty():
                 try:
                     log_entry = _log_queue.get_nowait()
-                    print(json.dumps(log_entry), flush=True)
+                    _write_stdout_line(json.dumps(log_entry))
                 except Exception:
                     break
 
@@ -56,7 +72,7 @@ def poll_queues():
                 while not prog_q.empty():
                     try:
                         event_str = prog_q.get_nowait()
-                        print(event_str, flush=True)
+                        _write_stdout_line(event_str)
                     except Exception:
                         break
 
@@ -96,7 +112,7 @@ def poll_queues():
                                 "recoverable": res.get("recoverable", True),
                                 "suggests_vpn": res.get("suggests_vpn", False),
                             }
-                        print(json.dumps(event), flush=True)
+                        _write_stdout_line(json.dumps(event))
                     except Exception:
                         break
 
@@ -107,11 +123,11 @@ def main():
     if len(sys.argv) > 1:
         command = sys.argv[1]
         if command == "bootstrap":
-            print(json.dumps(bootstrap()))
+            _write_stdout_line(json.dumps(bootstrap()))
         elif command == "formats" and len(sys.argv) >= 3:
-            print(json.dumps(get_formats(sys.argv[2])))
+            _write_stdout_line(json.dumps(get_formats(sys.argv[2])))
         else:
-            print(f"Unknown CLI command: {command}")
+            _write_stdout_line(f"Unknown CLI command: {command}")
         return
 
     threading.Thread(target=poll_queues, daemon=True).start()
@@ -229,7 +245,7 @@ def main():
             else:
                 response["result"] = res
 
-            print(json.dumps(response), flush=True)
+            _write_stdout_line(json.dumps(response))
 
         except Exception as e:
             log.log_exception(e, f"Error processing {method}")
@@ -245,14 +261,20 @@ def main():
             except Exception:
                 pass
             err_res = {
-                "id": None,
+                "id": req_id,
                 "error": {
                     "success": False,
                     "error_type": "ERROR_INTERNAL",
                     "error_message": str(e)
                 }
             }
-            print(json.dumps(err_res), flush=True)
+            _write_stdout_line(json.dumps(err_res))
+
+    # Gracefully shut down any in-flight downloads on EOF/exit
+    try:
+        shutdown_downloads(timeout=5.0)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
