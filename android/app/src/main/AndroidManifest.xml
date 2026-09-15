@@ -8,6 +8,9 @@
          is declared and requested at runtime on API 33+. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- T2-1: PARTIAL_WAKE_LOCK + WifiLock while downloads are active.
+         Normal (install-time) permission, auto-granted, no runtime prompt. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Lets the user exempt the app from Doze/App Standby on request
          (Settings toggle) so background downloads survive. -->

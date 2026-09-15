@@ -34,6 +34,25 @@ import androidx.core.app.ServiceCompat
  * NOTE: needs Android SDK compile + on-device verification (not available
  * in this workspace); logic mirrors ytdlnis DownloadWorker + ExoPlayer
  * DownloadService patterns.
+ *
+ * T2-1 power locks (verified approach, Sept 2026 — official WakeLock/WifiLock
+ * refs + NewPipe queue-active scope + vitals/Doze failure-modes research):
+ * - One non-counted PARTIAL_WAKE_LOCK + one non-counted WifiLock, held exactly
+ *   while `active` is non-empty (queue-active window), released on every idle
+ *   transition, STOP, quota timeout, and onDestroy. Stable tags (no per-ID
+ *   tags) for clean vitals attribution.
+ * - WifiLock mode branches on API 34: WIFI_MODE_FULL_HIGH_PERF below 34,
+ *   WIFI_MODE_FULL_LOW_LATENCY on 34+ (HIGH_PERF is auto-remapped there and
+ *   FULL has been non-functional since API 29 — requesting either blindly is
+ *   theater). Only WAKE_LOCK permission is needed for both locks.
+ * - WakeLock uses acquire(6h) as a leak backstop, renewed on transitions so a
+ *   legitimate multi-hour hold is never cut mid-download (6h matches the
+ *   dataSync quota: past it the service is demoted anyway).
+ * - Honest limits (documented, not fixed here): deep Doze suspends network and
+ *   ignores wake locks regardless of these holders — the battery-exemption
+ *   Settings toggle remains the Doze lever; UIDT migration is the designated
+ *   long-term path and a separate ticket. Verify on-device with
+ *   `adb shell dumpsys batterystats` (Grablytic:Download tag history).
  */
 class DownloadService : Service() {
 
@@ -51,6 +70,13 @@ class DownloadService : Service() {
     private var lastShownId: String? = null
     private var lastPromoteMs: Long = 0
 
+    // T2-1: single-owner power holders. Non-counted + isHeld() guards so N
+    // concurrent downloads share one logical "held while active non-empty"
+    // state — never per-download acquire/release pairing (under-lock crash).
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+    private var wakeAcquiredAtMs: Long = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -65,6 +91,7 @@ class DownloadService : Service() {
                 active[id] = intent.getStringExtra(EXTRA_TITLE) ?: id
                 alertPrefs[id] = intent.getBooleanExtra(EXTRA_SHOW_ALERT, true)
                 promote()
+                updateLocks()
             }
             ACTION_UPDATE -> {
                 val id = intent.getStringExtra(EXTRA_ID) ?: return START_NOT_STICKY
@@ -110,6 +137,7 @@ class DownloadService : Service() {
                 if (showAlert && id != null) {
                     postTerminalAlert(id, title, succeeded = true, detail = null)
                 }
+                updateLocks()
                 if (active.isEmpty()) {
                     lastShownId = null
                     stopSelf()
@@ -128,6 +156,7 @@ class DownloadService : Service() {
                 if (showAlert && id != null) {
                     postTerminalAlert(id, title, succeeded = false, detail = detail)
                 }
+                updateLocks()
                 if (active.isEmpty()) {
                     lastShownId = null
                     stopSelf()
@@ -139,6 +168,7 @@ class DownloadService : Service() {
                 active.remove(intent?.getStringExtra(EXTRA_ID))
                 prog.remove(intent?.getStringExtra(EXTRA_ID))
                 alertPrefs.remove(intent?.getStringExtra(EXTRA_ID))
+                updateLocks()
                 if (active.isEmpty()) {
                     lastShownId = null
                     stopSelf()
@@ -146,7 +176,13 @@ class DownloadService : Service() {
                     promote()
                 }
             }
-            ACTION_STOP -> stopSelf()
+            ACTION_STOP -> {
+                active.clear()
+                prog.clear()
+                alertPrefs.clear()
+                releaseLocks()
+                stopSelf()
+            }
         }
         return START_NOT_STICKY
     }
@@ -155,12 +191,86 @@ class DownloadService : Service() {
         // dataSync background quota exhausted — stop now or the OS crashes us.
         // Interrupted items stay 'downloading' in the Flutter layer and are
         // re-driven on next launch (DB resume is the follow-up).
+        releaseLocks()
         stopSelf()
+    }
+
+    override fun onDestroy() {
+        releaseLocks()
+        super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Don't linger when the user swipes the app away with nothing active.
         if (active.isEmpty()) stopSelf()
+    }
+
+    /**
+     * Single owner for both power holders: held if and only if `active` is
+     * non-empty. Call after every membership change; release paths also run
+     * from STOP, onTimeout, and onDestroy so no stop path leaks (§5: six
+     * stopSelf sites + death; death itself is binder-cleaned by the OS).
+     */
+    private fun updateLocks() {
+        if (active.isEmpty()) {
+            releaseLocks()
+            return
+        }
+        ensureLocks()
+        val now = android.os.SystemClock.elapsedRealtime()
+        try {
+            val wl = wakeLock
+            if (wl != null && !wl.isHeld) {
+                wl.acquire(WAKE_TIMEOUT_MS)
+                wakeAcquiredAtMs = now
+            } else if (wl != null && wl.isHeld && now - wakeAcquiredAtMs >= WAKE_RENEW_MS) {
+                // Renew the backstop without dropping the hold, so a
+                // legitimate multi-hour download is never cut mid-transfer.
+                try { wl.release() } catch (_: Exception) {}
+                wl.acquire(WAKE_TIMEOUT_MS)
+                wakeAcquiredAtMs = now
+            }
+        } catch (_: Exception) { /* keep-alive must never crash downloads */ }
+        try {
+            val fl = wifiLock
+            if (fl != null && !fl.isHeld) fl.acquire()
+        } catch (_: Exception) { /* keep-alive must never crash downloads */ }
+    }
+
+    private fun ensureLocks() {
+        if (wakeLock == null) {
+            try {
+                val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+                wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG)
+                wakeLock?.setReferenceCounted(false)
+            } catch (_: Exception) { wakeLock = null }
+        }
+        if (wifiLock == null) {
+            try {
+                val wm = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                    as? android.net.wifi.WifiManager ?: return
+                // FULL is non-functional since API 29; HIGH_PERF is remapped
+                // on API 34+, so branch explicitly instead of relying on it.
+                val mode = if (Build.VERSION.SDK_INT >= 34)
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                else
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                wifiLock = wm.createWifiLock(mode, WIFI_TAG)
+                wifiLock?.setReferenceCounted(false)
+            } catch (_: Exception) { wifiLock = null }
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            val wl = wakeLock
+            if (wl != null && wl.isHeld) wl.release()
+        } catch (_: Exception) {}
+        try {
+            val fl = wifiLock
+            if (fl != null && fl.isHeld) fl.release()
+        } catch (_: Exception) {}
+        wakeAcquiredAtMs = 0
     }
 
     private fun promote() {
@@ -335,6 +445,12 @@ class DownloadService : Service() {
     }
 
     companion object {
+        private const val WAKE_TAG = "Grablytic:Download"
+        private const val WIFI_TAG = "Grablytic:DownloadWifi"
+        // Backstop: past the dataSync quota the service is demoted anyway.
+        private const val WAKE_TIMEOUT_MS = 6L * 3600L * 1000L
+        // Renew before expiry so a legitimate long hold is never cut.
+        private const val WAKE_RENEW_MS = 5L * 3600L * 1000L
         const val ACTION_START = "com.theonly.grablytic.download.START"
         const val ACTION_UPDATE = "com.theonly.grablytic.download.UPDATE"
         const val ACTION_DONE = "com.theonly.grablytic.download.DONE"
