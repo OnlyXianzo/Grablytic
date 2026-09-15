@@ -289,8 +289,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             d.copyWith(status: 'queued'),
       ];
     } else if (eventType == 'downloading') {
-      final downloaded = event['downloaded_bytes'] as int? ?? 0;
-      final total = event['total_bytes'] as int? ?? 0;
+      // Engine sends bytes via JSON — numbers may decode as int OR double
+      // (HLS/fragmented totals, Chaquopy/Kotlin number coercion). `as int?`
+      // threw `type 'double' is not a subtype of type 'int?'` 233x in the
+      // field logs, each throw emitting another log line (crash-loop that
+      // amplified the 10+ download hang). Accept num, truncate to int.
+      final downloaded = (event['downloaded_bytes'] as num?)?.toInt() ?? 0;
+      final total = (event['total_bytes'] as num?)?.toInt() ?? 0;
       final progress = total > 0 ? downloaded / total : 0.0;
       final rawSpeed = (event['speed'] as num?)?.toDouble() ?? 0;
       final index = state.indexWhere((d) => d.id == downloadId);
@@ -347,7 +352,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       // One stream (e.g. DASH video) landed; more may follow, then FFmpeg
       // merge + post-processing. Record bytes, hold below 100%, stay
       // 'downloading' — only terminal 'finished' completes the item.
-      final filesize = event['filesize_bytes'] as int? ?? 0;
+      // Same num-tolerant parsing as above (JSON may yield double).
+      final filesize = (event['filesize_bytes'] as num?)?.toInt() ?? 0;
       state = [
         for (final d in state)
           if (d.id != downloadId)
@@ -361,7 +367,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             ),
       ];
     } else if (eventType == 'finished') {
-      final filesize = event['filesize_bytes'] as int? ?? 0;
+      // Same num-tolerant parsing — terminal filesize may also arrive as double.
+      final filesize = (event['filesize_bytes'] as num?)?.toInt() ?? 0;
       final filePath = event['file_path'] as String?;
       final thumbnailPath = event['thumbnail_path'] as String?;
       final sizeStr = _formatFilesize(filesize);

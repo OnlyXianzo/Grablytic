@@ -380,4 +380,47 @@ void main() {
       expect(n.smootherCount, 0);
     });
   });
+
+  group('num-tolerant byte parsing (field crash regression)', () {
+    // Field logs showed 233x FATAL: `type 'double' is not a subtype of
+    // type 'int?'` at handleProgressEvent when engine JSON decoded bytes as
+    // double (HLS `~ 19.32KiB` estimates, Kotlin number coercion). Each throw
+    // emitted another log line — crash-loop amplifying the 10+ hang.
+    test('downloading accepts double bytes without throwing', () {
+      final n = _notifier();
+      _seed(n);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'downloading',
+        'download_id': 'dl-1',
+        'downloaded_bytes': 952.43,
+        'total_bytes': 19781.0,
+        'speed': 952.43,
+      });
+      final item = n.state.single;
+      expect(item.status, 'downloading');
+      expect(item.downloadedBytes, 952);
+      expect(item.totalBytes, 19781);
+    });
+
+    test('stream_finished and finished accept double filesize', () {
+      final n = _notifier();
+      _seed(n);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'stream_finished',
+        'download_id': 'dl-1',
+        'filesize_bytes': 1234.56,
+      });
+      expect(n.state.single.downloadedBytes, 1234);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'finished',
+        'download_id': 'dl-1',
+        'filesize_bytes': 5678.9,
+      });
+      expect(n.state.single.status, 'completed');
+      expect(n.state.single.downloadedBytes, 5678);
+    });
+  });
 }
