@@ -71,6 +71,9 @@ def load_site_profiles() -> dict:
 def load_site_profiles_from_url(url: str) -> dict:
     global _SITE_PROFILES_CACHE
     try:
+        from grablytic_engine.url_guard import is_safe_profile_url
+        if not is_safe_profile_url(url):
+            return load_site_profiles()
         req = Request(url, headers={"User-Agent": "Grablytic/1.0"})
         with urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())

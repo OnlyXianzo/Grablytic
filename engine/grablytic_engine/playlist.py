@@ -71,6 +71,13 @@ def build_playlist_items(selected: list) -> str:
 
 
 def get_playlist_info(url: str, config: dict | None = None) -> dict:
+    from grablytic_engine.url_guard import is_safe_media_url, sanitized_proxy
+    if not is_safe_media_url(url):
+        return {
+            "success": False,
+            "error_type": "ERROR_INVALID_PARAM",
+            "error_message": "URL must be a public http(s) address",
+        }
     log.info(f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}")
 
     paths = get_paths()
@@ -86,8 +93,9 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
     cookies = cfg.get("cookies_path") or paths.get("cookies_path")
     if cookies:
         opts["cookiefile"] = cookies
-    if cfg.get("proxy"):
-        opts["proxy"] = cfg["proxy"]
+    proxy = sanitized_proxy(cfg.get("proxy"))
+    if proxy:
+        opts["proxy"] = proxy
 
     try:
         with YoutubeDL(opts) as ydl:

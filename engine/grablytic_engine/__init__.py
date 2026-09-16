@@ -17,6 +17,12 @@ from grablytic_engine.errors import classify_error, GrablyticError
 from grablytic_engine.formats import get_formats
 from grablytic_engine.playlist import get_playlist_info
 from grablytic_engine.search import search_query
+from grablytic_engine.url_guard import (
+    is_safe_media_url,
+    is_safe_profile_url,
+    safe_archive_path,
+    sanitized_proxy,
+)
 from grablytic_engine.po_token import generate_po_token
 from grablytic_engine.resume import scan_resume_candidates, report_resume_attempt
 from grablytic_engine.bootstrap import bootstrap, update_check
@@ -55,6 +61,10 @@ __all__ = [
     "get_formats",
     "get_playlist_info",
     "search_query",
+    "is_safe_media_url",
+    "is_safe_profile_url",
+    "safe_archive_path",
+    "sanitized_proxy",
     "generate_po_token",
     "scan_resume_candidates",
     "report_resume_attempt",

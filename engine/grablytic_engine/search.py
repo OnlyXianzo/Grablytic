@@ -55,8 +55,10 @@ def search(
     cookies = cfg.get("cookies_path") or paths.get("cookies_path")
     if cookies:
         opts["cookiefile"] = cookies
-    if cfg.get("proxy"):
-        opts["proxy"] = cfg["proxy"]
+    from grablytic_engine.url_guard import sanitized_proxy
+    proxy = sanitized_proxy(cfg.get("proxy"))
+    if proxy:
+        opts["proxy"] = proxy
 
     try:
         from grablytic_engine.opts_builder import _configure_js_runtime

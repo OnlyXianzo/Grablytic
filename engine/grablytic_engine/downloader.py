@@ -936,6 +936,22 @@ def start_download(
                 "error_message": "Engine is shutting down",
             }
 
+    # SSRF gate: only public http(s) media URLs reach yt-dlp. Rejects
+    # file://, localhost/LAN/link-local targets, and non-string garbage
+    # before admission, queueing, or thread spawn.
+    try:
+        from grablytic_engine.url_guard import is_safe_media_url
+        _url_ok = is_safe_media_url(url)
+    except Exception:
+        _url_ok = False
+    if not _url_ok:
+        return {
+            "success": False,
+            "download_id": download_id,
+            "error_type": "ERROR_INVALID_PARAM",
+            "error_message": "URL must be a public http(s) address",
+        }
+
     # Live engine-log delivery on Android/Chaquopy: push type:log events
     # through the same Kotlin callback the progress hooks use. The desktop
     # queue path is untouched (event_callback is None there).

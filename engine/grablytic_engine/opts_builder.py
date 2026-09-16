@@ -244,7 +244,18 @@ def build_ydl_opts(
         opts["ratelimit"] = cfg["rate_limit"]
 
     if cfg.get("proxy"):
-        opts["proxy"] = cfg["proxy"]
+        from grablytic_engine.url_guard import sanitized_proxy as _sanitized_proxy
+        _proxy = _sanitized_proxy(cfg.get("proxy"))
+        if _proxy:
+            opts["proxy"] = _proxy
+        else:
+            try:
+                from grablytic_engine.logger import get_logger as _get_logger
+                _get_logger("grablytic_engine.opts").warn(
+                    "Ignoring malformed proxy setting (expected "
+                    "http/https/socks URL with host)")
+            except Exception:
+                pass
 
     if cfg.get("geo_bypass"):
         opts["geo_bypass"] = True
@@ -256,10 +267,29 @@ def build_ydl_opts(
     if cfg.get("use_archive") and not cfg.get("ignore_archive"):
         import os as _os
 
-        archive = cfg.get("archive_path") or _os.path.join(
+        default_archive = _os.path.join(
             paths.get("data_dir") or ".", "download_archive.txt"
         )
-        opts["download_archive"] = archive
+        requested = cfg.get("archive_path") or default_archive
+        # archive_path is a user-controlled setting (not remote input), so
+        # custom absolute locations stay honored. Normalize and fail closed
+        # only on directories/empty: the destructive sink
+        # (clear_download_archive's delete) keeps strict data_dir
+        # containment; yt-dlp's write path here just records video IDs.
+        try:
+            _norm = _os.path.abspath(requested) if isinstance(requested, str) and requested.strip() else ""
+        except Exception:
+            _norm = ""
+        if _norm and not _os.path.isdir(_norm):
+            opts["download_archive"] = _norm
+        else:
+            opts["download_archive"] = default_archive
+            try:
+                from grablytic_engine.logger import get_logger as _get_logger
+                _get_logger("grablytic_engine.opts").warn(
+                    "Ignoring invalid archive_path; using default")
+            except Exception:
+                pass
 
     # TEARDOWN-4: same guard as retries/fragments (T3-10) — a bare int()
     # here turned a settings typo into a ValueError that killed the whole
