@@ -659,16 +659,7 @@ class MainActivity : FlutterActivity() {
                             val python = py ?: return@launch
                             val engine = python.getModule("grablytic_engine")
                             val status = engine.callAttr("get_queue_status")
-                            // Desktop parity (__main__.py): {"success": True, **status}.
-                            val jsonStr = pyJson(status).let { raw ->
-                                try {
-                                    val obj = org.json.JSONObject(raw)
-                                    obj.put("success", true)
-                                    obj.toString()
-                                } catch (_: Exception) {
-                                    raw
-                                }
-                            }
+                            val jsonStr = pyJson(status)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_QUEUE_FAILED", e.message, null) }

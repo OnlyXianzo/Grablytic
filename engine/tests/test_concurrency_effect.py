@@ -46,15 +46,15 @@ def test_set_limit_1_second_download_queues(monkeypatch):
 
 def test_queue_status_shape_matches_dart_contract(monkeypatch):
     """get_queue_status keys must match what EngineService.queueStatus
-    documents: {active, queued, max_concurrent} (+ success envelope)."""
+    documents: {success, active, queued, max_concurrent}."""
     _reset()
     monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
     try:
         dl_mod.start_download(url="https://x.test/1", download_id="c-shape-1")
         status = dl_mod.get_queue_status()
-        assert set(status.keys()) == {"active", "queued", "max_concurrent"}
-        envelope = {"success": True, **status}
-        assert envelope["success"] is True
+        assert set(status.keys()) == {"success", "active", "queued", "max_concurrent"}
+        assert status["success"] is True
+        assert status["active"] == ["c-shape-1"]
     finally:
         dl_mod._active_downloads.pop("c-shape-1", None)
         dl_mod.set_max_concurrent(2)
