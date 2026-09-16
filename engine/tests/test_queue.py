@@ -330,3 +330,32 @@ class TestUrlDedup:
             assert r2["success"] is True, r2
         finally:
             _cleanup("re-1", "re-2")
+
+
+def test_progress_queues_are_bounded(monkeypatch):
+    """E2 regression: admission queues must carry maxsize so drop-oldest
+    engages; unbounded queues retained tens of thousands of ticks (OOM)."""
+    from grablytic_engine.hooks import _QUEUE_MAXSIZE
+    _reset()
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+    try:
+        r = dl_mod.start_download(url="https://x.test/b", download_id="b-1")
+        assert r["success"] is True
+        entry = dl_mod._active_downloads["b-1"]
+        assert entry["progress_queue"].maxsize == _QUEUE_MAXSIZE
+        assert entry["result_queue"].maxsize == _QUEUE_MAXSIZE
+    finally:
+        _cleanup("b-1")
+
+
+def test_ydlogger_output_files_capped_and_deduped():
+    """E2 regression: output_files can never grow without bound and
+    duplicate log lines must not rescan an O(n) list."""
+    from grablytic_engine.downloader import YDLogger
+    yd = YDLogger()
+    yd._extract_path('[download] Destination: /tmp/a.mp4')
+    yd._extract_path('[download] Destination: /tmp/a.mp4')
+    assert yd.output_files == ['/tmp/a.mp4']
+    for i in range(yd.MAX_OUTPUT_FILES + 100):
+        yd._extract_path(f'[download] Destination: /tmp/f{i}.mp4')
+    assert len(yd.output_files) <= yd.MAX_OUTPUT_FILES

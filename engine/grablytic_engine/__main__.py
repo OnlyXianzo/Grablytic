@@ -51,11 +51,17 @@ def _write_stdout_line(line_str: str) -> None:
 def poll_queues():
     while True:
         if _log_queue is not None:
-            while not _log_queue.empty():
+            while True:
                 try:
                     log_entry = _log_queue.get_nowait()
                     _write_stdout_line(json.dumps(log_entry))
-                except Exception:
+                except _queue_module.Empty:
+                    break
+                except Exception as exc:
+                    try:
+                        log.warn(f"Dropping malformed log entry: {type(exc).__name__}")
+                    except Exception:
+                        pass
                     break
 
         with _downloads_lock:
@@ -70,15 +76,21 @@ def poll_queues():
                 res_q = info.get("result_queue")
 
             if prog_q:
-                while not prog_q.empty():
+                while True:
                     try:
                         event_str = prog_q.get_nowait()
                         _write_stdout_line(event_str)
-                    except Exception:
+                    except _queue_module.Empty:
+                        break
+                    except Exception as exc:
+                        try:
+                            log.warn(f"Dropping malformed progress event: {type(exc).__name__}")
+                        except Exception:
+                            pass
                         break
 
             if res_q:
-                while not res_q.empty():
+                while True:
                     try:
                         res = res_q.get_nowait()
                         is_success = res.get("success", False)
@@ -114,7 +126,13 @@ def poll_queues():
                                 "suggests_vpn": res.get("suggests_vpn", False),
                             }
                         _write_stdout_line(json.dumps(event))
-                    except Exception:
+                    except _queue_module.Empty:
+                        break
+                    except Exception as exc:
+                        try:
+                            log.warn(f"Dropping malformed result event: {type(exc).__name__}")
+                        except Exception:
+                            pass
                         break
 
         time.sleep(0.1)
