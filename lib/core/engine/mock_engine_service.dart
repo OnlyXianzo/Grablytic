@@ -406,7 +406,10 @@ class MockEngineService implements EngineService {
   }) async =>
       {'success': true};
 
+  @override
   void dispose() {
-    _progressController.close();
+    try {
+      if (!_progressController.isClosed) _progressController.close();
+    } catch (_) {}
   }
 }

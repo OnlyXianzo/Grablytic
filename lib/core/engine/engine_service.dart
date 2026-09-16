@@ -92,4 +92,11 @@ abstract class EngineService {
     bool wifiOnly = true,
     bool requiresCharging = false,
   });
+
+  /// Releases transport resources (broadcast controllers, native process
+  /// handles, pending completers). Idempotent, never throws. The provider
+  /// calls it for every implementation on dispose — previously only the
+  /// mock was disposed, leaking the platform/desktop transports on
+  /// provider refresh.
+  void dispose();
 }

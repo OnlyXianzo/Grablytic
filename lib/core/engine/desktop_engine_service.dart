@@ -90,18 +90,40 @@ class DesktopEngineService implements EngineService {
     });
   }
 
+  @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
-    _stdoutSubscription?.cancel();
-    _stderrSubscription?.cancel();
+    try {
+      _stdoutSubscription?.cancel();
+    } catch (_) {}
+    try {
+      _stderrSubscription?.cancel();
+    } catch (_) {}
+    _stdoutSubscription = null;
+    _stderrSubscription = null;
     final oldProcess = _process;
     _process = null;
     _running = false;
-    oldProcess?.kill();
-    _progressController.close();
+    try {
+      oldProcess?.kill();
+    } catch (_) {}
+    try {
+      if (!_progressController.isClosed) _progressController.close();
+    } catch (_) {}
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
-        completer.completeError(Exception('Engine disposed'));
+        // Complete with a failure RESULT, not an error: during provider
+        // teardown the awaiting FutureProviders may already be gone, and an
+        // unlistened error future fails widget tests and pollutes reports.
+        // Every _sendRequest caller already handles success:false maps.
+        try {
+          completer.complete({
+            'success': false,
+            'error_type': 'ERROR_DISPOSED',
+            'error_message': 'Engine disposed',
+          });
+        } catch (_) {}
       }
     }
     _pending.clear();

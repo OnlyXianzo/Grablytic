@@ -97,9 +97,16 @@ final engineProvider = Provider<EngineService>((ref) {
     );
   } catch (_) {}
 
-  if (engine is MockEngineService) {
-    ref.onDispose(() => engine.dispose());
-  }
+  // Every transport owns closable resources (broadcast controllers,
+  // native process handles, pending completers) — dispose all of them,
+  // not just the mock. Previously hot-restart leaked the platform and
+  // desktop transports (process + subscriptions + cached streams).
+  ref.onDispose(() {
+    try {
+      engine.dispose();
+    } catch (_) {}
+  });
+
   // Inject API-layer logging hooks (latency + error tracing) on every branch.
   return TracedEngineService(engine);
 });

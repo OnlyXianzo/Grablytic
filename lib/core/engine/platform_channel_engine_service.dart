@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import '../utils/app_logger.dart';
 import 'engine_codec.dart';
 import 'engine_service.dart';
 
@@ -91,10 +92,25 @@ class PlatformChannelEngineService implements EngineService {
                 }
               },
               handleError: (error, stackTrace, sink) {
-                // Keep stream alive on transient platform errors
+                // Formerly swallowed: downstream saw a stalled 0% card
+                // indistinguishable from a dead bridge. Forward so
+                // downloadProvider's onError logs and the UI can react.
+                try {
+                  AppLogger.warn('Progress channel error: $error',
+                      tag: 'engine');
+                } catch (_) {}
+                sink.addError(error, stackTrace);
               },
             ),
           );
+
+  @override
+  void dispose() {
+    try {
+      _progressCache = null;
+      if (!_intentController.isClosed) _intentController.close();
+    } catch (_) {}
+  }
 
   @override
   Future<Map<String, dynamic>> getFormats({
