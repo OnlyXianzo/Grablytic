@@ -10,6 +10,9 @@ class LogIngester {
   LogIngester(this._buffer);
 
   void start(Stream<Map<String, dynamic>> engineLogStream) {
+    // Re-start (e.g. provider refresh on engine change) must not orphan the
+    // previous subscription: each start replaces exactly one listen.
+    _subscription?.cancel();
     _subscription = engineLogStream.listen(_handleLogEvent);
   }
 

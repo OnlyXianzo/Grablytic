@@ -29,6 +29,28 @@ void main() {
         expect(controller.hasListener, isTrue);
       });
 
+      test('restart replaces the previous subscription (no duplicates)',
+          () async {
+        final first = StreamController<Map<String, dynamic>>.broadcast();
+        final second = StreamController<Map<String, dynamic>>.broadcast();
+        addTearDown(first.close);
+        addTearDown(second.close);
+        ingester.start(first.stream);
+        ingester.start(second.stream);
+        expect(first.hasListener, isFalse);
+
+        second.add({
+          'type': 'log',
+          'ts': '2026-07-06T10:00:00',
+          'level': 'INFO',
+          'logger': 'engine',
+          'message': 'only once',
+        });
+        await Future<void>.delayed(Duration.zero);
+        expect(
+            buffer.entries.where((e) => e.message == 'only once'), hasLength(1));
+      });
+
       test('handles multiple events in sequence', () async {
         ingester.start(controller.stream);
 
