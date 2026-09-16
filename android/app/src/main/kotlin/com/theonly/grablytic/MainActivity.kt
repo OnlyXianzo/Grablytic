@@ -42,6 +42,11 @@ class MainActivity : FlutterActivity() {
     private val sharedUrls = java.util.concurrent.ConcurrentLinkedQueue<String>()
     private var py: Python? = null
     private val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, EngineEventListener>()
+    // Terminals that arrived while Flutter had no EventChannel listener
+    // (activity-recreation gap). id -> eventJson, flushed once on the next
+    // onListen then cleared. Live-delivered terminals are never buffered,
+    // so neither DownloadService nor Dart sees a duplicate.
+    private val undeliveredTerminals = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private var dataDir: String? = null
     private var outputDir: String? = null
@@ -54,6 +59,9 @@ class MainActivity : FlutterActivity() {
         private const val REQ_POST_NOTIFICATIONS = 4101
         // T2-6: backlog bound for rapid shares (mirrors Dart _maxPendingShares).
         private const val MAX_QUEUED_SHARES = 50
+        // Terminals missed per detach gap (mirrors the engine queue vocabulary).
+        private const val MAX_UNDELIVERED_TERMINALS = 50
+        private val TERMINAL_EVENTS = setOf("finished", "error", "cancelled")
 
         private val MEDIA_EXTS = setOf(
             "mkv", "mp4", "webm", "m4v", "mov", "avi", "3gp", "3g2", "ts", "mts",
@@ -326,6 +334,10 @@ class MainActivity : FlutterActivity() {
                                                         )
                                                     }
                                                     "finished", "error", "cancelled" -> {
+                                                        // Terminal: the engine emits nothing more for
+                                                        // this id — release the callback holder (a
+                                                        // write-only GC root; never read elsewhere).
+                                                        activeCallbacks.remove(id)
                                                         when (obj.optString("event")) {
                                                     "finished" -> {
                                                         DownloadService.finished(
@@ -361,7 +373,28 @@ class MainActivity : FlutterActivity() {
                                     scope.launch(Dispatchers.Main) {
                                         val sink = eventSink
                                         if (sink == null) {
-                                            if (!noSinkWarned) {
+                                            // No listener: progress/postprocessing are
+                                            // transient (the next tick heals), but a
+                                            // dropped terminal wedges the card at 99%
+                                            // until restart — stash it for onListen.
+                                            val terminalId = try {
+                                                val o = org.json.JSONObject(eventJson)
+                                                if (o.optString("type") == "event" &&
+                                                    o.optString("event") in TERMINAL_EVENTS) {
+                                                    o.optString("download_id")
+                                                        .takeIf { it.isNotEmpty() }
+                                                } else null
+                                            } catch (_: Exception) {
+                                                null
+                                            }
+                                            if (terminalId != null) {
+                                                if (undeliveredTerminals.size >= MAX_UNDELIVERED_TERMINALS) {
+                                                    undeliveredTerminals.keys.firstOrNull()?.let {
+                                                        undeliveredTerminals.remove(it)
+                                                    }
+                                                }
+                                                undeliveredTerminals[terminalId] = eventJson
+                                            } else if (!noSinkWarned) {
                                                 noSinkWarned = true
                                                 android.util.Log.w(
                                                     "GrablyticEngine",
@@ -729,6 +762,19 @@ class MainActivity : FlutterActivity() {
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
+                    // Deliver terminals missed during the detach gap, each
+                    // exactly once (cleared here; live ones never buffered).
+                    if (undeliveredTerminals.isNotEmpty() && events != null) {
+                        val pending = undeliveredTerminals.values.toList()
+                        undeliveredTerminals.clear()
+                        for (e in pending) {
+                            try {
+                                events.success(e)
+                            } catch (_: Exception) {
+                                break
+                            }
+                        }
+                    }
                 }
                 override fun onCancel(arguments: Any?) {
                     eventSink = null

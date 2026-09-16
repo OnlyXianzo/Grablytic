@@ -274,4 +274,41 @@ void main() {
       expect(emptyRows, isEmpty);
     });
   });
+group('DownloadHistoryDb sweep (singleton)', () {
+    setUp(() async {
+      await DownloadHistoryDb.instance.closeForTesting();
+      final dir = await Directory.systemTemp.createTemp('grablytic_sweep_test_');
+      DownloadHistoryDb.dbPathForTesting = p.join(dir.path, 'sweep.db');
+    });
+
+    tearDown(() async {
+      await DownloadHistoryDb.instance.closeForTesting();
+      DownloadHistoryDb.dbPathForTesting = null;
+    });
+
+    test('sweep converts every non-terminal status, leaves terminals alone',
+        () async {
+      const nonTerminal = ['downloading', 'queued', 'pending', 'cancelling'];
+      const terminal = ['completed', 'error', 'cancelled'];
+      for (final s in [...nonTerminal, ...terminal, 'interrupted']) {
+        await DownloadHistoryDb.instance.insert(DownloadRecord(
+          id: 'id-$s',
+          url: 'https://x.test/$s',
+          title: s,
+          status: s,
+        ));
+      }
+      final n = await DownloadHistoryDb.instance.sweepActiveToInterrupted();
+      expect(n, nonTerminal.length);
+      final interrupted =
+          await DownloadHistoryDb.instance.getInterrupted(limit: 100);
+      expect(
+        interrupted.map((r) => r.id).toSet(),
+        containsAll([...nonTerminal.map((s) => 'id-$s'), 'id-interrupted']),
+      );
+      for (final s in terminal) {
+        expect((await DownloadHistoryDb.instance.getById('id-$s'))!.status, s);
+      }
+    });
+  });
 }

@@ -175,7 +175,7 @@ class SettingsScreen extends ConsumerWidget {
                   _SettingSwitch(
                     icon: Icons.cloud_outlined,
                     title: 'Wi-Fi Only Downloads',
-                    subtitle: 'Prevent data usage for downloads',
+                    subtitle: 'Auto-resumed downloads wait for Wi-Fi',
                     value: settings.wifiOnly,
                     onChanged: () => ref.read(settingsProvider.notifier).toggleWifiOnly(),
                     colorScheme: colorScheme,

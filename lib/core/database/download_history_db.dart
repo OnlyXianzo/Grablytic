@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -159,6 +160,21 @@ class DownloadHistoryDb {
 
   Database? _db;
 
+  /// Test-only database path override. When set, [_initDb] skips
+  /// path_provider (unavailable in unit tests). Null in production.
+  @visibleForTesting
+  static String? dbPathForTesting;
+
+  /// Test-only teardown: closes and drops the cached handle so the next
+  /// test can point [dbPathForTesting] at a fresh temp file.
+  @visibleForTesting
+  Future<void> closeForTesting() async {
+    try {
+      await _db?.close();
+    } catch (_) {}
+    _db = null;
+  }
+
   Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDb();
@@ -166,8 +182,10 @@ class DownloadHistoryDb {
   }
 
   Future<Database> _initDb() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'grablytic.db');
+    // ?? short-circuits: path_provider is never touched in unit tests.
+    final path = dbPathForTesting ??
+        p.join((await getApplicationDocumentsDirectory()).path,
+            'grablytic.db');
     return openDatabase(
       path,
       version: 4,
@@ -285,8 +303,11 @@ class DownloadHistoryDb {
     return db.delete('downloads', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Sweeps any lingering active/queued downloads in SQLite to 'interrupted'
-  /// on process death / app startup. Returns the number of affected rows.
+  /// Sweeps every non-terminal download in SQLite to 'interrupted' on
+  /// process death / app startup. 'pending' rows (default-constructed
+  /// items persisted before admission) and 'cancelling' rows would
+  /// otherwise survive as zombies — never resumed, never shown.
+  /// Returns the number of affected rows.
   Future<int> sweepActiveToInterrupted({String? now}) async {
     final db = await database;
     final timestamp = now ?? DateTime.now().toIso8601String();
@@ -296,13 +317,14 @@ class DownloadHistoryDb {
         'status': 'interrupted',
         'updatedAt': timestamp,
       },
-      where: 'status IN (?, ?)',
-      whereArgs: ['downloading', 'queued'],
+      where: 'status IN (?, ?, ?, ?)',
+      whereArgs: ['downloading', 'queued', 'pending', 'cancelling'],
     );
   }
 
-  /// Interrupted records for startup recovery sweep / retry.
-  Future<List<DownloadRecord>> getInterrupted({int limit = 50}) async {
+  /// Interrupted records for startup recovery sweep / retry. Null [limit]
+  /// returns the whole backlog (callers page or cap admission themselves).
+  Future<List<DownloadRecord>> getInterrupted({int? limit}) async {
     final db = await database;
     final rows = await db.query(
       'downloads',

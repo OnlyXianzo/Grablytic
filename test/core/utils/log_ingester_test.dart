@@ -265,6 +265,30 @@ void main() {
       });
     });
 
+    group('secret redaction (engine-origin entries)', () {
+      test('redacts tokens, sigs and proxy userinfo in message+exception', () async {
+        ingester.start(controller.stream);
+
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:00',
+          'level': 'INFO',
+          'logger': 'downloader',
+          'message': 'fetch https://vid.test/watch?v=1&sig=S3CR3T with token=abc123',
+          'exception': 'proxy auth failed for http://user:p4ss@proxy.test:8080',
+        });
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(buffer.entries, hasLength(1));
+        final entry = buffer.entries.single;
+        expect(entry.message, isNot(contains('S3CR3T')));
+        expect(entry.message, isNot(contains('abc123')));
+        expect(entry.message, contains('***REDACTED***'));
+        expect(entry.exception, isNot(contains('p4ss')));
+      });
+    });
+
     group('stop', () {
       test('cancels the subscription', () async {
         ingester.start(controller.stream);

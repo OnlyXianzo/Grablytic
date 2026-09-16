@@ -4,12 +4,14 @@ import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
 import 'resume_provider.dart';
+import 'settings_provider.dart';
 
 const _uuid = Uuid();
 
@@ -161,6 +163,12 @@ const kEtaGracePeriod = Duration(seconds: 2);
 /// dropping intermediates loses nothing — the next admitted event is latest.
 const kProgressCoalesceWindow = Duration(seconds: 1);
 
+/// Max interrupted rows auto-resumed at startup. The backlog beyond this
+/// is surfaced as in-memory 'interrupted' rows for manual resume instead
+/// of being orphaned — and instead of firing an unbounded admission
+/// storm at the engine on every cold start.
+const kMaxAutoResume = 50;
+
 /// Per-download smoother state. Lives in the notifier (transient, never
 /// persisted); the display-ready ring buffer lives on [DownloadItem].
 class _DownloadSmoother {
@@ -186,6 +194,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   final Future<void> Function({required String url, required bool success})?
       onDownloadOutcome;
 
+  /// Gate for unattended admissions (startup auto-resume). True = the
+  /// network is suitable for downloads the user didn't just tap.
+  /// Wired to the Wi-Fi Only setting + connectivity_plus in
+  /// downloadProvider; null (tests, embeds) means allow. Must never throw —
+  /// a failing gate fails open with a warning, preserving old behavior.
+  final Future<bool> Function()? unattendedNetworkAllowed;
+
   /// Drops transient smoother state for [id]. Called on every terminal
   /// transition and on history removal so long sessions cannot accumulate
   /// one [_DownloadSmoother] per completed download.
@@ -197,9 +212,24 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   @visibleForTesting
   int get smootherCount => _smoothers.length;
 
-  DownloadNotifier(this._engine, {DateTime Function()? clock, this.onDownloadOutcome})
+  DownloadNotifier(this._engine,
+      {DateTime Function()? clock,
+      this.onDownloadOutcome,
+      this.unattendedNetworkAllowed})
       : _clock = clock ?? DateTime.now,
         super([]);
+
+  Future<bool> _unattendedAllowed() async {
+    final gate = unattendedNetworkAllowed;
+    if (gate == null) return true;
+    try {
+      return await gate();
+    } catch (e) {
+      AppLogger.warn('Network gate failed ($e); auto-resume allowed',
+          tag: 'download');
+      return true;
+    }
+  }
 
   void _reportResumeOutcome(String url, bool success) {
     final cb = onDownloadOutcome;
@@ -616,7 +646,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final count = await DownloadHistoryDb.instance.sweepActiveToInterrupted();
     if (!autoResume) return count;
 
-    final records = await DownloadHistoryDb.instance.getInterrupted(limit: 50);
+    // One connectivity read per cold start, not per row: the gate only
+    // governs unattended auto-resume (explicit user taps are consent).
+    final networkOk = await _unattendedAllowed();
+    final records = await DownloadHistoryDb.instance.getInterrupted();
     int resumed = 0;
     for (final record in records) {
       Map<String, dynamic> config = {};
@@ -627,8 +660,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       }
 
       final attempts = record.attempts;
-      if (attempts >= 3) {
-        // Cap reached: surface as interrupted in memory for manual user resume
+      if (attempts >= 3 || resumed >= kMaxAutoResume || !networkOk) {
+        // Cap reached, admission storm guard, or metered/offline network:
+        // surface as interrupted in memory for manual user resume —
+        // never silently orphan.
         if (!state.any((d) => d.id == record.id)) {
           state = [
             ...state,
@@ -922,6 +957,21 @@ final downloadProvider =
     // per-file attempt counter; unresumed URLs are ignored downstream.
     onDownloadOutcome: ({required String url, required bool success}) =>
         ref.read(resumeProvider.notifier).reportAttempt(url: url, success: success),
+    // Wi-Fi Only finally gates something: unattended auto-resume yields
+    // on metered/offline networks. Explicit user taps are consent and
+    // stay ungated. Fail-open on plugin errors (old behavior + warning).
+    unattendedNetworkAllowed: () async {
+      if (!ref.read(settingsProvider).wifiOnly) return true;
+      try {
+        final results = await Connectivity().checkConnectivity();
+        return results.contains(ConnectivityResult.wifi) ||
+            results.contains(ConnectivityResult.ethernet);
+      } catch (e) {
+        AppLogger.warn('Connectivity check failed ($e); auto-resume allowed',
+            tag: 'download');
+        return true;
+      }
+    },
   );
   // Auto-sweep and restore interrupted downloads across process restart / LMK
   notifier.restoreInterruptedDownloads();

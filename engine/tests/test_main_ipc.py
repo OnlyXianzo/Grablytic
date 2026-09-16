@@ -258,3 +258,43 @@ def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
                 f"Interleaved/corrupted JSON line detected at line {idx}: {line!r}\nError: {exc}"
             )
 
+
+
+@pytest.mark.unit
+def test_method_log_params_sanitized(monkeypatch, capsys):
+    """Engine request log must not carry raw proxy/token secrets (Batch 2).
+
+    RED before fix: __main__ logs extra={"params": params} verbatim, so
+    proxy passwords, po_tokens and signed-URL sigs hit disk/GitHub.
+    """
+    mod = _main_mod()
+    seen = {}
+
+    class FakeLog:
+        def info(self, msg, extra=None):
+            seen.setdefault("infos", []).append((msg, extra))
+
+        def log_exception(self, *a, **k):
+            pass
+
+        def debug(self, *a, **k):
+            pass
+
+    def fake_get_formats(url, config=None):
+        return {"success": True, "formats": []}
+
+    monkeypatch.setattr(mod, "log", FakeLog())
+    monkeypatch.setattr(mod, "get_formats", fake_get_formats)
+    _run_lines(monkeypatch, capsys, [
+        json.dumps({"id": "s1", "method": "paths/set", "params": {
+            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
+            "cache_dir": "/tmp/x"}}),
+        json.dumps({"id": "f1", "method": "formats/get", "params": {
+            "url": "https://vid.test/watch?v=1&sig=S3CR3T",
+            "config": {"proxy": "http://user:p4ssw0rd@proxy.test:8080",
+                       "po_token": "POSECRET"}}}),
+    ])
+    blob = json.dumps(seen.get("infos", []))
+    assert "S3CR3T" not in blob
+    assert "p4ssw0rd" not in blob
+    assert "POSECRET" not in blob

@@ -91,11 +91,11 @@ sudo dnf install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.
 sudo zypper install https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-0.0.2-1.x86_64.rpm
 
 # Arch / Manjaro / EndeavourOS x64 (pacman fetches remote URLs directly)
-sudo pacman -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-0.0.2-1-x86_64.pkg.tar.zst
 
 # — or with your helper (same remote-file support) —
-yay -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
-paru -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.1/truestream-0.0.1-1-x86_64.pkg.tar.zst
+yay -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-0.0.2-1-x86_64.pkg.tar.zst
+paru -U https://github.com/OnlyXianzo/Grablytic/releases/download/v0.0.2/grablytic-0.0.2-1-x86_64.pkg.tar.zst
 # after AUR ingestion: paru -S grablytic-bin  (yay -S grablytic-bin)
 ```
 
@@ -297,7 +297,7 @@ correlation, 30 s timeout, auto-restart (≤3).
 
 | Layer | Technology |
 |---|---|
-| UI | Flutter 3.x (Impeller, 120 fps) · Dart 3.11 · Riverpod · Material 3 |
+| UI | Flutter 3.x (Impeller) · Dart 3.11 · Riverpod · Material 3 |
 | Engine | Python 3.11 · yt-dlp (`YoutubeDL` API) · `yt-dlp-ejs` solver scripts |
 | Android bridge | Chaquopy · Kotlin `MainActivity` · `BinaryPackageManager` · `DownloadService` |
 | Desktop bridge | JSON-RPC over stdin/stdout (`DesktopEngineService`) |
@@ -305,7 +305,7 @@ correlation, 30 s timeout, auto-restart (≤3).
 | Media | FFmpeg (static / jniLibs) · aria2c (static, native only for DASH/HLS) |
 | Persistence | SharedPreferences (settings/presets/playlists) · SQLite (history) |
 | Fonts | Instrument Sans (body) · Iosevka Charon Mono |
-| Tests | `flutter_test` · `pytest` (181 engine tests) |
+| Tests | `flutter_test` · `pytest` (engine suite) |
 
 ### 🐍 Engine modules (16 + entry point)
 
@@ -349,7 +349,7 @@ python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r engine/requirements.txt
 pip install -e engine/
-pytest engine/tests/ -v            # 181 tests
+pytest engine/tests/ -v
 ```
 
 ---
@@ -378,8 +378,8 @@ CI: [`verify.yml`](.github/workflows/verify.yml) runs `flutter analyze` +
 
 ```bash
 flutter analyze          # must be zero-error (0 issues found)
-flutter test             # 262 widget + unit tests (test/)
-pytest engine/tests/ -v  # 309 engine tests
+flutter test             # widget + unit tests (test/)
+pytest engine/tests/ -v  # engine tests
 ```
 
 Coverage: config · errors · format ladder · opts (incl. subtitle-PP order,
