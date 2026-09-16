@@ -161,6 +161,12 @@ const kEtaGracePeriod = Duration(seconds: 2);
 /// dropping intermediates loses nothing — the next admitted event is latest.
 const kProgressCoalesceWindow = Duration(seconds: 1);
 
+/// Max interrupted rows auto-resumed at startup. The backlog beyond this
+/// is surfaced as in-memory 'interrupted' rows for manual resume instead
+/// of being orphaned — and instead of firing an unbounded admission
+/// storm at the engine on every cold start.
+const kMaxAutoResume = 50;
+
 /// Per-download smoother state. Lives in the notifier (transient, never
 /// persisted); the display-ready ring buffer lives on [DownloadItem].
 class _DownloadSmoother {
@@ -616,7 +622,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final count = await DownloadHistoryDb.instance.sweepActiveToInterrupted();
     if (!autoResume) return count;
 
-    final records = await DownloadHistoryDb.instance.getInterrupted(limit: 50);
+    final records = await DownloadHistoryDb.instance.getInterrupted();
     int resumed = 0;
     for (final record in records) {
       Map<String, dynamic> config = {};
@@ -627,8 +633,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       }
 
       final attempts = record.attempts;
-      if (attempts >= 3) {
-        // Cap reached: surface as interrupted in memory for manual user resume
+      if (attempts >= 3 || resumed >= kMaxAutoResume) {
+        // Cap reached (or admission storm guard): surface as interrupted
+        // in memory for manual user resume — never silently orphan.
         if (!state.any((d) => d.id == record.id)) {
           state = [
             ...state,

@@ -1,4 +1,8 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:grablytic/core/database/download_history_db.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/providers/download_provider.dart';
 
@@ -555,6 +559,37 @@ group('structural selectors (Loop-3 O(1) rebuilds)', () {
       expect(s.pendingIds, ['a']);
       expect(s.failedIds, ['b']);
       expect(s.completedIds, ['c']);
+    });
+  });
+
+  group('restoreInterruptedDownloads overflow', () {
+    test('surfaces backlog beyond the auto-resume cap instead of orphaning',
+        () async {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      final dir =
+          await Directory.systemTemp.createTemp('grablytic_restore_test_');
+      DownloadHistoryDb.dbPathForTesting = p.join(dir.path, 'restore.db');
+      try {
+        for (var i = 0; i < 55; i++) {
+          await DownloadHistoryDb.instance.insert(DownloadRecord(
+            id: 'r-$i',
+            url: 'https://x.test/$i',
+            title: 't$i',
+            status: 'interrupted',
+            queuePosition: i,
+          ));
+        }
+        final n = _notifier();
+        final resumed = await n.restoreInterruptedDownloads();
+        expect(resumed, 50);
+        expect(n.state.length, 55);
+        expect(
+            n.state.where((d) => d.status == 'interrupted').length, 5);
+      } finally {
+        await DownloadHistoryDb.instance.closeForTesting();
+        DownloadHistoryDb.dbPathForTesting = null;
+      }
     });
   });
 }
