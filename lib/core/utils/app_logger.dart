@@ -193,6 +193,12 @@ class AppLogger {
   }
 
   /// Masks likely secrets before they hit disk / console / GitHub.
+  ///
+  /// Public so the engine-log ingester (a different library) redacts
+  /// engine-origin entries with identical rules — one pattern list,
+  /// every sink covered.
+  static String redact(String input) => _redact(input);
+
   static String _redact(String input) {
     var out = input;
     // Query-string / JSON tokens, cookies, auth headers, proxy creds.
@@ -206,9 +212,16 @@ class AppLogger {
       r"""(password\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(po[_-]?token\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""((?:lsig|sig|signature)\s*[:=]\s*["']?)([^"'\s,};&]+)""",
+      // URL userinfo passwords (proxy creds): scheme://user:PASS@host.
+      // Mirrors the engine sanitize() userinfo mask — same secret class.
+      r"""([A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)""",
     ];
     for (final p in patterns) {
-      out = out.replaceAllMapped(RegExp(p, caseSensitive: false), (m) => '${m.group(1)}***REDACTED***');
+      out = out.replaceAllMapped(RegExp(p, caseSensitive: false), (m) {
+        // Userinfo pattern keeps scheme/user + host: only the password goes.
+        if (m.groupCount == 3) return '${m.group(1)}***REDACTED***${m.group(3)}';
+        return '${m.group(1)}***REDACTED***';
+      });
     }
     return out;
   }

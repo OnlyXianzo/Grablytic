@@ -148,7 +148,14 @@ def main():
             method = req.get("method")
             params = req.get("params", {})
 
-            log.info(f"Method: {method}", extra={"params": params})
+            # Sanitized copy for the engine log (never raw secrets: proxy
+            # creds, po_token, signed-URL sigs ride in params/config).
+            try:
+                from grablytic_engine.persistent import sanitize as _sanitize
+                _safe_params = _sanitize(params)
+            except Exception:
+                _safe_params = {}
+            log.info(f"Method: {method}", extra={"params": _safe_params})
 
             # Sanitized copy for the rotating handler (never raw secrets).
             try:

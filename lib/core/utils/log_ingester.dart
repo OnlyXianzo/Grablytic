@@ -26,7 +26,23 @@ class LogIngester {
   void _handleLogEvent(Map<String, dynamic> data) {
     if (data['type'] != 'log') return;
     try {
-      final entry = LogEntry.fromEngineJson(data);
+      final raw = LogEntry.fromEngineJson(data);
+      // Engine strings bypass AppLogger.log(), so redact here: buffer,
+      // file line and GitHub reports all derive from this entry.
+      final entry = LogEntry(
+        timestamp: raw.timestamp,
+        level: raw.level,
+        logger: raw.logger,
+        message: AppLogger.redact(raw.message),
+        context: raw.context,
+        extra: raw.extra,
+        traceId: raw.traceId,
+        durationMs: raw.durationMs,
+        exception:
+            raw.exception != null ? AppLogger.redact(raw.exception!) : null,
+        source: raw.source,
+        downloadId: raw.downloadId,
+      );
       AppLogger.appendFileLine(entry.formattedLine);
       if (entry.level == LogLevel.debug) return;
       _buffer.add(entry);
