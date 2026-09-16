@@ -11,7 +11,7 @@ from yt_dlp import YoutubeDL
 
 from grablytic_engine.opts_builder import build_ydl_opts
 from grablytic_engine.errors import classify_error, GrablyticError
-from grablytic_engine.hooks import _QUEUE_MAXSIZE, _emit_event
+from grablytic_engine.hooks import _QUEUE_MAXSIZE, _emit_event, _put_bounded
 from grablytic_engine.paths import get_paths
 from grablytic_engine.playlist import detect_playlist
 from grablytic_engine.config import coerce_config
@@ -65,12 +65,16 @@ def _close_own_slot(download_id: str, slot_token) -> bool:
     worker whose id was reused, or a watchdog firing after a fast retry,
     gets False and must not emit, stamp, or pump. Legacy records without a
     token match token None (today's unconditional stamp behavior).
+    Idempotent: an already-terminal entry returns False so a watchdog
+    close followed by the late worker finally cannot double-pump.
     """
     with _downloads_lock:
         info = _active_downloads.get(download_id)
         if info is None:
             return False
         if info.get("slot_token") != slot_token:
+            return False
+        if info.get("finished_at"):
             return False
         info["finished_at"] = datetime.now(timezone.utc)
         return True
@@ -214,16 +218,29 @@ def _pump_queue() -> None:
             }
         try:
             _spawn_thread(entry)
-            if entry.get("event_callback") is not None and not entry["cancel_event"].is_set():
+            if entry["cancel_event"].is_set():
+                continue
+            promotion = json.dumps({
+                "type": "event",
+                "event": "downloading",
+                "download_id": did,
+                "promoted_from_queue": True,
+            })
+            if entry.get("event_callback") is not None:
                 try:
-                    _emit_event(entry["event_callback"], json.dumps({
-                        "type": "event",
-                        "event": "downloading",
-                        "download_id": did,
-                        "promoted_from_queue": True,
-                    }))
+                    _emit_event(entry["event_callback"], promotion)
                 except Exception:
                     pass
+            else:
+                # Desktop has no callback: make promotion pollable or the
+                # client that received queued:true waits until terminal.
+                try:
+                    _put_bounded(entry["progress_queue"], promotion)
+                except Exception:
+                    try:
+                        entry["progress_queue"].put_nowait(promotion)
+                    except Exception:
+                        pass
         except Exception:
             try:
                 log.error(
@@ -1168,9 +1185,13 @@ def _start_cancel_watchdog(download_id: str, worker_thread) -> None:
                 return  # worker terminal won the race
             if info.get("thread") is not worker_thread:
                 return  # slot reused under the same id; not ours to close
-            info["finished_at"] = datetime.now(timezone.utc)
+            slot_token = info.get("slot_token")
             cb = info.get("event_callback")
             res_q = info.get("result_queue")
+        # Token-aware idempotent close: a late worker finally after us is
+        # a no-op, so the slot can never double-pump into over-admission.
+        if not _close_own_slot(download_id, slot_token):
+            return
         terminal = json.dumps({
             "type": "event",
             "event": "cancelled",

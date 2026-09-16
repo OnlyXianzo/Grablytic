@@ -842,3 +842,27 @@ class TestDownloadLifecycleCorrelation:
         assert events[0]["level"] == "ERROR"
         assert "boom" in events[0]["message"]
 
+
+
+@pytest.mark.unit
+def test_concurrent_get_logger_and_global_setters_race_free():
+    """Logger registry mutations under concurrency must not raise or lose."""
+    import threading as _th
+    from grablytic_engine import logger as _lm
+    errors: list = []
+
+    def _make(i: int) -> None:
+        try:
+            _lm.get_logger(f"race-{i % 8}")
+            _lm.set_global_queue(None)
+            _lm.set_global_log_dir("/tmp/race-logs")
+        except Exception as exc:  # noqa: BLE001 — collecting, not swallowing
+            errors.append(exc)
+
+    threads = [_th.Thread(target=_make, args=(i,)) for i in range(32)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not errors
+    assert callable(_lm.get_logger("race-0").info)

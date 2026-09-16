@@ -204,6 +204,7 @@ class EngineLogger:
 
 
 _loggers: dict[str, EngineLogger] = {}
+_loggers_lock = threading.Lock()
 
 # Loop-2 I/O shield: open/write/close per DEBUG line was 3 syscalls × tens
 # of Hz × downloads on low-end eMMC (visible I/O jitter). Cached handles
@@ -284,25 +285,30 @@ _global_bridge_min_level: int = INFO
 
 
 def get_logger(name: str) -> EngineLogger:
-    if name not in _loggers:
-        _loggers[name] = EngineLogger(name)
-        if _global_event_callback is not None:
-            _loggers[name].set_event_callback(_global_event_callback)
-        if _global_log_dir is not None:
-            _loggers[name].set_log_dir(_global_log_dir)
-        _loggers[name].set_bridge_min_level(_global_bridge_min_level)
-    return _loggers[name]
+    with _loggers_lock:
+        if name not in _loggers:
+            _loggers[name] = EngineLogger(name)
+            if _global_event_callback is not None:
+                _loggers[name].set_event_callback(_global_event_callback)
+            if _global_log_dir is not None:
+                _loggers[name].set_log_dir(_global_log_dir)
+            _loggers[name].set_bridge_min_level(_global_bridge_min_level)
+        return _loggers[name]
 
 
 def set_global_log_dir(path: str) -> None:
     global _global_log_dir
     _global_log_dir = path
-    for logger in _loggers.values():
+    with _loggers_lock:
+        targets = list(_loggers.values())
+    for logger in targets:
         logger.set_log_dir(path)
 
 
 def set_global_queue(q: queue.Queue | None) -> None:
-    for logger in _loggers.values():
+    with _loggers_lock:
+        targets = list(_loggers.values())
+    for logger in targets:
         logger.set_queue(q)
 
 
@@ -314,7 +320,9 @@ def set_global_event_callback(cb) -> None:
     """
     global _global_event_callback
     _global_event_callback = cb
-    for logger in _loggers.values():
+    with _loggers_lock:
+        targets = list(_loggers.values())
+    for logger in targets:
         try:
             logger.set_event_callback(cb)
         except Exception:
@@ -328,7 +336,9 @@ def set_global_bridge_min_level(level: int) -> None:
     """
     global _global_bridge_min_level
     _global_bridge_min_level = level
-    for logger in _loggers.values():
+    with _loggers_lock:
+        targets = list(_loggers.values())
+    for logger in targets:
         try:
             logger.set_bridge_min_level(level)
         except Exception:

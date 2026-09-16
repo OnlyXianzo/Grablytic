@@ -359,3 +359,44 @@ def test_ydlogger_output_files_capped_and_deduped():
     for i in range(yd.MAX_OUTPUT_FILES + 100):
         yd._extract_path(f'[download] Destination: /tmp/f{i}.mp4')
     assert len(yd.output_files) <= yd.MAX_OUTPUT_FILES
+
+
+def test_close_own_slot_is_idempotent(monkeypatch):
+    """Watchdog close followed by late worker finally must not double-pump."""
+    _reset()
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+    try:
+        dl_mod.start_download(url="https://x.test/i", download_id="i-1")
+        token = dl_mod._active_downloads["i-1"].get("slot_token")
+        assert dl_mod._close_own_slot("i-1", token) is True
+        assert dl_mod._close_own_slot("i-1", token) is False
+        assert dl_mod._close_own_slot("i-1", "wrong-token") is False
+    finally:
+        _cleanup("i-1")
+
+
+def test_queued_promotion_is_pollable_on_desktop(monkeypatch):
+    """Desktop (no callback) must observe promoted_from_queue in its
+    progress queue; previously only the callback path emitted it."""
+    import json as _json
+    _reset()
+    dl_mod.set_max_concurrent(1)
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+    try:
+        r1 = dl_mod.start_download(url="https://x.test/p1", download_id="pr-1")
+        assert r1["success"] is True
+        r2 = dl_mod.start_download(url="https://x.test/p2", download_id="pr-2")
+        assert r2.get("queued") is True
+        token = dl_mod._active_downloads["pr-1"].get("slot_token")
+        assert dl_mod._close_own_slot("pr-1", token) is True
+        dl_mod._pump_queue()
+        prog_q = dl_mod._active_downloads["pr-2"]["progress_queue"]
+        found = False
+        while not prog_q.empty():
+            ev = _json.loads(prog_q.get_nowait())
+            if ev.get("promoted_from_queue") is True and ev.get("download_id") == "pr-2":
+                found = True
+        assert found, "promotion event missing from desktop progress queue"
+    finally:
+        dl_mod.set_max_concurrent(2)
+        _cleanup("pr-1", "pr-2")
