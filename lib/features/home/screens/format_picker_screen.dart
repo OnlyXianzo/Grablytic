@@ -124,6 +124,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         ),
         tag: 'FormatPickerScreen',
       );
+      if (!mounted) return;
 
       if (result['success'] == true) {
         final formats = (result['formats'] as List).cast<Map<String, dynamic>>();

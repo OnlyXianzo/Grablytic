@@ -32,6 +32,9 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         "no_warnings": True,
     }
 
+    from grablytic_engine.opts_builder import _configure_js_runtime
+    _configure_js_runtime(opts, paths)
+
     if "youtube.com" in url or "youtu.be" in url:
         opts.setdefault("extractor_args", {})
         opts["extractor_args"].setdefault("youtube", {})
@@ -62,9 +65,17 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         formats_raw = info.get("formats", [])
         if is_playlist and not formats_raw:
             entries_val = info.get("entries")
-            first = next(iter(entries_val), None) if entries_val is not None else None
-            if first and isinstance(first, dict):
-                formats_raw = first.get("formats", [])
+            if entries_val is not None:
+                if not isinstance(entries_val, list):
+                    try:
+                        import itertools
+                        entries_val = list(itertools.islice(entries_val, 500))
+                    except Exception:
+                        entries_val = []
+                    info["entries"] = entries_val
+                first = entries_val[0] if entries_val and isinstance(entries_val[0], dict) else None
+                if first:
+                    formats_raw = first.get("formats", [])
 
         parsed = []
         for f in formats_raw:
@@ -126,6 +137,26 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             thumbs = info.get("thumbnails")
             if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
                 thumb = thumbs[-1].get("url")
+        if not thumb and is_playlist:
+            entries_val = info.get("entries")
+            if entries_val is not None and not isinstance(entries_val, list):
+                try:
+                    import itertools
+                    entries_val = list(itertools.islice(entries_val, 500))
+                    info["entries"] = entries_val
+                except Exception:
+                    entries_val = []
+            if entries_val and isinstance(entries_val, list):
+                for entry in entries_val:
+                    if isinstance(entry, dict):
+                        t = entry.get("thumbnail")
+                        if not t and entry.get("thumbnails"):
+                            entry_thumbs = entry.get("thumbnails")
+                            if isinstance(entry_thumbs, list) and len(entry_thumbs) > 0 and isinstance(entry_thumbs[-1], dict):
+                                t = entry_thumbs[-1].get("url")
+                        if t:
+                            thumb = t
+                            break
 
         return {
             "success": True,
