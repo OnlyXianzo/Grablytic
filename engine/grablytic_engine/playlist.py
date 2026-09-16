@@ -90,6 +90,19 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
         "force_generic_extractor": False,
     }
 
+    from grablytic_engine.opts_builder import _configure_js_runtime
+    _configure_js_runtime(opts, paths)
+
+    if "youtube.com" in url or "youtu.be" in url:
+        opts.setdefault("extractor_args", {})
+        opts["extractor_args"].setdefault("youtube", {})
+        opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
+
+        from grablytic_engine.po_token import generate_po_token
+        po_token = generate_po_token(url) or paths.get("po_token")
+        if po_token:
+            opts["extractor_args"]["youtube"]["po_token"] = [po_token]
+
     from grablytic_engine.opts_builder import sanitize_cookiefile
     cookiefile = sanitize_cookiefile(cfg.get("cookies_path") or paths.get("cookies_path"))
     if cookiefile:
@@ -106,7 +119,15 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             log.warn(f"No data returned for playlist {url}")
             return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not fetch playlist"}
 
-        entries_raw = data.get("entries") if "entries" in data and data.get("entries") is not None else [data]
+        entries_val = data.get("entries") if "entries" in data and data.get("entries") is not None else [data]
+        if entries_val is not None:
+            if not isinstance(entries_val, list):
+                try:
+                    import itertools
+                    entries_val = list(itertools.islice(entries_val, 500))
+                except Exception:
+                    entries_val = []
+        entries_raw = entries_val or []
         entries = []
         idx = 1
         for e in entries_raw:
@@ -149,11 +170,30 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             idx += 1
 
         playlist_title = data.get("title", "Unknown Playlist")
+        playlist_thumb = data.get("thumbnail")
+        if not playlist_thumb and data.get("thumbnails"):
+            thumbs = data.get("thumbnails")
+            if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+                playlist_thumb = thumbs[-1].get("url")
+        if not playlist_thumb:
+            for e in entries:
+                if e.get("thumbnail_url"):
+                    playlist_thumb = e["thumbnail_url"]
+                    break
+        if not playlist_thumb:
+            for e in entries:
+                u = e.get("url") or ""
+                m = re.search(r"(?:v=|/v/|youtu\.be/|/embed/)([a-zA-Z0-9_-]{11})", u)
+                if m:
+                    playlist_thumb = f"https://i.ytimg.com/vi/{m.group(1)}/hqdefault.jpg"
+                    break
+
         log.info(f"Playlist '{playlist_title}' has {len(entries)} entries")
         return {
             "success": True,
             "title": playlist_title,
             "uploader": data.get("uploader"),
+            "thumbnail_url": playlist_thumb,
             "count": len(entries),
             "estimated_total_bytes": None,
             "entries": entries,
