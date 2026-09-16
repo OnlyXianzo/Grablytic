@@ -127,7 +127,7 @@ def test_aria2c_max_speed_validated(tmp_path):
 
 def test_rate_limit_applied():
     opts = build_ydl_opts(config={"rate_limit": "500K"})
-    assert opts["ratelimit"] == "500K"
+    assert opts["ratelimit"] == 512000
 
 
 def test_proxy_applied():
@@ -178,10 +178,12 @@ def test_po_token_added():
     assert extractor.get("youtube", {}).get("po_token") == ["mypotoken"]
 
 
-def test_cookies_added_when_set():
-    _paths["cookies_path"] = "/tmp/cookies.txt"
+def test_cookies_added_when_set(tmp_path):
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.touch()
+    _paths["cookies_path"] = str(cookie_file)
     opts = build_ydl_opts()
-    assert opts["cookiefile"] == "/tmp/cookies.txt"
+    assert opts["cookiefile"] == str(cookie_file.resolve())
 
 
 def test_verbose_enabled():
@@ -626,3 +628,101 @@ def test_mp3_audio_keeps_jpg_cover_art():
 def test_video_keeps_jpg_cover_art():
     opts = build_ydl_opts(config={"thumbnail_format": "jpg"})
     assert _thumb_convertor_format(opts) == "jpg"
+
+
+def test_playlist_items_malicious_ranges_rejected():
+    """FLAW E-R2: Out-of-bounds or malformed playlist_items must be omitted."""
+    # Massive flat-fetch ranges
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "1:100000"})
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "1-50000"})
+    # Negative, zero, or malformed syntax
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "-1"})
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "0"})
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": ",,"})
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "abc"})
+    assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "::"})
+    # Valid bounded ranges are accepted
+    assert build_ydl_opts(config={"playlist_items": "1-5"}).get("playlist_items") == "1-5"
+    assert build_ydl_opts(config={"playlist_items": "1:10"}).get("playlist_items") == "1:10"
+    assert build_ydl_opts(config={"playlist_items": "1,2,3"}).get("playlist_items") == "1,2,3"
+
+
+def test_rate_limit_coercion_and_clamping():
+    """FLAW E-R2: rate_limit must be converted to numeric bytes/sec or omitted."""
+    opts_500k = build_ydl_opts(config={"rate_limit": "500K"})
+    assert isinstance(opts_500k.get("ratelimit"), (int, float))
+    assert opts_500k["ratelimit"] == 512000
+
+    opts_2m = build_ydl_opts(config={"rate_limit": "2M"})
+    assert opts_2m["ratelimit"] == 2097152
+
+    # Zero, negative, or invalid strings omitted
+    assert "ratelimit" not in build_ydl_opts(config={"rate_limit": "0"})
+    assert "ratelimit" not in build_ydl_opts(config={"rate_limit": "-100"})
+    assert "ratelimit" not in build_ydl_opts(config={"rate_limit": "invalid"})
+
+
+def test_cookies_path_security_checks(tmp_path):
+    """FLAW E-R2: cookiefile must exist, be regular file, and be readable."""
+    real_cookie = tmp_path / "valid_cookies.txt"
+    real_cookie.touch()
+    _paths["cookies_path"] = str(real_cookie)
+    assert build_ydl_opts()["cookiefile"] == str(real_cookie.resolve())
+
+    # Nonexistent file rejected
+    _paths["cookies_path"] = str(tmp_path / "nonexistent.txt")
+    assert "cookiefile" not in build_ydl_opts()
+
+    # Directory rejected
+    _paths["cookies_path"] = str(tmp_path)
+    assert "cookiefile" not in build_ydl_opts()
+
+    # Relative path rejected
+    _paths["cookies_path"] = "relative/cookies.txt"
+    assert "cookiefile" not in build_ydl_opts()
+
+
+def test_compat_opts_allowlist():
+    """FLAW E-R2: Dangerous compat_options must be filtered out against allowlist."""
+    # Disallow unsafe flags
+    opts_bad = build_ydl_opts(config={"compat_options": "allow-unsafe-exec-expansion,no-certifi"})
+    assert "compat_opts" not in opts_bad
+
+    # Allow safe flags
+    opts_good = build_ydl_opts(config={"compat_options": "no-live-chat,format-sort"})
+    assert opts_good.get("compat_opts") == ["no-live-chat", "format-sort"]
+
+    # Filter mixed
+    opts_mixed = build_ydl_opts(config={"compat_options": "no-live-chat,allow-unsafe-exec-expansion"})
+    assert opts_mixed.get("compat_opts") == ["no-live-chat"]
+
+
+def test_subtitleslangs_sanitization():
+    """FLAW E-R2: subtitleslangs must be sanitized against ReDoS and invalid tokens."""
+    # Standard languages
+    assert build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": ["en", "es"]})["subtitleslangs"] == ["en", "es"]
+
+    # Comma-separated string coerced to list
+    assert build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": "en,fr"})["subtitleslangs"] == ["en", "fr"]
+
+    # Metacharacters / ReDoS patterns rejected
+    opts_redos = build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": ["(a+)+$", "en"]})
+    assert opts_redos["subtitleslangs"] == ["en"]
+
+
+def test_config_schema_validation():
+    """FLAW E-R2: sanitize_config must drop unknown keys and coerce known types."""
+    from grablytic_engine.config import sanitize_config
+    raw = {
+        "evil_key": "drop_me",
+        "writesubtitles": 1,
+        "retries": "15",
+        "container": "mp4",
+    }
+    cleaned = sanitize_config(raw)
+    assert "evil_key" not in cleaned
+    assert cleaned["writesubtitles"] is True
+    assert cleaned["retries"] == 15
+    assert cleaned["container"] == "mp4"
+
+
