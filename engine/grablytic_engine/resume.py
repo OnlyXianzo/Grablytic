@@ -28,6 +28,13 @@ _MAX_SCAN_FILES = 2000
 
 
 def _attempts_path(cache_dir: str) -> str:
+    try:
+        from grablytic_engine.paths import get_paths
+        data_dir = get_paths().get("data_dir")
+        if data_dir and os.path.isdir(data_dir):
+            return os.path.join(data_dir, _ATTEMPTS_FILENAME)
+    except Exception:
+        pass
     return os.path.join(cache_dir, _ATTEMPTS_FILENAME)
 
 
@@ -51,16 +58,42 @@ def _save_attempts(cache_dir: str, attempts: dict) -> None:
         pass
 
 
-def _contained_path(cache_dir: str, filepath: str) -> str | None:
-    """Realpath of filepath if strictly inside cache_dir, else None."""
+def _is_strictly_contained(parent: str, child: str) -> bool:
     try:
-        base = os.path.realpath(cache_dir)
+        real_parent = os.path.realpath(parent)
+        real_child = os.path.realpath(child)
+    except (OSError, ValueError):
+        return False
+    if real_parent == real_child:
+        return False
+    try:
+        return os.path.commonpath([real_parent, real_child]) == real_parent
+    except (ValueError, OSError):
+        return False
+
+
+def _contained_path(cache_dir: str, filepath: str) -> str | None:
+    """Realpath of filepath if strictly inside cache_dir or allowed engine paths, else None."""
+    try:
         real = os.path.realpath(filepath)
     except OSError:
         return None
-    if real == base or not real.startswith(base + os.sep):
-        return None
-    return real
+
+    allowed_roots = [cache_dir]
+    try:
+        from grablytic_engine.paths import get_paths
+        p = get_paths()
+        for k in ("output_dir", "data_dir", "cache_dir"):
+            v = p.get(k)
+            if v and isinstance(v, str) and v not in allowed_roots:
+                allowed_roots.append(v)
+    except Exception:
+        pass
+
+    for root in allowed_roots:
+        if root and os.path.isdir(root) and _is_strictly_contained(root, real):
+            return real
+    return None
 
 
 def report_resume_attempt(cache_dir: str, filepath: str, success) -> dict:
@@ -94,28 +127,42 @@ def report_resume_attempt(cache_dir: str, filepath: str, success) -> dict:
 
 
 def _iter_part_files(cache_dir: str, recursive: bool, max_files: int | None = None):
-    """Yield .part file paths (top level, or full walk without followlinks)."""
+    """Yield .part file paths (top level, or walk bounded by depth and max files)."""
     cap = max_files if max_files is not None else _MAX_SCAN_FILES
     yielded = 0
+    total_inspected = 0
+    max_inspected = 5000
+
     if not recursive:
         try:
             entries = os.listdir(cache_dir)
         except OSError:
             return
         for entry in entries:
+            total_inspected += 1
             if entry.endswith(".part"):
                 yield os.path.join(cache_dir, entry)
                 yielded += 1
                 if yielded >= cap:
                     return
+            if total_inspected >= max_inspected:
+                return
         return
+
+    base_depth = cache_dir.rstrip(os.sep).count(os.sep)
     for root, _dirs, files in os.walk(cache_dir, followlinks=False):
+        current_depth = root.rstrip(os.sep).count(os.sep) - base_depth
+        if current_depth >= 2:
+            _dirs.clear()
         for name in files:
+            total_inspected += 1
             if name.endswith(".part"):
                 yield os.path.join(root, name)
                 yielded += 1
                 if yielded >= cap:
                     return
+            if total_inspected >= max_inspected:
+                return
 
 
 def scan_resume_candidates(
@@ -167,16 +214,30 @@ def scan_resume_candidates(
         age = now - stat.st_mtime
 
         likely_url = None
-        info_path = _strip_part_suffix(filepath) + ".info.json"
+        clean_stem = _strip_part_suffix(filepath)
+        info_path = clean_stem + ".info.json"
         if not os.path.exists(info_path):
-            base, _ = os.path.splitext(_strip_part_suffix(filepath))
+            base, _ = os.path.splitext(clean_stem)
             info_path = base + ".info.json"
+        if not os.path.exists(info_path):
+            # Split stream tag e.g. <title>.f137.mp4 -> <title>.info.json
+            import re
+            base_no_fmt = re.sub(r"\.f[a-zA-Z0-9_-]+(?=\.[^.]+$|$)", "", clean_stem)
+            info_path = base_no_fmt + ".info.json"
+            if not os.path.exists(info_path):
+                base_dir = os.path.dirname(filepath)
+                base_name = os.path.splitext(os.path.basename(base_no_fmt))[0]
+                info_path = os.path.join(base_dir, base_name + ".info.json")
 
         if os.path.exists(info_path):
             try:
                 with open(info_path, "r", encoding="utf-8") as f:
                     info_data = json.load(f)
-                    likely_url = info_data.get("webpage_url") or info_data.get("url")
+                    likely_url = (
+                        info_data.get("webpage_url")
+                        or info_data.get("original_url")
+                        or info_data.get("url")
+                    )
             except Exception:
                 pass
 

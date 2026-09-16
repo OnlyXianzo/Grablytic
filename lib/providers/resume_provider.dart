@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/utils/app_logger.dart';
 import '../core/utils/trust_boundary.dart';
+import 'download_provider.dart';
 import 'settings_provider.dart';
 
 /// Remove ONE trailing '.part' only (BRUTAL-6 info.json).
@@ -93,11 +94,13 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
   final Ref _ref;
   final Future<String> Function()? resolveCacheDir;
   final Future<String?> Function()? resolveDownloadDir;
+  final List<DownloadItem> Function()? resolveActiveDownloads;
 
   ResumeNotifier(
     this._ref, {
     this.resolveCacheDir,
     this.resolveDownloadDir,
+    this.resolveActiveDownloads,
   }) : super(const AsyncValue.loading()) {
     scan();
   }
@@ -138,37 +141,56 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
   Future<void> scan() async {
     state = const AsyncValue.loading();
     try {
-      final cacheDir = resolveCacheDir != null
-          ? await resolveCacheDir!()
-          : (await getTemporaryDirectory()).path;
+      final allowedDirs = await _allowedDirectories();
       final engine = _ref.read(engineProvider);
-      final result = await engine.scanResumeCandidates(cacheDir: cacheDir);
-      if (result['success'] == true) {
-        final rawList = result['candidates'] as List? ?? [];
-        final allowedDirs = await _allowedDirectories();
-        final List<ResumeCandidate> candidatesList = [];
+      final List<ResumeCandidate> candidatesList = [];
+      final Set<String> seenPaths = {};
 
-        for (final item in rawList) {
-          if (item is! Map) continue;
-          final candidate = ResumeCandidate.fromJson(
-            Map<String, dynamic>.from(item),
-            allowedDirs: allowedDirs,
-          );
-          if (candidate == null) {
-            AppLogger.warn(
-              'Dropping resume candidate outside trust boundary: ${item['filepath']}',
-              tag: 'resume',
-            );
-            continue;
+      for (final dir in allowedDirs) {
+        if (dir.isEmpty) continue;
+        try {
+          final result = await engine.scanResumeCandidates(cacheDir: dir);
+          if (result['success'] == true) {
+            final rawList = result['candidates'] as List? ?? [];
+            for (final item in rawList) {
+              if (item is! Map) continue;
+              final candidate = ResumeCandidate.fromJson(
+                Map<String, dynamic>.from(item),
+                allowedDirs: allowedDirs,
+              );
+              if (candidate != null && seenPaths.add(candidate.filepath)) {
+                candidatesList.add(candidate);
+              }
+            }
           }
-          candidatesList.add(candidate);
+        } catch (e) {
+          AppLogger.warn('Scan skipped for $dir: $e', tag: 'resume');
         }
-        state = AsyncValue.data(candidatesList);
-      } else {
-        state = AsyncValue.error(
-            result['error_message'] ?? 'Failed to scan resume candidates',
-            StackTrace.current);
       }
+
+      // Filter out candidates matching active in-progress or pending downloads
+      try {
+        final downloads = resolveActiveDownloads != null
+            ? resolveActiveDownloads!()
+            : _ref.read(downloadProvider);
+        final activePaths = <String>{};
+        for (final d in downloads) {
+          if (d.status == 'downloading' ||
+              d.status == 'pending' ||
+              d.status == 'cancelling') {
+            final p = d.filePath;
+            if (p != null && p.isNotEmpty) {
+              activePaths.add(p);
+              activePaths.add('$p.part');
+            }
+          }
+        }
+        candidatesList.removeWhere((c) =>
+            activePaths.contains(c.filepath) ||
+            activePaths.contains(stripPartSuffix(c.filepath)));
+      } catch (_) {}
+
+      state = AsyncValue.data(candidatesList);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
     }
@@ -212,6 +234,20 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
             await infoFile.delete();
           } else {
             AppLogger.warn('Sidecar realpath outside allowed dirs: $realSidecar', tag: 'resume');
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. Delete .part.ytdl state file if present
+    final ytdlPath = sanitizeEngineFilePath('${candidate.filepath}.ytdl');
+    if (ytdlPath != null && _isPathInAllowedDirs(ytdlPath, allowedDirs)) {
+      final ytdlFile = File(ytdlPath);
+      if (await ytdlFile.exists()) {
+        try {
+          final realYtdl = await ytdlFile.resolveSymbolicLinks();
+          if (_isPathInAllowedDirs(realYtdl, allowedDirs)) {
+            await ytdlFile.delete();
           }
         } catch (_) {}
       }
@@ -269,10 +305,19 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
     final filepath = _resumeOrigins.remove(url);
     if (filepath == null) return;
     try {
-      final dir = cacheDir ??
-          (resolveCacheDir != null
-              ? await resolveCacheDir!()
-              : (await getTemporaryDirectory()).path);
+      String? dir = cacheDir;
+      if (dir == null) {
+        final allowed = await _allowedDirectories();
+        for (final d in allowed) {
+          if (isPathWithinDir(filepath, d)) {
+            dir = d;
+            break;
+          }
+        }
+        dir ??= (resolveCacheDir != null
+            ? await resolveCacheDir!()
+            : (await getTemporaryDirectory()).path);
+      }
       final engine = _ref.read(engineProvider);
       await engine.reportResumeAttempt(
           cacheDir: dir, filepath: filepath, success: success);

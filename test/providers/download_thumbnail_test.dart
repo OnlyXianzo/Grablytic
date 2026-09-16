@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -128,6 +129,75 @@ void main() {
       // List-view completed fallback icon (no network image attempted).
       expect(find.byIcon(Icons.image_outlined), findsWidgets);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('Task 03: sidecar thumbnail deletion in deleteFileAndHistory', () {
+    test('deletes media file and unshared thumbnail sidecar', () async {
+      final tempDir = await Directory.systemTemp.createTemp('thumb_del');
+      addTearDown(() => tempDir.delete(recursive: true));
+
+      final mediaFile = File('${tempDir.path}/video.mp4');
+      await mediaFile.writeAsString('video');
+      final thumbFile = File('${tempDir.path}/video.jpg');
+      await thumbFile.writeAsString('thumb');
+
+      final n = DownloadNotifier(MockEngineService(), resolveDownloadDir: () => tempDir.path);
+      n.addDownload(DownloadItem(
+        id: 'dl-to-delete',
+        title: 'Delete Me',
+        url: 'https://x.test/v',
+        status: 'completed',
+        filePath: mediaFile.path,
+        thumbnailPath: thumbFile.path,
+      ));
+
+      final deleted = await n.deleteFileAndHistory('dl-to-delete');
+      expect(deleted, isTrue);
+      expect(mediaFile.existsSync(), isFalse);
+      expect(thumbFile.existsSync(), isFalse);
+    });
+
+    test('preserves thumbnail sidecar if shared by another history item', () async {
+      final tempDir = await Directory.systemTemp.createTemp('thumb_del_shared');
+      addTearDown(() => tempDir.delete(recursive: true));
+
+      final mediaFile1 = File('${tempDir.path}/video1.mp4');
+      await mediaFile1.writeAsString('video1');
+      final mediaFile2 = File('${tempDir.path}/video2.mp4');
+      await mediaFile2.writeAsString('video2');
+      final sharedThumb = File('${tempDir.path}/shared.jpg');
+      await sharedThumb.writeAsString('thumb');
+
+      final n = DownloadNotifier(MockEngineService(), resolveDownloadDir: () => tempDir.path);
+      n.addDownload(DownloadItem(
+        id: 'dl-1',
+        title: 'Item 1',
+        url: 'https://x.test/1',
+        status: 'completed',
+        filePath: mediaFile1.path,
+        thumbnailPath: sharedThumb.path,
+      ));
+      n.addDownload(DownloadItem(
+        id: 'dl-2',
+        title: 'Item 2',
+        url: 'https://x.test/2',
+        status: 'completed',
+        filePath: mediaFile2.path,
+        thumbnailPath: sharedThumb.path,
+      ));
+
+      // Deleting dl-1 must delete mediaFile1, but PRESERVE sharedThumb because dl-2 uses it!
+      final deleted = await n.deleteFileAndHistory('dl-1');
+      expect(deleted, isTrue);
+      expect(mediaFile1.existsSync(), isFalse);
+      expect(sharedThumb.existsSync(), isTrue);
+
+      // Now deleting dl-2 must delete both mediaFile2 and sharedThumb
+      final deleted2 = await n.deleteFileAndHistory('dl-2');
+      expect(deleted2, isTrue);
+      expect(mediaFile2.existsSync(), isFalse);
+      expect(sharedThumb.existsSync(), isFalse);
     });
   });
 }
