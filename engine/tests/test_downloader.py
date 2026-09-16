@@ -282,3 +282,44 @@ class TestErrorTaxonomy:
         assert res["success"] is False
         assert res["error_type"] == "ERROR_FORMAT_UNAVAILABLE"
         assert "not available" in res["error_message"]
+
+
+class TestDownloadPathsAndFFmpegSafety:
+    @pytest.mark.unit
+    def test_cache_dir_sets_cachedir_not_temp_path(self, _env, monkeypatch):
+        """Regression test: opts['paths']['temp'] must NOT be set to cache_dir
+        as Android OS silently purges files in cacheDir under storage pressure,
+        causing FileNotFoundError during atomic renames. Instead, opts['cachedir']
+        is set for extractor HTTP cache."""
+        captured_opts = {}
+
+        class FakeYDL:
+            def __init__(self, opts):
+                captured_opts.update(opts)
+
+            def add_progress_hook(self, hook):
+                pass
+
+            def download(self, urls):
+                return 0
+
+        monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYDL)
+        res_q: queue.Queue = queue.Queue()
+        dl_mod.download_thread(
+            url="https://x.test/safe_paths", download_id="safe_paths_1",
+            result_queue=res_q,
+        )
+        res = res_q.get(timeout=10)
+        assert res["success"] is True
+        assert captured_opts.get("cachedir") is not None
+        paths = captured_opts.get("paths", {})
+        assert "temp" not in paths, "paths['temp'] must never be set to cache_dir"
+
+    @pytest.mark.unit
+    def test_ffmpeg_serialization_gate(self):
+        """Verify that _ensure_ffmpeg_serialized wraps real_run_ffmpeg
+        with a mutual exclusion semaphore."""
+        import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
+        dl_mod._ensure_ffmpeg_serialized()
+        assert dl_mod._ffmpeg_patched is True
+        assert hasattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg")

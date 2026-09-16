@@ -42,6 +42,41 @@ _MAX_PENDING_QUEUE = 500
 # progress_queue/result_queue/cancel_event/event_callback/queued_at.
 _pending_queue: list[dict] = []
 
+# ── FFmpeg post-processing serializer ────────────────────────────────────
+# Multiple concurrent downloads downloading over network is fine, but when
+# they finish, running multiple native FFmpeg remux/merge processes in parallel
+# pins all CPU cores to 100%, causing device lag, UI freezing, thermal
+# throttling, and Android LMK (Low Memory Killer) crashes.
+# We serialize FFmpeg execution with a process-wide semaphore so only one
+# FFmpeg invocation runs at a time across all active downloads.
+_ffmpeg_semaphore = threading.Semaphore(1)
+_ffmpeg_patched = False
+_ffmpeg_patch_lock = threading.Lock()
+
+
+def _ensure_ffmpeg_serialized() -> None:
+    global _ffmpeg_patched
+    if _ffmpeg_patched:
+        return
+    with _ffmpeg_patch_lock:
+        if _ffmpeg_patched:
+            return
+        try:
+            import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
+            orig_real_run_ffmpeg = yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg
+
+            def serialized_real_run_ffmpeg(self, *args, **kwargs):
+                with _ffmpeg_semaphore:
+                    return orig_real_run_ffmpeg(self, *args, **kwargs)
+
+            yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg = serialized_real_run_ffmpeg
+            _ffmpeg_patched = True
+        except Exception as e:
+            log.warning(f"Failed to serialize FFmpeg postprocessor: {e}")
+
+
+_ensure_ffmpeg_serialized()
+
 
 def set_max_concurrent(n) -> dict:
     """Set max simultaneous downloads, clamped to 1–5. Returns new limit."""
@@ -732,8 +767,10 @@ def download_thread(
             )
 
             if get_paths().get("cache_dir"):
-                opts["paths"] = opts.get("paths", {})
-                opts["paths"]["temp"] = get_paths()["cache_dir"]
+                # Use cache_dir solely for yt-dlp internal HTTP/extractor cache,
+                # NEVER for paths["temp"] which dumps partial/complete media streams
+                # into app-internal cache subject to Android OS silent eviction.
+                opts["cachedir"] = get_paths()["cache_dir"]
 
             ydl_logger = YDLogger(log, download_id=download_id)
             opts["logger"] = ydl_logger
