@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'log_entry.dart';
 
 class LogBuffer {
@@ -6,9 +7,13 @@ class LogBuffer {
   final int maxEntriesPerDownload;
   final int maxRetainedDownloads;
 
-  final List<LogEntry> _entries = [];
-  final Map<String, List<LogEntry>> _perDownloadEntries = {};
-  final List<String> _downloadLru = [];
+  // O(1) eviction: List.removeAt(0) memmoves up to 5000 entries per log
+  // line at tens-of-Hz engine rates. Queues drop the oldest in constant
+  // time; iteration order stays insertion-ordered so all views behave
+  // exactly as before.
+  final Queue<LogEntry> _entries = ListQueue<LogEntry>();
+  final Map<String, Queue<LogEntry>> _perDownloadEntries = {};
+  final LinkedHashSet<String> _downloadLru = LinkedHashSet<String>();
 
   final StreamController<LogEntry> _controller =
       StreamController<LogEntry>.broadcast();
@@ -41,7 +46,7 @@ class LogBuffer {
     if (_sourceFilter != null && entry.source != _sourceFilter) return;
 
     if (_entries.length >= maxEntries) {
-      _entries.removeAt(0);
+      _entries.removeFirst();
     }
     _entries.add(entry);
     _controller.add(entry);
@@ -50,19 +55,21 @@ class LogBuffer {
   void _recordForDownload(String downloadId, LogEntry entry) {
     if (!_perDownloadEntries.containsKey(downloadId)) {
       if (_downloadLru.length >= maxRetainedDownloads) {
-        final oldest = _downloadLru.removeAt(0);
+        final oldest = _downloadLru.first;
+        _downloadLru.remove(oldest);
         _perDownloadEntries.remove(oldest);
       }
-      _perDownloadEntries[downloadId] = [];
+      _perDownloadEntries[downloadId] = ListQueue<LogEntry>();
       _downloadLru.add(downloadId);
     } else {
+      // LRU touch in O(1): re-insertion moves the id to the newest end.
       _downloadLru.remove(downloadId);
       _downloadLru.add(downloadId);
     }
 
     final list = _perDownloadEntries[downloadId]!;
     if (list.length >= maxEntriesPerDownload) {
-      list.removeAt(0);
+      list.removeFirst();
     }
     list.add(entry);
   }
