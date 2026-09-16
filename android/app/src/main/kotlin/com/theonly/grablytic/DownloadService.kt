@@ -486,6 +486,7 @@ class DownloadService : Service() {
     }
 
     companion object {
+        private const val TAG = "DownloadService"
         private const val WAKE_TAG = "Grablytic:Download"
         private const val WIFI_TAG = "Grablytic:DownloadWifi"
         // Backstop: past the dataSync quota the service is demoted anyway.

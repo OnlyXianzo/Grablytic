@@ -157,7 +157,7 @@ object BinaryPackageManager {
             if (android.system.OsConstants.S_ISDIR(stat.st_mode)) {
                 file.deleteRecursively()
             } else {
-                android.system.Os.unlink(file.absolutePath)
+                android.system.Os.remove(file.absolutePath)
             }
         } catch (e: android.system.ErrnoException) {
             if (e.errno != android.system.OsConstants.ENOENT) {

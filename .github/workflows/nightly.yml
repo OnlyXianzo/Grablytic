@@ -172,6 +172,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate detailed nightly notes
+        env:
+          DATESTAMP: ${{ needs.prep.outputs.datestamp }}
+          SHA: ${{ needs.prep.outputs.sha }}
+        run: |
+          python3 tool/generate_nightly_notes.py "$DATESTAMP" "$SHA" > nightly_notes.md
 
       - name: Download all nightly artifacts
         uses: actions/download-artifact@v4
@@ -199,7 +208,7 @@ jobs:
           if ! gh release view nightly >/dev/null 2>&1; then
             gh release create nightly nightly_assets/* \
               --title "Grablytic Nightly $DATESTAMP ($SHA)" \
-              --notes "Rolling nightly build from main @ $SHA. Pre-release: expect rough edges." \
+              --notes-file nightly_notes.md \
               --prerelease
           else
             # Dated names accumulate — clear last night's assets first.
@@ -209,6 +218,6 @@ jobs:
             gh release upload nightly nightly_assets/* --clobber
             gh release edit nightly \
               --title "Grablytic Nightly $DATESTAMP ($SHA)" \
-              --notes "Rolling nightly build from main @ $SHA. Pre-release: expect rough edges." \
+              --notes-file nightly_notes.md \
               --prerelease
           fi
