@@ -77,8 +77,10 @@ class LogEntry {
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}.${d.millisecond.toString().padLeft(3, '0')}';
   }
 
-  String get formattedLine =>
-      '[$formattedTimestamp] [${level.name.toUpperCase()}] [$logger]: $message${exception != null ? "\n  ⚠ $exception" : ""}';
+  String get formattedLine {
+    final dlTag = downloadId != null ? ' [$downloadId]' : '';
+    return '[$formattedTimestamp] [${level.name.toUpperCase()}] [$logger]$dlTag: $message${exception != null ? "\n  ⚠ $exception" : ""}';
+  }
 
   Map<String, dynamic> toJson() => {
         'type': 'log',

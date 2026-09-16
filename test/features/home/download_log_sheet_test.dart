@@ -212,4 +212,54 @@ void main() {
     expect(find.textRange.ofSubstring('Download completed'), findsOneWidget);
     expect(find.textRange.ofSubstring('noise-'), findsNothing);
   });
+
+  testWidgets('level filter can select fatal and revert back to all levels', (tester) async {
+    buffer.add(LogEntry(
+      timestamp: DateTime.now(),
+      level: LogLevel.info,
+      logger: 'downloader',
+      message: 'Initial connection',
+      downloadId: 'dl-filter',
+    ));
+    buffer.add(LogEntry(
+      timestamp: DateTime.now(),
+      level: LogLevel.fatal,
+      logger: 'downloader',
+      message: 'Unrecoverable crash',
+      downloadId: 'dl-filter',
+    ));
+
+    await tester.pumpWidget(
+      buildTestWidget(
+        downloadId: 'dl-filter',
+        title: 'Filter Item',
+      ),
+    );
+
+    expect(find.textRange.ofSubstring('Initial connection'), findsOneWidget);
+    expect(find.textRange.ofSubstring('Unrecoverable crash'), findsOneWidget);
+
+    // Tap filter button to open menu
+    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.pumpAndSettle();
+
+    // Select FATAL
+    await tester.tap(find.text('FATAL'));
+    await tester.pumpAndSettle();
+
+    // INFO log is hidden, FATAL log is visible
+    expect(find.textRange.ofSubstring('Initial connection'), findsNothing);
+    expect(find.textRange.ofSubstring('Unrecoverable crash'), findsOneWidget);
+
+    // Tap filter button again to switch back to ALL LEVELS
+    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ALL LEVELS'));
+    await tester.pumpAndSettle();
+
+    // ALL logs are visible again
+    expect(find.textRange.ofSubstring('Initial connection'), findsOneWidget);
+    expect(find.textRange.ofSubstring('Unrecoverable crash'), findsOneWidget);
+  });
 }

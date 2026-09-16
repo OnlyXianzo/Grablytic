@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,7 +34,7 @@ class DownloadLogSheet extends ConsumerStatefulWidget {
     String? status,
     String? url,
   }) {
-    return showModalBottomSheet(
+    return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -50,13 +51,15 @@ class DownloadLogSheet extends ConsumerStatefulWidget {
   ConsumerState<DownloadLogSheet> createState() => _DownloadLogSheetState();
 }
 
+enum _LogFilter { all, debug, info, warn, error, fatal }
+
 class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   StreamSubscription<LogEntry>? _streamSub;
 
   String _searchQuery = '';
-  LogLevel? _selectedLevel;
+  _LogFilter _selectedFilter = _LogFilter.all;
   bool _autoScroll = true;
   bool _isLoadingDisk = false;
   List<LogEntry> _diskFallbackEntries = [];
@@ -106,12 +109,15 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
       // logs plus an unbounded entry list janked frames on open. Newest
       // files first, newest lines win via the trailing cap below.
       const maxDiskEntries = 500;
-      for (final file in files.take(3)) {
+      for (final file in files.take(5)) {
         final content = await AppLogger.readLogFile(file);
         for (final line in content.split('\n')) {
           if (line.contains(widget.downloadId)) {
-            diskEntries.add(_parseDiskLine(line));
-            if (diskEntries.length >= maxDiskEntries) break;
+            final parsed = _parseDiskLine(line);
+            if (parsed != null) {
+              diskEntries.add(parsed);
+              if (diskEntries.length >= maxDiskEntries) break;
+            }
           }
         }
         if (diskEntries.length >= maxDiskEntries) break;
@@ -127,18 +133,50 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
     }
   }
 
-  LogEntry _parseDiskLine(String line) {
+  LogEntry? _parseDiskLine(String line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return null;
+
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        final map = jsonDecode(trimmed) as Map<String, dynamic>;
+        if (map['type'] == 'log') {
+          return LogEntry.fromEngineJson(map);
+        }
+      } catch (_) {}
+    }
+
     var level = LogLevel.info;
     if (line.contains('[DEBUG]')) level = LogLevel.debug;
     if (line.contains('[WARN]')) level = LogLevel.warn;
     if (line.contains('[ERROR]')) level = LogLevel.error;
     if (line.contains('[FATAL]')) level = LogLevel.fatal;
 
+    DateTime ts = DateTime.now();
+    try {
+      final match = RegExp(r'^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)\]').firstMatch(line);
+      if (match != null) {
+        ts = DateTime.parse(match.group(1)!.replaceFirst(' ', 'T'));
+      }
+    } catch (_) {}
+
+    String logger = 'disk';
+    final tagMatch = RegExp(r'\[([A-Za-z0-9_.-]+)\]:').firstMatch(line);
+    if (tagMatch != null) {
+      logger = tagMatch.group(1)!;
+    }
+
+    var message = line;
+    final msgIndex = line.indexOf(']: ');
+    if (msgIndex != -1) {
+      message = line.substring(msgIndex + 3);
+    }
+
     return LogEntry(
-      timestamp: DateTime.now(),
+      timestamp: ts,
       level: level,
-      logger: 'disk',
-      message: line,
+      logger: logger,
+      message: message,
       downloadId: widget.downloadId,
       source: 'engine',
     );
@@ -174,7 +212,9 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
     }
 
     return entries.where((e) {
-      if (_selectedLevel != null && e.level != _selectedLevel) return false;
+      if (_selectedFilter != _LogFilter.all && e.level.name != _selectedFilter.name) {
+        return false;
+      }
       if (_searchQuery.isNotEmpty &&
           !e.message.toLowerCase().contains(_searchQuery.toLowerCase())) {
         return false;
@@ -208,6 +248,23 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
       case LogLevel.error:
         return Colors.red.shade400;
       case LogLevel.fatal:
+        return Colors.purple.shade300;
+    }
+  }
+
+  Color _levelFilterColor(_LogFilter filter, ColorScheme cs) {
+    switch (filter) {
+      case _LogFilter.all:
+        return cs.onSurface;
+      case _LogFilter.debug:
+        return Colors.grey.shade400;
+      case _LogFilter.info:
+        return Colors.blue.shade300;
+      case _LogFilter.warn:
+        return Colors.orange.shade300;
+      case _LogFilter.error:
+        return Colors.red.shade400;
+      case _LogFilter.fatal:
         return Colors.purple.shade300;
     }
   }
@@ -382,23 +439,26 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                PopupMenuButton<LogLevel?>(
+                PopupMenuButton<_LogFilter>(
                   tooltip: 'Filter by level',
                   icon: Icon(
                     Icons.filter_list,
                     size: 20,
-                    color: _selectedLevel != null ? cs.primary : cs.outline,
+                    color: _selectedFilter != _LogFilter.all ? cs.primary : cs.outline,
                   ),
-                  onSelected: (lvl) => setState(() => _selectedLevel = lvl),
+                  onSelected: (filter) => setState(() => _selectedFilter = filter),
                   itemBuilder: (ctx) => [
-                    const PopupMenuItem(value: null, child: Text('ALL LEVELS')),
-                    for (final lvl in LogLevel.values)
+                    const PopupMenuItem(
+                      value: _LogFilter.all,
+                      child: Text('ALL LEVELS'),
+                    ),
+                    for (final filter in _LogFilter.values.where((f) => f != _LogFilter.all))
                       PopupMenuItem(
-                        value: lvl,
+                        value: filter,
                         child: Text(
-                          lvl.name.toUpperCase(),
+                          filter.name.toUpperCase(),
                           style: TextStyle(
-                            color: _levelColor(lvl, cs),
+                            color: _levelFilterColor(filter, cs),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
