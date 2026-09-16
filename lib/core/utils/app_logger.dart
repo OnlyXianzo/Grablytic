@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'log_buffer.dart';
 import 'log_entry.dart';
+import 'trust_boundary.dart';
 
 class AppLogger {
   static String? _logsDirPath;
@@ -526,7 +527,7 @@ class AppLogger {
       String two(int n) => n.toString().padLeft(2, '0');
       final stamp =
           '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
-      final name = src.path.split('/').last;
+      final name = sanitizeExportFileName(src.path);
       // 1s timestamp resolution → same-second exports must not overwrite.
       var dest = File('${destDir.path}/grablytic-$stamp-$name');
       var n = 1;

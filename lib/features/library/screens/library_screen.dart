@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/trust_boundary.dart';
 import '../../../features/home/screens/media_preview_screen.dart';
 import '../../../features/home/widgets/download_overflow_menu.dart';
 import '../../../providers/download_provider.dart';
@@ -438,7 +439,11 @@ class _ThumbnailImage extends StatelessWidget {
         ),
       );
     }
-    final path = trimmed.startsWith('file://') ? trimmed.substring(7) : trimmed;
+    final rawPath = trimmed.startsWith('file://') ? trimmed.substring(7) : trimmed;
+    // Trust boundary: only absolute engine-sanctioned paths reach the
+    // image decoder; anything else falls back instead of probing it.
+    final path = sanitizeEngineFilePath(rawPath);
+    if (path == null) return fallback;
     final file = File(path);
     if (!file.existsSync()) {
       return fallback;
