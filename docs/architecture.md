@@ -452,7 +452,7 @@ Colors follow the "Earth & Ethos" palette defined in DESIGN.md tokens.
 `GrablyticColors` provides light and dark color constants used by `AppTheme`.
 
 - `AppTheme.light()` and `AppTheme.dark()` build Material 3 `ThemeData` from `ColorScheme`
-- Typography wraps `GoogleFonts.instrumentSansTextTheme(base)` for body text
+- Typography applies the bundled InstrumentSans family to `base` for body text
 - Monospace text uses `GrablyticTextStyles.mono` extension on `TextTheme` (Iosevka Charon Mono)
 
 ## Accessibility

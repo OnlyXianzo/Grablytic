@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/text_styles.dart';
 
 class ErrorRecoveryCard extends StatelessWidget {
@@ -53,7 +52,7 @@ class ErrorRecoveryCard extends StatelessWidget {
               children: [
                 Text(
                   errorMessage ?? 'Download failed',
-                  style: GoogleFonts.instrumentSans(
+                  style: TextStyle(fontFamily: 'InstrumentSans',
                     fontSize: 12,
                     color: colorScheme.onErrorContainer,
                     fontWeight: FontWeight.w500,
@@ -90,7 +89,7 @@ class ErrorRecoveryCard extends StatelessWidget {
                               const SizedBox(width: 6),
                               Text(
                                 label,
-                                style: GoogleFonts.instrumentSans(
+                                style: TextStyle(fontFamily: 'InstrumentSans',
                                   fontSize: 12,
                                   color: colorScheme.error,
                                   fontWeight: FontWeight.w600,

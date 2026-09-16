@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../providers/batch_provider.dart';
 import 'batch_download_screen.dart';
@@ -140,7 +139,7 @@ class _BatchImportDialogState extends ConsumerState<BatchImportDialog> {
           decoration: InputDecoration(
             labelText: 'Add URLs',
             hintText: 'Paste multiple URLs, one per line...',
-            labelStyle: GoogleFonts.instrumentSans(
+            labelStyle: TextStyle(fontFamily: 'InstrumentSans',
               color: colorScheme.primary,
               fontWeight: FontWeight.w500,
             ),
@@ -157,7 +156,7 @@ class _BatchImportDialogState extends ConsumerState<BatchImportDialog> {
               borderSide: BorderSide(color: colorScheme.primary),
             ),
           ),
-          style: GoogleFonts.instrumentSans(color: colorScheme.onSurface),
+          style: TextStyle(fontFamily: 'InstrumentSans',color: colorScheme.onSurface),
           keyboardType: TextInputType.multiline,
           textInputAction: TextInputAction.newline,
         ),

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/theme/text_styles.dart';
 
@@ -44,7 +43,7 @@ class MediaPreviewScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(
           'Media Preview',
-          style: GoogleFonts.instrumentSans(
+          style: TextStyle(fontFamily: 'InstrumentSans',
             fontWeight: FontWeight.w600,
             color: colorScheme.primary,
           ),
@@ -143,7 +142,7 @@ class MediaPreviewScreen extends ConsumerWidget {
                   icon: const Icon(Icons.play_arrow_rounded, size: 28),
                   label: Text(
                     fileExists ? 'Open in system player' : 'No file available',
-                    style: GoogleFonts.instrumentSans(
+                    style: TextStyle(fontFamily: 'InstrumentSans',
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),

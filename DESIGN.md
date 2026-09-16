@@ -100,7 +100,7 @@ as hex literals. New code with a hex literal fails review.
 
 ## 4. Typography
 
-- **Product face:** Instrument Sans (`GoogleFonts.instrumentSansTextTheme`).
+- **Product face:** Instrument Sans (bundled `assets/fonts/InstrumentSans-*.ttf`, OFL — never a runtime webfont fetch).
 - **Technical face:** Iosevka Charon Mono (`textTheme.mono`) — bytes,
   speed, ETA, URLs, log lines, template strings. Never for prose.
 - **Brand face:** the logo wordmark serif is reserved for the logo lockup
