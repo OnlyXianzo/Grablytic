@@ -1,5 +1,6 @@
 import '../../providers/settings_provider.dart';
 import 'playlist_selection.dart';
+import 'trust_boundary.dart';
 
 /// Shared engine-config overlay built from user settings (P1).
 ///
@@ -33,9 +34,9 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
   if (maxSpeed != null && maxSpeed.trim().isNotEmpty) {
     config['aria2c_max_speed'] = maxSpeed.trim();
   }
-  final proxy = settings.proxy;
-  if (proxy != null && proxy.trim().isNotEmpty) {
-    config['proxy'] = proxy.trim();
+  final proxy = sanitizeProxy(settings.proxy);
+  if (proxy != null) {
+    config['proxy'] = proxy;
   }
   return config;
 }

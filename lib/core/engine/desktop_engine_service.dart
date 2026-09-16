@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
+import '../utils/trust_boundary.dart';
 import 'engine_codec.dart';
 import 'engine_service.dart';
 
@@ -584,11 +585,12 @@ class DesktopEngineService implements EngineService {
             message: 'Could not resolve Downloads folder');
       }
       await base.create(recursive: true);
-      var dest = File('${base.path}/$displayName');
+      final safeName = sanitizeExportFileName(displayName);
+      var dest = File('${base.path}/$safeName');
       var n = 1;
       while (await dest.exists()) {
         n++;
-        dest = File('${base.path}/$displayName-$n');
+        dest = File('${base.path}/$safeName-$n');
       }
       await src.copy(dest.path);
       return {'success': true, 'path': dest.path};

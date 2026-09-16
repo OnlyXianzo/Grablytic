@@ -10,6 +10,7 @@ import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
+import '../core/utils/trust_boundary.dart';
 import 'resume_provider.dart';
 import 'settings_provider.dart';
 
@@ -208,6 +209,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _smoothers.remove(id);
   }
 
+  /// Resolves the user's download folder for containment checks. Wired to
+  /// settings in [downloadProvider]; null in tests/embeds means
+  /// absolute-path validation only (no containment).
+  final String? Function()? resolveDownloadDir;
+
   /// Test-only surface: number of retained smoother entries.
   @visibleForTesting
   int get smootherCount => _smoothers.length;
@@ -215,7 +221,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   DownloadNotifier(this._engine,
       {DateTime Function()? clock,
       this.onDownloadOutcome,
-      this.unattendedNetworkAllowed})
+      this.unattendedNetworkAllowed,
+      this.resolveDownloadDir})
       : _clock = clock ?? DateTime.now,
         super([]);
 
@@ -418,8 +425,12 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     } else if (eventType == 'finished') {
       // Same num-tolerant parsing — terminal filesize may also arrive as double.
       final filesize = (event['filesize_bytes'] as num?)?.toInt() ?? 0;
-      final filePath = event['file_path'] as String?;
-      final thumbnailPath = event['thumbnail_path'] as String?;
+      // Trust boundary: engine-reported paths are sanitized before they
+      // touch state, SQLite, deletion, or image rendering. Non-absolute or
+      // out-of-folder paths keep the previous value and warn.
+      final filePath = _sanitizeEnginePath(event['file_path'] as String?);
+      final thumbnailPath =
+          _sanitizeEnginePath(event['thumbnail_path'] as String?);
       final sizeStr = _formatFilesize(filesize);
       // Terminal outcome — one line per download (never per-progress) so
       // diagnostics reports always show what happened. ID + outcome only,
@@ -893,10 +904,18 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final path = item.filePath;
     if (path != null && path.isNotEmpty) {
       try {
-        final file = File(path);
-        if (await file.exists()) {
-          await file.delete();
-          deletedFile = true;
+        final sanitized = sanitizeEngineFilePath(path);
+        final dir = _downloadDir();
+        if (sanitized == null ||
+            (dir != null && !isPathWithinDir(sanitized, dir))) {
+          AppLogger.warn('Delete refused: $id path outside download folder',
+              tag: 'download');
+        } else {
+          final file = File(sanitized);
+          if (await file.exists()) {
+            await file.delete();
+            deletedFile = true;
+          }
         }
       } catch (_) {}
     }
@@ -940,8 +959,36 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     ];
   }
 
-  String _formatFilesize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
+  String? _downloadDir() {
+    try {
+      return resolveDownloadDir?.call();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sanitizes one engine-reported path: absolute-only, and contained in
+  /// the download folder when it is known. Returns null (caller keeps the
+  /// previous value) and warns on rejection. Never throws.
+  String? _sanitizeEnginePath(String? raw) {
+    final clean = sanitizeEngineFilePath(raw);
+    if (clean == null) {
+      if (raw != null && raw.trim().isNotEmpty) {
+        AppLogger.warn('Ignoring engine path outside trust boundary',
+            tag: 'download');
+      }
+      return null;
+    }
+    final dir = _downloadDir();
+    if (dir != null && !isPathWithinDir(clean, dir)) {
+      AppLogger.warn('Ignoring engine path outside download folder',
+          tag: 'download');
+      return null;
+    }
+    return clean;
+  }
+
+  String _formatFilesize(int bytes) {   if (bytes < 1024) return '$bytes B';
     if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
     if (bytes < 1073741824) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
     return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
@@ -953,6 +1000,9 @@ final downloadProvider =
   final engine = ref.watch(engineProvider);
   final notifier = DownloadNotifier(
     engine,
+    // Trust boundary: engine-reported file paths must resolve inside the
+    // user's download folder before state, history, or deletion touch them.
+    resolveDownloadDir: () => ref.read(settingsProvider).downloadPath,
     // Resume strike loop (BRUTAL-5): terminal outcomes feed the engine's
     // per-file attempt counter; unresumed URLs are ignored downstream.
     onDownloadOutcome: ({required String url, required bool success}) =>
