@@ -919,6 +919,40 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         }
       } catch (_) {}
     }
+
+    // Clean up sidecar thumbnail file if present and unshared
+    final thumbPath = item.thumbnailPath;
+    if (thumbPath != null && thumbPath.isNotEmpty) {
+      try {
+        final sanitizedThumb = sanitizeEngineFilePath(thumbPath);
+        final dir = _downloadDir();
+        const allowedExts = {'.jpg', '.jpeg', '.png', '.webp'};
+        final thumbExt = sanitizedThumb != null && sanitizedThumb.contains('.')
+            ? sanitizedThumb.substring(sanitizedThumb.lastIndexOf('.')).toLowerCase()
+            : '';
+
+        if (sanitizedThumb != null &&
+            allowedExts.contains(thumbExt) &&
+            (dir == null || isPathWithinDir(sanitizedThumb, dir))) {
+          final isShared = state.any((d) =>
+              d.id != id &&
+              d.thumbnailPath != null &&
+              d.thumbnailPath == thumbPath);
+          final cleanPath = path != null ? sanitizeEngineFilePath(path) : null;
+          final isSameAsMedia = cleanPath != null && cleanPath == sanitizedThumb;
+
+          if (!isShared && !isSameAsMedia) {
+            final thumbFile = File(sanitizedThumb);
+            if (await thumbFile.exists()) {
+              final realThumb = await thumbFile.resolveSymbolicLinks();
+              if (dir == null || isPathWithinDir(realThumb, dir)) {
+                await thumbFile.delete();
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
     state = state.where((d) => d.id != id).toList();
     _dropSmoother(id);
     try {
@@ -1032,7 +1066,10 @@ final downloadProvider =
     },
   );
   // Auto-sweep and restore interrupted downloads across process restart / LMK
-  notifier.restoreInterruptedDownloads();
+  notifier.restoreInterruptedDownloads().catchError((e, st) {
+    AppLogger.warn('Restore interrupted downloads error: $e', tag: 'download');
+    return 0;
+  });
   final subscription = engine.progressStream.listen(
     (event) {
       notifier.handleProgressEvent(event);
