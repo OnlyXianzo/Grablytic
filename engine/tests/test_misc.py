@@ -74,6 +74,27 @@ class TestScanResumeCandidates:
             assert len(result["candidates"]) == 1
             assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=abc123"
 
+    def test_clamps_limit_and_bounds_scanning(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for i in range(5):
+                open(os.path.join(tmpdir, f"video{i}.part"), "w").close()
+            # Negative limit clamped to 1
+            res_neg = scan_resume_candidates(tmpdir, limit=-5)
+            assert len(res_neg["candidates"]) == 1
+            # Huge limit clamped without crashing
+            res_huge = scan_resume_candidates(tmpdir, limit=999999)
+            assert len(res_huge["candidates"]) == 5
+
+    def test_bounds_file_traversal(self, monkeypatch):
+        import grablytic_engine.resume as resume_mod
+        monkeypatch.setattr(resume_mod, "_MAX_SCAN_FILES", 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for i in range(10):
+                open(os.path.join(tmpdir, f"v{i}.part"), "w").close()
+            res = scan_resume_candidates(tmpdir, limit=50)
+            assert len(res["candidates"]) == 3
+
+
     def test_recovers_url_for_fragment_style_names(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             part_path = os.path.join(tmpdir, "video.f302.mp4.part")

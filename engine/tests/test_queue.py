@@ -400,3 +400,101 @@ def test_queued_promotion_is_pollable_on_desktop(monkeypatch):
     finally:
         dl_mod.set_max_concurrent(2)
         _cleanup("pr-1", "pr-2")
+
+
+def test_pending_queue_rejects_when_full(monkeypatch):
+    """FLAW E-R1: start_download must reject with ERROR_QUEUE_FULL when queue cap reached."""
+    _reset()
+    dl_mod.set_max_concurrent(1)
+    monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 3)
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+    ids = ["act-0", "q-0", "q-1", "q-2", "overflow-1"]
+    try:
+        r_act = dl_mod.start_download(url="https://x.test/act", download_id="act-0")
+        assert r_act["success"] is True
+        for i in range(3):
+            r = dl_mod.start_download(url=f"https://x.test/q{i}", download_id=f"q-{i}")
+            assert r["success"] is True
+            assert r.get("queued") is True
+
+        assert len(dl_mod._pending_queue) == 3
+
+        # 4th pending item must be rejected
+        r_overflow = dl_mod.start_download(url="https://x.test/overflow", download_id="overflow-1")
+        assert r_overflow["success"] is False
+        assert r_overflow["error_type"] == "ERROR_QUEUE_FULL"
+        assert r_overflow["queue_size"] == 3
+        assert r_overflow["max_queue_size"] == 3
+        assert len(dl_mod._pending_queue) == 3
+        assert "overflow-1" not in dl_mod._active_downloads
+        assert not any(e["download_id"] == "overflow-1" for e in dl_mod._pending_queue)
+    finally:
+        dl_mod.set_max_concurrent(2)
+        _cleanup(*ids)
+
+
+def test_queue_rejection_allocates_no_resources(monkeypatch):
+    """FLAW E-R1: Rejected downloads must not allocate Queues or Events."""
+    import queue as _q
+    _reset()
+    dl_mod.set_max_concurrent(1)
+    monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 1)
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+
+    alloc_count = [0]
+    orig_queue = _q.Queue
+
+    def _counting_queue(*args, **kwargs):
+        alloc_count[0] += 1
+        return orig_queue(*args, **kwargs)
+
+    monkeypatch.setattr(dl_mod._queue, "Queue", _counting_queue)
+
+    ids = ["act-res", "q-res", "overflow-res"]
+    try:
+        dl_mod.start_download(url="https://x.test/act-res", download_id="act-res")
+        dl_mod.start_download(url="https://x.test/q-res", download_id="q-res")
+        before_count = alloc_count[0]
+
+        res = dl_mod.start_download(url="https://x.test/overflow-res", download_id="overflow-res")
+        assert res["success"] is False
+        assert res["error_type"] == "ERROR_QUEUE_FULL"
+        # Zero queue allocations for rejected admission
+        assert alloc_count[0] == before_count
+    finally:
+        dl_mod.set_max_concurrent(2)
+        _cleanup(*ids)
+
+
+def test_queue_promotion_unblocks_after_queue_full(monkeypatch):
+    """FLAW E-R1: Releasing slot unblocks queue and allows new admissions."""
+    _reset()
+    dl_mod.set_max_concurrent(1)
+    monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 1)
+    monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
+
+    ids = ["act-p", "q-p", "new-p"]
+    try:
+        dl_mod.start_download(url="https://x.test/act-p", download_id="act-p")
+        dl_mod.start_download(url="https://x.test/q-p", download_id="q-p")
+
+        # Full now
+        r_blocked = dl_mod.start_download(url="https://x.test/block", download_id="block")
+        assert r_blocked["success"] is False
+        assert r_blocked["error_type"] == "ERROR_QUEUE_FULL"
+
+        # Release act-p
+        token = dl_mod._active_downloads["act-p"].get("slot_token")
+        assert dl_mod._close_own_slot("act-p", token) is True
+        dl_mod._pump_queue()
+
+        # q-p is now active, pending queue has space
+        assert len(dl_mod._pending_queue) == 0
+        r_new = dl_mod.start_download(url="https://x.test/new-p", download_id="new-p")
+        assert r_new["success"] is True
+        assert r_new.get("queued") is True
+        assert len(dl_mod._pending_queue) == 1
+    finally:
+        dl_mod.set_max_concurrent(2)
+        _cleanup(*ids, "block")
+
