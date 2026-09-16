@@ -42,9 +42,10 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         if po_token:
             opts["extractor_args"]["youtube"]["po_token"] = [po_token]
 
-    cookies = cfg.get("cookies_path") or paths.get("cookies_path")
-    if cookies:
-        opts["cookiefile"] = cookies
+    from grablytic_engine.opts_builder import sanitize_cookiefile
+    cookiefile = sanitize_cookiefile(cfg.get("cookies_path") or paths.get("cookies_path"))
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
     proxy = sanitized_proxy(cfg.get("proxy"))
     if proxy:
         opts["proxy"] = proxy
