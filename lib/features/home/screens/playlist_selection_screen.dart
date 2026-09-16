@@ -7,6 +7,7 @@ import '../../../core/utils/download_config.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../../../core/utils/schedule_guard.dart';
 import '../../../providers/download_provider.dart';
+import '../../../providers/metered_guard.dart';
 import '../../../providers/preset_provider.dart';
 import '../../../providers/settings_provider.dart';
 
@@ -181,6 +182,13 @@ class _PlaylistSelectionScreenState
     if (!isWithinScheduleWindow(settings, DateTime.now()) && mounted) {
       final go = await _confirmOutsideSchedule(settings);
       if (!mounted || !go) return;
+    }
+
+    // Metered gate (Seal parity): explicit tap, but Wi-Fi Only is on —
+    // confirm on metered links instead of silently spending data.
+    if (mounted &&
+        !await ensureUnmeteredDownload(context: context, ref: ref)) {
+      return;
     }
 
     AppLogger.info(

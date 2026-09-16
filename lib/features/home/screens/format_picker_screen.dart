@@ -11,6 +11,7 @@ import '../../../core/utils/format_selector.dart';
 import '../../../core/utils/history_guard.dart';
 import '../../../core/utils/schedule_guard.dart';
 import '../../../providers/download_provider.dart';
+import '../../../providers/metered_guard.dart';
 import '../../../providers/playlist_provider.dart';
 import '../../../providers/preset_provider.dart';
 import '../../../providers/settings_provider.dart';
@@ -296,6 +297,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     if (!isWithinScheduleWindow(settings, DateTime.now()) && mounted) {
       final go = await _confirmOutsideSchedule(settings);
       if (!mounted || !go) return;
+    }
+
+    // Metered gate (Seal parity): explicit tap, but Wi-Fi Only is on —
+    // confirm on metered links instead of silently spending data.
+    if (mounted &&
+        !await ensureUnmeteredDownload(context: context, ref: ref)) {
+      return;
     }
 
     // Already-downloaded / duplicate guard: warn instead of silently

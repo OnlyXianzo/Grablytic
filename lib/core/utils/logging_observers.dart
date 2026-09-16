@@ -257,6 +257,10 @@ class TracedEngineService implements EngineService {
       );
 
   @override
+  Future<Map<String, dynamic>> networkMeteredStatus() =>
+      _traced('system/network_metered', () => _inner.networkMeteredStatus());
+
+  @override
   Future<Map<String, dynamic>> batteryExemptionStatus() =>
       _traced('system/battery_status', () => _inner.batteryExemptionStatus());
 

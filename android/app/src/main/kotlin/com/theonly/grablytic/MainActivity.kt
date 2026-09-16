@@ -619,6 +619,22 @@ class MainActivity : FlutterActivity() {
                 "system/battery_status" -> {
                     result.success(mapOf("success" to true, "supported" to true, "exempt" to batteryExempt()))
                 }
+                "system/network_metered" -> {
+                    // Seal parity (PreferenceUtil.isNetworkAvailableForDownload):
+                    // the platform meteredness verdict, not a transport guess —
+                    // catches metered Wi-Fi hotspots that a wifi-vs-cell check
+                    // would wrongly allow. No permission required for this call.
+                    // Fail closed (metered=true): Dart prompts instead of
+                    // silently spending data.
+                    val metered = try {
+                        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                            as? android.net.ConnectivityManager
+                        cm?.isActiveNetworkMetered == true
+                    } catch (_: Exception) {
+                        true
+                    }
+                    result.success(mapOf("success" to true, "supported" to true, "metered" to metered))
+                }
                 "system/battery_request" -> {
                     // Play policy: exemption prompts must be user-initiated
                     // with rationale — this handler only runs from the
