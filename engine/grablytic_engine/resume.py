@@ -22,6 +22,9 @@ def _strip_part_suffix(path: str) -> str:
 _attempts_lock = threading.Lock()
 _ATTEMPTS_FILENAME = "resume_attempts.json"
 _DEFAULT_MAX_ATTEMPTS = 3
+_DEFAULT_RESUME_LIMIT = 50
+_MAX_RESUME_LIMIT = 500
+_MAX_SCAN_FILES = 2000
 
 
 def _attempts_path(cache_dir: str) -> str:
@@ -90,8 +93,10 @@ def report_resume_attempt(cache_dir: str, filepath: str, success) -> dict:
         return {"success": False, "error_message": str(exc)[:200]}
 
 
-def _iter_part_files(cache_dir: str, recursive: bool):
+def _iter_part_files(cache_dir: str, recursive: bool, max_files: int | None = None):
     """Yield .part file paths (top level, or full walk without followlinks)."""
+    cap = max_files if max_files is not None else _MAX_SCAN_FILES
+    yielded = 0
     if not recursive:
         try:
             entries = os.listdir(cache_dir)
@@ -100,11 +105,17 @@ def _iter_part_files(cache_dir: str, recursive: bool):
         for entry in entries:
             if entry.endswith(".part"):
                 yield os.path.join(cache_dir, entry)
+                yielded += 1
+                if yielded >= cap:
+                    return
         return
     for root, _dirs, files in os.walk(cache_dir, followlinks=False):
         for name in files:
             if name.endswith(".part"):
                 yield os.path.join(root, name)
+                yielded += 1
+                if yielded >= cap:
+                    return
 
 
 def scan_resume_candidates(
@@ -133,8 +144,8 @@ def scan_resume_candidates(
     try:
         limit = int(limit)
     except (TypeError, ValueError):
-        limit = 50
-    limit = max(1, limit)
+        limit = _DEFAULT_RESUME_LIMIT
+    limit = max(1, min(limit, _MAX_RESUME_LIMIT))
     try:
         max_attempts = int(max_attempts)
     except (TypeError, ValueError):

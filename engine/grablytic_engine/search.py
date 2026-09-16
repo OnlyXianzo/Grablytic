@@ -19,6 +19,9 @@ def _build_search_url(query: str, site: str, limit: int) -> str:
     return f"{prefix}{query.strip()}"
 
 
+_MAX_QUERY_LENGTH = 500
+
+
 def search(
     query: str,
     site: str = "youtube",
@@ -32,6 +35,13 @@ def search(
             "success": False,
             "error_type": "ERROR_INVALID_PARAM",
             "error_message": "Search query cannot be empty",
+        }
+
+    if len(query_clean) > _MAX_QUERY_LENGTH:
+        return {
+            "success": False,
+            "error_type": "ERROR_INVALID_PARAM",
+            "error_message": f"Search query exceeds maximum length of {_MAX_QUERY_LENGTH} characters",
         }
 
     try:

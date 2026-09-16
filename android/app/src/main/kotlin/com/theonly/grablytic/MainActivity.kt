@@ -631,6 +631,9 @@ class MainActivity : FlutterActivity() {
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
                             val jsonStr = pyJson(startResult)
+                            if (downloadId != null && !jsonStr.contains("\"success\": true") && !jsonStr.contains("\"success\":true")) {
+                                activeCallbacks.remove(downloadId)
+                            }
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
                             if (downloadId != null) {

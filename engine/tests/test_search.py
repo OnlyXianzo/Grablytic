@@ -37,6 +37,14 @@ class TestSearch:
         assert res["success"] is False
         assert res["error_type"] == "ERROR_INVALID_PARAM"
 
+    def test_excessive_query_length_returns_error(self):
+        long_query = "a" * 501
+        res = search(long_query)
+        assert res["success"] is False
+        assert res["error_type"] == "ERROR_INVALID_PARAM"
+        assert "exceeds maximum length" in res["error_message"]
+
+
     def test_successful_search_with_entry_normalization(self, monkeypatch):
         def sample_entries():
             yield {
