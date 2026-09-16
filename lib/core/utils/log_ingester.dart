@@ -13,7 +13,13 @@ class LogIngester {
     // Re-start (e.g. provider refresh on engine change) must not orphan the
     // previous subscription: each start replaces exactly one listen.
     _subscription?.cancel();
-    _subscription = engineLogStream.listen(_handleLogEvent);
+    _subscription = engineLogStream.listen(
+      _handleLogEvent,
+      onError: (Object error, StackTrace stackTrace) {
+        AppLogger.warn('Engine log stream error: $error', tag: 'log_ingester');
+      },
+      cancelOnError: false,
+    );
   }
 
   /// Single ingestion point for engine `type:log` events on ALL platforms.

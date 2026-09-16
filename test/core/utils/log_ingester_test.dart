@@ -349,5 +349,38 @@ void main() {
         expect(() => ingester.stop(), returnsNormally);
       });
     });
+
+    group('stream error handling (F-R2)', () {
+      test('absorbs stream errors without throwing into zone', () async {
+        ingester.start(controller.stream);
+        expect(controller.hasListener, isTrue);
+
+        controller.addError(Exception('Simulated platform channel error'));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(controller.hasListener, isTrue);
+      });
+
+      test('continues ingesting logs after stream error (cancelOnError: false)',
+          () async {
+        ingester.start(controller.stream);
+
+        controller.addError(Exception('Transient bridge error'));
+        await Future<void>.delayed(Duration.zero);
+
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:00',
+          'level': 'INFO',
+          'logger': 'engine',
+          'message': 'log after error',
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        expect(buffer.entries, hasLength(1));
+        expect(buffer.entries.single.message, 'log after error');
+      });
+    });
   });
 }
+

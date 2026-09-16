@@ -79,9 +79,12 @@ class DesktopEngineService implements EngineService {
   set processForTesting(Process? p) => _process = p;
 
   @visibleForTesting
-  void attachProcessForTesting(Process p) {
+  void attachProcessForTesting(Process p, {bool wireStreams = false}) {
     _process = p;
     _running = true;
+    if (wireStreams) {
+      _wireProcessStreams(p);
+    }
     p.exitCode.then((code) {
       _running = false;
       if (!_disposed && code != 0 && _process == p) {
@@ -233,17 +236,7 @@ class DesktopEngineService implements EngineService {
       runInShell: false,
     );
 
-    _stdoutSubscription = _process!.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(_handleLine);
-
-    _stderrSubscription = _process!.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      AppLogger.warn(line, tag: 'engine-stderr');
-    });
+    _wireProcessStreams(_process!);
 
     final currentProcess = _process!;
     currentProcess.exitCode.then((code) {
@@ -255,6 +248,48 @@ class DesktopEngineService implements EngineService {
 
     _running = true;
     _reconnectAttempts = 0;
+  }
+
+  void _wireProcessStreams(Process process) {
+    _stdoutSubscription = process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          _handleLine,
+          onError: (Object error, StackTrace stackTrace) {
+            AppLogger.error(
+              'Engine stdout error: $error',
+              tag: 'engine',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            _running = false;
+            if (!_disposed && _process == process) {
+              _restart();
+            }
+          },
+          onDone: () {
+            AppLogger.info('Engine stdout stream closed', tag: 'engine');
+            _running = false;
+            if (!_disposed && _process == process) {
+              _restart();
+            }
+          },
+          cancelOnError: true,
+        );
+
+    _stderrSubscription = process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          (line) {
+            AppLogger.warn(line, tag: 'engine-stderr');
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            AppLogger.warn('Engine stderr error: $error', tag: 'engine-stderr');
+          },
+          cancelOnError: false,
+        );
   }
 
   void _restart() {
