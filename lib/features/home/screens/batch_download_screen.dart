@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/batch_provider.dart';
+import '../../../providers/metered_guard.dart';
 
 class BatchDownloadScreen extends ConsumerStatefulWidget {
   final List<BatchItem> items;
@@ -21,7 +22,14 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || widget.items.isEmpty) return;
+      // One metered confirm for the whole batch (Seal parity) — "Wait"
+      // backs out of the batch screen instead of starting silently.
+      if (!await ensureUnmeteredDownload(context: context, ref: ref)) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
       if (mounted && widget.items.isNotEmpty) {
         ref
             .read(batchProvider.notifier)

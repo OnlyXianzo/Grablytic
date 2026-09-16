@@ -57,6 +57,15 @@ abstract class EngineService {
   Future<Map<String, dynamic>> batteryExemptionStatus();
   Future<Map<String, dynamic>> requestBatteryExemption();
 
+  /// Metered-network verdict for the Wi-Fi Only gate (Seal parity:
+  /// `CELLULAR_DOWNLOAD || !isActiveNetworkMetered`). Returns
+  /// `{'success', 'supported', 'metered'}` — never throws. Android
+  /// reports `ConnectivityManager.isActiveNetworkMetered` (catches
+  /// metered Wi-Fi hotspots, not just cell radios); desktop derives it
+  /// from transport types. Transport failures report metered (prompt
+  /// the user rather than silently spending data).
+  Future<Map<String, dynamic>> networkMeteredStatus();
+
   /// Notification permission (Android 13+; older Android is always
   /// granted, other platforms unsupported). `requestNotificationPermission`
   /// shows the system prompt once and completes with the verdict —

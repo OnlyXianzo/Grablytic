@@ -33,6 +33,7 @@ abstract final class EngineMethods {
   static const String updateCheck = 'engine/update_check';
   static const String setUpdateChannel = 'engine/set_update_channel';
   static const String batteryStatus = 'system/battery_status';
+  static const String networkMetered = 'system/network_metered';
   static const String batteryRequest = 'system/battery_request';
   static const String notificationStatus = 'system/notification_status';
   static const String notificationRequest = 'system/notification_request';

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
 import '../utils/trust_boundary.dart';
@@ -606,6 +607,20 @@ class DesktopEngineService implements EngineService {
           errorType: 'ERROR_UNSUPPORTED',
           message: 'Not supported on this platform',
           extra: {'supported': false});
+
+  @override
+  Future<Map<String, dynamic>> networkMeteredStatus() async {
+    // No metered API via connectivity_plus: transport heuristic.
+    // Fail closed (metered) on errors — prompt, don't silently spend.
+    try {
+      final results = await Connectivity().checkConnectivity();
+      final unmetered = results.contains(ConnectivityResult.wifi) ||
+          results.contains(ConnectivityResult.ethernet);
+      return {'success': true, 'supported': true, 'metered': !unmetered};
+    } catch (_) {
+      return {'success': true, 'supported': true, 'metered': true};
+    }
+  }
 
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async =>

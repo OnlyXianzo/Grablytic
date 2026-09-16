@@ -236,6 +236,20 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> networkMeteredStatus() async {
+    try {
+      final result =
+          await _channel.invokeMethod<Map>(EngineMethods.networkMetered);
+      if (result == null) {
+        return {'success': false, 'supported': true, 'metered': true};
+      }
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return {'success': false, 'supported': true, 'metered': true};
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> batteryExemptionStatus() async {
     try {
       final result = await _channel.invokeMethod<Map>(EngineMethods.batteryStatus);

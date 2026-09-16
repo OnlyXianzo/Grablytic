@@ -344,6 +344,13 @@ class MockEngineService implements EngineService {
           message: 'Not supported on this platform',
           extra: {'supported': false});
 
+  /// Test seam: flip to simulate a metered link in widget tests.
+  bool mockMetered = false;
+
+  @override
+  Future<Map<String, dynamic>> networkMeteredStatus() async =>
+      {'success': true, 'supported': true, 'metered': mockMetered};
+
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async =>
       EngineEnvelope.error(

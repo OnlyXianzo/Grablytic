@@ -11,6 +11,7 @@ import '../../library/screens/library_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
+import '../../../providers/metered_guard.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
@@ -193,6 +194,15 @@ class _AppShellState extends ConsumerState<AppShell> {
           return;
         }
       }
+      // Metered gate (Seal parity): the auto-start share path fires
+      // without further taps — confirm on metered links like any tap.
+      if (mounted &&
+          !await ensureUnmeteredDownload(context: context, ref: ref)) {
+        _currentIndex = 0;
+        _pageController.jumpToPage(0);
+        return;
+      }
+      if (!mounted) return;
       final notifier = ref.read(downloadProvider.notifier);
       if (notifier.isDownloading(url)) {
         ScaffoldMessenger.of(context).showSnackBar(
