@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../providers/settings_provider.dart';
 
@@ -20,7 +19,7 @@ class ScheduleSettingsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(
           'Download Schedule',
-          style: GoogleFonts.instrumentSans(
+          style: TextStyle(fontFamily: 'InstrumentSans',
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -80,7 +79,7 @@ class ScheduleSettingsScreen extends ConsumerWidget {
                     return ChoiceChip(
                       label: Text(
                         _dayLabels[i],
-                        style: GoogleFonts.instrumentSans(
+                        style: TextStyle(fontFamily: 'InstrumentSans',
                           fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),

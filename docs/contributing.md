@@ -20,7 +20,7 @@ Please note that this project is released with a Contributor [Code of Conduct](.
 
 - Follow [Effective Dart](https://dart.dev/effective-dart) guidelines and the settings in `analysis_options.yaml`.
 - Use **Riverpod** for shared state. Never use `setState()` for state shared across widgets. Use `ConsumerWidget` / `ConsumerStatefulWidget` with providers.
-- Body text uses Instrument Sans via `GoogleFonts.instrumentSans()`. Mono text (speeds, URLs, format codes) uses `Theme.of(context).textTheme.mono` (the `GrablyticTextStyles` extension on `TextTheme` that provides IosevkaCharonMono).
+- Body text uses the bundled InstrumentSans family (`fontFamily: 'InstrumentSans'`). Mono text (speeds, URLs, format codes) uses `Theme.of(context).textTheme.mono` (the `GrablyticTextStyles` extension on `TextTheme` that provides IosevkaCharonMono).
 - All colors must reference DESIGN.md tokens via `GrablyticColors`. Never hardcode hex values.
 - Use `const` constructors where possible. Avoid mutable state in widgets.
 - Aim for 48x48 minimum touch targets for interactive elements.
@@ -106,7 +106,7 @@ The CI pipeline in `.github/workflows/verify.yml` enforces all three on every pu
 - **Downloads**: Always in `threading.Thread` with a cancel event. Never block the main thread.
 - **Events**: Android progress goes through `event_callback.onEvent(json)` with queue fallback. Streaming progress capped at 99%; terminal `finished` carries 100% + `filesize_bytes`.
 - **State**: Riverpod `ConsumerWidget`/`Notifier`/`AsyncNotifier`. Never `setState()` for shared state.
-- **Fonts**: Body = `GoogleFonts.instrumentSans()`. Mono = `Theme.of(context).textTheme.mono` (IosevkaCharonMono). Never system fonts.
+- **Fonts**: Body = bundled InstrumentSans (`fontFamily: 'InstrumentSans'`, never a runtime webfont fetch). Mono = `Theme.of(context).textTheme.mono` (IosevkaCharonMono). Never system fonts.
 - **Colors**: Always from DESIGN.md tokens via `GrablyticColors`. Never hex literals.
 - **Config**: Never hardcode paths. All binary paths injected via `set_paths()` (8 args — keep `deno_path` aligned!).
 - **Format options**: Never use both `merge_output_format` and `remux_video` simultaneously in yt-dlp options.

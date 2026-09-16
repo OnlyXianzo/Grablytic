@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class GrablyticColors {
   GrablyticColors._();
@@ -206,6 +205,10 @@ class AppTheme {
       bodySmall: TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
     );
 
-    return GoogleFonts.instrumentSansTextTheme(base);
+    // Bundled product face (assets/fonts/InstrumentSans-*.ttf, OFL).
+    // Pure-Dart apply: no runtime font fetch, no network beacon, and the
+    // theme constructs in plain unit tests. Previously GoogleFonts, which
+    // fetched from fonts.gstatic.com on first build.
+    return base.apply(fontFamily: 'InstrumentSans');
   }
 }

@@ -37,7 +37,6 @@ dependencies:
   flutter_animate: ^4.5.2
   flutter_staggered_animations: ^1.1.1
   glassmorphic_ui_kit: ^1.1.6
-  google_fonts: ^6.2.1
   lottie: ^3.3.2
   shimmer: ^3.0.0
   shared_preferences: ^2.5.5
@@ -77,6 +76,16 @@ flutter:
     - assets/branding/Grablytic-logo.png
 
   fonts:
+    - family: InstrumentSans
+      fonts:
+        - asset: assets/fonts/InstrumentSans-400.ttf
+          weight: 400
+        - asset: assets/fonts/InstrumentSans-500.ttf
+          weight: 500
+        - asset: assets/fonts/InstrumentSans-600.ttf
+          weight: 600
+        - asset: assets/fonts/InstrumentSans-700.ttf
+          weight: 700
     - family: IosevkaCharon
       fonts:
         - asset: assets/fonts/IosevkaCharon-Regular.ttf

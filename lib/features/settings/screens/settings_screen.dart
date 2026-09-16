@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/search_provider.dart';
 import '../../../providers/engine_status_provider.dart';
@@ -1042,13 +1041,13 @@ class _Aria2cSpeedField extends StatelessWidget {
             width: 100,
             child: TextField(
               controller: controller,
-              style: GoogleFonts.instrumentSans(
+              style: TextStyle(fontFamily: 'InstrumentSans',
                 fontSize: 14,
                 color: colorScheme.onSurface,
               ),
               decoration: InputDecoration(
                 hintText: 'Unlimited',
-                hintStyle: GoogleFonts.instrumentSans(
+                hintStyle: TextStyle(fontFamily: 'InstrumentSans',
                   color: colorScheme.onSurfaceVariant,
                   fontSize: 14,
                 ),

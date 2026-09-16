@@ -11,7 +11,7 @@ from yt_dlp import YoutubeDL
 
 from grablytic_engine.opts_builder import build_ydl_opts
 from grablytic_engine.errors import classify_error, GrablyticError
-from grablytic_engine.hooks import _emit_event
+from grablytic_engine.hooks import _QUEUE_MAXSIZE, _emit_event
 from grablytic_engine.paths import get_paths
 from grablytic_engine.playlist import detect_playlist
 from grablytic_engine.config import coerce_config
@@ -414,15 +414,17 @@ class YDLogger:
 
     # T3-9: bound the tail — ignoreerrors playlists can log thousands of
     # entries. Most-recent retained (diagnostically relevant). output_files
-    # is deliberately NOT capped: eviction there would break legit
-    # big-playlist file discovery at completion time.
+    # is capped high enough for legit big playlists but can never grow
+    # without bound; a set gives O(1) dedup instead of O(n) list scans.
     MAX_ERRORS = 200
+    MAX_OUTPUT_FILES = 2000
 
     def __init__(self, logger: EngineLogger | None = None, download_id: str | None = None):
         self.logger = logger if logger is not None else log
         self.download_id = download_id
         self.errors: deque[str] = deque(maxlen=self.MAX_ERRORS)
         self.output_files: list[str] = []
+        self._output_seen: set[str] = set()
 
     def _extract_path(self, msg):
         if not isinstance(msg, str):
@@ -431,7 +433,10 @@ class YDLogger:
             m = pat.search(msg)
             if m:
                 candidate = m.group(1).strip().strip('"').strip("'")
-                if candidate and candidate not in self.output_files:
+                if candidate and candidate not in self._output_seen:
+                    self._output_seen.add(candidate)
+                    if len(self.output_files) >= self.MAX_OUTPUT_FILES:
+                        self.output_files.pop(0)
                     self.output_files.append(candidate)
                 break
 
@@ -571,8 +576,11 @@ def download_thread(
         # live HashMap proxies, not mappings). Coerce before any use.
         config = coerce_config(config)
         cancel = cancel_event or threading.Event()
-        prog_q = progress_queue or _queue.Queue()
-        res_q = result_queue or _queue.Queue()
+        # Bounded queues: _put_bounded() drop-oldest only engages when the
+        # queue has a maxsize; unbounded Queue() never raises Full so tens
+        # of thousands of progress ticks were retained until finish (OOM).
+        prog_q = progress_queue or _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+        res_q = result_queue or _queue.Queue(maxsize=_QUEUE_MAXSIZE)
 
         with _downloads_lock:
             # Update in place — start_download() already registered this id with
@@ -897,8 +905,8 @@ def start_download(
     network_type: str = "wifi",
     event_callback=None,
 ) -> dict:
-    progress_queue: _queue.Queue = _queue.Queue()
-    result_queue: _queue.Queue = _queue.Queue()
+    progress_queue: _queue.Queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+    result_queue: _queue.Queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
     cancel_event: threading.Event = threading.Event()
 
     # Reject admission if engine is currently shutting down
