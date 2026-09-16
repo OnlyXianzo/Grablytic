@@ -77,6 +77,28 @@ class DownloadService : Service() {
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeAcquiredAtMs: Long = 0
 
+    private val lockRenewalHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val lockRenewalRunnable = object : Runnable {
+        override fun run() {
+            if (active.isNotEmpty()) {
+                renewWakeLock()
+                lockRenewalHandler.postDelayed(this, WAKE_RENEW_MS)
+            }
+        }
+    }
+
+    private fun renewWakeLock() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        try {
+            val wl = wakeLock
+            if (wl != null) {
+                try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
+                wl.acquire(WAKE_TIMEOUT_MS)
+                wakeAcquiredAtMs = now
+            }
+        } catch (_: Exception) {}
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -188,11 +210,26 @@ class DownloadService : Service() {
     }
 
     override fun onTimeout(startId: Int) {
-        // dataSync background quota exhausted — stop now or the OS crashes us.
-        // Interrupted items stay 'downloading' in the Flutter layer and are
-        // re-driven on next launch (DB resume is the follow-up).
-        releaseLocks()
-        stopSelf()
+        android.util.Log.w(TAG, "ForegroundService dataSync timeout (startId=$startId)")
+        try {
+            for ((id, title) in active.entries) {
+                val showAlert = alertPrefs[id] ?: true
+                if (showAlert) {
+                    postTerminalAlert(
+                        id,
+                        title,
+                        succeeded = false,
+                        detail = "Download paused: system background limit reached (re-open app to resume)"
+                    )
+                }
+            }
+            DownloadDbSweepHelper.sweepActiveToInterrupted(applicationContext)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "onTimeout cleanup error: ${e.message}", e)
+        } finally {
+            releaseLocks()
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
@@ -235,6 +272,9 @@ class DownloadService : Service() {
             val fl = wifiLock
             if (fl != null && !fl.isHeld) fl.acquire()
         } catch (_: Exception) { /* keep-alive must never crash downloads */ }
+
+        lockRenewalHandler.removeCallbacks(lockRenewalRunnable)
+        lockRenewalHandler.postDelayed(lockRenewalRunnable, WAKE_RENEW_MS)
     }
 
     private fun ensureLocks() {
@@ -262,6 +302,7 @@ class DownloadService : Service() {
     }
 
     private fun releaseLocks() {
+        lockRenewalHandler.removeCallbacks(lockRenewalRunnable)
         try {
             val wl = wakeLock
             if (wl != null && wl.isHeld) wl.release()
