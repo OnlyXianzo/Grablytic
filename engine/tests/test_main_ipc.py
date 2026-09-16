@@ -87,7 +87,7 @@ def test_dispatch_calls_search(monkeypatch, capsys):
         called["limit"] = limit
         return {"success": True, "query": query, "count": 1, "entries": [{"title": "Test"}]}
 
-    monkeypatch.setattr(mod, "search", fake_search)
+    monkeypatch.setattr(mod, "search_query", fake_search)
     resps = _run_lines(monkeypatch, capsys, [
         json.dumps({"id": "s1", "method": "paths/set", "params": {
             "data_dir": "/tmp/x", "output_dir": "/tmp/x",
@@ -97,6 +97,32 @@ def test_dispatch_calls_search(monkeypatch, capsys):
     ])
     assert called == {"query": "rick astley", "site": "youtube", "limit": 10}
     assert _by_id(resps, "q1")["result"]["count"] == 1
+
+
+@pytest.mark.unit
+def test_search_dispatch_wiring_is_callable_without_mock(monkeypatch, capsys):
+    """Regression: search/query dispatch must bind the real function.
+
+    Previously `from grablytic_engine import search` bound the submodule
+    (module, not callable), so unmocked dispatch raised
+    `TypeError: 'module' object is not callable` and surfaced as
+    ERROR_INTERNAL. The old test masked this by monkeypatching
+    `mod.search`. Empty query exercises the real function without
+    network and must return ERROR_INVALID_PARAM, never ERROR_INTERNAL.
+    """
+    mod = _main_mod()
+    assert callable(getattr(mod, "search_query", None))
+    resps = _run_lines(monkeypatch, capsys, [
+        json.dumps({"id": "s1", "method": "paths/set", "params": {
+            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
+            "cache_dir": "/tmp/x"}}),
+        json.dumps({"id": "q2", "method": "search/query",
+                    "params": {"query": "", "site": "youtube", "limit": 10}}),
+    ])
+    resp = _by_id(resps, "q2")
+    assert "result" in resp or "error" in resp
+    payload = resp.get("result", resp.get("error"))
+    assert payload["error_type"] == "ERROR_INVALID_PARAM"
 
 
 @pytest.mark.unit
