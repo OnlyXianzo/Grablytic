@@ -18,7 +18,10 @@ OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
 UNAME_M="${UNAME_M:-$(uname -m)}"
 
 log()  { printf '[grablytic] %s\n' "$*"; }
-run()  { if [ "$DRY_RUN" = "1" ]; then printf '[dry-run] %s\n' "$*"; else eval "$*"; fi; }
+run()  {
+  if [ "$DRY_RUN" = "1" ]; then printf '[dry-run]'; printf ' %q' "$@"; printf '\n';
+  else "$@"; fi
+}
 need() { command -v "$1" >/dev/null 2>&1 || { log "missing required tool: $1"; exit 1; }; }
 
 usage() {
@@ -54,15 +57,15 @@ done
 [ -r "$OS_RELEASE_FILE" ] && . "$OS_RELEASE_FILE"
 ID_LIKE_LOWER="$(printf '%s %s' "${ID_LIKE:-}" "${ID:-}" | tr '[:upper:]' '[:lower:]')"
 
-PM=""; PM_INSTALL=""; PM_REMOVE=""
+PM=""; PM_INSTALL=(); PM_REMOVE=()
 if command -v apt-get >/dev/null 2>&1 && [[ "$ID_LIKE_LOWER" == *debian* || "$ID_LIKE_LOWER" == *ubuntu* ]]; then
-  PM="apt"; PM_INSTALL="sudo apt-get install -y"; PM_REMOVE="sudo apt-get remove -y grablytic"
+  PM="apt"; PM_INSTALL=(sudo apt-get install -y); PM_REMOVE=(sudo apt-get remove -y grablytic)
 elif command -v dnf >/dev/null 2>&1; then
-  PM="dnf"; PM_INSTALL="sudo dnf install -y"; PM_REMOVE="sudo dnf remove -y grablytic"
+  PM="dnf"; PM_INSTALL=(sudo dnf install -y); PM_REMOVE=(sudo dnf remove -y grablytic)
 elif command -v zypper >/dev/null 2>&1; then
-  PM="zypper"; PM_INSTALL="sudo zypper --non-interactive install"; PM_REMOVE="sudo zypper --non-interactive remove grablytic"
+  PM="zypper"; PM_INSTALL=(sudo zypper --non-interactive install); PM_REMOVE=(sudo zypper --non-interactive remove grablytic)
 elif command -v pacman >/dev/null 2>&1; then
-  PM="pacman"; PM_INSTALL="sudo pacman -U --noconfirm"; PM_REMOVE="sudo pacman -Rns --noconfirm grablytic"
+  PM="pacman"; PM_INSTALL=(sudo pacman -U --noconfirm); PM_REMOVE=(sudo pacman -Rns --noconfirm grablytic)
 else
   log "no supported package manager found (apt/dnf/zypper/pacman). Install manually from https://github.com/${REPO}/releases"
   exit 1
@@ -78,7 +81,7 @@ log "detected: pm=$PM arch=$UNAME_M"
 # --- uninstall path -----------------------------------------------------------
 if [ "$UNINSTALL" = "1" ]; then
   log "removing grablytic via $PM..."
-  run "$PM_REMOVE"
+  run "${PM_REMOVE[@]}"
   log "done."
   exit 0
 fi
@@ -89,29 +92,24 @@ trap 'rm -rf "$TMPDIR_WORK"' EXIT
 
 # --- resolve version + asset URLs from the GitHub release API -----------------
 need python3
+if [ "$VERSION" != "latest" ] && [[ ! "$VERSION" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  log "invalid --version value: $VERSION (want like 0.0.2)"
+  exit 1
+fi
 API_URL="https://api.github.com/repos/${REPO}/releases"
 [ "$VERSION" = "latest" ] && API_URL="${API_URL}/latest" || API_URL="${API_URL}/tags/v${VERSION}"
 log "querying $API_URL ..."
-RELEASE_JSON="$(curl -fsSL "$API_URL")"
+RELEASE_JSON="$(curl -fsSL --proto '=https' --tlsv1.2 --retry 3 "$API_URL")"
 TAG="$(printf '%s' "$RELEASE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
 VER="${TAG#v}"
 log "release: $TAG"
 
-pick_url() { # $1 = filename regex -> browser_download_url or ''
-  printf '%s' "$RELEASE_JSON" | python3 -c "
-import json, re, sys
-assets = json.load(sys.stdin)['assets']
-m = [a for a in assets if re.search(r'''$1''', a['name'])]
-print(m[0]['browser_download_url'] if m else '')
-"
+pick_url() { # $1 = exact filename -> browser_download_url or ''
+  # Static python (-c single-quoted, no interpolation); untrusted name via argv only.
+  printf '%s' "$RELEASE_JSON" | python3 -c 'import json, sys; target = sys.argv[1]; assets = json.load(sys.stdin)["assets"]; m = [a for a in assets if a.get("name") == target]; print(m[0]["browser_download_url"] if m else "")' "$1"
 }
 pick_digest() { # $1 = exact filename -> 'sha256:...' or ''
-  printf '%s' "$RELEASE_JSON" | python3 -c "
-import json, sys
-assets = json.load(sys.stdin)['assets']
-m = [a for a in assets if a['name'] == '''$1''']
-print(m[0].get('digest', '') if m else '')
-"
+  printf '%s' "$RELEASE_JSON" | python3 -c 'import json, sys; target = sys.argv[1]; assets = json.load(sys.stdin)["assets"]; m = [a for a in assets if a.get("name") == target]; print(m[0].get("digest", "") if m else "")' "$1"
 }
 
 # Post-rename transition: new releases publish `grablytic-*` assets; releases
@@ -125,7 +123,7 @@ case "$PM" in
 esac
 URL=""; FILE=""
 for candidate in "${FILES[@]}"; do
-  URL="$(pick_url "^${candidate//./\\.}\$")"
+  URL="$(pick_url "$candidate")"
   if [ -n "$URL" ]; then FILE="$candidate"; break; fi
 done
 [ -n "$URL" ] || { log "no $PM asset named ${FILES[0]} (or legacy ${FILES[1]}) in $TAG"; exit 1; }
@@ -133,7 +131,7 @@ log "asset: $FILE"
 
 # --- download + verify + install ----------------------------------------------
 cd "$TMPDIR_WORK"
-run "curl -fsSL -o '$FILE' '$URL'"
+run curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$FILE" "$URL"
 DIGEST="$(pick_digest "$FILE")"
 if [ -n "$DIGEST" ] && [ "$DRY_RUN" != "1" ]; then
   EXPECT="${DIGEST#sha256:}"; ACTUAL="$(sha256sum "$FILE" | awk '{print $1}')"
@@ -158,11 +156,7 @@ else
   exit 1
 fi
 
-if [ "$PM" = "apt" ]; then
-  run "$PM_INSTALL './$FILE'"   # local path: apt resolves dependencies
-else
-  run "$PM_INSTALL './$FILE'"
-fi
+run "${PM_INSTALL[@]}" "./$FILE"   # local path: apt resolves dependencies
 
 if [ "$DRY_RUN" = "1" ]; then log "dry-run complete."; exit 0; fi
 command -v grablytic >/dev/null 2>&1 && log "installed: $(command -v grablytic)" || { log "install finished but 'grablytic' not on PATH"; exit 1; }
