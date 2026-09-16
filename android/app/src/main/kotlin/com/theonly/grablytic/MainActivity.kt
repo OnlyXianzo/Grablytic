@@ -372,6 +372,20 @@ class MainActivity : FlutterActivity() {
                         val ffmpegLdPath = allLdDirs.joinToString(":").takeIf { it.isNotEmpty() }
                         val resolvedNodePath = nodeBin?.executable
                         val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
+                        if (denoBin == null && nodeBin == null) {
+                            // No working JS runtime (e.g. armeabi-v7a ships
+                            // no deno and node probe failed): the Dart-sent
+                            // bin/ fallback above is NOT executable on
+                            // targetSdk > 28, so YouTube extraction will
+                            // fail at download time. Say so now in logcat
+                            // instead of surfacing minutes later as a
+                            // generic engine exec failure.
+                            android.util.Log.w(
+                                "BinaryPackages",
+                                "no working JS runtime (deno/node absent or probe-failed); " +
+                                    "YouTube EJS challenges cannot run on this device",
+                            )
+                        }
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("grablytic_engine")

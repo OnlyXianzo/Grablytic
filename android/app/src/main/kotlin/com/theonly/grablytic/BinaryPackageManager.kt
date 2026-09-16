@@ -120,8 +120,37 @@ object BinaryPackageManager {
         val stamp = zipSo.length().toString() + "\nv2-symlinks"
         if (target.isDirectory && marker.isFile && marker.readText().trim() == stamp.trim()) return
 
+        // Atomic replacement: extract into a sibling tmp dir, then swap.
+        // The old code deleted the live tree first, so a kill mid-extract
+        // left an empty packages/<name>/ until the next paths/set.
+        val parent = target.parentFile
+            ?: throw IllegalStateException("no parent for ${target.absolutePath}")
+        val tmp = File(parent, target.name + ".tmp")
+        deleteQuietly(tmp)
+        tmp.mkdirs()
+        try {
+            extractZipTo(zipSo, tmp)
+        } catch (e: Exception) {
+            deleteQuietly(tmp)
+            throw e
+        }
+        try {
+            tmp.resolve(".zipsize").writeText(stamp)
+        } catch (_: Exception) {
+        }
         deleteQuietly(target)
-        target.mkdirs()
+        if (!tmp.renameTo(target)) {
+            deleteQuietly(tmp)
+            Log.w(TAG, "${target.name}: atomic swap failed; keeping previous tree")
+            return
+        }
+        // .so deps need read access; keep everything executable-safe.
+        // (setExecutable follows symlinks to their targets — harmless.)
+        target.walkTopDown().forEach { it.setExecutable(true, false) }
+        Log.i(TAG, "extracted ${zipSo.name} -> ${target.absolutePath}")
+    }
+
+    private fun extractZipTo(zipSo: File, target: File) {
         // Apache commons-compress, mirroring ytdlnis ZipUtils: java.util.zip
         // cannot see Unix symlink entries, so versioned libs (libswscale.so
         // -> libswscale.so.8.3.100, ...) were extracted as tiny TEXT files
@@ -152,14 +181,6 @@ object BinaryPackageManager {
                 }
             }
         }
-        // .so deps need read access; keep everything executable-safe.
-        // (setExecutable follows symlinks to their targets — harmless.)
-        target.walkTopDown().forEach { it.setExecutable(true, false) }
-        try {
-            marker.writeText(stamp)
-        } catch (_: Exception) {
-        }
-        Log.i(TAG, "extracted ${zipSo.name} -> ${target.absolutePath}")
     }
 
     private fun deleteQuietly(file: File) {
