@@ -5,6 +5,8 @@
 /// maps the SAFE subset onto exact engine config keys; everything else is
 /// reported in `ignored` and never applied. Explicit format ids picked in
 /// the UI always win — templates never touch them.
+library;
+
 import 'trust_boundary.dart';
 
 class ParsedTemplate {
