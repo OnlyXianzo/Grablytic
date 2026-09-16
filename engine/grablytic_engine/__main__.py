@@ -198,6 +198,7 @@ def main():
                     deno_path=params.get("deno_path"),
                     po_token=params.get("po_token"),
                     ffmpeg_ld_path=params.get("ffmpeg_ld_path"),
+                    nodejs_path=params.get("nodejs_path"),
                 )
                 data_dir = params["data_dir"]
                 set_global_log_dir(data_dir + "/logs")
@@ -227,7 +228,7 @@ def main():
                     elif method == "download/cancel":
                         return cancel_download(params["download_id"])
                     elif method == "download/queue_status":
-                        return {"success": True, **get_queue_status()}
+                        return get_queue_status()
                     elif method == "download/set_concurrency":
                         return set_max_concurrent(params.get("max_concurrent", 2))
                     elif method == "download/clear_archive":

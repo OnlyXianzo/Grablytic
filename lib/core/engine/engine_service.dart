@@ -65,7 +65,7 @@ abstract class EngineService {
   Future<Map<String, dynamic>> requestNotificationPermission();
 
   /// Download queue (engine backstop; Dart owns the queued UI state).
-  /// `queueStatus` → `{'active': [...ids], 'queued': [...ids], 'max_concurrent': N}`.
+  /// `queueStatus` → `{'success': true, 'active': [...ids], 'queued': [...ids], 'max_concurrent': N}`.
   /// `setConcurrency` clamps 1–5, returns `{'success', 'max_concurrent'}`.
   /// Never throws — unsupported platforms return `{'success': false}`.
   Future<Map<String, dynamic>> queueStatus();

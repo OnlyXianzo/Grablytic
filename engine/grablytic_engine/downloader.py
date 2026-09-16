@@ -116,6 +116,7 @@ def _find_live_url_holder(url: str, audio_only: bool):
 def get_queue_status() -> dict:
     with _downloads_lock:
         return {
+            "success": True,
             "active": [did for did, info in _active_downloads.items()
                        if not info.get("finished_at")],
             "queued": [e["download_id"] for e in _pending_queue],
