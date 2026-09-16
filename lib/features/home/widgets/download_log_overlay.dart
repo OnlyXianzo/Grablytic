@@ -33,6 +33,10 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
   StreamSubscription<LogEntry>? _sub;
   bool _expanded = false;
   final ScrollController _scroll = ScrollController();
+  // Loop-3 batching: engine log events arrive at tens of Hz; the collapsed
+  // view shows the last 8 lines, so refreshing at ~2 Hz loses nothing and
+  // avoids a setState storm multiplied by every mounted card.
+  Timer? _batch;
 
   static const int _collapsedLines = 8;
   static const int _expandedLines = 60;
@@ -40,21 +44,32 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
   @override
   void initState() {
     super.initState();
-    _sub = ref.read(logBufferProvider).stream.listen((_) {
-      if (!mounted) return;
-      setState(() {});
-      if (_expanded) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scroll.hasClients) {
-            _scroll.jumpTo(_scroll.position.maxScrollExtent);
-          }
-        });
-      }
+    // Scoped subscription: only this download's entries wake this card
+    // (previously the GLOBAL stream rebuilt every card on every app-wide
+    // log line — the top UI amplifier in the 10+ hang).
+    _sub = ref
+        .read(logBufferProvider)
+        .streamForDownload(widget.downloadId)
+        .listen((_) {
+      if (!mounted || !widget.visible) return;
+      _batch ??= Timer(const Duration(milliseconds: 500), () {
+        _batch = null;
+        if (!mounted) return;
+        setState(() {});
+        if (_expanded) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scroll.hasClients) {
+              _scroll.jumpTo(_scroll.position.maxScrollExtent);
+            }
+          });
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _batch?.cancel();
     _sub?.cancel();
     _scroll.dispose();
     super.dispose();

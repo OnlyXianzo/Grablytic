@@ -94,7 +94,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
   @override
   Widget build(BuildContext context) {
-    final downloads = ref.watch(downloadProvider);
+    // Loop-3 O(1) rebuilds: structural sections only. Progress ticks no
+    // longer rebuild this screen; rows watch their own item by id.
+    final sections = ref.watch(downloadSectionsProvider);
     final playlists = ref.watch(playlistProvider);
     final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
@@ -161,7 +163,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildLibraryContent(downloads, colorScheme, textTheme, settings.useGridView),
+                  _buildLibraryContent(sections, colorScheme, textTheme, settings.useGridView),
                   _buildPlaylistsTab(playlists, colorScheme, textTheme),
                   const DownloadHistoryScreen(),
                 ],
@@ -174,24 +176,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   }
 
   Widget _buildLibraryContent(
-    List<DownloadItem> downloads,
+    DownloadSections sections,
     ColorScheme colorScheme,
     TextTheme textTheme,
     bool useGridView,
   ) {
-    final pending = downloads
-        .where((d) =>
-            d.status == 'downloading' ||
-            d.status == 'pending' ||
-            d.status == 'paused')
-        .toList();
-    final failed = downloads
-        .where((d) => d.status == 'error' || d.status == 'cancelled')
-        .toList();
-    final completed =
-        downloads.where((d) => d.status == 'completed').toList();
+    final pending = sections.pendingIds;
+    final failed = sections.failedIds;
+    final completed = sections.completedIds;
 
-    if (downloads.isEmpty) {
+    if (sections.allIds.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.only(top: 60),
@@ -214,9 +208,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   }
 
   Widget _buildListView(
-    List<DownloadItem> completed,
-    List<DownloadItem> pending,
-    List<DownloadItem> failed,
+    List<String> completed,
+    List<String> pending,
+    List<String> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
@@ -249,7 +243,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             itemBuilder: (context, i) => Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: _LibraryItem(
-                item: pending[i],
+                id: pending[i],
                 colorScheme: colorScheme,
                 isDownloading: true,
               ),
@@ -264,7 +258,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             itemBuilder: (context, i) => Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: _LibraryItem(
-                item: failed[i],
+                id: failed[i],
                 colorScheme: colorScheme,
                 isError: true,
               ),
@@ -279,7 +273,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             itemBuilder: (context, i) => Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: _LibraryItem(
-                item: completed[i],
+                id: completed[i],
                 colorScheme: colorScheme,
                 isDownloading: false,
               ),
@@ -292,13 +286,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   }
 
   Widget _buildGridView(
-    List<DownloadItem> completed,
-    List<DownloadItem> pending,
-    List<DownloadItem> failed,
+    List<String> completed,
+    List<String> pending,
+    List<String> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
     final all = [...pending, ...failed, ...completed];
+    // Flags recovered from section ranges (same partition as _buildListView).
+    bool rangeIsDownloading(int i) => i < pending.length;
+    bool rangeIsError(int i) =>
+        i >= pending.length && i < pending.length + failed.length;
     return GridView.builder(
       key: const ValueKey('grid'),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -310,15 +308,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       ),
       itemCount: all.length,
       itemBuilder: (context, index) {
-        final item = all[index];
-        final isDownloading = item.status == 'downloading' || item.status == 'pending';
-        final isError = item.status == 'error' || item.status == 'cancelled';
         return _LibraryGridCard(
-          item: item,
+          id: all[index],
           colorScheme: colorScheme,
           textTheme: textTheme,
-          isDownloading: isDownloading,
-          isError: isError,
+          isDownloading: rangeIsDownloading(index),
+          isError: rangeIsError(index),
         );
       },
     );
@@ -462,14 +457,14 @@ class _ThumbnailImage extends StatelessWidget {
 }
 
 class _LibraryGridCard extends ConsumerWidget {
-  final DownloadItem item;
+  final String id;
   final ColorScheme colorScheme;
   final TextTheme textTheme;
   final bool isDownloading;
   final bool isError;
 
   const _LibraryGridCard({
-    required this.item,
+    required this.id,
     required this.colorScheme,
     required this.textTheme,
     this.isDownloading = false,
@@ -478,6 +473,9 @@ class _LibraryGridCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Own-item subscription (Loop-3): rebuilds only when this item changes.
+    final item = ref.watch(downloadItemProvider(id));
+    if (item == null) return const SizedBox.shrink();
     final label = isError
         ? '${item.title}, failed'
         : '${item.title}, ${isDownloading ? 'downloading' : 'completed'}';
@@ -709,13 +707,13 @@ class _LibraryGridCard extends ConsumerWidget {
 }
 
 class _LibraryItem extends ConsumerWidget {
-  final DownloadItem item;
+  final String id;
   final ColorScheme colorScheme;
   final bool isDownloading;
   final bool isError;
 
   const _LibraryItem({
-    required this.item,
+    required this.id,
     required this.colorScheme,
     this.isDownloading = false,
     this.isError = false,
@@ -723,6 +721,9 @@ class _LibraryItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Own-item subscription (Loop-3): rebuilds only when this item changes.
+    final item = ref.watch(downloadItemProvider(id));
+    if (item == null) return const SizedBox.shrink();
     final textTheme = Theme.of(context).textTheme;
 
     final label = isError

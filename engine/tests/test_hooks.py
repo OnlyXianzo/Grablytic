@@ -101,3 +101,45 @@ class TestPostprocessorHook:
         hook = build_postprocessor_hook(q, "d1")
         hook({"status": "finished", "postprocessor": "Merger"})
         assert q.empty()
+
+
+class TestProgressSampler:
+    @pytest.mark.unit
+    def test_rapid_same_pct_ticks_coalesced_to_one(self):
+        q: queue.Queue = queue.Queue()
+        hook = build_progress_hook(q, "d1")
+        for b in (500, 501, 502, 503):
+            hook({"status": "downloading", "downloaded_bytes": b,
+                  "total_bytes": 1000, "info_dict": {}})
+        assert len(_drain(q)) == 1
+
+    @pytest.mark.unit
+    def test_pct_jump_emits_despite_time_gate(self):
+        q: queue.Queue = queue.Queue()
+        hook = build_progress_hook(q, "d1")
+        hook({"status": "downloading", "downloaded_bytes": 100,
+              "total_bytes": 1000, "info_dict": {}})
+        hook({"status": "downloading", "downloaded_bytes": 300,
+              "total_bytes": 1000, "info_dict": {}})
+        evs = _drain(q)
+        assert len(evs) == 2
+        assert evs[-1]["downloaded_bytes"] == 300
+
+    @pytest.mark.unit
+    def test_terminal_events_always_pass_through(self):
+        q: queue.Queue = queue.Queue()
+        hook = build_progress_hook(q, "d1")
+        hook({"status": "finished", "filename": "a.mp4", "total_bytes": 9})
+        hook({"status": "finished", "filename": "b.mp4", "total_bytes": 9})
+        assert len(_drain(q)) == 2
+
+    @pytest.mark.unit
+    def test_put_bounded_evicts_oldest_never_blocks(self):
+        from grablytic_engine.hooks import _put_bounded
+        q: queue.Queue = queue.Queue(maxsize=2)
+        _put_bounded(q, "e1")
+        _put_bounded(q, "e2")
+        _put_bounded(q, "e3")  # must not block or raise
+        assert q.get_nowait() == "e2"
+        assert q.get_nowait() == "e3"
+        assert q.empty()

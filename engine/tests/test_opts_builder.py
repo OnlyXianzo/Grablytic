@@ -420,8 +420,10 @@ def test_js_runtime_configured_with_deno(tmp_path):
 
 
 def test_fragment_and_socket_defaults_applied():
+    # Loop-4 low-end default: 2 fragment threads (was 4). Mobile sweet spot
+    # is 1-3; 2 active downloads now cost 4 threads instead of 8.
     opts = build_ydl_opts()
-    assert opts["concurrent_fragment_downloads"] == 4
+    assert opts["concurrent_fragment_downloads"] == 2
     assert opts["socket_timeout"] == 30
 
 
@@ -442,7 +444,7 @@ def test_fragment_clamped_to_sane_range():
 def test_fragment_and_socket_invalid_fall_back():
     opts = build_ydl_opts(
         config={"concurrent_fragments": "lots", "socket_timeout": "soon"})
-    assert opts["concurrent_fragment_downloads"] == 4
+    assert opts["concurrent_fragment_downloads"] == 2
     assert "socket_timeout" not in opts
 
 
@@ -587,3 +589,40 @@ class TestNumericGuards:
         assert not any(a.startswith("--max-download-limit") for a in args)
         args = _aria2c_args(tmp_path, aria2c_max_speed="0K")
         assert not any(a.startswith("--max-download-limit") for a in args)
+
+
+def _thumb_convertor_format(opts):
+    for pp in opts.get("postprocessors", []):
+        if pp.get("key") == "FFmpegThumbnailsConvertor":
+            return pp.get("format")
+    return None
+
+
+def test_m4a_audio_forces_png_cover_art():
+    # Field failure (ri1Ar5nEq4s): mjpeg cannot mux into m4a/ipod, so every
+    # m4a download with JPG thumbnails died at EmbedThumbnail. PNG muxes
+    # cleanly — forced regardless of the toggle.
+    opts = build_ydl_opts(
+        config={"audio_only": True, "audio_format": "m4a",
+                "thumbnail_format": "jpg"})
+    assert _thumb_convertor_format(opts) == "png"
+
+
+def test_m4a_audio_explicit_png_stays_png():
+    opts = build_ydl_opts(
+        config={"audio_only": True, "audio_format": "m4a",
+                "thumbnail_format": "png"})
+    assert _thumb_convertor_format(opts) == "png"
+
+
+def test_mp3_audio_keeps_jpg_cover_art():
+    # MP3 (ID3) embeds mjpeg fine — no override, toggle respected.
+    opts = build_ydl_opts(
+        config={"audio_only": True, "audio_format": "mp3",
+                "thumbnail_format": "jpg"})
+    assert _thumb_convertor_format(opts) == "jpg"
+
+
+def test_video_keeps_jpg_cover_art():
+    opts = build_ydl_opts(config={"thumbnail_format": "jpg"})
+    assert _thumb_convertor_format(opts) == "jpg"

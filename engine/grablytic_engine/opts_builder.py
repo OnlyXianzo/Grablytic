@@ -175,6 +175,9 @@ def build_ydl_opts(
     has_audio_only_explicit = bool(explicit_aid) and not bool(explicit_vid)
     is_audio = override_audio if override_audio is not None else (bool(cfg.get("audio_only")) or has_audio_only_explicit)
     container = override_container or cfg["container"]
+    # Resolved audio codec when is_audio (None for video). Read by the
+    # thumbnail block below for the m4a cover-art rule.
+    audio_codec: str | None = None
 
     if cfg.get("organize_by_folder"):
         # Video/ vs Audio/ split. Relative subdir keeps the template
@@ -343,6 +346,17 @@ def build_ydl_opts(
             thumb_fmt = str(cfg.get("thumbnail_format") or "jpg").lower()
             if thumb_fmt not in ("jpg", "png", "webp"):
                 thumb_fmt = "jpg"
+            # Field fix (ri1Ar5nEq4s class): mjpeg cover art cannot mux into
+            # m4a (`[ipod] Could not find tag for codec mjpeg`) — EVERY m4a
+            # audio download with JPG thumbnails died at EmbedThumbnail.
+            # PNG muxes cleanly, so force png for m4a output no matter the
+            # toggle (video containers keep the user's choice).
+            if thumb_fmt == "jpg" and audio_codec == "m4a":
+                thumb_fmt = "png"
+                _tmpl_log.info(
+                    "Using PNG cover art for m4a output "
+                    "(mjpeg cannot embed in the ipod container)"
+                )
             opts["writethumbnail"] = True
             pp.append({"key": "FFmpegThumbnailsConvertor", "format": thumb_fmt, "when": "before_dl"})
 
@@ -447,13 +461,13 @@ def build_ydl_opts(
     from grablytic_engine.logger import get_logger as _get_logger
     _log = _get_logger("grablytic_engine.opts_builder")
     try:
-        frags = max(1, min(16, int(cfg.get("concurrent_fragments", 4))))
+        frags = max(1, min(16, int(cfg.get("concurrent_fragments", 2))))
     except (ValueError, TypeError):
         _log.warn(
             "Ignoring invalid concurrent_fragments value: "
             f"{cfg.get('concurrent_fragments')!r}"
         )
-        frags = 4
+        frags = 2
     opts["concurrent_fragment_downloads"] = frags
     try:
         timeout = int(cfg.get("socket_timeout", 30))

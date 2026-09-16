@@ -16,12 +16,20 @@ class LogIngester {
   /// Single ingestion point for engine `type:log` events on ALL platforms.
   /// Buffer entry (structured) + file line (via appendFileLine, no console,
   /// no second buffer entry) — exactly-once on desktop and Android alike.
+  ///
+  /// Loop-1 hang fix: DEBUG entries are file-only, never buffered. The
+  /// engine already gates DEBUG off the UI bridge (bridge floor INFO), but
+  /// desktop/older engines still deliver DEBUG over the queue→stdout path;
+  /// buffering tens-of-Hz yt-dlp DEBUG rebuilt every overlay/sheet/list at
+  /// log rate (field sessions: 63k lines/7.5MB). The file log keeps every
+  /// byte, so Diagnostics → File Logs loses nothing.
   void _handleLogEvent(Map<String, dynamic> data) {
     if (data['type'] != 'log') return;
     try {
       final entry = LogEntry.fromEngineJson(data);
-      _buffer.add(entry);
       AppLogger.appendFileLine(entry.formattedLine);
+      if (entry.level == LogLevel.debug) return;
+      _buffer.add(entry);
     } catch (_) {
       // ignore malformed log entries
     }

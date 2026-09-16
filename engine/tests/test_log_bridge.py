@@ -8,7 +8,11 @@ import pytest
 
 import grablytic_engine.logger as logger_mod
 from grablytic_engine.logger import (
+    DEBUG,
+    INFO,
+    close_log_sinks,
     get_logger,
+    set_global_bridge_min_level,
     set_global_event_callback,
 )
 
@@ -28,19 +32,26 @@ class _Sink:
 def _clean_bridge():
     prev_cb = logger_mod._global_event_callback
     prev_dir = logger_mod._global_log_dir
+    prev_bridge = logger_mod._global_bridge_min_level
     set_global_event_callback(None)
+    set_global_bridge_min_level(INFO)
     for lg in logger_mod._loggers.values():
         lg.set_event_callback(None)
         lg.set_queue(None)
         lg.set_log_dir(None)
+        lg.set_bridge_min_level(INFO)
     yield
     set_global_event_callback(None)
+    set_global_bridge_min_level(INFO)
+    close_log_sinks()
     for lg in logger_mod._loggers.values():
         lg.set_event_callback(None)
         lg.set_queue(None)
         lg.set_log_dir(None)
+        lg.set_bridge_min_level(INFO)
     logger_mod._global_event_callback = prev_cb
     logger_mod._global_log_dir = prev_dir
+    logger_mod._global_bridge_min_level = prev_bridge
     for lg in logger_mod._loggers.values():
         if prev_dir is not None:
             lg.set_log_dir(prev_dir)
@@ -90,6 +101,56 @@ def test_queue_path_still_works_alongside_callback(_clean_bridge):
     log.info("both channels")
     assert len(sink.events) == 1
     assert q.get_nowait()["message"] == "both channels"
+
+
+def test_debug_skips_callback_but_reaches_file_and_queue(tmp_path, _clean_bridge):
+    """Loop-1 hang fix: DEBUG must never cross the UI bridge (JNI/EventChannel
+    → Flutter rebuilds at tens of Hz), while file + queue keep every byte."""
+    q: queue.Queue = queue.Queue()
+    sink = _Sink()
+    set_global_event_callback(sink)
+    log = get_logger("grablytic_engine.test_bridge_debug_gate")
+    log.set_queue(q)
+    log.set_log_dir(str(tmp_path))
+
+    log.debug("per-block progress chatter")
+    log.info("milestone")
+
+    # Bridge: INFO only.
+    assert len(sink.events) == 1
+    assert json.loads(sink.events[0])["level"] == "INFO"
+    # Queue (desktop drain + diagnostics): both.
+    assert q.get_nowait()["level"] == "DEBUG"
+    assert q.get_nowait()["level"] == "INFO"
+    # File: both (diagnostics lose nothing).
+    logged = "".join(
+        (tmp_path / f).read_text()
+        for f in os.listdir(str(tmp_path))
+        if f.startswith("engine_")
+    )
+    assert "per-block progress chatter" in logged
+    assert "milestone" in logged
+
+
+def test_bridge_floor_lowerable_to_debug(_clean_bridge):
+    sink = _Sink()
+    set_global_event_callback(sink)
+    set_global_bridge_min_level(DEBUG)
+    log = get_logger("grablytic_engine.test_bridge_floor_debug")
+    log.debug("verbose on")
+    assert len(sink.events) == 1
+    assert json.loads(sink.events[0])["level"] == "DEBUG"
+
+
+def test_late_logger_inherits_bridge_floor(_clean_bridge):
+    set_global_bridge_min_level(INFO)
+    sink = _Sink()
+    set_global_event_callback(sink)
+    log = get_logger("grablytic_engine.test_bridge_floor_late")
+    log.debug("dropped")
+    log.warn("kept")
+    assert len(sink.events) == 1
+    assert json.loads(sink.events[0])["level"] == "WARN"
 
 
 def test_set_paths_initializes_file_logging(tmp_path, monkeypatch, _clean_bridge):
@@ -534,9 +595,15 @@ class TestVerboseOpts:
             )
         finally:
             dl_mod._active_downloads.pop("verb1", None)
+        # Loop-1 contract: the verbose triage dump is DEBUG, so it rides the
+        # FILE (diagnostics preserved, sanitized) — never the UI bridge.
         logs = [json.loads(r) for r in sink.events
                 if json.loads(r).get("type") == "log"]
-        dumped = [e["message"] for e in logs if "Effective opts:" in e["message"]]
+        assert not [e for e in logs if "Effective opts:" in e["message"]]
+        files = [p for p in tmp_path.rglob("engine_*.txt")]
+        assert files, "expected an engine log file"
+        content = "".join(p.read_text() for p in files)
+        dumped = [ln for ln in content.splitlines() if "Effective opts:" in ln]
         assert len(dumped) == 1
         assert "user:pass" not in dumped[0]
         assert "***REDACTED***" in dumped[0]
@@ -576,3 +643,27 @@ class TestEmitDiagnostics:
             hooks_mod._log.set_queue(None)
             hooks_mod._callback_failed_once = False
             hooks_mod._log.clear_context()
+
+
+class TestBatchedDailyWriter:
+    @pytest.mark.unit
+    def test_error_force_flushes_without_close(self, tmp_path, _clean_bridge):
+        log = get_logger("grablytic_engine.test_writer_flush")
+        log.set_log_dir(str(tmp_path))
+        log.error("boom happened")
+        files = [p for p in tmp_path.rglob("engine_*.txt")]
+        assert files, "ERROR must be visible on disk immediately"
+        assert "boom happened" in files[0].read_text()
+
+    @pytest.mark.unit
+    def test_debug_buffered_until_close(self, tmp_path, _clean_bridge):
+        log = get_logger("grablytic_engine.test_writer_buffered")
+        log.set_log_dir(str(tmp_path))
+        for i in range(5):
+            log.debug(f"tick {i}")
+        close_log_sinks()
+        files = [p for p in tmp_path.rglob("engine_*.txt")]
+        assert files
+        content = files[0].read_text()
+        for i in range(5):
+            assert f"tick {i}" in content

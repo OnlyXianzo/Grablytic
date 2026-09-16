@@ -483,4 +483,78 @@ void main() {
       expect(out, isEmpty);
     });
   });
+group('structural selectors (Loop-3 O(1) rebuilds)', () {
+    test('sections equal across progress ticks (no structural change)', () {
+      final n = _notifier();
+      _seed(n);
+      final before = DownloadSections.fromList(n.state);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'downloading',
+        'download_id': 'dl-1',
+        'downloaded_bytes': 50,
+        'total_bytes': 100,
+        'speed': 1000,
+      });
+      final after = DownloadSections.fromList(n.state);
+      expect(after, equals(before));
+      expect(after.allIds, ['dl-1']);
+      expect(after.pendingIds, ['dl-1']);
+    });
+
+    test('untouched items keep identical instance across ticks', () {
+      final n = _notifier();
+      _seed(n);
+      n.addDownload(DownloadItem(
+          id: 'dl-2', title: 't2', url: 'https://x.test/v2'));
+      final dl2Before =
+          n.state.firstWhere((d) => d.id == 'dl-2');
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'downloading',
+        'download_id': 'dl-1',
+        'downloaded_bytes': 10,
+        'total_bytes': 100,
+        'speed': 1000,
+      });
+      final dl2After =
+          n.state.firstWhere((d) => d.id == 'dl-2');
+      // Identical instance => family consumers skip rebuild (Riverpod ==).
+      expect(identical(dl2After, dl2Before), isTrue);
+      final dl1After =
+          n.state.firstWhere((d) => d.id == 'dl-1');
+      expect(dl1After.downloadedBytes, 10);
+    });
+
+    test('status flips change sections (structural notification)', () {
+      final n = _notifier();
+      _seed(n);
+      final before = DownloadSections.fromList(n.state);
+      n.handleProgressEvent({
+        'type': 'event',
+        'event': 'finished',
+        'download_id': 'dl-1',
+        'filesize_bytes': 100,
+      });
+      final after = DownloadSections.fromList(n.state);
+      expect(after == before, isFalse);
+      expect(after.completedIds, ['dl-1']);
+      expect(after.pendingIds, isEmpty);
+    });
+
+    test('buckets mirror Library partition; queued stays in allIds only',
+        () {
+      final items = [
+        DownloadItem(id: 'a', title: 't', url: 'u', status: 'downloading'),
+        DownloadItem(id: 'b', title: 't', url: 'u', status: 'error'),
+        DownloadItem(id: 'c', title: 't', url: 'u', status: 'completed'),
+        DownloadItem(id: 'd', title: 't', url: 'u', status: 'queued'),
+      ];
+      final s = DownloadSections.fromList(items);
+      expect(s.allIds, ['a', 'b', 'c', 'd']);
+      expect(s.pendingIds, ['a']);
+      expect(s.failedIds, ['b']);
+      expect(s.completedIds, ['c']);
+    });
+  });
 }

@@ -50,6 +50,17 @@ class EngineLogger:
         self._event_callback = None
         self._log_dir: str | None = None
         self._min_level: int = DEBUG
+        # Bridge gate (Loop-1 hang fix): the Chaquopy/EventChannel callback
+        # feeds the Flutter UI thread (LogBuffer + overlay rebuilds). yt-dlp
+        # emits per-block DEBUG at tens of Hz per download; forwarding all
+        # of it hung flagships with 10+ queued items (63k lines/7.5MB per
+        # field session). INFO+ crosses the bridge; DEBUG stays in the file
+        # log + in-memory queue (desktop drain), so diagnostics lose nothing.
+        # Deliberately NOT per-download: loggers are process-global shared
+        # singletons, so a per-download verbose flag would race across
+        # concurrent downloads. Verbose users read DEBUG via Diagnostics →
+        # File Logs (same bytes, zero UI cost).
+        self._bridge_min_level: int = INFO
 
     def set_context(self, **kwargs: Any) -> None:
         if not hasattr(self._context, 'data'):
@@ -75,6 +86,10 @@ class EngineLogger:
 
     def set_min_level(self, level: int) -> None:
         self._min_level = level
+
+    def set_bridge_min_level(self, level: int) -> None:
+        """Floor for the UI bridge callback (file + queue unaffected)."""
+        self._bridge_min_level = level
 
     def _log(self, level: int, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
         ctx = getattr(self._context, 'data', {}).copy() if hasattr(self._context, 'data') else {}
@@ -103,14 +118,9 @@ class EngineLogger:
         print(f"[{level_name}] [{self.name}] {message}", file=sys.stderr)
 
         if level >= self._min_level and self._log_dir:
-            date_str = now.strftime("%Y-%m-%d")
-            log_file = os.path.join(self._log_dir, f"engine_{date_str}.txt")
-            try:
-                os.makedirs(self._log_dir, exist_ok=True)
-                with open(log_file, "a") as f:
-                    f.write(json.dumps(event, default=str) + "\n")
-            except Exception:
-                pass
+            _write_daily_line(self._log_dir, now,
+                              json.dumps(event, default=str) + "\n",
+                              level=level, force_flush=level >= ERROR)
 
         if level >= self._min_level and self._queue is not None:
             try:
@@ -123,8 +133,10 @@ class EngineLogger:
         # EventChannel. Falls back to the module-global callback so loggers
         # created before the setter ran still deliver. Never raises — a
         # logging path must not break downloads (or tests without Chaquopy).
+        # Gated on _bridge_min_level (default INFO): DEBUG rides the file +
+        # queue only, never the UI thread.
         cb = self._event_callback if self._event_callback is not None else _global_event_callback
-        if cb is not None:
+        if cb is not None and level >= self._bridge_min_level:
             try:
                 cb.onEvent(json.dumps(event, default=str))
             except Exception:
@@ -193,6 +205,72 @@ class EngineLogger:
 
 _loggers: dict[str, EngineLogger] = {}
 
+# Loop-2 I/O shield: open/write/close per DEBUG line was 3 syscalls × tens
+# of Hz × downloads on low-end eMMC (visible I/O jitter). Cached handles
+# with a 5 s flush cadence (immediate on ERROR+) cut syscalls ~100x with the
+# same durability for triage (crash lines always force-flush). Keyed by real
+# path; guarded by one lock; closed at interpreter exit. Never raises.
+_file_sinks: dict[str, Any] = {}
+_file_sinks_lock = threading.Lock()
+_FILE_FLUSH_INTERVAL_S = 5.0
+
+
+def _write_daily_line(log_dir: str, now: datetime, line: str, *, level: int = INFO,
+                      force_flush: bool = False) -> None:
+    # Durability contract: INFO and above are write-through (flushed every
+    # line) so triage/report/export readers never see a stale file. DEBUG —
+    # the per-block flood — rides the 64 KiB buffer with a 5 s flush cadence.
+    # Either way there is exactly one write syscall per line and no open/close
+    # churn (the old code paid open+write+close per line).
+    try:
+        date_str = now.strftime("%Y-%m-%d")
+        os.makedirs(log_dir, exist_ok=True)
+        path = os.path.realpath(os.path.join(log_dir, f"engine_{date_str}.txt"))
+        with _file_sinks_lock:
+            sink = _file_sinks.get(path)
+            if sink is None or sink.get("closed", False):
+                sink = {"fh": open(path, "a", buffering=1 << 16),
+                        "last_flush": _time_monotonic(),
+                        "closed": False}
+                _file_sinks[path] = sink
+            sink["fh"].write(line)
+            if (force_flush or level >= INFO
+                    or _time_monotonic() - sink["last_flush"] >= _FILE_FLUSH_INTERVAL_S):
+                sink["fh"].flush()
+                sink["last_flush"] = _time_monotonic()
+    except Exception:
+        pass
+
+
+def _time_monotonic() -> float:
+    return time.monotonic()
+
+
+def close_log_sinks() -> None:
+    """Flush + close all cached daily handles. Idempotent, never raises."""
+    try:
+        with _file_sinks_lock:
+            items = list(_file_sinks.items())
+            _file_sinks.clear()
+        for _, sink in items:
+            try:
+                sink["fh"].flush()
+            except Exception:
+                pass
+            try:
+                sink["fh"].close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+try:
+    import atexit as _atexit
+    _atexit.register(close_log_sinks)
+except Exception:
+    pass
+
 # Module-global push callback (Android/Chaquopy). Stored here so loggers
 # created AFTER the setter ran inherit it via get_logger().
 _global_event_callback = None
@@ -200,6 +278,9 @@ _global_event_callback = None
 # Module-global log dir. Same late-binding rationale: set_paths() may run
 # before some lazily-created loggers exist (Android calls it directly).
 _global_log_dir: str | None = None
+
+# Module-global bridge floor (see EngineLogger._bridge_min_level).
+_global_bridge_min_level: int = INFO
 
 
 def get_logger(name: str) -> EngineLogger:
@@ -209,6 +290,7 @@ def get_logger(name: str) -> EngineLogger:
             _loggers[name].set_event_callback(_global_event_callback)
         if _global_log_dir is not None:
             _loggers[name].set_log_dir(_global_log_dir)
+        _loggers[name].set_bridge_min_level(_global_bridge_min_level)
     return _loggers[name]
 
 
@@ -235,5 +317,19 @@ def set_global_event_callback(cb) -> None:
     for logger in _loggers.values():
         try:
             logger.set_event_callback(cb)
+        except Exception:
+            pass
+
+
+def set_global_bridge_min_level(level: int) -> None:
+    """Floor for the UI bridge callback on all loggers (present + future).
+
+    File + queue delivery are unaffected at any setting. Never raises.
+    """
+    global _global_bridge_min_level
+    _global_bridge_min_level = level
+    for logger in _loggers.values():
+        try:
+            logger.set_bridge_min_level(level)
         except Exception:
             pass

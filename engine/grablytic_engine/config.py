@@ -61,7 +61,10 @@ DEFAULT_CFG = {
     "aria2c_enabled": False,
     "aria2c_chunks": 5,
     "aria2c_max_speed": None,
-    "concurrent_fragments": 4,
+    # Loop-4 low-end default: 2 fragment threads (was 4). Mobile sweet spot
+    # is 1-3 (ytdlnis defaults 1); 2 active downloads now cost 4 fragment
+    # threads instead of 8. User-overridable up to 16 via config/templates.
+    "concurrent_fragments": 2,
     "socket_timeout": 30,
     "proxy": "",
     "geo_bypass": True,
