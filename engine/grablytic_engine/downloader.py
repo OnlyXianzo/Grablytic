@@ -50,7 +50,15 @@ def set_max_concurrent(n) -> dict:
         n = int(n)
     except Exception:
         n = _DEFAULT_MAX_CONCURRENT
-    _max_concurrent = max(1, min(_ABSOLUTE_MAX_CONCURRENT, n))
+    with _downloads_lock:
+        old_max = _max_concurrent
+        _max_concurrent = max(1, min(_ABSOLUTE_MAX_CONCURRENT, n))
+        increased = _max_concurrent > old_max
+    if increased:
+        try:
+            _pump_queue()
+        except Exception:
+            pass
     return {"success": True, "max_concurrent": _max_concurrent}
 
 
@@ -137,28 +145,33 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
         with _downloads_lock:
             rec = _active_downloads.get(download_id)
             own_token = rec.get("slot_token") if isinstance(rec, dict) else None
-        _close_own_slot(download_id, own_token)
-        terminal = json.dumps({
-            "type": "event",
-            "event": "cancelled",
-            "download_id": download_id,
-            "error_type": "ERROR_CANCELLED",
-            "error_message": "Download cancelled by user",
-        })
-        cb = entry.get("event_callback")
-        if cb is not None:
+        owned = _close_own_slot(download_id, own_token)
+        if owned:
+            terminal = json.dumps({
+                "type": "event",
+                "event": "cancelled",
+                "download_id": download_id,
+                "error_type": "ERROR_CANCELLED",
+                "error_message": "Download cancelled by user",
+            })
+            cb = entry.get("event_callback")
+            if cb is not None:
+                try:
+                    _emit_event(cb, terminal)
+                except Exception:
+                    pass
+            else:
+                try:
+                    entry["result_queue"].put({
+                        "success": False,
+                        "download_id": download_id,
+                        "error_type": "ERROR_CANCELLED",
+                        "error_message": "Download cancelled by user",
+                    })
+                except Exception:
+                    pass
             try:
-                _emit_event(cb, terminal)
-            except Exception:
-                pass
-        else:
-            try:
-                entry["result_queue"].put({
-                    "success": False,
-                    "download_id": download_id,
-                    "error_type": "ERROR_CANCELLED",
-                    "error_message": "Download cancelled by user",
-                })
+                _pump_queue()
             except Exception:
                 pass
         return None
@@ -174,7 +187,11 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                 "thread": None,  # set after start
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
+                "event_callback": entry.get("event_callback"),
             }
+        else:
+            if "event_callback" not in _active_downloads[download_id] and entry.get("event_callback") is not None:
+                _active_downloads[download_id]["event_callback"] = entry.get("event_callback")
         # BRUTAL-2a: generation identity is fixed at registration (before
         # start) so the worker's finally-block can prove ownership even if
         # the entry is replaced under the same id mid-flight.
@@ -187,7 +204,44 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
               entry["event_callback"], slot_token),
         daemon=True,
     )
-    t.start()
+    try:
+        t.start()
+    except Exception as exc:
+        log.error(f"Failed to start download thread: {exc}", extra={"download_id": download_id})
+        _close_own_slot(download_id, slot_token)
+        err_event = json.dumps({
+            "type": "event",
+            "event": "error",
+            "download_id": download_id,
+            "error_type": "ERROR_THREAD_SPAWN",
+            "error_message": f"Could not start downloader thread: {exc}",
+            "recoverable": True,
+            "suggests_vpn": False,
+        })
+        cb = entry.get("event_callback")
+        if cb is not None:
+            try:
+                _emit_event(cb, err_event)
+            except Exception:
+                pass
+        else:
+            try:
+                entry["result_queue"].put({
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_THREAD_SPAWN",
+                    "error_message": f"Could not start downloader thread: {exc}",
+                    "recoverable": True,
+                    "suggests_vpn": False,
+                })
+            except Exception:
+                pass
+        try:
+            _pump_queue()
+        except Exception:
+            pass
+        return None
+
     with _downloads_lock:
         if download_id in _active_downloads:
             _active_downloads[download_id]["thread"] = t
@@ -217,6 +271,7 @@ def _pump_queue() -> None:
                 "thread": None,
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
+                "event_callback": entry.get("event_callback"),
             }
         try:
             _spawn_thread(entry)
@@ -613,6 +668,7 @@ def download_thread(
                 "url": url,
                 "audio_only": _is_audio_mode(config),
                 "started_at": datetime.now(timezone.utc),
+                "event_callback": event_callback or existing.get("event_callback"),
             })
             _active_downloads[download_id] = existing
 
@@ -1029,6 +1085,7 @@ def start_download(
                 "thread": None,
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
+                "event_callback": event_callback,
             }
 
     if event_callback is not None:
@@ -1083,6 +1140,8 @@ def cancel_download(download_id: str) -> dict:
     queued_entry = None
     worker_thread = None
     worker_alive = False
+    active_slot_token = None
+    active_info = None
     with _downloads_lock:
         for i, e in enumerate(_pending_queue):
             if e["download_id"] == download_id:
@@ -1102,6 +1161,8 @@ def cancel_download(download_id: str) -> dict:
                 pass
             worker_thread = info.get("thread")
             worker_alive = _worker_thread_alive(info)
+            active_slot_token = info.get("slot_token")
+            active_info = info
 
     if queued_entry is not None:
         # Dequeued before a thread ever spawned: deliver a terminal
@@ -1127,6 +1188,54 @@ def cancel_download(download_id: str) -> dict:
                     "error_type": "ERROR_CANCELLED",
                     "error_message": "Download cancelled by user",
                 })
+            except Exception:
+                pass
+            # Register into _active_downloads so desktop poll_queues() will
+            # drain its result_queue before cleanup_loop removes it.
+            with _downloads_lock:
+                _active_downloads[download_id] = {
+                    "cancel_event": queued_entry["cancel_event"],
+                    "progress_queue": queued_entry["progress_queue"],
+                    "result_queue": queued_entry["result_queue"],
+                    "url": queued_entry["url"],
+                    "audio_only": _is_audio_mode(queued_entry.get("config")),
+                    "thread": None,
+                    "started_at": queued_entry.get("queued_at") or datetime.now(timezone.utc),
+                    "finished_at": datetime.now(timezone.utc),
+                    "slot_token": _new_slot_token(),
+                }
+
+    if active_info is not None and not worker_alive:
+        # Worker is not running (pre-spawn, threadless mock, or dead without closing slot).
+        # Close slot immediately to avoid leaking capacity, stamp finished_at, emit terminal,
+        # and pump the queue so parked downloads can proceed.
+        closed = _close_own_slot(download_id, active_slot_token)
+        if closed:
+            terminal = json.dumps({
+                "type": "event",
+                "event": "cancelled",
+                "download_id": download_id,
+                "error_type": "ERROR_CANCELLED",
+                "error_message": "Download cancelled by user",
+            })
+            cb = active_info.get("event_callback")
+            if cb is not None:
+                try:
+                    _emit_event(cb, terminal)
+                except Exception:
+                    pass
+            else:
+                try:
+                    active_info["result_queue"].put({
+                        "success": False,
+                        "download_id": download_id,
+                        "error_type": "ERROR_CANCELLED",
+                        "error_message": "Download cancelled by user",
+                    })
+                except Exception:
+                    pass
+            try:
+                _pump_queue()
             except Exception:
                 pass
 
