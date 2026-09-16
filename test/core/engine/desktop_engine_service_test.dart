@@ -41,6 +41,18 @@ class _FakeProcess implements Process {
       _exitCodeCompleter.complete(code);
     }
   }
+
+  void completeStdoutDone() {
+    _stdoutController.close();
+  }
+
+  void addStdoutError(Object error) {
+    _stdoutController.addError(error);
+  }
+
+  void addStderrError(Object error) {
+    _stderrController.addError(error);
+  }
 }
 
 void main() {
@@ -141,6 +153,46 @@ void main() {
       // Replacement process must NOT have been killed by old process exit code
       expect(service.process, same(replacement));
       expect(replacement.killCalled, isFalse);
+    });
+
+    group('DesktopEngineService stream error & lifecycle handling (F-R2)', () {
+      test('stdout onDone completes pending requests immediately and triggers restart', () async {
+        final service = DesktopEngineService();
+        final fakeProcess = _FakeProcess();
+        service.attachProcessForTesting(fakeProcess, wireStreams: true);
+
+        expect(service.process, same(fakeProcess));
+
+        fakeProcess.completeStdoutDone();
+        await pumpEventQueue();
+
+        expect(service.process, isNull);
+        expect(fakeProcess.killCalled, isTrue);
+      });
+
+      test('stdout onError triggers restart and fails pending requests without zone error', () async {
+        final service = DesktopEngineService();
+        final fakeProcess = _FakeProcess();
+        service.attachProcessForTesting(fakeProcess, wireStreams: true);
+
+        fakeProcess.addStdoutError(const FormatException('Malformed UTF-8 byte'));
+        await pumpEventQueue();
+
+        expect(service.process, isNull);
+        expect(fakeProcess.killCalled, isTrue);
+      });
+
+      test('stderr onError logs error safely without restarting engine', () async {
+        final service = DesktopEngineService();
+        final fakeProcess = _FakeProcess();
+        service.attachProcessForTesting(fakeProcess, wireStreams: true);
+
+        fakeProcess.addStderrError(const FormatException('Bad stderr byte'));
+        await pumpEventQueue();
+
+        expect(service.process, same(fakeProcess));
+        expect(fakeProcess.killCalled, isFalse);
+      });
     });
   });
 }
