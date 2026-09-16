@@ -592,4 +592,36 @@ group('structural selectors (Loop-3 O(1) rebuilds)', () {
       }
     });
   });
+
+  group('restoreInterruptedDownloads wifi gate', () {
+    test('auto-resume yields to a denying gate, surfacing rows', () async {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      final dir =
+          await Directory.systemTemp.createTemp('grablytic_wifigate_test_');
+      DownloadHistoryDb.dbPathForTesting = p.join(dir.path, 'gate.db');
+      try {
+        for (var i = 0; i < 3; i++) {
+          await DownloadHistoryDb.instance.insert(DownloadRecord(
+            id: 'g-$i',
+            url: 'https://x.test/g$i',
+            title: 'g$i',
+            status: 'interrupted',
+            queuePosition: i,
+          ));
+        }
+        final n = DownloadNotifier(
+          MockEngineService(),
+          unattendedNetworkAllowed: () async => false,
+        );
+        final resumed = await n.restoreInterruptedDownloads();
+        expect(resumed, 0);
+        expect(n.state.length, 3);
+        expect(n.state.every((d) => d.status == 'interrupted'), isTrue);
+      } finally {
+        await DownloadHistoryDb.instance.closeForTesting();
+        DownloadHistoryDb.dbPathForTesting = null;
+      }
+    });
+  });
 }
