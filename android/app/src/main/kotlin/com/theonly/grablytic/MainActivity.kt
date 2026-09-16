@@ -43,10 +43,12 @@ class MainActivity : FlutterActivity() {
     private var py: Python? = null
     private val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, EngineEventListener>()
     // Terminals that arrived while Flutter had no EventChannel listener
-    // (activity-recreation gap). id -> eventJson, flushed once on the next
-    // onListen then cleared. Live-delivered terminals are never buffered,
-    // so neither DownloadService nor Dart sees a duplicate.
-    private val undeliveredTerminals = java.util.concurrent.ConcurrentHashMap<String, String>()
+    // (activity-recreation gap). Process-wide (companion): the buffering
+    // activity may be destroyed before the next onListen, so an instance
+    // field would strand them on a dead object. id -> eventJson, each
+    // removed exactly once on successful delivery; live-delivered
+    // terminals are never buffered, so neither DownloadService nor Dart
+    // sees a duplicate.
 
     private var dataDir: String? = null
     private var outputDir: String? = null
@@ -62,6 +64,131 @@ class MainActivity : FlutterActivity() {
         // Terminals missed per detach gap (mirrors the engine queue vocabulary).
         private const val MAX_UNDELIVERED_TERMINALS = 50
         private val TERMINAL_EVENTS = setOf("finished", "error", "cancelled")
+
+        // Process-wide missed-terminal buffer (see instance comment above).
+        // Insertion-ordered eviction: the queue mirrors map keys oldest
+        // first, so overflow evicts the OLDEST id — never a random one
+        // (the old ConcurrentHashMap.keys.firstOrNull() was unordered).
+        private val undeliveredTerminals =
+            java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val undeliveredOrder =
+            java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+        // Stash one terminal for the next onListen. Same-id re-arrival
+        // refreshes recency instead of duplicating. Never throws.
+        private fun bufferTerminal(id: String, eventJson: String) {
+            try {
+                if (undeliveredTerminals.containsKey(id)) {
+                    undeliveredOrder.remove(id)
+                } else {
+                    while (undeliveredTerminals.size >= MAX_UNDELIVERED_TERMINALS) {
+                        val oldest = undeliveredOrder.poll() ?: break
+                        undeliveredTerminals.remove(oldest)
+                    }
+                }
+                undeliveredTerminals[id] = eventJson
+                undeliveredOrder.offer(id)
+            } catch (_: Exception) {
+            }
+        }
+
+        // Flush oldest-first to a live sink. Each entry is removed only
+        // after a successful success() call, so a mid-flush failure keeps
+        // the unsent tail buffered instead of dropping it (the old code
+        // cleared before the loop and broke on first throw).
+        private fun flushTerminals(events: EventChannel.EventSink) {
+            while (true) {
+                val id = undeliveredOrder.peek() ?: return
+                val json = undeliveredTerminals[id] ?: run {
+                    undeliveredOrder.remove(id)
+                    continue
+                }
+                try {
+                    events.success(json)
+                } catch (_: Exception) {
+                    return
+                }
+                undeliveredOrder.remove(id)
+                undeliveredTerminals.remove(id)
+            }
+        }
+
+        // Media-store visibility scan (companion-static with explicit
+        // context/dir: progress listeners outlive activity recreations and
+        // must not capture the Activity). Files land via raw rename
+        // (yt-dlp MoveFiles), which never notifies MediaStore — without
+        // this scan they exist on disk but stay invisible in every media
+        // browser. scanFileExact hits the finished path from the engine
+        // event (never thumbnail sidecars); the recursive walk is the
+        // self-healing fallback (real files land in Video/<name> and
+        // Audio/<name> subfolders). Never throws.
+        private fun scanRecentMedia(ctx: android.content.Context, outDir: String?) {
+            try {
+                val root = outDir?.let(::File)?.takeIf { it.isDirectory } ?: return
+                val cutoff = System.currentTimeMillis() - 2 * 60 * 60 * 1000
+                val files = ArrayList<File>()
+                collectRecentMedia(root, cutoff, files)
+                files.forEach { f ->
+                    try {
+                        android.media.MediaScannerConnection.scanFile(
+                            ctx, arrayOf(f.absolutePath), null, null,
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        private fun collectRecentMedia(dir: File, cutoff: Long, out: ArrayList<File>) {
+            val kids = try {
+                dir.listFiles()
+            } catch (_: Exception) {
+                null
+            } ?: return
+            for (f in kids) {
+                try {
+                    if (f.isDirectory) {
+                        // Skip hidden/cache dirs ( temp segments, .tmp work files).
+                        if (!f.name.startsWith(".")) collectRecentMedia(f, cutoff, out)
+                    } else if (f.isFile && f.lastModified() >= cutoff &&
+                        f.extension.lowercase() in MEDIA_EXTS &&
+                        !isThumbnailSidecar(f)
+                    ) {
+                        out.add(f)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        private fun scanFileExact(ctx: android.content.Context, path: String?) {
+            try {
+                if (path.isNullOrEmpty()) return
+                val f = File(path)
+                if (!f.isFile) return
+                if (f.extension.lowercase() !in MEDIA_EXTS) return
+                android.media.MediaScannerConnection.scanFile(
+                    ctx, arrayOf(f.absolutePath), null, null,
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        private fun isThumbnailSidecar(f: File): Boolean {
+            // writethumbnail sidecars share the media basename (<name>.jpg next
+            // to <name>.mp4). A same-basename media file means "thumbnail".
+            if (f.extension.lowercase() !in THUMB_EXTS) return false
+            val base = f.nameWithoutExtension
+            val parent = try { f.parentFile } catch (_: Exception) { null } ?: return false
+            return MEDIA_EXTS.any { ext ->
+                try {
+                    File(parent, "$base.$ext").isFile
+                } catch (_: Exception) {
+                    false
+                }
+            }
+        }
 
         private val MEDIA_EXTS = setOf(
             "mkv", "mp4", "webm", "m4v", "mov", "avi", "3gp", "3g2", "ts", "mts",
@@ -305,6 +432,26 @@ class MainActivity : FlutterActivity() {
                                 var noSinkWarned = false
                                 var sinkFailedWarned = false
                                 override fun onEvent(eventJson: String) {
+                                    // Application context only: this listener
+                                    // outlives activity recreations (Python
+                                    // holds it until the terminal arrives),
+                                    // so capturing the Activity would leak
+                                    // the destroyed instance. Snapshot the
+                                    // output dir for the same reason.
+                                    val appCtx = applicationContext
+                                    val outDir = outputDir
+                                    // Parse once: terminal identity decides
+                                    // buffering on every path below.
+                                    val terminalId = try {
+                                        val o = org.json.JSONObject(eventJson)
+                                        if (o.optString("type") == "event" &&
+                                            o.optString("event") in TERMINAL_EVENTS) {
+                                            o.optString("download_id")
+                                                .takeIf { it.isNotEmpty() }
+                                        } else null
+                                    } catch (_: Exception) {
+                                        null
+                                    }
                                     // Drive the keep-alive service from the same
                                     // event stream (progress + terminal events).
                                     try {
@@ -321,7 +468,7 @@ class MainActivity : FlutterActivity() {
                                                             ((dl * 100) / total).toInt().coerceIn(0, 99)
                                                         } else -1
                                                         DownloadService.update(
-                                                            this@MainActivity, id, pct,
+                                                            appCtx, id, pct,
                                                             speedBps = speed,
                                                             downloadedBytes = dl,
                                                             totalBytes = total,
@@ -330,7 +477,7 @@ class MainActivity : FlutterActivity() {
                                                     "postprocessing" -> {
                                                         val stageLabel = obj.optString("stage_label", "Processing...")
                                                         DownloadService.updateStage(
-                                                            this@MainActivity, id, stageLabel,
+                                                            appCtx, id, stageLabel,
                                                         )
                                                     }
                                                     "finished", "error", "cancelled" -> {
@@ -341,26 +488,26 @@ class MainActivity : FlutterActivity() {
                                                         when (obj.optString("event")) {
                                                     "finished" -> {
                                                         DownloadService.finished(
-                                                            this@MainActivity, id,
+                                                            appCtx, id,
                                                         )
                                                         // Exact file first: the engine reports the
                                                         // finished media path in the event, so scan
                                                         // THAT file (never the thumbnail sidecar —
                                                         // sidecars must stay out of Gallery).
                                                         // Recursive walk below stays as fallback.
-                                                        scanFileExact(obj.optString("file_path", null))
-                                                        scanRecentMedia()
+                                                        scanFileExact(appCtx, obj.optString("file_path", null))
+                                                        scanRecentMedia(appCtx, outDir)
                                                     }
                                                             "error" -> {
                                                                 val detail = obj.optString("error_message", null)
                                                                     .takeIf { it.isNotEmpty() }
                                                                 DownloadService.failed(
-                                                                    this@MainActivity, id, detail,
+                                                                    appCtx, id, detail,
                                                                 )
                                                             }
                                                             else -> {
                                                                 DownloadService.done(
-                                                                    this@MainActivity, id, true,
+                                                                    appCtx, id, true,
                                                                 )
                                                             }
                                                         }
@@ -370,43 +517,50 @@ class MainActivity : FlutterActivity() {
                                         }
                                     } catch (_: Exception) {
                                     }
+                                    // Buffer synchronously — never inside
+                                    // scope.launch: after onDestroy the scope
+                                    // is cancelled and the safety net would
+                                    // fail exactly when it is needed (the old
+                                    // code stashed terminals only inside the
+                                    // dropped launch). ConcurrentHashMap +
+                                    // queue are thread-safe by construction.
+                                    val sink = eventSink
+                                    if (sink == null) {
+                                        // No listener: progress/postprocessing are
+                                        // transient (the next tick heals), but a
+                                        // dropped terminal wedges the card at 99%
+                                        // until restart — stash it for onListen.
+                                        if (terminalId != null) {
+                                            bufferTerminal(terminalId, eventJson)
+                                        } else if (!noSinkWarned) {
+                                            noSinkWarned = true
+                                            android.util.Log.w(
+                                                "GrablyticEngine",
+                                                "EventChannel sink null — Flutter is not listening; " +
+                                                    "progress UI will stall while the download continues",
+                                            )
+                                        }
+                                        return
+                                    }
                                     scope.launch(Dispatchers.Main) {
-                                        val sink = eventSink
-                                        if (sink == null) {
-                                            // No listener: progress/postprocessing are
-                                            // transient (the next tick heals), but a
-                                            // dropped terminal wedges the card at 99%
-                                            // until restart — stash it for onListen.
-                                            val terminalId = try {
-                                                val o = org.json.JSONObject(eventJson)
-                                                if (o.optString("type") == "event" &&
-                                                    o.optString("event") in TERMINAL_EVENTS) {
-                                                    o.optString("download_id")
-                                                        .takeIf { it.isNotEmpty() }
-                                                } else null
-                                            } catch (_: Exception) {
-                                                null
-                                            }
+                                        // Re-read: the listener may have
+                                        // detached between decision and dispatch.
+                                        val live = eventSink
+                                        if (live == null) {
                                             if (terminalId != null) {
-                                                if (undeliveredTerminals.size >= MAX_UNDELIVERED_TERMINALS) {
-                                                    undeliveredTerminals.keys.firstOrNull()?.let {
-                                                        undeliveredTerminals.remove(it)
-                                                    }
-                                                }
-                                                undeliveredTerminals[terminalId] = eventJson
-                                            } else if (!noSinkWarned) {
-                                                noSinkWarned = true
-                                                android.util.Log.w(
-                                                    "GrablyticEngine",
-                                                    "EventChannel sink null — Flutter is not listening; " +
-                                                        "progress UI will stall while the download continues",
-                                                )
+                                                bufferTerminal(terminalId, eventJson)
                                             }
                                             return@launch
                                         }
                                         try {
-                                            sink.success(eventJson)
+                                            live.success(eventJson)
                                         } catch (e: Exception) {
+                                            // A failed sink.success used to
+                                            // only warn: the terminal was lost
+                                            // anyway. Re-buffer instead.
+                                            if (terminalId != null) {
+                                                bufferTerminal(terminalId, eventJson)
+                                            }
                                             if (!sinkFailedWarned) {
                                                 sinkFailedWarned = true
                                                 android.util.Log.w(
@@ -763,17 +917,11 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
                     // Deliver terminals missed during the detach gap, each
-                    // exactly once (cleared here; live ones never buffered).
-                    if (undeliveredTerminals.isNotEmpty() && events != null) {
-                        val pending = undeliveredTerminals.values.toList()
-                        undeliveredTerminals.clear()
-                        for (e in pending) {
-                            try {
-                                events.success(e)
-                            } catch (_: Exception) {
-                                break
-                            }
-                        }
+                    // exactly once (removed per successful send; live ones
+                    // never buffered). The buffer is process-wide, so this
+                    // flushes terminals stashed by a destroyed instance too.
+                    if (events != null) {
+                        flushTerminals(events)
                     }
                 }
                 override fun onCancel(arguments: Any?) {
@@ -781,86 +929,6 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
-    }
-
-    /**
-     * Makes freshly moved downloads visible to Gallery/Files apps.
-     * Files land via raw rename (yt-dlp MoveFiles), which never notifies
-     * MediaStore — without this scan they exist on disk but are invisible
-     * in every media browser (the "video don't get saved" report).
-     *
-     * Two layers: [scanFileExact] hits the finished path from the engine
-     * event; this walk is the self-healing fallback. The walk MUST be
-     * recursive — real files land in Video/<name> and Audio/<name>
-     * subfolders (config.py subfolder split), which the old top-level-only
-     * listing never reached. Never throws. Never scans thumbnail sidecars.
-     */
-    private fun scanRecentMedia() {
-        try {
-            val root = outputDir?.let(::File)?.takeIf { it.isDirectory } ?: return
-            val cutoff = System.currentTimeMillis() - 2 * 60 * 60 * 1000
-            val files = ArrayList<File>()
-            collectRecentMedia(root, cutoff, files)
-            files.forEach { f ->
-                try {
-                    android.media.MediaScannerConnection.scanFile(
-                        applicationContext, arrayOf(f.absolutePath), null, null,
-                    )
-                } catch (_: Exception) {
-                }
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun collectRecentMedia(dir: File, cutoff: Long, out: ArrayList<File>) {
-        val kids = try {
-            dir.listFiles()
-        } catch (_: Exception) {
-            null
-        } ?: return
-        for (f in kids) {
-            try {
-                if (f.isDirectory) {
-                    // Skip hidden/cache dirs ( temp segments, .tmp work files).
-                    if (!f.name.startsWith(".")) collectRecentMedia(f, cutoff, out)
-                } else if (f.isFile && f.lastModified() >= cutoff &&
-                    f.extension.lowercase() in MEDIA_EXTS &&
-                    !isThumbnailSidecar(f)
-                ) {
-                    out.add(f)
-                }
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    private fun scanFileExact(path: String?) {
-        try {
-            if (path.isNullOrEmpty()) return
-            val f = File(path)
-            if (!f.isFile) return
-            if (f.extension.lowercase() !in MEDIA_EXTS) return
-            android.media.MediaScannerConnection.scanFile(
-                applicationContext, arrayOf(f.absolutePath), null, null,
-            )
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun isThumbnailSidecar(f: File): Boolean {
-        // writethumbnail sidecars share the media basename (<name>.jpg next
-        // to <name>.mp4). A same-basename media file means "thumbnail".
-        if (f.extension.lowercase() !in THUMB_EXTS) return false
-        val base = f.nameWithoutExtension
-        val parent = try { f.parentFile } catch (_: Exception) { null } ?: return false
-        return MEDIA_EXTS.any { ext ->
-            try {
-                File(parent, "$base.$ext").isFile
-            } catch (_: Exception) {
-                false
-            }
-        }
     }
 
     override fun onDestroy() {
