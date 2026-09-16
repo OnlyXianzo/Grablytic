@@ -8,7 +8,7 @@ from grablytic_engine import (
     bootstrap,
     get_formats,
     get_playlist_info,
-    search,
+    search_query,
     scan_resume_candidates,
     report_resume_attempt,
     start_download,
@@ -219,7 +219,7 @@ def main():
                     elif method == "playlist/info":
                         return get_playlist_info(params["url"], params.get("config"))
                     elif method == "search/query":
-                        return search(
+                        return search_query(
                             query=params.get("query", ""),
                             site=params.get("site", "youtube"),
                             limit=params.get("limit", 20),
