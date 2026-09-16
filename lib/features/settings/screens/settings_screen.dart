@@ -990,7 +990,7 @@ class _Aria2cChunkSlider extends StatelessWidget {
   }
 }
 
-class _Aria2cSpeedField extends StatelessWidget {
+class _Aria2cSpeedField extends StatefulWidget {
   final String? maxSpeed;
   final ValueChanged<String?> onChanged;
   final ColorScheme colorScheme;
@@ -1002,9 +1002,39 @@ class _Aria2cSpeedField extends StatelessWidget {
   });
 
   @override
+  State<_Aria2cSpeedField> createState() => _Aria2cSpeedFieldState();
+}
+
+class _Aria2cSpeedFieldState extends State<_Aria2cSpeedField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.maxSpeed ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant _Aria2cSpeedField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newText = widget.maxSpeed ?? '';
+    if (_controller.text != newText) {
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final controller = TextEditingController(text: maxSpeed ?? '');
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1016,10 +1046,10 @@ class _Aria2cSpeedField extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainer,
+                color: widget.colorScheme.surfaceContainer,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.speed, color: colorScheme.outline, size: 20),
+              child: Icon(Icons.speed, color: widget.colorScheme.outline, size: 20),
             ),
           ),
           const SizedBox(width: 16),
@@ -1031,7 +1061,7 @@ class _Aria2cSpeedField extends StatelessWidget {
                 Text(
                   'e.g. 10M or leave empty for unlimited',
                   style: textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                    color: widget.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -1040,20 +1070,20 @@ class _Aria2cSpeedField extends StatelessWidget {
           SizedBox(
             width: 100,
             child: TextField(
-              controller: controller,
+              controller: _controller,
               style: TextStyle(fontFamily: 'InstrumentSans',
                 fontSize: 14,
-                color: colorScheme.onSurface,
+                color: widget.colorScheme.onSurface,
               ),
               decoration: InputDecoration(
                 hintText: 'Unlimited',
                 hintStyle: TextStyle(fontFamily: 'InstrumentSans',
-                  color: colorScheme.onSurfaceVariant,
+                  color: widget.colorScheme.onSurfaceVariant,
                   fontSize: 14,
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  borderSide: BorderSide(color: widget.colorScheme.outlineVariant),
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 isDense: true,
@@ -1062,7 +1092,7 @@ class _Aria2cSpeedField extends StatelessWidget {
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^[0-9]*[KMGT]?$')),
               ],
-              onChanged: (v) => onChanged(v.isEmpty ? null : v),
+              onChanged: (v) => widget.onChanged(v.isEmpty ? null : v),
             ),
           ),
         ],
