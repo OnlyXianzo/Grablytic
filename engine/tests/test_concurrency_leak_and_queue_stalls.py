@@ -12,13 +12,10 @@ These tests prove:
 5. Early pre-spawn cancellation in _spawn_thread must pump the queue.
 """
 
-import json
 import queue as _queue
 import threading
-import pytest
 
 import grablytic_engine.downloader as dl_mod
-from grablytic_engine import __main__ as main_mod
 
 
 def _reset():
@@ -123,7 +120,7 @@ def test_spawn_thread_exception_unwinds_slot_and_emits_error(monkeypatch):
 
     try:
         # Start download 1: thread spawn will fail
-        r1 = dl_mod.start_download(url="https://x.test/fail1", download_id="fail-1")
+        dl_mod.start_download(url="https://x.test/fail1", download_id="fail-1")
         # Start download 2 (queued)
         # But if fail-1 fails during spawn, fail-1 must not leak slot!
         info = dl_mod._active_downloads.get("fail-1")
@@ -176,7 +173,7 @@ def test_pre_spawn_cancel_in_spawn_thread_pumps_queue(monkeypatch):
 
     try:
         # Start download 1 (active)
-        r1 = dl_mod.start_download(url="https://x.test/ps1", download_id="ps-1")
+        dl_mod.start_download(url="https://x.test/ps1", download_id="ps-1")
         # Start download 2 (queued)
         r2 = dl_mod.start_download(url="https://x.test/ps2", download_id="ps-2")
         assert r2.get("queued") is True

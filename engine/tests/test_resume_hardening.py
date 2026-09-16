@@ -1,10 +1,7 @@
-import os
 import json
-import pytest
 from grablytic_engine.resume import (
     scan_resume_candidates,
     report_resume_attempt,
-    _contained_path,
 )
 
 
