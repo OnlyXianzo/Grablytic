@@ -622,9 +622,6 @@ class MainActivity : FlutterActivity() {
                 }
                 "download/cancel" -> {
                     val downloadId = call.argument<String>("download_id")
-                    if (downloadId != null) {
-                        activeCallbacks.remove(downloadId)
-                    }
                     scope.launch(Dispatchers.IO) {
                         try {
                             val python = py ?: return@launch
