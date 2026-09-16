@@ -380,6 +380,13 @@ class TracedEngineService implements EngineService {
   @override
   Stream<Map<String, dynamic>> get logStream => _inner.logStream;
 
+  @override
+  void dispose() {
+    try {
+      _inner.dispose();
+    } catch (_) {}
+  }
+
   Map<String, dynamic> _redactedPaths(Map<String, dynamic> paths) {
     // Paths themselves are safe; cookies path value is redacted in AppLogger.
     return paths;

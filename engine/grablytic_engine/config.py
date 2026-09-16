@@ -27,6 +27,38 @@ def coerce_config(config) -> dict:
     return {}
 
 
+def sanitize_config(config: dict) -> dict:
+    """Validate and sanitize an IPC-supplied configuration dictionary against DEFAULT_CFG.
+
+    - Drops unknown keys.
+    - Coerces types according to DEFAULT_CFG schema (bool, int, list, str).
+    """
+    if not isinstance(config, dict):
+        return {}
+    sanitized = {}
+    for k, default_val in DEFAULT_CFG.items():
+        if k in config:
+            val = config[k]
+            if isinstance(default_val, bool):
+                sanitized[k] = bool(val)
+            elif isinstance(default_val, int) and not isinstance(default_val, bool):
+                try:
+                    sanitized[k] = int(val)
+                except (ValueError, TypeError):
+                    sanitized[k] = val
+            elif isinstance(default_val, list):
+                if isinstance(val, (list, tuple)):
+                    sanitized[k] = list(val)
+                elif isinstance(val, str):
+                    sanitized[k] = [s.strip() for s in val.split(",") if s.strip()]
+                else:
+                    sanitized[k] = list(default_val)
+            else:
+                sanitized[k] = val
+    return sanitized
+
+
+
 DEFAULT_CFG = {
     # ── Update ────────────────────────────────────────────────────────────
     "update_channel": "stable",

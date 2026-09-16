@@ -20,17 +20,27 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
   int? _expandedIndex;
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<LogEntry>? _bufferSub;
+  // Coalesce tens-of-Hz engine log bursts into one rebuild per 500 ms
+  // (same batching the download sheet/overlay already use). Per-line
+  // setState rebuilt a 5000-row filtered list at log rate and dropped
+  // frames into ANRs on low-end devices.
+  Timer? _batch;
 
   @override
   void initState() {
     super.initState();
     _bufferSub = ref.read(logBufferProvider).stream.listen((_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      _batch ??= Timer(const Duration(milliseconds: 500), () {
+        _batch = null;
+        if (mounted) setState(() {});
+      });
     });
   }
 
   @override
   void dispose() {
+    _batch?.cancel();
     _bufferSub?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -96,7 +106,6 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                       onPressed: () {
                         setState(() {
                           _searchQuery = '';
-                          buffer.setSearchFilter(null);
                         });
                       },
                     )
@@ -106,8 +115,10 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
             onChanged: (v) {
+              // Local-only filter: the old code also mutated the shared
+              // buffer's search filter, silently hiding entries from every
+              // other log consumer while typing here.
               setState(() => _searchQuery = v);
-              buffer.setSearchFilter(v.isEmpty ? null : v);
             },
           ),
         ),

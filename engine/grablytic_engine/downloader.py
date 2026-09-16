@@ -37,6 +37,7 @@ _downloads_lock = threading.Lock()
 _DEFAULT_MAX_CONCURRENT = 2
 _ABSOLUTE_MAX_CONCURRENT = 5
 _max_concurrent = _DEFAULT_MAX_CONCURRENT
+_MAX_PENDING_QUEUE = 500
 # FIFO of parked entries: each holds download_id/url/config/network_type/
 # progress_queue/result_queue/cancel_event/event_callback/queued_at.
 _pending_queue: list[dict] = []
@@ -116,6 +117,7 @@ def _find_live_url_holder(url: str, audio_only: bool):
 def get_queue_status() -> dict:
     with _downloads_lock:
         return {
+            "success": True,
             "active": [did for did, info in _active_downloads.items()
                        if not info.get("finished_at")],
             "queued": [e["download_id"] for e in _pending_queue],
@@ -922,10 +924,6 @@ def start_download(
     network_type: str = "wifi",
     event_callback=None,
 ) -> dict:
-    progress_queue: _queue.Queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-    result_queue: _queue.Queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-    cancel_event: threading.Event = threading.Event()
-
     # Reject admission if engine is currently shutting down
     with _shutdown_lock:
         if _is_shutting_down:
@@ -951,18 +949,6 @@ def start_download(
             "error_type": "ERROR_INVALID_PARAM",
             "error_message": "URL must be a public http(s) address",
         }
-
-    # Live engine-log delivery on Android/Chaquopy: push type:log events
-    # through the same Kotlin callback the progress hooks use. The desktop
-    # queue path is untouched (event_callback is None there).
-    if event_callback is not None:
-        try:
-            set_global_event_callback(event_callback)
-        except Exception:
-            pass
-
-    # Ensure background cleanup is active for this download
-    _ensure_cleanup_thread()
 
     with _downloads_lock:
         existing = _active_downloads.get(download_id)
@@ -1004,6 +990,18 @@ def start_download(
             }
         queued = _running_count() >= _max_concurrent
         if queued:
+            if len(_pending_queue) >= _MAX_PENDING_QUEUE:
+                return {
+                    "success": False,
+                    "download_id": download_id,
+                    "error_type": "ERROR_QUEUE_FULL",
+                    "error_message": f"Download queue is full (maximum {_MAX_PENDING_QUEUE} pending items)",
+                    "queue_size": len(_pending_queue),
+                    "max_queue_size": _MAX_PENDING_QUEUE,
+                }
+            progress_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+            result_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+            cancel_event = threading.Event()
             entry = {
                 "download_id": download_id,
                 "url": url,
@@ -1017,24 +1015,10 @@ def start_download(
             }
             _pending_queue.append(entry)
             position = len(_pending_queue)
-            if event_callback is not None:
-                try:
-                    _emit_event(event_callback, json.dumps({
-                        "type": "event",
-                        "event": "queued",
-                        "download_id": download_id,
-                        "position": position,
-                    }))
-                except Exception:
-                    pass
-            return {
-                "success": True,
-                "download_id": download_id,
-                "thread_started": False,
-                "queued": True,
-                "position": position,
-            }
         else:
+            progress_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+            result_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+            cancel_event = threading.Event()
             # T1-1: Atomically register in _active_downloads under lock before releasing lock
             _active_downloads[download_id] = {
                 "cancel_event": cancel_event,
@@ -1046,6 +1030,33 @@ def start_download(
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
             }
+
+    if event_callback is not None:
+        try:
+            set_global_event_callback(event_callback)
+        except Exception:
+            pass
+
+    _ensure_cleanup_thread()
+
+    if queued:
+        if event_callback is not None:
+            try:
+                _emit_event(event_callback, json.dumps({
+                    "type": "event",
+                    "event": "queued",
+                    "download_id": download_id,
+                    "position": position,
+                }))
+            except Exception:
+                pass
+        return {
+            "success": True,
+            "download_id": download_id,
+            "thread_started": False,
+            "queued": True,
+            "position": position,
+        }
 
     entry = {
         "download_id": download_id,

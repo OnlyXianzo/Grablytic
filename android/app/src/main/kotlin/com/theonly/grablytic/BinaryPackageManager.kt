@@ -111,55 +111,206 @@ object BinaryPackageManager {
             }
         }
 
+    private data class Stamp(val length: Long, val mtime: Long, val crc32: Long)
+
+    private fun readStamp(file: File): Stamp? {
+        if (!file.isFile) return null
+        return try {
+            val lines = file.readLines()
+            if (lines.isEmpty() || lines[0].trim() != "v3-atomic") return null
+            val map = lines.drop(1).associate {
+                val parts = it.split("=", limit = 2)
+                parts[0].trim() to parts.getOrNull(1)?.trim()
+            }
+            val len = map["length"]?.toLongOrNull() ?: return null
+            val mtime = map["mtime"]?.toLongOrNull() ?: return null
+            val crc = map["crc32"]?.toLongOrNull() ?: return null
+            Stamp(len, mtime, crc)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun writeStamp(file: File, stamp: Stamp) {
+        try {
+            file.writeText("v3-atomic\nlength=${stamp.length}\nmtime=${stamp.mtime}\ncrc32=${stamp.crc32}\n")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write stamp: ${e.message}")
+        }
+    }
+
+    private fun computeCrc32(file: File): Long {
+        val crc = java.util.zip.CRC32()
+        val buf = ByteArray(65536)
+        file.inputStream().use { input ->
+            var n: Int
+            while (input.read(buf).also { n = it } != -1) {
+                crc.update(buf, 0, n)
+            }
+        }
+        return crc.value
+    }
+
+    private fun safeDeleteEntry(file: File) {
+        try {
+            val stat = android.system.Os.lstat(file.absolutePath)
+            if (android.system.OsConstants.S_ISDIR(stat.st_mode)) {
+                file.deleteRecursively()
+            } else {
+                android.system.Os.unlink(file.absolutePath)
+            }
+        } catch (e: android.system.ErrnoException) {
+            if (e.errno != android.system.OsConstants.ENOENT) {
+                file.delete()
+            }
+        } catch (_: Exception) {
+            file.delete()
+        }
+    }
+
+    private fun recoverIncompleteSwap(packagesDir: File, name: String) {
+        val target = File(packagesDir, name)
+        val tmp = File(packagesDir, "$name.tmp")
+        val backup = File(packagesDir, "$name.bak")
+
+        if (!target.exists()) {
+            if (tmp.exists() && File(tmp, ".zipsize").isFile) {
+                Log.w(TAG, "Recovering swap: promoting intact $tmp to $target")
+                if (!tmp.renameTo(target)) {
+                    Log.e(TAG, "Failed to promote $tmp to $target")
+                }
+            } else if (backup.exists()) {
+                Log.w(TAG, "Recovering swap: rolling back $backup to $target")
+                if (!backup.renameTo(target)) {
+                    Log.e(TAG, "Failed to rollback $backup to $target")
+                }
+            }
+        }
+        deleteQuietly(tmp)
+        deleteQuietly(backup)
+    }
+
     private fun extractTree(zipSo: File, target: File) {
         if (!zipSo.isFile) return // packages without a support tree (none today)
-        val marker = File(target, ".zipsize")
-        // v2: symlink-aware extraction (see below). Old size-only markers
-        // never match, forcing one clean re-extract that replaces the
-        // broken text-stub trees on already-installed devices.
-        val stamp = zipSo.length().toString() + "\nv2-symlinks"
-        if (target.isDirectory && marker.isFile && marker.readText().trim() == stamp.trim()) return
+        val packagesDir = target.parentFile
+            ?: throw IllegalStateException("no parent for ${target.absolutePath}")
 
-        deleteQuietly(target)
-        target.mkdirs()
-        // Apache commons-compress, mirroring ytdlnis ZipUtils: java.util.zip
-        // cannot see Unix symlink entries, so versioned libs (libswscale.so
-        // -> libswscale.so.8.3.100, ...) were extracted as tiny TEXT files
-        // and the linker failed every bundled binary (CANNOT LINK
-        // EXECUTABLE). Symlinks are recreated with Os.symlink instead.
+        recoverIncompleteSwap(packagesDir, target.name)
+
+        val marker = File(target, ".zipsize")
+        val currentStamp = readStamp(marker)
+
+        val zipLength = zipSo.length()
+        val zipMtime = zipSo.lastModified()
+
+        // Two-tier cache check: fast path checks size + mtime
+        if (target.isDirectory && currentStamp != null) {
+            if (currentStamp.length == zipLength && currentStamp.mtime == zipMtime) {
+                return
+            }
+            // If mtime/length differ, check authoritative CRC32
+            val actualCrc = computeCrc32(zipSo)
+            if (currentStamp.length == zipLength && currentStamp.crc32 == actualCrc) {
+                // Update mtime in stamp so subsequent launches hit fast path
+                writeStamp(marker, Stamp(zipLength, zipMtime, actualCrc))
+                return
+            }
+        }
+
+        // Three-way atomic swap: extract into tmp, swap target -> backup, tmp -> target, delete backup.
+        val tmp = File(packagesDir, "${target.name}.tmp")
+        val backup = File(packagesDir, "${target.name}.bak")
+        deleteQuietly(tmp)
+        deleteQuietly(backup)
+        tmp.mkdirs()
+
+        val crc = try {
+            extractZipTo(zipSo, tmp)
+        } catch (e: Exception) {
+            deleteQuietly(tmp)
+            throw e
+        }
+
+        val newStamp = Stamp(zipLength, zipMtime, crc)
+        writeStamp(File(tmp, ".zipsize"), newStamp)
+
+        if (target.exists()) {
+            if (!target.renameTo(backup)) {
+                deleteQuietly(tmp)
+                Log.w(TAG, "${target.name}: rename to backup failed; aborting swap")
+                return
+            }
+        }
+
+        if (!tmp.renameTo(target)) {
+            Log.e(TAG, "${target.name}: atomic swap failed; rolling back from backup")
+            if (backup.exists() && !backup.renameTo(target)) {
+                Log.e(TAG, "${target.name}: rollback from backup also failed!")
+            }
+            deleteQuietly(tmp)
+            return
+        }
+
+        deleteQuietly(backup)
+
+        // .so deps need read access; keep everything executable-safe.
+        target.walkTopDown().forEach { it.setExecutable(true, false) }
+        Log.i(TAG, "extracted ${zipSo.name} -> ${target.absolutePath} (CRC32: $crc)")
+    }
+
+    private fun extractZipTo(zipSo: File, target: File): Long {
+        val crc = java.util.zip.CRC32()
+        val buf = ByteArray(65536)
+
         org.apache.commons.compress.archivers.zip.ZipFile(zipSo).use { zip ->
             val entries = zip.entries
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
                 val out = File(target, entry.name)
-                // Zip-slip guard (entries come from our own APK, belt and braces).
+
+                // Zip-slip entry location guard
                 check(out.canonicalPath.startsWith(target.canonicalPath + File.separator)) {
                     "Unsafe zip entry: ${entry.name}"
                 }
+
                 if (entry.isDirectory) {
+                    safeDeleteEntry(out)
                     out.mkdirs()
                 } else if (entry.isUnixSymlink) {
                     out.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input ->
-                        val linkTarget = input.bufferedReader().readText()
-                        android.system.Os.symlink(linkTarget, out.absolutePath)
+                    val linkTarget = zip.getInputStream(entry).use { it.bufferedReader().readText().trim() }
+                    check(linkTarget.isNotEmpty()) { "Empty symlink target in ${entry.name}" }
+                    check(!linkTarget.startsWith("/")) {
+                        "Absolute symlink target forbidden: ${entry.name} -> $linkTarget"
                     }
+                    val resolvedTarget = File(out.parentFile, linkTarget).canonicalPath
+                    check(resolvedTarget.startsWith(target.canonicalPath + File.separator)) {
+                        "Symlink target escapes package directory: ${entry.name} -> $linkTarget"
+                    }
+                    safeDeleteEntry(out)
+                    android.system.Os.symlink(linkTarget, out.absolutePath)
                 } else {
                     out.parentFile?.mkdirs()
+                    safeDeleteEntry(out)
                     zip.getInputStream(entry).use { input ->
-                        out.outputStream().use { input.copyTo(it) }
+                        out.outputStream().use { output ->
+                            var n: Int
+                            while (input.read(buf).also { n = it } != -1) {
+                                output.write(buf, 0, n)
+                            }
+                        }
                     }
                 }
             }
         }
-        // .so deps need read access; keep everything executable-safe.
-        // (setExecutable follows symlinks to their targets — harmless.)
-        target.walkTopDown().forEach { it.setExecutable(true, false) }
-        try {
-            marker.writeText(stamp)
-        } catch (_: Exception) {
+
+        zipSo.inputStream().use { input ->
+            var n: Int
+            while (input.read(buf).also { n = it } != -1) {
+                crc.update(buf, 0, n)
+            }
         }
-        Log.i(TAG, "extracted ${zipSo.name} -> ${target.absolutePath}")
+        return crc.value
     }
 
     private fun deleteQuietly(file: File) {

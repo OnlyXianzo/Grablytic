@@ -33,7 +33,6 @@ class MainActivity : FlutterActivity() {
     private val ENGINE_CHANNEL = "com.theonly.grablytic/engine"
     private val PROGRESS_CHANNEL = "com.theonly.grablytic/progress"
 
-    private var eventSink: EventChannel.EventSink? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var methodChannel: MethodChannel? = null
     // T2-6: FIFO of share URLs (was a single nullable var — two rapid
@@ -41,12 +40,6 @@ class MainActivity : FlutterActivity() {
     // the oldest. Thread-safe for onNewIntent vs method-channel threads.
     private val sharedUrls = java.util.concurrent.ConcurrentLinkedQueue<String>()
     private var py: Python? = null
-    private val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, EngineEventListener>()
-    // Terminals that arrived while Flutter had no EventChannel listener
-    // (activity-recreation gap). id -> eventJson, flushed once on the next
-    // onListen then cleared. Live-delivered terminals are never buffered,
-    // so neither DownloadService nor Dart sees a duplicate.
-    private val undeliveredTerminals = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private var dataDir: String? = null
     private var outputDir: String? = null
@@ -62,6 +55,157 @@ class MainActivity : FlutterActivity() {
         // Terminals missed per detach gap (mirrors the engine queue vocabulary).
         private const val MAX_UNDELIVERED_TERMINALS = 50
         private val TERMINAL_EVENTS = setOf("finished", "error", "cancelled")
+
+        val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+        @Volatile
+        var eventSink: EventChannel.EventSink? = null
+        private val terminalLock = Any()
+        private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+        // Process-wide missed-terminal buffer (see instance comment above).
+        // Insertion-ordered eviction: the queue mirrors map keys oldest
+        // first, so overflow evicts the OLDEST id — never a random one
+        // (the old ConcurrentHashMap.keys.firstOrNull() was unordered).
+        private val undeliveredTerminals =
+            java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val undeliveredOrder =
+            java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+        // Stash one terminal for the next onListen. Same-id re-arrival
+        // refreshes recency instead of duplicating. Never throws.
+        private fun bufferTerminal(id: String, eventJson: String) {
+            synchronized(terminalLock) {
+                try {
+                    if (undeliveredTerminals.containsKey(id)) {
+                        undeliveredOrder.remove(id)
+                    } else {
+                        while (undeliveredTerminals.size >= MAX_UNDELIVERED_TERMINALS) {
+                            val oldest = undeliveredOrder.poll() ?: break
+                            undeliveredTerminals.remove(oldest)
+                        }
+                    }
+                    undeliveredTerminals[id] = eventJson
+                    undeliveredOrder.offer(id)
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        // Flush oldest-first to a live sink. Each entry is removed only
+        // after a successful success() call, so a mid-flush failure keeps
+        // the unsent tail buffered instead of dropping it (the old code
+        // cleared before the loop and broke on first throw).
+        private fun flushTerminals(events: EventChannel.EventSink) {
+            synchronized(terminalLock) {
+                while (true) {
+                    val id = undeliveredOrder.peek() ?: return
+                    val json = undeliveredTerminals[id] ?: run {
+                        undeliveredOrder.remove(id)
+                        continue
+                    }
+                    try {
+                        events.success(json)
+                    } catch (_: Exception) {
+                        return
+                    }
+                    undeliveredOrder.remove(id)
+                    undeliveredTerminals.remove(id)
+                }
+            }
+        }
+
+        fun reportTerminalTimeout(id: String) {
+            val eventJson = org.json.JSONObject().apply {
+                put("type", "event")
+                put("download_id", id)
+                put("event", "error")
+                put("error_type", "ERROR_TIMEOUT")
+                put("error_message", "Download paused: background execution limit reached. Re-open app to resume.")
+                put("suggests_vpn", false)
+            }.toString()
+
+            bufferTerminal(id, eventJson)
+            mainHandler.post {
+                eventSink?.let { flushTerminals(it) }
+            }
+        }
+
+        // Media-store visibility scan (companion-static with explicit
+        // context/dir: progress listeners outlive activity recreations and
+        // must not capture the Activity). Files land via raw rename
+        // (yt-dlp MoveFiles), which never notifies MediaStore — without
+        // this scan they exist on disk but stay invisible in every media
+        // browser. scanFileExact hits the finished path from the engine
+        // event (never thumbnail sidecars); the recursive walk is the
+        // self-healing fallback (real files land in Video/<name> and
+        // Audio/<name> subfolders). Never throws.
+        private fun scanRecentMedia(ctx: android.content.Context, outDir: String?) {
+            try {
+                val root = outDir?.let(::File)?.takeIf { it.isDirectory } ?: return
+                val cutoff = System.currentTimeMillis() - 2 * 60 * 60 * 1000
+                val files = ArrayList<File>()
+                collectRecentMedia(root, cutoff, files)
+                files.forEach { f ->
+                    try {
+                        android.media.MediaScannerConnection.scanFile(
+                            ctx, arrayOf(f.absolutePath), null, null,
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        private fun collectRecentMedia(dir: File, cutoff: Long, out: ArrayList<File>) {
+            val kids = try {
+                dir.listFiles()
+            } catch (_: Exception) {
+                null
+            } ?: return
+            for (f in kids) {
+                try {
+                    if (f.isDirectory) {
+                        // Skip hidden/cache dirs ( temp segments, .tmp work files).
+                        if (!f.name.startsWith(".")) collectRecentMedia(f, cutoff, out)
+                    } else if (f.isFile && f.lastModified() >= cutoff &&
+                        f.extension.lowercase() in MEDIA_EXTS &&
+                        !isThumbnailSidecar(f)
+                    ) {
+                        out.add(f)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        private fun scanFileExact(ctx: android.content.Context, path: String?) {
+            try {
+                if (path.isNullOrEmpty()) return
+                val f = File(path)
+                if (!f.isFile) return
+                if (f.extension.lowercase() !in MEDIA_EXTS) return
+                android.media.MediaScannerConnection.scanFile(
+                    ctx, arrayOf(f.absolutePath), null, null,
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        private fun isThumbnailSidecar(f: File): Boolean {
+            // writethumbnail sidecars share the media basename (<name>.jpg next
+            // to <name>.mp4). A same-basename media file means "thumbnail".
+            if (f.extension.lowercase() !in THUMB_EXTS) return false
+            val base = f.nameWithoutExtension
+            val parent = try { f.parentFile } catch (_: Exception) { null } ?: return false
+            return MEDIA_EXTS.any { ext ->
+                try {
+                    File(parent, "$base.$ext").isFile
+                } catch (_: Exception) {
+                    false
+                }
+            }
+        }
 
         private val MEDIA_EXTS = setOf(
             "mkv", "mp4", "webm", "m4v", "mov", "avi", "3gp", "3g2", "ts", "mts",
@@ -167,6 +311,75 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    @androidx.annotation.Keep
+    private class ProcessEngineEventListener(
+        private val appContext: android.content.Context,
+        private val outDir: String?,
+    ) : EngineEventListener {
+        private var noSinkWarned = false
+
+        override fun onEvent(eventJson: String) {
+            val terminalId = try {
+                val o = org.json.JSONObject(eventJson)
+                if (o.optString("type") == "event" && o.optString("event") in TERMINAL_EVENTS) {
+                    o.optString("download_id").takeIf { it.isNotEmpty() }
+                } else null
+            } catch (_: Exception) { null }
+
+            try {
+                val obj = org.json.JSONObject(eventJson)
+                if (obj.optString("type") == "event") {
+                    val id = obj.optString("download_id")
+                    if (id.isNotEmpty()) {
+                        when (obj.optString("event")) {
+                            "downloading" -> {
+                                val dl = obj.optLong("downloaded_bytes", 0)
+                                val total = obj.optLong("total_bytes", 0)
+                                val speed = obj.optLong("speed", 0)
+                                val pct = if (total > 0) ((dl * 100) / total).toInt().coerceIn(0, 99) else -1
+                                DownloadService.update(appContext, id, pct, speedBps = speed, downloadedBytes = dl, totalBytes = total)
+                            }
+                            "postprocessing" -> {
+                                DownloadService.updateStage(appContext, id, obj.optString("stage_label", "Processing..."))
+                            }
+                            "finished", "error", "cancelled" -> {
+                                activeCallbacks.remove(id)
+                                when (obj.optString("event")) {
+                                    "finished" -> {
+                                        DownloadService.finished(appContext, id)
+                                        scanFileExact(appContext, obj.optString("file_path", null))
+                                        scanRecentMedia(appContext, outDir)
+                                    }
+                                    "error" -> DownloadService.failed(appContext, id, obj.optString("error_message", null).takeIf { it.isNotEmpty() })
+                                    else -> DownloadService.done(appContext, id, true)
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            if (terminalId != null) {
+                // 1. Buffer synchronously FIRST: guarantees survival across any destroy/cancel
+                bufferTerminal(terminalId, eventJson)
+                // 2. Dispatch flush to Main thread via Handler
+                mainHandler.post {
+                    eventSink?.let { flushTerminals(it) }
+                }
+            } else {
+                val sink = eventSink
+                if (sink != null) {
+                    mainHandler.post {
+                        try { eventSink?.success(eventJson) } catch (_: Exception) {}
+                    }
+                } else if (!noSinkWarned) {
+                    noSinkWarned = true
+                    android.util.Log.w("GrablyticEngine", "EventChannel sink null — Flutter is not listening")
+                }
+            }
+        }
+    }
+
     private fun setupChannels(flutterEngine: FlutterEngine) {
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)
         methodChannel = channel
@@ -245,6 +458,20 @@ class MainActivity : FlutterActivity() {
                         val ffmpegLdPath = allLdDirs.joinToString(":").takeIf { it.isNotEmpty() }
                         val resolvedNodePath = nodeBin?.executable
                         val resolvedDenoPath = denoBin?.executable ?: dartDenoPath
+                        if (denoBin == null && nodeBin == null) {
+                            // No working JS runtime (e.g. armeabi-v7a ships
+                            // no deno and node probe failed): the Dart-sent
+                            // bin/ fallback above is NOT executable on
+                            // targetSdk > 28, so YouTube extraction will
+                            // fail at download time. Say so now in logcat
+                            // instead of surfacing minutes later as a
+                            // generic engine exec failure.
+                            android.util.Log.w(
+                                "BinaryPackages",
+                                "no working JS runtime (deno/node absent or probe-failed); " +
+                                    "YouTube EJS challenges cannot run on this device",
+                            )
+                        }
                         try {
                             val python = py ?: return@launch
                             val engine = python.getModule("grablytic_engine")
@@ -296,129 +523,7 @@ class MainActivity : FlutterActivity() {
                             val python = py ?: return@launch
                             val engine = python.getModule("grablytic_engine")
 
-                            val eventCallback = object : EngineEventListener {
-                                // First-failure diagnostics: every delivery
-                                // fault below is silent by design (a logging
-                                // path must never break downloads), so the
-                                // FIRST one warns loudly — it tells the next
-                                // diagnostics bundle exactly which hop died.
-                                var noSinkWarned = false
-                                var sinkFailedWarned = false
-                                override fun onEvent(eventJson: String) {
-                                    // Drive the keep-alive service from the same
-                                    // event stream (progress + terminal events).
-                                    try {
-                                        val obj = org.json.JSONObject(eventJson)
-                                        if (obj.optString("type") == "event") {
-                                            val id = obj.optString("download_id")
-                                            if (id.isNotEmpty()) {
-                                                when (obj.optString("event")) {
-                                                    "downloading" -> {
-                                                        val dl = obj.optLong("downloaded_bytes", 0)
-                                                        val total = obj.optLong("total_bytes", 0)
-                                                        val speed = obj.optLong("speed", 0)
-                                                        val pct = if (total > 0) {
-                                                            ((dl * 100) / total).toInt().coerceIn(0, 99)
-                                                        } else -1
-                                                        DownloadService.update(
-                                                            this@MainActivity, id, pct,
-                                                            speedBps = speed,
-                                                            downloadedBytes = dl,
-                                                            totalBytes = total,
-                                                        )
-                                                    }
-                                                    "postprocessing" -> {
-                                                        val stageLabel = obj.optString("stage_label", "Processing...")
-                                                        DownloadService.updateStage(
-                                                            this@MainActivity, id, stageLabel,
-                                                        )
-                                                    }
-                                                    "finished", "error", "cancelled" -> {
-                                                        // Terminal: the engine emits nothing more for
-                                                        // this id — release the callback holder (a
-                                                        // write-only GC root; never read elsewhere).
-                                                        activeCallbacks.remove(id)
-                                                        when (obj.optString("event")) {
-                                                    "finished" -> {
-                                                        DownloadService.finished(
-                                                            this@MainActivity, id,
-                                                        )
-                                                        // Exact file first: the engine reports the
-                                                        // finished media path in the event, so scan
-                                                        // THAT file (never the thumbnail sidecar —
-                                                        // sidecars must stay out of Gallery).
-                                                        // Recursive walk below stays as fallback.
-                                                        scanFileExact(obj.optString("file_path", null))
-                                                        scanRecentMedia()
-                                                    }
-                                                            "error" -> {
-                                                                val detail = obj.optString("error_message", null)
-                                                                    .takeIf { it.isNotEmpty() }
-                                                                DownloadService.failed(
-                                                                    this@MainActivity, id, detail,
-                                                                )
-                                                            }
-                                                            else -> {
-                                                                DownloadService.done(
-                                                                    this@MainActivity, id, true,
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } catch (_: Exception) {
-                                    }
-                                    scope.launch(Dispatchers.Main) {
-                                        val sink = eventSink
-                                        if (sink == null) {
-                                            // No listener: progress/postprocessing are
-                                            // transient (the next tick heals), but a
-                                            // dropped terminal wedges the card at 99%
-                                            // until restart — stash it for onListen.
-                                            val terminalId = try {
-                                                val o = org.json.JSONObject(eventJson)
-                                                if (o.optString("type") == "event" &&
-                                                    o.optString("event") in TERMINAL_EVENTS) {
-                                                    o.optString("download_id")
-                                                        .takeIf { it.isNotEmpty() }
-                                                } else null
-                                            } catch (_: Exception) {
-                                                null
-                                            }
-                                            if (terminalId != null) {
-                                                if (undeliveredTerminals.size >= MAX_UNDELIVERED_TERMINALS) {
-                                                    undeliveredTerminals.keys.firstOrNull()?.let {
-                                                        undeliveredTerminals.remove(it)
-                                                    }
-                                                }
-                                                undeliveredTerminals[terminalId] = eventJson
-                                            } else if (!noSinkWarned) {
-                                                noSinkWarned = true
-                                                android.util.Log.w(
-                                                    "GrablyticEngine",
-                                                    "EventChannel sink null — Flutter is not listening; " +
-                                                        "progress UI will stall while the download continues",
-                                                )
-                                            }
-                                            return@launch
-                                        }
-                                        try {
-                                            sink.success(eventJson)
-                                        } catch (e: Exception) {
-                                            if (!sinkFailedWarned) {
-                                                sinkFailedWarned = true
-                                                android.util.Log.w(
-                                                    "GrablyticEngine",
-                                                    "EventChannel sink failed: ${e.message}",
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
+                            val eventCallback = ProcessEngineEventListener(applicationContext, outputDir)
                             if (downloadId != null) {
                                 activeCallbacks[downloadId] = eventCallback
                             }
@@ -463,6 +568,9 @@ class MainActivity : FlutterActivity() {
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
                             val jsonStr = pyJson(startResult)
+                            if (downloadId != null && !jsonStr.contains("\"success\": true") && !jsonStr.contains("\"success\":true")) {
+                                activeCallbacks.remove(downloadId)
+                            }
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
                             if (downloadId != null) {
@@ -491,16 +599,7 @@ class MainActivity : FlutterActivity() {
                             val python = py ?: return@launch
                             val engine = python.getModule("grablytic_engine")
                             val status = engine.callAttr("get_queue_status")
-                            // Desktop parity (__main__.py): {"success": True, **status}.
-                            val jsonStr = pyJson(status).let { raw ->
-                                try {
-                                    val obj = org.json.JSONObject(raw)
-                                    obj.put("success", true)
-                                    obj.toString()
-                                } catch (_: Exception) {
-                                    raw
-                                }
-                            }
+                            val jsonStr = pyJson(status)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) { result.error("ERROR_QUEUE_FAILED", e.message, null) }
@@ -776,107 +875,22 @@ class MainActivity : FlutterActivity() {
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, PROGRESS_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
+                private var events: EventChannel.EventSink? = null
+
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    this.events = events
                     eventSink = events
-                    // Deliver terminals missed during the detach gap, each
-                    // exactly once (cleared here; live ones never buffered).
-                    if (undeliveredTerminals.isNotEmpty() && events != null) {
-                        val pending = undeliveredTerminals.values.toList()
-                        undeliveredTerminals.clear()
-                        for (e in pending) {
-                            try {
-                                events.success(e)
-                            } catch (_: Exception) {
-                                break
-                            }
-                        }
-                    }
+                    events?.let { flushTerminals(it) }
                 }
+
                 override fun onCancel(arguments: Any?) {
-                    eventSink = null
+                    if (eventSink === events) {
+                        eventSink = null
+                    }
+                    this.events = null
                 }
             }
         )
-    }
-
-    /**
-     * Makes freshly moved downloads visible to Gallery/Files apps.
-     * Files land via raw rename (yt-dlp MoveFiles), which never notifies
-     * MediaStore — without this scan they exist on disk but are invisible
-     * in every media browser (the "video don't get saved" report).
-     *
-     * Two layers: [scanFileExact] hits the finished path from the engine
-     * event; this walk is the self-healing fallback. The walk MUST be
-     * recursive — real files land in Video/<name> and Audio/<name>
-     * subfolders (config.py subfolder split), which the old top-level-only
-     * listing never reached. Never throws. Never scans thumbnail sidecars.
-     */
-    private fun scanRecentMedia() {
-        try {
-            val root = outputDir?.let(::File)?.takeIf { it.isDirectory } ?: return
-            val cutoff = System.currentTimeMillis() - 2 * 60 * 60 * 1000
-            val files = ArrayList<File>()
-            collectRecentMedia(root, cutoff, files)
-            files.forEach { f ->
-                try {
-                    android.media.MediaScannerConnection.scanFile(
-                        applicationContext, arrayOf(f.absolutePath), null, null,
-                    )
-                } catch (_: Exception) {
-                }
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun collectRecentMedia(dir: File, cutoff: Long, out: ArrayList<File>) {
-        val kids = try {
-            dir.listFiles()
-        } catch (_: Exception) {
-            null
-        } ?: return
-        for (f in kids) {
-            try {
-                if (f.isDirectory) {
-                    // Skip hidden/cache dirs ( temp segments, .tmp work files).
-                    if (!f.name.startsWith(".")) collectRecentMedia(f, cutoff, out)
-                } else if (f.isFile && f.lastModified() >= cutoff &&
-                    f.extension.lowercase() in MEDIA_EXTS &&
-                    !isThumbnailSidecar(f)
-                ) {
-                    out.add(f)
-                }
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    private fun scanFileExact(path: String?) {
-        try {
-            if (path.isNullOrEmpty()) return
-            val f = File(path)
-            if (!f.isFile) return
-            if (f.extension.lowercase() !in MEDIA_EXTS) return
-            android.media.MediaScannerConnection.scanFile(
-                applicationContext, arrayOf(f.absolutePath), null, null,
-            )
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun isThumbnailSidecar(f: File): Boolean {
-        // writethumbnail sidecars share the media basename (<name>.jpg next
-        // to <name>.mp4). A same-basename media file means "thumbnail".
-        if (f.extension.lowercase() !in THUMB_EXTS) return false
-        val base = f.nameWithoutExtension
-        val parent = try { f.parentFile } catch (_: Exception) { null } ?: return false
-        return MEDIA_EXTS.any { ext ->
-            try {
-                File(parent, "$base.$ext").isFile
-            } catch (_: Exception) {
-                false
-            }
-        }
     }
 
     override fun onDestroy() {

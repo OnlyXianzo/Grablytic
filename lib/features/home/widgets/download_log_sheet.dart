@@ -102,13 +102,19 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
         return;
       }
       final diskEntries = <LogEntry>[];
+      // Cap the fallback parse: full-file split+scan of multi-MB rolling
+      // logs plus an unbounded entry list janked frames on open. Newest
+      // files first, newest lines win via the trailing cap below.
+      const maxDiskEntries = 500;
       for (final file in files.take(3)) {
         final content = await AppLogger.readLogFile(file);
         for (final line in content.split('\n')) {
           if (line.contains(widget.downloadId)) {
             diskEntries.add(_parseDiskLine(line));
+            if (diskEntries.length >= maxDiskEntries) break;
           }
         }
+        if (diskEntries.length >= maxDiskEntries) break;
       }
       if (mounted) {
         setState(() {

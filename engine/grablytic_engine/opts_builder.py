@@ -1,7 +1,197 @@
-from grablytic_engine.config import DEFAULT_CFG, coerce_config
+import os
+import re
+
+from grablytic_engine.config import DEFAULT_CFG, coerce_config, sanitize_config
 from grablytic_engine.paths import get_paths
 from grablytic_engine.format_selector import build_format_string
 from grablytic_engine.hooks import build_progress_hook, build_postprocessor_hook
+
+
+_PLAYLIST_SEGMENT_RE = re.compile(r"^(\d+)(?:([-:])(\d+))?$")
+_SUBTITLE_LANG_RE = re.compile(r"^-?(?:all|[a-zA-Z0-9_-]{1,32})$")
+
+SAFE_COMPAT_OPTIONS = frozenset({
+    "no-live-chat",
+    "no-youtube-channel-redirect",
+    "no-youtube-unavailable-videos",
+    "no-youtube-prefer-utc-upload-date",
+    "prefer-vp9-sort",
+    "format-sort",
+    "format-spec",
+    "multistreams",
+    "no-playlist-metafiles",
+    "no-attach-info-json",
+    "embed-metadata",
+    "seperate-video-versions",
+    "no-clean-infojson",
+    "no-keep-subs",
+    "mtime-by-default",
+    "manifest-filesize-approx",
+    "abort-on-error",
+})
+
+
+def sanitize_playlist_items(val: str | list | tuple | None, max_items: int = 500, max_index: int = 10000) -> str | None:
+    """Sanitize and validate playlist_items specification.
+
+    Prevents flat-fetch DoS attacks and unhandled parser ValueError exceptions.
+    Returns sanitized string if valid, None if invalid or out of bounds.
+    """
+    if val is None:
+        return None
+    if isinstance(val, (list, tuple)):
+        items = []
+        for x in val:
+            try:
+                n = int(x)
+                if 1 <= n <= max_index:
+                    items.append(str(n))
+                else:
+                    return None
+            except (ValueError, TypeError):
+                return None
+        if not items or len(items) > max_items:
+            return None
+        return ",".join(items)
+
+    if not isinstance(val, str):
+        return None
+
+    val_str = val.strip()
+    if not val_str:
+        return None
+
+    tokens = val_str.split(",")
+    if any(not t.strip() for t in tokens):
+        return None
+
+    total_items = 0
+    clean_parts = []
+    for token in tokens:
+        token = token.strip()
+        m = _PLAYLIST_SEGMENT_RE.match(token)
+        if not m:
+            return None
+        start_str, sep, end_str = m.group(1), m.group(2), m.group(3)
+        start = int(start_str)
+        if start <= 0 or start > max_index:
+            return None
+        if sep is not None:
+            end = int(end_str)
+            if end <= 0 or end > max_index or start > end:
+                return None
+            span = end - start + 1
+            if span > max_items:
+                return None
+            total_items += span
+            clean_parts.append(f"{start}{sep}{end}")
+        else:
+            total_items += 1
+            clean_parts.append(str(start))
+
+    if total_items > max_items:
+        return None
+
+    return ",".join(clean_parts)
+
+
+def sanitize_ratelimit(val) -> int | None:
+    """Coerce and clamp rate_limit string/number to integer bytes/sec.
+
+    yt-dlp expects numeric ratelimit (int or float). Strings cause TypeError
+    during active transfers. Zero causes ZeroDivisionError. Very low values
+    cause thread hangs.
+    """
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        num = int(val)
+    elif isinstance(val, str):
+        s = val.strip().upper()
+        if not s:
+            return None
+        units = {"K": 1024, "KB": 1024, "M": 1024**2, "MB": 1024**2, "G": 1024**3, "GB": 1024**3}
+        multiplier = 1
+        num_str = s
+        for unit, mult in sorted(units.items(), key=lambda x: -len(x[0])):
+            if s.endswith(unit):
+                multiplier = mult
+                num_str = s[:-len(unit)].strip()
+                break
+        try:
+            num = int(float(num_str) * multiplier)
+        except (ValueError, TypeError):
+            return None
+    else:
+        return None
+
+    if num <= 0:
+        return None
+    return max(1024, min(num, 1073741824))
+
+
+def sanitize_cookiefile(path: str | None) -> str | None:
+    """Validate cookies file path for security and existence.
+
+    Must be an absolute path to an existing, readable regular file.
+    Rejects directories, nonexistent paths, relative paths, and unreadable files.
+    """
+    if not path or not isinstance(path, str):
+        return None
+    path_str = path.strip()
+    if not os.path.isabs(path_str):
+        return None
+    try:
+        real_path = os.path.realpath(path_str)
+        if not os.path.isfile(real_path):
+            return None
+        if not os.access(real_path, os.R_OK):
+            return None
+        return real_path
+    except Exception:
+        return None
+
+
+def sanitize_compat_opts(val: str | list | tuple | None) -> list[str] | None:
+    """Filter compat_options against a strict allowlist of safe flags."""
+    if not val:
+        return None
+    tokens = []
+    if isinstance(val, str):
+        tokens = [s.strip() for s in re.split(r"[\s,]+", val) if s.strip()]
+    elif isinstance(val, (list, tuple)):
+        for item in val:
+            if isinstance(item, str):
+                tokens.extend(s.strip() for s in re.split(r"[\s,]+", item) if s.strip())
+    else:
+        return None
+
+    safe = [tok for tok in tokens if tok in SAFE_COMPAT_OPTIONS]
+    return safe if safe else None
+
+
+def sanitize_subtitleslangs(val: list | tuple | str | None) -> list[str]:
+    """Validate and sanitize subtitleslangs tokens.
+
+    Guards against ReDoS in yt-dlp's re.compile(val) and type errors.
+    Returns a sanitized list of language codes, defaulting to ['en'].
+    """
+    if not val:
+        return ["en"]
+    tokens = []
+    if isinstance(val, str):
+        tokens = [s.strip() for s in val.split(",") if s.strip()]
+    elif isinstance(val, (list, tuple)):
+        for item in val:
+            if isinstance(item, str) and item.strip():
+                tokens.append(item.strip())
+    else:
+        return ["en"]
+
+    valid = [tok for tok in tokens if _SUBTITLE_LANG_RE.fullmatch(tok)]
+    valid = valid[:50]
+    return valid if valid else ["en"]
+
 
 
 def _is_safe_outtmpl(tmpl) -> bool:
@@ -146,7 +336,7 @@ def build_ydl_opts(
 ) -> dict:
     # Belt-and-braces: callers coerce, but a raw Chaquopy HashMap proxy
     # dies on `{**...}` below — normalize first, never crash here.
-    cfg = {**DEFAULT_CFG, **coerce_config(config)}
+    cfg = sanitize_config({**DEFAULT_CFG, **coerce_config(config)})
     paths = get_paths()
 
     # SEC-04: confine the output template. yt-dlp honors absolute-path
@@ -236,12 +426,13 @@ def build_ydl_opts(
         if _os.path.isfile(_ffmpeg) and _os.access(_ffmpeg, _os.X_OK):
             opts["ffmpeg_location"] = _ffmpeg
 
-    cookies = paths.get("cookies_path")
+    cookies = sanitize_cookiefile(paths.get("cookies_path"))
     if cookies:
         opts["cookiefile"] = cookies
 
-    if cfg.get("rate_limit"):
-        opts["ratelimit"] = cfg["rate_limit"]
+    ratelimit = sanitize_ratelimit(cfg.get("rate_limit"))
+    if ratelimit is not None:
+        opts["ratelimit"] = ratelimit
 
     if cfg.get("proxy"):
         from grablytic_engine.url_guard import sanitized_proxy as _sanitized_proxy
@@ -301,8 +492,9 @@ def build_ydl_opts(
     if cfg.get("no_playlist"):
         opts["noplaylist"] = True
 
-    if cfg.get("playlist_items"):
-        opts["playlist_items"] = str(cfg["playlist_items"])
+    playlist_items = sanitize_playlist_items(cfg.get("playlist_items"))
+    if playlist_items:
+        opts["playlist_items"] = playlist_items
     if cfg.get("playlist_rev"):
         opts["playlistreverse"] = True
     if cfg.get("playlist_rand"):
@@ -408,7 +600,7 @@ def build_ydl_opts(
             # ever written for sidecar-only).
             opts["writesubtitles"] = cfg.get("writesubtitles", False)
             opts["writeautomaticsub"] = cfg.get("writeautomaticsub", False)
-            opts["subtitleslangs"] = cfg.get("subtitleslangs", ["en"])
+            opts["subtitleslangs"] = sanitize_subtitleslangs(cfg.get("subtitleslangs"))
         if subs_enabled and cfg.get("embedsubtitles"):
             # `embedsubs` is not a real YoutubeDL param (silently ignored).
             # The CLI maps --embed-subs to the FFmpegEmbedSubtitle PP, so we
@@ -467,8 +659,9 @@ def build_ydl_opts(
     if cfg.get("verbose"):
         opts["verbose"] = True
 
-    if cfg.get("compat_options"):
-        opts["compat_opts"] = [cfg["compat_options"]]
+    compat = sanitize_compat_opts(cfg.get("compat_options"))
+    if compat:
+        opts["compat_opts"] = compat
 
     if progress_queue is not None:
         opts["progress_hooks"] = [build_progress_hook(progress_queue, download_id or "", event_callback)]

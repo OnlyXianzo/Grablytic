@@ -19,6 +19,9 @@ def _build_search_url(query: str, site: str, limit: int) -> str:
     return f"{prefix}{query.strip()}"
 
 
+_MAX_QUERY_LENGTH = 500
+
+
 def search(
     query: str,
     site: str = "youtube",
@@ -32,6 +35,13 @@ def search(
             "success": False,
             "error_type": "ERROR_INVALID_PARAM",
             "error_message": "Search query cannot be empty",
+        }
+
+    if len(query_clean) > _MAX_QUERY_LENGTH:
+        return {
+            "success": False,
+            "error_type": "ERROR_INVALID_PARAM",
+            "error_message": f"Search query exceeds maximum length of {_MAX_QUERY_LENGTH} characters",
         }
 
     try:
@@ -52,9 +62,10 @@ def search(
         "force_generic_extractor": False,
     }
 
-    cookies = cfg.get("cookies_path") or paths.get("cookies_path")
-    if cookies:
-        opts["cookiefile"] = cookies
+    from grablytic_engine.opts_builder import sanitize_cookiefile
+    cookiefile = sanitize_cookiefile(cfg.get("cookies_path") or paths.get("cookies_path"))
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
     from grablytic_engine.url_guard import sanitized_proxy
     proxy = sanitized_proxy(cfg.get("proxy"))
     if proxy:

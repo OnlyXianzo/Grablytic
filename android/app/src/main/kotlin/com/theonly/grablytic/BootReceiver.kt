@@ -36,41 +36,8 @@ class BootReceiver : BroadcastReceiver() {
         Log.i(TAG, "Handling broadcast: $action")
 
         try {
-            // Locate grablytic.db in Flutter documents directory
-            val filesDir = context.filesDir
-            val appFlutterDir = File(filesDir.parentFile, "app_flutter")
-            val dbFile = File(appFlutterDir, "grablytic.db")
-            if (!dbFile.exists()) {
-                Log.d(TAG, "No database file found at ${dbFile.absolutePath}")
-                return
-            }
-
-            val db = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath,
-                null,
-                SQLiteDatabase.OPEN_READWRITE
-            )
-
-            db.use { database ->
-                val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-                    timeZone = TimeZone.getTimeZone("UTC")
-                }
-                val now = sdf.format(Date())
-
-                // Mark in-flight downloads as interrupted
-                val values = android.content.ContentValues().apply {
-                    put("status", "interrupted")
-                    put("updatedAt", now)
-                }
-
-                val affected = database.update(
-                    "downloads",
-                    values,
-                    "status IN (?, ?)",
-                    arrayOf("downloading", "queued")
-                )
-                Log.i(TAG, "Swept $affected active downloads to interrupted on boot")
-            }
+            val count = DownloadDbSweepHelper.sweepActiveToInterrupted(context)
+            Log.i(TAG, "Swept $count active downloads to interrupted on boot")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sweep downloads on boot: ${e.message}", e)
         }

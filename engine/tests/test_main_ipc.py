@@ -43,6 +43,42 @@ def test_paths_set_envelope(tmp_path, monkeypatch, capsys):
 
 
 @pytest.mark.unit
+def test_paths_set_forwards_nodejs_path(tmp_path, monkeypatch, capsys):
+    """Regression test for FLAW E-R3: paths/set must forward nodejs_path."""
+    from grablytic_engine.paths import get_paths
+    node_bin = tmp_path / "node"
+    node_bin.touch()
+    node_bin.chmod(0o755)
+
+    resps = _run_lines(monkeypatch, capsys, [json.dumps({
+        "id": "p_node", "method": "paths/set",
+        "params": {
+            "data_dir": str(tmp_path), "output_dir": str(tmp_path),
+            "cache_dir": str(tmp_path),
+            "nodejs_path": str(node_bin),
+        },
+    })])
+    assert _by_id(resps, "p_node") == {"id": "p_node", "result": {"success": True}}
+    assert get_paths()["nodejs_path"] == str(node_bin.resolve())
+
+
+@pytest.mark.unit
+def test_download_queue_status_ipc_envelope(tmp_path, monkeypatch, capsys):
+    """Regression test for FLAW E-R3: download/queue_status returns success envelope."""
+    resps = _run_lines(monkeypatch, capsys, [
+        json.dumps({"id": "s1", "method": "paths/set", "params": {
+            "data_dir": str(tmp_path), "output_dir": str(tmp_path),
+            "cache_dir": str(tmp_path)}}),
+        json.dumps({"id": "q_stat", "method": "download/queue_status", "params": {}}),
+    ])
+    result = _by_id(resps, "q_stat")["result"]
+    assert result["success"] is True
+    assert "active" in result and isinstance(result["active"], list)
+    assert "queued" in result and isinstance(result["queued"], list)
+    assert "max_concurrent" in result and isinstance(result["max_concurrent"], int)
+
+
+@pytest.mark.unit
 def test_unknown_method_error_envelope(monkeypatch, capsys):
     resps = _run_lines(monkeypatch, capsys, [
         json.dumps({"id": "s1", "method": "paths/set", "params": {

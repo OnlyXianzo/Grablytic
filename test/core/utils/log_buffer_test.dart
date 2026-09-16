@@ -572,4 +572,46 @@ void main() {
       expect(buffer.getEntriesForDownload('dl-1'), isEmpty);
     });
   });
+
+  group('bounded eviction (F1)', () {
+    test('global cap drops oldest first, order preserved', () {
+      final buffer = LogBuffer(maxEntries: 5);
+      for (var i = 0; i < 8; i++) {
+        buffer.add(_entry(message: 'm$i'));
+      }
+      expect(buffer.entries, hasLength(5));
+      expect(buffer.entries.first.message, 'm3');
+      expect(buffer.entries.last.message, 'm7');
+    });
+
+    test('per-download cap drops oldest first', () {
+      final buffer = LogBuffer(maxEntriesPerDownload: 3);
+      for (var i = 0; i < 5; i++) {
+        buffer.add(_entry(message: 'm$i', downloadId: 'dl-1'));
+      }
+      final got = buffer.getEntriesForDownload('dl-1');
+      expect(got, hasLength(3));
+      expect(got.first.message, 'm2');
+    });
+
+    test('LRU evicts oldest download bucket', () {
+      final buffer = LogBuffer(maxRetainedDownloads: 2);
+      buffer.add(_entry(message: 'a', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'b', downloadId: 'dl-2'));
+      buffer.add(_entry(message: 'c', downloadId: 'dl-3'));
+      expect(buffer.getEntriesForDownload('dl-1'), isEmpty);
+      expect(buffer.getEntriesForDownload('dl-2'), hasLength(1));
+      expect(buffer.getEntriesForDownload('dl-3'), hasLength(1));
+    });
+
+    test('LRU touch keeps active download bucket', () {
+      final buffer = LogBuffer(maxRetainedDownloads: 2);
+      buffer.add(_entry(message: 'a', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'b', downloadId: 'dl-2'));
+      buffer.add(_entry(message: 'a2', downloadId: 'dl-1'));
+      buffer.add(_entry(message: 'c', downloadId: 'dl-3'));
+      expect(buffer.getEntriesForDownload('dl-1'), hasLength(2));
+      expect(buffer.getEntriesForDownload('dl-2'), isEmpty);
+    });
+  });
 }

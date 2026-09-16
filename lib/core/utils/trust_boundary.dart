@@ -4,6 +4,8 @@
 /// user-pasted text (proxy settings, pasted flag templates) must never
 /// reach file deletion, image rendering, log export, or the network stack
 /// verbatim. All helpers are pure and never throw.
+library;
+
 import 'package:path/path.dart' as p;
 
 /// Schemes allowed for outbound proxy settings.

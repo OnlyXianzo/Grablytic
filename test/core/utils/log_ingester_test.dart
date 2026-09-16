@@ -29,6 +29,28 @@ void main() {
         expect(controller.hasListener, isTrue);
       });
 
+      test('restart replaces the previous subscription (no duplicates)',
+          () async {
+        final first = StreamController<Map<String, dynamic>>.broadcast();
+        final second = StreamController<Map<String, dynamic>>.broadcast();
+        addTearDown(first.close);
+        addTearDown(second.close);
+        ingester.start(first.stream);
+        ingester.start(second.stream);
+        expect(first.hasListener, isFalse);
+
+        second.add({
+          'type': 'log',
+          'ts': '2026-07-06T10:00:00',
+          'level': 'INFO',
+          'logger': 'engine',
+          'message': 'only once',
+        });
+        await Future<void>.delayed(Duration.zero);
+        expect(
+            buffer.entries.where((e) => e.message == 'only once'), hasLength(1));
+      });
+
       test('handles multiple events in sequence', () async {
         ingester.start(controller.stream);
 
@@ -327,5 +349,38 @@ void main() {
         expect(() => ingester.stop(), returnsNormally);
       });
     });
+
+    group('stream error handling (F-R2)', () {
+      test('absorbs stream errors without throwing into zone', () async {
+        ingester.start(controller.stream);
+        expect(controller.hasListener, isTrue);
+
+        controller.addError(Exception('Simulated platform channel error'));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(controller.hasListener, isTrue);
+      });
+
+      test('continues ingesting logs after stream error (cancelOnError: false)',
+          () async {
+        ingester.start(controller.stream);
+
+        controller.addError(Exception('Transient bridge error'));
+        await Future<void>.delayed(Duration.zero);
+
+        controller.add({
+          'type': 'log',
+          'ts': '2026-07-06T12:00:00',
+          'level': 'INFO',
+          'logger': 'engine',
+          'message': 'log after error',
+        });
+        await Future<void>.delayed(Duration.zero);
+
+        expect(buffer.entries, hasLength(1));
+        expect(buffer.entries.single.message, 'log after error');
+      });
+    });
   });
 }
+

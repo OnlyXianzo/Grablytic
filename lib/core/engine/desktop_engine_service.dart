@@ -80,9 +80,12 @@ class DesktopEngineService implements EngineService {
   set processForTesting(Process? p) => _process = p;
 
   @visibleForTesting
-  void attachProcessForTesting(Process p) {
+  void attachProcessForTesting(Process p, {bool wireStreams = false}) {
     _process = p;
     _running = true;
+    if (wireStreams) {
+      _wireProcessStreams(p);
+    }
     p.exitCode.then((code) {
       _running = false;
       if (!_disposed && code != 0 && _process == p) {
@@ -91,18 +94,40 @@ class DesktopEngineService implements EngineService {
     });
   }
 
+  @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
-    _stdoutSubscription?.cancel();
-    _stderrSubscription?.cancel();
+    try {
+      _stdoutSubscription?.cancel();
+    } catch (_) {}
+    try {
+      _stderrSubscription?.cancel();
+    } catch (_) {}
+    _stdoutSubscription = null;
+    _stderrSubscription = null;
     final oldProcess = _process;
     _process = null;
     _running = false;
-    oldProcess?.kill();
-    _progressController.close();
+    try {
+      oldProcess?.kill();
+    } catch (_) {}
+    try {
+      if (!_progressController.isClosed) _progressController.close();
+    } catch (_) {}
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
-        completer.completeError(Exception('Engine disposed'));
+        // Complete with a failure RESULT, not an error: during provider
+        // teardown the awaiting FutureProviders may already be gone, and an
+        // unlistened error future fails widget tests and pollutes reports.
+        // Every _sendRequest caller already handles success:false maps.
+        try {
+          completer.complete({
+            'success': false,
+            'error_type': 'ERROR_DISPOSED',
+            'error_message': 'Engine disposed',
+          });
+        } catch (_) {}
       }
     }
     _pending.clear();
@@ -212,17 +237,7 @@ class DesktopEngineService implements EngineService {
       runInShell: false,
     );
 
-    _stdoutSubscription = _process!.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(_handleLine);
-
-    _stderrSubscription = _process!.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      AppLogger.warn(line, tag: 'engine-stderr');
-    });
+    _wireProcessStreams(_process!);
 
     final currentProcess = _process!;
     currentProcess.exitCode.then((code) {
@@ -234,6 +249,48 @@ class DesktopEngineService implements EngineService {
 
     _running = true;
     _reconnectAttempts = 0;
+  }
+
+  void _wireProcessStreams(Process process) {
+    _stdoutSubscription = process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          _handleLine,
+          onError: (Object error, StackTrace stackTrace) {
+            AppLogger.error(
+              'Engine stdout error: $error',
+              tag: 'engine',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            _running = false;
+            if (!_disposed && _process == process) {
+              _restart();
+            }
+          },
+          onDone: () {
+            AppLogger.info('Engine stdout stream closed', tag: 'engine');
+            _running = false;
+            if (!_disposed && _process == process) {
+              _restart();
+            }
+          },
+          cancelOnError: true,
+        );
+
+    _stderrSubscription = process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          (line) {
+            AppLogger.warn(line, tag: 'engine-stderr');
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            AppLogger.warn('Engine stderr error: $error', tag: 'engine-stderr');
+          },
+          cancelOnError: false,
+        );
   }
 
   void _restart() {

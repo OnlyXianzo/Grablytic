@@ -48,7 +48,11 @@ class ObservedSourcesPollWorker(
     companion object {
         const val TAG = "ObservedSourcesWorker"
         const val WORK_NAME = "observed-sources-poll"
-        private const val NOTIF_CHANNEL_COMPLETE = "grablytic_downloads_complete"
+        // Must match DownloadService.CHANNEL_COMPLETE ("Download complete",
+        // HIGH): the old private id "grablytic_downloads_complete" was never
+        // created anywhere, so API 26+ silently dropped every background
+        // poll notification while logs looked healthy.
+        private const val NOTIF_CHANNEL_COMPLETE = "grablytic_complete"
 
         fun schedule(
             context: Context,
@@ -418,8 +422,27 @@ class ObservedSourcesPollWorker(
         }
     }
 
+    private fun ensureCompleteChannel() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return
+            val mgr = applicationContext.getSystemService(
+                android.app.NotificationManager::class.java) ?: return
+            if (mgr.getNotificationChannel(NOTIF_CHANNEL_COMPLETE) == null) {
+                mgr.createNotificationChannel(
+                    android.app.NotificationChannel(
+                        NOTIF_CHANNEL_COMPLETE,
+                        "Download complete",
+                        android.app.NotificationManager.IMPORTANCE_HIGH,
+                    ).apply { description = "Alerts when a download finishes" },
+                )
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun postNotification(count: Int) {
         try {
+            ensureCompleteChannel()
             if (NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()) {
                 val intent = Intent(applicationContext, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
