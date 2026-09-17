@@ -747,6 +747,31 @@ class DesktopEngineService implements EngineService {
           extra: {'supported': false});
 
   @override
+  Future<Map<String, dynamic>> openFile(String path) async {
+    // Desktop opens via the OS resolver; never throws — UI falls back to
+    // showing the path when no handler exists.
+    try {
+      final os = Platform.operatingSystem;
+      if (os == 'linux') {
+        await Process.run('xdg-open', [path]);
+      } else if (os == 'macos') {
+        await Process.run('open', [path]);
+      } else if (os == 'windows') {
+        await Process.run('explorer', [path]);
+      } else {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_UNSUPPORTED',
+            message: 'Not supported on this platform',
+            extra: {'supported': false});
+      }
+      return {'success': true};
+    } catch (e) {
+      return EngineEnvelope.error(
+          errorType: 'ERROR_OPEN_FAILED', message: 'Could not open file: $e');
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> syncSchedule({
     required bool enabled,
     int intervalMinutes = 60,

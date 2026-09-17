@@ -38,7 +38,8 @@ tap the link on your device, confirm — or in Obtainium: *Add App* → paste
 > (`com.theonly.truestream` → `com.theonly.grablytic`), so Android treats
 > this as a new app: if you installed the v0.0.1 TrueStream build, install
 > Grablytic fresh via the links above, then uninstall the old app (your
-> existing `Download/TrueStream` folder keeps being used — see
+> existing `Download/TrueStream` folder is renamed to `Download/Grablytic`
+> on first run — see
 > [`docs/troubleshooting.md`](docs/troubleshooting.md#truestream--grablytic-rename-data-migration)).
 > `v0.0.1` assets below keep their original `truestream-*` filenames and
 > checksums; new releases use `grablytic-*` names.

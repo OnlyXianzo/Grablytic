@@ -3,8 +3,13 @@ import 'package:flutter/material.dart';
 /// One explained accept/reject choice in the onboarding permissions step.
 ///
 /// Purely presentational: the parent owns the permission state and fires
-/// the actual system requests. Colors come from the active [ColorScheme]
-/// (light + dark correct) — never hardcoded whites.
+/// the actual system requests. Uses the dark translucent design language
+/// of onboarding beats 1-4 ([Colors.white10] card, white/white70 text)
+/// because the onboarding scaffold is always [Colors.black], regardless
+/// of the active theme — [ColorScheme.onSurface] would be black-on-black
+/// in light mode. Elevated buttons reuse
+/// [ColorScheme.primaryContainer]/[ColorScheme.onPrimaryContainer] to
+/// match the beat-4 Continue button (identical value in both themes).
 ///
 /// When [confirmed] is true (granted / already-on / acknowledged / not
 /// applicable on this device), the card shows [statusText] with a check
@@ -72,14 +77,20 @@ class PermissionExplainerCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    final elevatedStyle = ElevatedButton.styleFrom(
+      backgroundColor: colorScheme.primaryContainer,
+      foregroundColor: colorScheme.onPrimaryContainer,
+    );
+    const rejectStyle = ButtonStyle(
+      foregroundColor: WidgetStatePropertyAll(Colors.white70),
+    );
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
+        color: Colors.white10,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: Colors.white24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,22 +99,22 @@ class PermissionExplainerCard extends StatelessWidget {
             children: [
               Semantics(
                 label: title,
-                child: Icon(icon, color: colorScheme.primary, size: 28),
+                child: Icon(icon, color: Colors.white, size: 28),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   title,
                   style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurface,
+                    color: Colors.white,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
               if (confirmed)
-                Icon(
+                const Icon(
                   Icons.check_circle,
-                  color: colorScheme.primary,
+                  color: Colors.white,
                   size: 22,
                 ),
             ],
@@ -112,7 +123,7 @@ class PermissionExplainerCard extends StatelessWidget {
           Text(
             explanation,
             style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
+              color: Colors.white70,
             ),
           ),
           if (confirmed && statusText != null) ...[
@@ -120,7 +131,7 @@ class PermissionExplainerCard extends StatelessWidget {
             Text(
               statusText!,
               style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.primary,
+                color: Colors.white70,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -132,7 +143,10 @@ class PermissionExplainerCard extends StatelessWidget {
                 child: SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
                 ),
               )
             else if (singleAck)
@@ -140,6 +154,7 @@ class PermissionExplainerCard extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: ElevatedButton(
                   onPressed: onAccept,
+                  style: elevatedStyle,
                   child: Text(acceptLabel ?? 'Got it'),
                 ),
               )
@@ -150,17 +165,20 @@ class PermissionExplainerCard extends StatelessWidget {
                   if (rejectLabel != null)
                     TextButton(
                       onPressed: onReject,
+                      style: rejectStyle,
                       child: Text(rejectLabel!),
                     ),
                   const SizedBox(width: 8),
                   if (recoveryLabel != null)
                     ElevatedButton(
                       onPressed: onRecovery,
+                      style: elevatedStyle,
                       child: Text(recoveryLabel!),
                     )
                   else if (acceptLabel != null)
                     ElevatedButton(
                       onPressed: onAccept,
+                      style: elevatedStyle,
                       child: Text(acceptLabel!),
                     ),
                 ],

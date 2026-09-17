@@ -405,6 +405,13 @@ class MockEngineService implements EngineService {
           extra: {'supported': false});
 
   @override
+  Future<Map<String, dynamic>> openFile(String path) async =>
+      EngineEnvelope.error(
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false});
+
+  @override
   Future<Map<String, dynamic>> syncSchedule({
     required bool enabled,
     int intervalMinutes = 60,

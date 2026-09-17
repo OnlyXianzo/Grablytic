@@ -93,6 +93,12 @@ abstract class EngineService {
   /// throws; UI falls back to clipboard copy on `false`.
   Future<Map<String, dynamic>> openUrl(String url);
 
+  /// Open a downloaded media file in the system player (ACTION_VIEW with a
+  /// FileProvider content URI on Android, xdg-open/open/explorer on
+  /// desktop). Returns `{'success'}` — never throws; UI shows the file
+  /// path fallback on `false`.
+  Future<Map<String, dynamic>> openFile(String path);
+
   /// Synchronizes background scheduler parameters with the native platform
   /// for observed sources periodic background polling. Never throws.
   Future<Map<String, dynamic>> syncSchedule({

@@ -64,10 +64,12 @@ works, then uninstall the old app.
 
 What **is** preserved automatically:
 
-- **Download folder:** fresh installs use `Download/Grablytic`, but if a
-  legacy `Download/TrueStream` folder already exists it keeps being used
-  (see `getDefaultDownloadPath()` in `lib/providers/settings_provider.dart`).
-  Nothing is moved or deleted; you can point Settings at either folder.
+- **Download folder:** fresh installs use `Download/Grablytic`. If a
+  legacy `Download/TrueStream` folder exists, it is renamed to
+  `Download/Grablytic` best-effort on first run (see
+  `getDefaultDownloadPath()` in `lib/providers/settings_provider.dart`).
+  If the rename fails, the legacy folder keeps being used.
+  Nothing is deleted; you can point Settings at either folder.
 - **Linux native packages:** the `.deb` declares `Replaces:`/`Conflicts:`
   against the old `truestream` package; the AUR package declares
   `replaces=('truestream-bin')`. Remove any manually installed v0.0.1

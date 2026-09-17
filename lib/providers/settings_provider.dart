@@ -8,17 +8,48 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// - Fresh installs get `<parent>/Grablytic` (created on demand).
 /// - If a legacy `<parent>/TrueStream` folder already exists (and no
-///   `Grablytic` folder does), it keeps being used so the rename never
-///   orphans the user's existing files. Nothing is moved, renamed, or
+///   `Grablytic` folder does), it is renamed to `Grablytic` best-effort so
+///   new downloads adopt the new name without orphaning existing files.
+///   If the rename fails, the legacy path keeps being used. Nothing is
 ///   deleted — the user can switch folders at any time in Settings, and an
 ///   explicitly stored `downloadPath` always wins over both defaults.
 Future<String> _resolveDownloadDir(Directory parent) async {
   final next = Directory('${parent.path}/Grablytic');
   if (await next.exists()) return next.path;
   final legacy = Directory('${parent.path}/TrueStream');
-  if (await legacy.exists()) return legacy.path;
+  if (await legacy.exists()) {
+    // One-time best-effort migration TrueStream → Grablytic: rename the
+    // folder so new downloads land in Grablytic. If the rename fails
+    // (e.g. a Grablytic folder raced into existence, permission), fall
+    // back to the legacy path rather than orphaning user files.
+    try {
+      await legacy.rename(next.path);
+      return next.path;
+    } catch (_) {
+      if (await next.exists()) return next.path;
+      return legacy.path;
+    }
+  }
   await next.create(recursive: true);
   return next.path;
+}
+
+/// Safe default for simultaneous downloads based on CPU cores.
+///
+/// - ≤ 6 cores (typical mid-range phones): 2 — one downloading while one
+///   merges, without oversubscription or thermal throttling.
+/// - ≥ 8 cores (flagships): 3 — matches Seal's proven default.
+/// Values above the recommendation are allowed (up to 5) but the Settings
+/// UI warns about battery/CPU/thermal cost. Never throws (e.g. on web
+/// where Platform is unavailable) — falls back to 2.
+int recommendedMaxConcurrency() {
+  try {
+    final cores = Platform.numberOfProcessors;
+    if (cores >= 8) return 3;
+    return 2;
+  } catch (_) {
+    return 2;
+  }
 }
 
 Future<String> getDefaultDownloadPath() async {
@@ -308,7 +339,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
     final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
     final maxConcurrentDownloads =
-        (_prefs.getInt('maxConcurrentDownloads') ?? 2).clamp(1, 5);
+        (_prefs.getInt('maxConcurrentDownloads') ?? recommendedMaxConcurrency())
+            .clamp(1, 5);
     final useCookies = _prefs.getBool('useCookies') ?? false;
     final cookieProfilesJson = _prefs.getStringList('cookieProfiles') ?? [];
     final cookieProfiles = <Map<String, dynamic>>[];

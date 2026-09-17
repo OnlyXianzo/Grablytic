@@ -30,9 +30,10 @@ void main() {
         EngineMethods.notificationRequest,
         EngineMethods.notificationSettings,
         EngineMethods.openUrl,
+        EngineMethods.openFile,
         EngineMethods.syncSchedule,
       };
-      expect(ids, hasLength(24));
+      expect(ids, hasLength(25));
       expect(ids.every((id) => id.isNotEmpty), isTrue);
     });
 
@@ -50,6 +51,7 @@ void main() {
       expect(EngineMethods.getSharedUrl, 'intent/get_shared');
       expect(EngineMethods.sharedUrlInbound, 'intent/shared_url');
       expect(EngineMethods.openUrl, 'intent/open_url');
+      expect(EngineMethods.openFile, 'intent/open_file');
       expect(EngineMethods.syncSchedule, 'schedule/sync');
     });
   });
