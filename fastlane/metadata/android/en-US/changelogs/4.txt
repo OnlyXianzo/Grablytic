@@ -1,0 +1,6 @@
+Grablytic v0.0.4 (Build 4):
+• Tap a finished download to play it in your video player.
+• Resume interrupted downloads; simultaneous-download guard with battery warning.
+• Library grid view for videos, playlists, and history.
+• Faster, leaner engine: no more phantom waits, frozen cancels, or log-screen hangs.
+• Hardened downloads: safer links, verified installer, atomic updates.
