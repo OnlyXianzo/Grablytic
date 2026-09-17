@@ -27,6 +27,7 @@ abstract final class EngineMethods {
   static const String getSharedUrl = 'intent/get_shared';
   static const String sharedUrlInbound = 'intent/shared_url';
   static const String openUrl = 'intent/open_url';
+  static const String openFile = 'intent/open_file';
   static const String scanResume = 'resume/scan';
   static const String resumeReport = 'resume/report';
   static const String exportLog = 'log/export_to_downloads';

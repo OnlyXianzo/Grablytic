@@ -6,6 +6,7 @@ import 'package:grablytic/core/engine/engine_provider.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/library/screens/library_screen.dart';
 import 'package:grablytic/providers/download_provider.dart';
+import 'package:grablytic/providers/playlist_provider.dart';
 import 'package:grablytic/providers/settings_provider.dart';
 
 void main() {
@@ -251,6 +252,69 @@ void main() {
 
       expect(find.text('Thumb Video'), findsOneWidget);
       expect(find.byType(Image), findsOneWidget);
+    });
+  });
+
+  group('LibraryScreen playlists grid view', () {
+    late SharedPreferences prefs;
+    late MockEngineService mockEngine;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      prefs = await SharedPreferences.getInstance();
+      mockEngine = MockEngineService();
+    });
+
+    testWidgets('playlists tab renders list by default and grid after toggle',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            engineProvider.overrideWithValue(mockEngine),
+            downloadProvider.overrideWith((ref) {
+              return DownloadNotifier(mockEngine);
+            }),
+            playlistProvider.overrideWith((ref) {
+              final notifier = PlaylistNotifier(prefs);
+              notifier.createPlaylist('My Playlist');
+              return notifier;
+            }),
+          ],
+          child: const MaterialApp(
+            home: LibraryScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Switch to Playlists tab.
+      await tester.tap(find.text('Playlists'));
+      await tester.pumpAndSettle();
+
+      // List view by default: playlist name + item count, no GridView.
+      expect(find.text('My Playlist'), findsOneWidget);
+      expect(find.text('0 items'), findsOneWidget);
+      expect(find.byType(GridView), findsNothing);
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+
+      // Toggle to grid view.
+      await tester.tap(find.byTooltip('Grid view'));
+      await tester.pumpAndSettle();
+
+      // Grid view: same content inside a 2-column GridView.
+      expect(find.byType(GridView), findsOneWidget);
+      expect(find.text('My Playlist'), findsOneWidget);
+      expect(find.text('0 items'), findsOneWidget);
+      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+
+      // Toggle back to list view: pixel-identical list behavior.
+      await tester.tap(find.byTooltip('List view'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GridView), findsNothing);
+      expect(find.text('My Playlist'), findsOneWidget);
+      expect(find.text('0 items'), findsOneWidget);
     });
   });
 }

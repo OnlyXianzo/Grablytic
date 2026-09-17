@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 
 class MediaPreviewScreen extends ConsumerWidget {
@@ -131,7 +132,7 @@ class MediaPreviewScreen extends ConsumerWidget {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton.icon(
-                  onPressed: () => _openInPlayer(context, filePath),
+                  onPressed: () => _openInPlayer(context, ref, filePath),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colorScheme.primary,
                     foregroundColor: colorScheme.onPrimary,
@@ -190,7 +191,8 @@ class MediaPreviewScreen extends ConsumerWidget {
     return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
   }
 
-  void _openInPlayer(BuildContext context, String? path) {
+  Future<void> _openInPlayer(
+      BuildContext context, WidgetRef ref, String? path) async {
     if (path == null) return;
     if (!File(path).existsSync()) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -202,22 +204,45 @@ class MediaPreviewScreen extends ConsumerWidget {
       return;
     }
 
+    // Android: system player via FileProvider (MainActivity intent/open_file).
+    // Desktop: OS resolver via the engine (xdg-open/open/explorer).
+    // Never throws — falls back to showing the path.
+    if (Platform.isAndroid) {
+      bool opened = false;
+      try {
+        final res = await ref.read(engineProvider).openFile(path);
+        opened = res['success'] == true;
+      } catch (_) {}
+      if (!context.mounted) return;
+      if (opened) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No app can play this file.\nOpen file at: $path'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
+
     try {
-      if (Platform.isLinux) {
-        Process.run('xdg-open', [path]);
-      } else if (Platform.isMacOS) {
-        Process.run('open', [path]);
-      } else if (Platform.isWindows) {
-        Process.run('explorer', [path]);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Open file at: $path'),
-            backgroundColor: Theme.of(context).colorScheme.primary,
-          ),
-        );
+      if (Platform.isLinux || Platform.isMacOS || Platform.isWindows) {
+        bool opened = false;
+        try {
+          final res = await ref.read(engineProvider).openFile(path);
+          opened = res['success'] == true;
+        } catch (_) {}
+        if (!context.mounted) return;
+        if (opened) return;
       }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Open file at: $path'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
     } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Could not open file: $e'),

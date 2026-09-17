@@ -6,7 +6,9 @@ import '../../../providers/download_history_provider.dart';
 import '../../home/widgets/download_log_sheet.dart';
 
 class DownloadHistoryScreen extends ConsumerStatefulWidget {
-  const DownloadHistoryScreen({super.key});
+  final bool useGridView;
+
+  const DownloadHistoryScreen({super.key, this.useGridView = false});
 
   @override
   ConsumerState<DownloadHistoryScreen> createState() =>
@@ -227,6 +229,33 @@ class _DownloadHistoryScreenState
                       ],
                     ),
                   ),
+                );
+              }
+              if (widget.useGridView) {
+                return GridView.builder(
+                  key: const ValueKey('history-grid'),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.72,
+                  ),
+                  itemCount: records.length,
+                  itemBuilder: (context, index) {
+                    final record = records[index];
+                    return _HistoryGridCard(
+                      record: record,
+                      colorScheme: colorScheme,
+                      textTheme: textTheme,
+                      onDelete: () => _deleteRecord(record.id),
+                      formatSize: _formatSize,
+                      formatDate: _formatDate,
+                      platformIcon: _platformIcon,
+                      statusColor: _statusColor,
+                    );
+                  },
                 );
               }
               return ListView.builder(
@@ -472,6 +501,164 @@ class _HistoryItem extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Delete',
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryGridCard extends StatelessWidget {
+  final DownloadRecord record;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+  final VoidCallback onDelete;
+  final String Function(int?) formatSize;
+  final String Function(String) formatDate;
+  final IconData Function(String?) platformIcon;
+  final Color Function(String, ColorScheme) statusColor;
+
+  const _HistoryGridCard({
+    required this.record,
+    required this.colorScheme,
+    required this.textTheme,
+    required this.onDelete,
+    required this.formatSize,
+    required this.formatDate,
+    required this.platformIcon,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final statusCol = statusColor(record.status, colorScheme);
+
+    return Semantics(
+      label:
+          '${record.title}, status: ${record.status}, ${formatSize(record.fileSize)}',
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  platformIcon(record.platform),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                record.title,
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: statusCol.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  record.status,
+                  style: textTheme.mono.copyWith(
+                    fontSize: 10,
+                    color: statusCol,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (record.quality != null) ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    record.quality!,
+                    style: textTheme.mono.copyWith(
+                      fontSize: 10,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 4),
+              if (record.fileSize != null && record.fileSize! > 0)
+                Text(
+                  formatSize(record.fileSize),
+                  style: textTheme.mono.copyWith(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              Text(
+                formatDate(record.timestamp),
+                style: textTheme.mono.copyWith(
+                  fontSize: 11,
+                  color: colorScheme.outline,
+                ),
+              ),
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Semantics(
+                    label: 'View download logs',
+                    child: IconButton(
+                      icon: Icon(Icons.terminal,
+                          size: 18, color: colorScheme.outline),
+                      onPressed: () {
+                        DownloadLogSheet.show(
+                          context,
+                          downloadId: record.id,
+                          title: record.title,
+                          status: record.status,
+                          url: record.url,
+                        );
+                      },
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'View logs',
+                    ),
+                  ),
+                  Semantics(
+                    label: 'Delete download record',
+                    child: IconButton(
+                      icon: Icon(Icons.delete_outline,
+                          size: 18, color: colorScheme.outline),
+                      onPressed: onDelete,
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Delete',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

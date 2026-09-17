@@ -867,57 +867,99 @@ class _ConcurrencySlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final showWarning = value > 2;
 
     return Semantics(
       label:
           'Simultaneous downloads, $value at a time. Extra downloads wait in a queue.',
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Semantics(
-              label: 'Simultaneous downloads',
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+            Row(
+              children: [
+                Semantics(
+                  label: 'Simultaneous downloads',
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child:
+                        Icon(Icons.download_outlined, color: colorScheme.outline, size: 20),
+                  ),
                 ),
-                child:
-                    Icon(Icons.download_outlined, color: colorScheme.outline, size: 20),
-              ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Simultaneous downloads', style: textTheme.bodyLarge),
+                      Text(
+                        value == 1
+                            ? '1 at a time — extras queue'
+                            : '$value at a time — extras queue',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 120,
+                  child: Slider(
+                    value: value.toDouble(),
+                    min: 1,
+                    max: 5,
+                    divisions: 4,
+                    label: '$value',
+                    activeColor: colorScheme.primary,
+                    inactiveColor: colorScheme.surfaceContainerHighest,
+                    onChanged: (v) => onChanged(v.round()),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Simultaneous downloads', style: textTheme.bodyLarge),
-                  Text(
-                    value == 1
-                        ? '1 at a time — extras queue'
-                        : '$value at a time — extras queue',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+            if (showWarning)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Semantics(
+                  label:
+                      'Warning: high concurrency increases battery and thermal load',
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.errorContainer.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_outlined,
+                            size: 16, color: colorScheme.onErrorContainer),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Setting concurrency above 2 simultaneous downloads '
+                            'increases battery consumption, CPU thermal '
+                            'throttling, and background memory pressure on '
+                            'mobile devices.',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-            SizedBox(
-              width: 120,
-              child: Slider(
-                value: value.toDouble(),
-                min: 1,
-                max: 5,
-                divisions: 4,
-                label: '$value',
-                activeColor: colorScheme.primary,
-                inactiveColor: colorScheme.surfaceContainerHighest,
-                onChanged: (v) => onChanged(v.round()),
-              ),
-            ),
           ],
         ),
       ),

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider roots for opening downloaded media in the system player.
+     Downloads live in public storage (Download/Grablytic) so external-path
+     is the primary root; the app-private roots cover custom download
+     folders pointing at internal storage. -->
+<paths>
+    <external-path name="external_files" path="." />
+    <external-files-path name="external_app_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <files-path name="internal_files" path="." />
+    <cache-path name="internal_cache" path="." />
+</paths>

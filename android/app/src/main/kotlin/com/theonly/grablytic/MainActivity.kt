@@ -217,22 +217,39 @@ class MainActivity : FlutterActivity() {
 
     private fun handleSendText(intent: Intent?) {
         if (intent == null) return
-        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-            // SEC-03: cap inbound share text — a multi-MB EXTRA_TEXT from a
-            // malicious app would otherwise ride into regex + UI state.
-            // 8 KB still fits any real URL several times over.
-            if (sharedText.length > 8192) return
-            val urlRegex = "(https?://[\\w\\d:#@%/;$~()'*&+-=\\?\\.\\!\\[\\]]+)".toRegex()
-            val match = urlRegex.find(sharedText)
-            if (match != null) {
-                val url = match.value
-                while (sharedUrls.size >= MAX_QUEUED_SHARES) sharedUrls.poll()
-                sharedUrls.offer(url)
-                scope.launch(Dispatchers.Main) {
-                    methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to url))
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                if (intent.type == "text/plain") {
+                    val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+                    // SEC-03: cap inbound share text — a multi-MB EXTRA_TEXT from a
+                    // malicious app would otherwise ride into regex + UI state.
+                    // 8 KB still fits any real URL several times over.
+                    if (sharedText.length > 8192) return
+                    val urlRegex = "(https?://[\\w\\d:#@%/;$~()'*&+-=\\?\\.\\!\\[\\]]+)".toRegex()
+                    val match = urlRegex.find(sharedText)
+                    if (match != null) {
+                        enqueueSharedUrl(match.value)
+                    }
                 }
             }
+            Intent.ACTION_VIEW -> {
+                // Deep link: https URL opened into the app (BROWSABLE
+                // intent-filter). Queue it like a share so Dart's drain loop
+                // picks it up. Capped — a malicious link cannot flood memory.
+                val data = intent.dataString ?: return
+                if (data.length > 8192) return
+                if (data.startsWith("http://") || data.startsWith("https://")) {
+                    enqueueSharedUrl(data)
+                }
+            }
+        }
+    }
+
+    private fun enqueueSharedUrl(url: String) {
+        while (sharedUrls.size >= MAX_QUEUED_SHARES) sharedUrls.poll()
+        sharedUrls.offer(url)
+        scope.launch(Dispatchers.Main) {
+            methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to url))
         }
     }
 
@@ -394,6 +411,9 @@ class MainActivity : FlutterActivity() {
                 // app registered for the host (e.g. the GitHub app for
                 // github.com links) Android offers it, otherwise the browser.
                 // http(s) + mailto only, fail-closed. No extra dependency.
+                // Package-visibility note (API 30+): resolveActivity returns
+                // null for undeclared intents, so never gate on it — just
+                // startActivity and catch ActivityNotFoundException.
                 "intent/open_url" -> {
                     val url = call.argument<String>("url")
                     try {
@@ -405,11 +425,46 @@ class MainActivity : FlutterActivity() {
                             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
-                            if (view.resolveActivity(packageManager) != null) {
+                            try {
                                 startActivity(view)
                                 result.success(mapOf("success" to true))
-                            } else {
+                            } catch (e: android.content.ActivityNotFoundException) {
                                 result.success(mapOf("success" to false, "error" to "no handler"))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        result.success(mapOf("success" to false, "error" to (e.message ?: "open failed")))
+                    }
+                }
+                // Open a downloaded media file in the system player via
+                // FileProvider (file:// URIs are blocked on API 24+).
+                "intent/open_file" -> {
+                    val path = call.argument<String>("path")
+                    try {
+                        if (path.isNullOrEmpty()) {
+                            result.success(mapOf("success" to false, "error" to "missing path"))
+                        } else {
+                            val file = File(path)
+                            if (!file.isFile) {
+                                result.success(mapOf("success" to false, "error" to "file not found"))
+                            } else {
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    this@MainActivity,
+                                    "$packageName.fileprovider",
+                                    file,
+                                )
+                                val mime = mimeTypeForFile(file.name)
+                                val view = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, mime)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                try {
+                                    startActivity(view)
+                                    result.success(mapOf("success" to true))
+                                } catch (e: android.content.ActivityNotFoundException) {
+                                    result.success(mapOf("success" to false, "error" to "no handler"))
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -893,6 +948,40 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    /** Extension → MIME for ACTION_VIEW. Video/audio first (the app's
+     * media), common containers covered explicitly; falls back to the
+     * system MimeTypeMap, then */* so a chooser still appears instead of
+     * failing closed. Never throws. */
+    private fun mimeTypeForFile(name: String): String {
+        val lower = name.lowercase()
+        val ext = lower.substringAfterLast('.', "")
+        val mapped = when (ext) {
+            "mp4", "m4v", "mov" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "webm" -> "video/webm"
+            "avi" -> "video/x-msvideo"
+            "3gp", "3g2" -> "video/3gpp"
+            "mp3" -> "audio/mpeg"
+            "m4a", "m4b" -> "audio/mp4"
+            "opus", "ogg", "oga" -> "audio/ogg"
+            "weba" -> "audio/webm"
+            "wav" -> "audio/wav"
+            "flac" -> "audio/flac"
+            "aac" -> "audio/aac"
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            else -> null
+        }
+        if (mapped != null) return mapped
+        return try {
+            android.webkit.MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(ext) ?: "*/*"
+        } catch (_: Exception) {
+            "*/*"
+        }
     }
 
     /**

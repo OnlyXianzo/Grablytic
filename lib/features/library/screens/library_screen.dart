@@ -165,8 +165,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 controller: _tabController,
                 children: [
                   _buildLibraryContent(sections, colorScheme, textTheme, settings.useGridView),
-                  _buildPlaylistsTab(playlists, colorScheme, textTheme),
-                  const DownloadHistoryScreen(),
+                  _buildPlaylistsTab(playlists, colorScheme, textTheme, settings.useGridView),
+                  DownloadHistoryScreen(useGridView: settings.useGridView),
                 ],
               ),
             ),
@@ -323,8 +323,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   Widget _buildPlaylistsTab(
     List<Playlist> playlists,
     ColorScheme colorScheme,
-    TextTheme textTheme,
-  ) {
+    TextTheme textTheme, [
+    bool useGridView = false,
+  ]) {
     if (playlists.isEmpty) {
       return Center(
         child: Column(
@@ -356,6 +357,79 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             ),
           ],
         ),
+      );
+    }
+
+    if (useGridView) {
+      return GridView.builder(
+        key: const ValueKey('playlists-grid'),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: playlists.length,
+        itemBuilder: (context, index) {
+          final playlist = playlists[index];
+          return Card(
+            margin: EdgeInsets.zero,
+            elevation: 0,
+            color: colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PlaylistDetailsScreen(playlistId: playlist.id),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      backgroundColor:
+                          colorScheme.primary.withValues(alpha: 0.1),
+                      child:
+                          Icon(Icons.playlist_play, color: colorScheme.primary),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      playlist.name,
+                      style: textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${playlist.downloadIds.length} items',
+                      style: textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 8),
+                    Semantics(
+                      label: 'Open playlist',
+                      child: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       );
     }
 

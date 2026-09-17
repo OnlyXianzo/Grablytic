@@ -421,6 +421,23 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> openFile(String path) async {
+    try {
+      final result = await _channel
+          .invokeMethod<Map>(EngineMethods.openFile, {'path': path});
+      if (result == null) {
+        return EngineEnvelope.error(
+            errorType: 'ERROR_TRANSPORT',
+            message: 'No response from native layer');
+      }
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return EngineEnvelope.error(
+          errorType: 'ERROR_TRANSPORT', message: 'Native call failed');
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> syncSchedule({
     required bool enabled,
     int intervalMinutes = 60,

@@ -154,7 +154,7 @@ class _OnboardingPermissionsStepState
           Text(
             'A couple of quick choices',
             style: textTheme.headlineMedium?.copyWith(
-              color: colorScheme.onSurface,
+              color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
@@ -164,7 +164,7 @@ class _OnboardingPermissionsStepState
             'Grablytic works without these — they just make downloads smoother. '
             'You can change everything later in Settings.',
             style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
+              color: Colors.white70,
             ),
             textAlign: TextAlign.center,
           ),
