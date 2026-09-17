@@ -669,6 +669,38 @@ def _find_thumbnail_path(final_path: str | None, config: dict | None = None) -> 
     return None
 
 
+def _delete_infojson_sidecars(file_path: str | None) -> list[str]:
+    """Delete writeinfojson sidecars beside a successfully finished download.
+
+    Candidates are derived ONLY from the engine's own finished ``file_path``:
+    ``<stem>.info.json`` (yt-dlp's sidecar name) and ``<file>.info.json``.
+    Call on terminal SUCCESS only — failure/cancel keeps the sidecar so
+    ``resume.py`` can recover the URL. Never raises; returns removed paths.
+    """
+    removed: list[str] = []
+    try:
+        if not file_path or not isinstance(file_path, str):
+            return removed
+        candidates = (
+            os.path.splitext(file_path)[0] + ".info.json",
+            file_path + ".info.json",
+        )
+        for candidate in candidates:
+            try:
+                # The finished file itself is never a candidate (e.g. a file
+                # that already ends in .info.json); regular files only.
+                if candidate == file_path:
+                    continue
+                if os.path.isfile(candidate):
+                    os.remove(candidate)
+                    removed.append(candidate)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return removed
+
+
 def download_thread(
     url: str,
     download_id: str,
@@ -902,6 +934,12 @@ def download_thread(
                 # Local thumbnail sidecar (writethumbnail output kept via
                 # already_have_thumbnail) so Dart can render Library
                 # thumbnails offline instead of re-fetching remote URLs.
+                # Success-path only: the sidecar served resume duty during the
+                # download; on terminal success it would litter Download/.
+                # Failure/cancel paths above return before reaching here, so
+                # their sidecars survive for resume.py.
+                _delete_infojson_sidecars(final_path)
+
                 thumbnail_path = _find_thumbnail_path(final_path, config)
 
                 terminal_event = json.dumps({

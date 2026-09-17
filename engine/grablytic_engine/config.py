@@ -127,7 +127,10 @@ DEFAULT_CFG = {
     "quality_threshold_height": 720,
     # ── Extras ──────────────────────────────────────────────────────────
     "write_description": False,
-    "write_info_json": False,
+    # Default-ON (iteration 1): interrupted downloads leave a
+    # `<stem>.info.json` sidecar that resume.py recovers the URL from.
+    # Opt-out preserved — explicit False disables it.
+    "write_info_json": True,
     "compat_options": "",
     "verbose": False,
     "output_tmpl": "%(uploader)s - %(title)s.%(ext)s",
