@@ -3,7 +3,9 @@ package com.theonly.grablytic
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.database.sqlite.SQLiteDatabase
+import android.util.Base64
 import android.util.Log
 import android.util.Xml
 import androidx.core.app.NotificationCompat
@@ -17,8 +19,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
-import java.io.File
+import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.io.ObjectInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -53,6 +56,38 @@ class ObservedSourcesPollWorker(
         // created anywhere, so API 26+ silently dropped every background
         // poll notification while logs looked healthy.
         private const val NOTIF_CHANNEL_COMPLETE = "grablytic_complete"
+
+        // ---- Item 6: shared_preferences mapping (defensive mirror) ----
+        // Verified against upstream shared_preferences_android (locked at
+        // 2.4.23 in pubspec.lock) and the Dart write sites in
+        // lib/providers/settings_provider.dart:
+        //   * file  = "FlutterSharedPreferences" (plugin SHARED_PREFERENCES_NAME),
+        //     i.e. .../shared_prefs/FlutterSharedPreferences.xml, MODE_PRIVATE.
+        //   * Dart key K is stored as "flutter.K" (Dart SharedPreferences._prefix).
+        // Both are plugin INTERNALS with no stability contract (newer
+        // backends support custom fileName/prefix and a DataStore backend
+        // this reader could not see), so every read below is
+        // contains()-guarded and type-tolerant; unknown state yields the
+        // documented Dart-side default, never a crash.
+        // Per-key Dart type -> native storage (settings_provider.dart):
+        //   scheduleEnabled : bool       -> BOOLEAN (setBool :612, read :300)
+        //   scheduleTime    : String     -> String  (setString :616-617, read :301)
+        //   scheduleDays    : List<String> -> single String
+        //                    "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu"+Base64
+        //                    (plugin LIST_IDENTIFIER + Java-serialized list;
+        //                    setStringList :621-622, read via getStringList :302).
+        //                    A raw getString therefore returns an opaque blob,
+        //                    NOT parseable days — see readScheduleDays.
+        //   observedSources : String (JSON array) -> String (:667-669, :294).
+        private const val PREFS_FILE = "FlutterSharedPreferences"
+        private const val KEY_SCHEDULE_ENABLED = "flutter.scheduleEnabled"
+        private const val KEY_SCHEDULE_TIME = "flutter.scheduleTime"
+        private const val KEY_SCHEDULE_DAYS = "flutter.scheduleDays"
+        private const val KEY_OBSERVED_SOURCES = "flutter.observedSources"
+        private const val DEFAULT_SCHEDULE_TIME = "22:00"
+        private val DEFAULT_SCHEDULE_DAYS = setOf(1, 2, 3, 4, 5)
+        private const val LIST_IDENTIFIER = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu"
+        private val SCHEDULE_DAYS_CSV = Regex("^[\\d,\\s]+\$")
 
         fun schedule(
             context: Context,
@@ -102,74 +137,75 @@ class ObservedSourcesPollWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
             Log.i(TAG, "Starting observed sources background check...")
-            val prefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-
-            val scheduleEnabled = prefs.getBoolean("flutter.scheduleEnabled", false)
-            val scheduleTime = prefs.getString("flutter.scheduleTime", "22:00") ?: "22:00"
-            val scheduleDaysRaw = prefs.getString("flutter.scheduleDays", null)
-            val observedSourcesJson = prefs.getString("flutter.observedSources", null)
-
-            if (observedSourcesJson.isNullOrEmpty()) {
+            val snapshot = readPrefsSnapshot()
+            if (snapshot == null) {
                 Log.i(TAG, "No observed sources configured, skipping")
                 return@withContext Result.success()
             }
 
             // Window check
-            if (scheduleEnabled && !isWithinScheduleWindow(scheduleTime, scheduleDaysRaw)) {
+            if (snapshot.scheduleEnabled &&
+                !isWithinScheduleWindow(snapshot.scheduleTime, snapshot.scheduleDays)
+            ) {
                 Log.i(TAG, "Current time outside scheduled window, skipping poll")
                 return@withContext Result.success()
             }
-
-            val sourcesArray = try {
-                JSONArray(observedSourcesJson)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to parse observedSources JSON: ${e.message}")
+            if (snapshot.enabledSources.isEmpty()) {
+                Log.i(TAG, "Observed sources present but none enabled, skipping")
                 return@withContext Result.success()
             }
 
-            // Locate grablytic.db
-            val filesDir = applicationContext.filesDir
-            val appFlutterDir = File(filesDir.parentFile, "app_flutter")
-            val dbFile = File(appFlutterDir, "grablytic.db")
-            if (!dbFile.exists()) {
+            // Locate grablytic.db. Never CREATE_IF_NECESSARY from here: the
+            // file is owned by Dart sqflite (see DownloadDbSweepHelper header).
+            val dbFile = grablyticDbFile(applicationContext)
+            if (dbFile == null) {
                 Log.w(TAG, "Database grablytic.db not found, skipping poll")
                 return@withContext Result.success()
             }
 
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
+            // Phase A — short gated connection: ensure schema, snapshot the
+            // seen ledger, close. The connection is closed BEFORE any network
+            // I/O so a slow RSS fetch or Chaquopy startup can never hold the
+            // DB lock against Dart (the old code held one connection open
+            // across all per-source network calls).
+            val sourceUrls = snapshot.enabledSources.map { it.url }
+            val seenBySource: Map<String, Set<String>> = withGrablyticDb(dbFile) { db ->
+                ensureSeenSchema(db)
+                readSeenSnapshot(db, sourceUrls)
+            }
+
+            // Phase B — network only, no DB held.
+            val pending = mutableListOf<PendingSourceResult>()
             var totalNewFound = 0
+            for (src in snapshot.enabledSources) {
+                if (isStopped) {
+                    Log.i(TAG, "Worker stopped by OS constraint or cancellation")
+                    break
+                }
+                val newEntries = checkSource(src.url, seenBySource[src.url] ?: emptySet())
+                if (newEntries.isNotEmpty()) {
+                    Log.i(TAG, "Found ${newEntries.size} new videos for source: ${src.name} (${src.url})")
+                    totalNewFound += newEntries.size
+                    pending.add(PendingSourceResult(src.url, src.quality, newEntries))
+                }
+            }
+            if (isStopped) {
+                // Nothing was recorded as seen, so the next run re-finds
+                // these entries; deterministic queue ids (see
+                // recordAndQueueEntries) make that re-run idempotent. Never
+                // notify on a cancelled run.
+                Log.i(TAG, "Worker stopped after fetch; discarding ${pending.size} source(s) without write")
+                return@withContext Result.success()
+            }
 
-            db.use { database ->
-                // Ensure seen_source_videos table exists in case worker runs before Flutter upgraded
-                database.execSQL("""
-                    CREATE TABLE IF NOT EXISTS seen_source_videos (
-                      source_url TEXT NOT NULL,
-                      video_id TEXT NOT NULL,
-                      seen_at TEXT NOT NULL,
-                      PRIMARY KEY (source_url, video_id)
-                    )
-                """.trimIndent())
-                database.execSQL("CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)")
-
-                for (i in 0 until sourcesArray.length()) {
-                    if (isStopped) {
-                        Log.i(TAG, "Worker stopped by OS constraint or cancellation")
-                        break
-                    }
-                    val sourceObj = sourcesArray.optJSONObject(i) ?: continue
-                    val isSourceEnabled = sourceObj.optBoolean("enabled", true)
-                    if (!isSourceEnabled) continue
-
-                    val sourceUrl = sourceObj.optString("url", "").trim()
-                    val sourceName = sourceObj.optString("name", "Channel")
-                    val sourceQuality = sourceObj.optString("quality", "best")
-                    if (sourceUrl.isEmpty()) continue
-
-                    val newEntries = checkSource(sourceUrl, database)
-                    if (newEntries.isNotEmpty()) {
-                        Log.i(TAG, "Found ${newEntries.size} new videos for source: $sourceName ($sourceUrl)")
-                        totalNewFound += newEntries.size
-                        recordAndQueueEntries(database, sourceUrl, sourceQuality, newEntries)
+            // Phase C — short gated connection, writer burst only, no
+            // network inside. Persistent BUSY propagates as an exception ->
+            // Result.retry() with WorkManager linear backoff (correct here,
+            // unlike the boot sweep: this work is deferrable by design).
+            if (pending.isNotEmpty()) {
+                withGrablyticDb(dbFile) { db ->
+                    for (p in pending) {
+                        recordAndQueueEntries(db, p.sourceUrl, p.quality, p.entries)
                     }
                 }
             }
@@ -185,57 +221,255 @@ class ObservedSourcesPollWorker(
         }
     }
 
-    private fun isWithinScheduleWindow(scheduleTime: String, scheduleDaysRaw: String?): Boolean {
+    // ---- Item 6: defensive prefs snapshot ----
+
+    private data class ParsedSource(val url: String, val name: String, val quality: String)
+
+    private data class PollPrefs(
+        val scheduleEnabled: Boolean,
+        val scheduleTime: String,
+        val scheduleDays: Set<Int>,
+        val enabledSources: List<ParsedSource>,
+    )
+
+    private data class PendingSourceResult(
+        val sourceUrl: String,
+        val quality: String,
+        val entries: List<SourceEntry>,
+    )
+
+    /**
+     * Reads everything the worker needs from FlutterSharedPreferences in one
+     * place. Returns null when there is nothing to poll (absent/unparseable
+     * `observedSources`) — both map to Result.success(), never retry, so a
+     * corrupt value cannot poison the WorkManager queue. Per-key
+     * ClassCastExceptions (native type != expected, e.g. after a plugin
+     * storage-format change) fall back to the Dart-side default + Log.w.
+     */
+    private fun readPrefsSnapshot(): PollPrefs? {
+        try {
+            if (!applicationContext.getSharedPrefsFile(PREFS_FILE).exists()) {
+                Log.i(TAG, "No $PREFS_FILE.xml yet (fresh install or Dart never saved prefs); using defaults")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Prefs file probe failed, reading with defaults: ${e.message}")
+        }
+        val prefs = try {
+            applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Cannot open $PREFS_FILE, skipping poll: ${e.message}")
+            return null
+        }
+
+        val observedSourcesJson = getStringSafe(prefs, KEY_OBSERVED_SOURCES, null)
+        if (observedSourcesJson.isNullOrEmpty()) return null
+
+        val enabledSources = try {
+            val sourcesArray = JSONArray(observedSourcesJson)
+            List(sourcesArray.length()) { i -> sourcesArray.optJSONObject(i) }
+                .filter { o ->
+                    o != null && o.optBoolean("enabled", true) &&
+                        o.optString("url", "").trim().isNotEmpty()
+                }
+                .map { o ->
+                    ParsedSource(
+                        url = o!!.optString("url").trim(),
+                        name = o.optString("name", "Channel"),
+                        quality = o.optString("quality", "best"),
+                    )
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse observedSources JSON: ${e.message}")
+            return null
+        }
+
+        return PollPrefs(
+            scheduleEnabled = getBooleanSafe(prefs, KEY_SCHEDULE_ENABLED, false),
+            scheduleTime = getStringSafe(prefs, KEY_SCHEDULE_TIME, null)
+                ?.takeIf { it.isNotBlank() } ?: DEFAULT_SCHEDULE_TIME,
+            scheduleDays = readScheduleDays(prefs),
+            enabledSources = enabledSources,
+        )
+    }
+
+    private fun getBooleanSafe(prefs: SharedPreferences, key: String, default: Boolean): Boolean {
+        if (!prefs.contains(key)) return default
+        return try {
+            prefs.getBoolean(key, default)
+        } catch (_: ClassCastException) {
+            Log.w(TAG, "$key has unexpected native type; using default=$default")
+            default
+        }
+    }
+
+    private fun getStringSafe(prefs: SharedPreferences, key: String, default: String?): String? {
+        if (!prefs.contains(key)) return default
+        return try {
+            prefs.getString(key, default)
+        } catch (_: ClassCastException) {
+            Log.w(TAG, "$key has unexpected native type; using default")
+            default
+        }
+    }
+
+    /**
+     * Reads `scheduleDays` tolerating every known native encoding, newest first:
+     *  1. StringSet (pre-Pigeon-era installs; the plugin itself migrates these
+     *     on Dart read — mirror that tolerance, never migrate from here).
+     *  2. Raw JSON array / CSV digits (hand-written or legacy values; the
+     *     previous worker version accepted both — keep accepting).
+     *  3. Plugin LIST_IDENTIFIER blob (what Dart actually writes today via
+     *     setStringList): an optional "!" + JSON array (newer Dart-side
+     *     encoding) or Base64 Java-serialized list (platform encoding).
+     * Anything else -> DEFAULT_SCHEDULE_DAYS (Mon-Fri, matching Dart
+     * settings_provider.dart:302) with a loud log. Never throws.
+     */
+    private fun readScheduleDays(prefs: SharedPreferences): Set<Int> {
+        try {
+            prefs.getStringSet(KEY_SCHEDULE_DAYS, null)?.let { set ->
+                val days = set.mapNotNull { it.trim().toIntOrNull() }.toSet()
+                if (days.isNotEmpty()) return days
+            }
+        } catch (_: ClassCastException) {
+            // Current encoding is a String blob; fall through.
+        } catch (e: Exception) {
+            Log.w(TAG, "scheduleDays StringSet read failed: ${e.message}")
+        }
+
+        val raw = try {
+            prefs.getString(KEY_SCHEDULE_DAYS, null)
+        } catch (_: ClassCastException) {
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "scheduleDays String read failed: ${e.message}")
+            null
+        }
+        if (raw.isNullOrBlank()) {
+            Log.i(TAG, "scheduleDays absent; defaulting to Mon-Fri $DEFAULT_SCHEDULE_DAYS")
+            return DEFAULT_SCHEDULE_DAYS
+        }
+        val text = raw.trim()
+        if (text.startsWith("[")) {
+            try {
+                val arr = JSONArray(text)
+                val days = List(arr.length()) { arr.optString(it) }
+                    .mapNotNull { it.trim().toIntOrNull() }.toSet()
+                if (days.isNotEmpty()) return days
+            } catch (e: Exception) {
+                Log.w(TAG, "scheduleDays JSON parse failed: ${e.message}")
+            }
+        } else if (SCHEDULE_DAYS_CSV.matches(text)) {
+            val days = text.split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
+            if (days.isNotEmpty()) return days
+        } else {
+            val decoded = decodePlatformListString(text)
+            val days = decoded?.mapNotNull { it.trim().toIntOrNull() }?.toSet() ?: emptySet()
+            if (days.isNotEmpty()) return days
+        }
+        Log.w(
+            TAG,
+            "Unparseable scheduleDays (len=${text.length}, prefix='${text.take(24)}'); " +
+                "defaulting to Mon-Fri $DEFAULT_SCHEDULE_DAYS. Full value withheld from log.",
+        )
+        return DEFAULT_SCHEDULE_DAYS
+    }
+
+    /**
+     * Best-effort decode of the plugin's StringList blob: LIST_IDENTIFIER +
+     * either "!" + JSON array or Base64(Java-serialized ArrayList) — mirrors
+     * shared_preferences_android ListEncoder. Returns null when undecodable.
+     * Runs on app-private MODE_PRIVATE data (backup disabled in the
+     * manifest), so ObjectInputStream only ever sees bytes our own Dart side
+     * wrote; any failure still falls back to defaults, never a crash.
+     */
+    private fun decodePlatformListString(raw: String): List<String>? {
+        if (!raw.startsWith(LIST_IDENTIFIER)) return null
+        val payload = raw.substring(LIST_IDENTIFIER.length)
+        if (payload.startsWith("!")) {
+            return try {
+                val arr = JSONArray(payload.substring(1))
+                List(arr.length()) { arr.optString(it) }
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return try {
+            val bytes = Base64.decode(payload, Base64.DEFAULT)
+            ObjectInputStream(ByteArrayInputStream(bytes)).use { ois ->
+                @Suppress("UNCHECKED_CAST")
+                (ois.readObject() as? List<*>)?.map { it.toString() }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Schema ensure for the seen ledger; runs on the short Phase-A connection. */
+    private fun ensureSeenSchema(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS seen_source_videos (
+              source_url TEXT NOT NULL,
+              video_id TEXT NOT NULL,
+              seen_at TEXT NOT NULL,
+              PRIMARY KEY (source_url, video_id)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)")
+    }
+
+    /** Bulk-reads the seen ledger for exactly the sources about to be polled. */
+    private fun readSeenSnapshot(db: SQLiteDatabase, sourceUrls: List<String>): Map<String, Set<String>> {
+        val out = mutableMapOf<String, MutableSet<String>>()
+        if (sourceUrls.isEmpty()) return out
+        val placeholders = sourceUrls.joinToString(",") { "?" }
+        db.rawQuery(
+            "SELECT source_url, video_id FROM seen_source_videos WHERE source_url IN ($placeholders)",
+            sourceUrls.toTypedArray(),
+        ).use { c ->
+            val urlIdx = c.getColumnIndex("source_url")
+            val idIdx = c.getColumnIndex("video_id")
+            while (c.moveToNext()) {
+                out.getOrPut(c.getString(urlIdx)) { mutableSetOf() }.add(c.getString(idIdx))
+            }
+        }
+        return out
+    }
+
+    private fun isWithinScheduleWindow(scheduleTime: String, days: Set<Int>): Boolean {
         val cal = Calendar.getInstance()
         val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val isoWeekday = if (dayOfWeek == Calendar.SUNDAY) 7 else dayOfWeek - 1
 
-        val days = mutableSetOf<Int>()
-        if (scheduleDaysRaw != null) {
-            try {
-                if (scheduleDaysRaw.startsWith("[")) {
-                    val arr = JSONArray(scheduleDaysRaw)
-                    for (i in 0 until arr.length()) {
-                        val d = arr.optString(i).toIntOrNull()
-                        if (d != null) days.add(d)
-                    }
-                } else {
-                    scheduleDaysRaw.split(",").forEach { s ->
-                        s.trim().toIntOrNull()?.let { days.add(it) }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        if (days.isEmpty()) {
-            days.addAll(listOf(1, 2, 3, 4, 5))
-        }
-
         if (!days.contains(isoWeekday)) return false
 
         val parts = scheduleTime.split(":")
-        if (parts.size != 2) return true
-        val h = parts[0].toIntOrNull() ?: return true
-        val m = parts[1].toIntOrNull() ?: return true
-        if (h !in 0..23 || m !in 0..59) return true
+        if (parts.size != 2) {
+            Log.w(TAG, "Malformed scheduleTime '$scheduleTime'; ignoring time gate")
+            return true
+        }
+        val h = parts[0].toIntOrNull()
+        val m = parts[1].toIntOrNull()
+        if (h == null || m == null) {
+            Log.w(TAG, "Malformed scheduleTime '$scheduleTime'; ignoring time gate")
+            return true
+        }
+        if (h !in 0..23 || m !in 0..59) {
+            Log.w(TAG, "Out-of-range scheduleTime '$scheduleTime'; ignoring time gate")
+            return true
+        }
 
         val startMinutes = h * 60 + m
         val currentMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         return currentMinutes >= startMinutes
     }
 
-    private fun checkSource(sourceUrl: String, db: SQLiteDatabase): List<SourceEntry> {
-        val seenIds = mutableSetOf<String>()
-        val cursor = db.rawQuery(
-            "SELECT video_id FROM seen_source_videos WHERE source_url = ?",
-            arrayOf(sourceUrl),
-        )
-        cursor.use { c ->
-            val idx = c.getColumnIndex("video_id")
-            while (c.moveToNext()) {
-                seenIds.add(c.getString(idx))
-            }
-        }
-
+    /**
+     * Item 6: pure-network filter. Seen ids come from the Phase-A snapshot,
+     * never from a live DB handle, so slow RSS/Chaquopy calls hold no lock.
+     */
+    private fun checkSource(sourceUrl: String, seenIds: Set<String>): List<SourceEntry> {
         // Tier 1: Try YouTube channel RSS if applicable
         val rssEntries = tryFetchYouTubeRss(sourceUrl)
         if (rssEntries != null && rssEntries.isNotEmpty()) {
@@ -389,8 +623,17 @@ class ObservedSourcesPollWorker(
                     SQLiteDatabase.CONFLICT_REPLACE,
                 )
 
-                // 2. Queue in downloads table with status = 'pending'
-                val downloadId = "obs_${System.currentTimeMillis()}_${entry.id}"
+                // 2. Queue in downloads table with status = 'pending'.
+                // Deterministic id (no wall-clock): a rerun after a failed or
+                // cancelled run re-finds the same entries, and with
+                // CONFLICT_IGNORE + stable ids the re-run is a no-op instead
+                // of a duplicate queue row. String.hashCode is JLS-specified
+                // (stable across processes); '-' escaped since ids feed LIKE
+                // filters elsewhere. (Deliberately NOT Integer.toUnsignedString:
+                // that is API 26+ and minSdk here is 24.)
+                val sourceTag = sourceUrl.hashCode().toString().replace('-', 'n')
+                val safeVideoId = entry.id.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                val downloadId = "obs_${sourceTag}_${safeVideoId}"
                 val config = JSONObject().apply {
                     put("source", "observed")
                     put("quality", quality)
