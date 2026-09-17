@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -435,6 +436,138 @@ class AppLogger {
       }
     } catch (e) {
       return 'Failed to read log tail: $e';
+    }
+  }
+
+  /// Reads the tail of an arbitrary log [file] without loading it all.
+  ///
+  /// Returns a record with the decoded tail [text] (NO header baked in —
+  /// the caller renders its own banner from [fileBytes]/[shownBytes]),
+  /// whether head bytes/lines were dropped ([truncated]), the full [fileBytes]
+  /// length, the [shownBytes] the returned text came from
+  /// (`utf8.encode(text).length`; equals [fileBytes] when nothing is cut),
+  /// and a null [error] on success. Never throws and never calls `flushNow()`
+  /// (generic `File` helper — the caller flushes if it needs to).
+  static Future<
+      ({
+        String text,
+        bool truncated,
+        int fileBytes,
+        int shownBytes,
+        String? error
+      })> readLogTailText(File file,
+      {int maxBytes = 100 * 1024, int maxLines = 1000}) async {
+    try {
+      final capBytes = maxBytes < 0 ? 0 : maxBytes;
+      final capLines = maxLines < 0 ? 0 : maxLines;
+      final len = await file.length();
+      if (len <= capBytes) {
+        final full = await file.readAsString();
+        if (full.isEmpty) {
+          return (
+            text: '',
+            truncated: false,
+            fileBytes: len,
+            shownBytes: len,
+            error: null
+          );
+        }
+        final endsWithNewline = full.endsWith('\n');
+        final lines = full.split('\n');
+        final contentLineCount =
+            endsWithNewline ? lines.length - 1 : lines.length;
+        if (contentLineCount <= capLines) {
+          return (
+            text: full,
+            truncated: false,
+            fileBytes: len,
+            shownBytes: len,
+            error: null
+          );
+        }
+        if (capLines == 0) {
+          return (
+            text: '',
+            truncated: true,
+            fileBytes: len,
+            shownBytes: 0,
+            error: null
+          );
+        }
+        final contentLines =
+            endsWithNewline ? lines.sublist(0, lines.length - 1) : lines;
+        final kept =
+            contentLines.sublist(contentLines.length - capLines);
+        final keptText = kept.join('\n') + (endsWithNewline ? '\n' : '');
+        return (
+          text: keptText,
+          truncated: true,
+          fileBytes: len,
+          shownBytes: utf8.encode(keptText).length,
+          error: null
+        );
+      }
+      final raf = await file.open(mode: FileMode.read);
+      try {
+        await raf.setPosition(len - capBytes);
+        final window = await raf.read(capBytes);
+        var text = utf8.decode(window, allowMalformed: true);
+        final nl = text.indexOf('\n');
+        if (nl >= 0 && nl < 4096) {
+          text = text.substring(nl + 1);
+        }
+        if (text.isNotEmpty) {
+          final endsWithNewline = text.endsWith('\n');
+          final lines = text.split('\n');
+          final contentLines = endsWithNewline
+              ? lines.sublist(0, lines.length - 1)
+              : lines;
+          if (contentLines.length > capLines) {
+            if (capLines == 0) {
+              text = '';
+            } else {
+              final kept =
+                  contentLines.sublist(contentLines.length - capLines);
+              text = kept.join('\n') + (endsWithNewline ? '\n' : '');
+            }
+          }
+        }
+        return (
+          text: text,
+          truncated: true,
+          fileBytes: len,
+          shownBytes: utf8.encode(text).length,
+          error: null
+        );
+      } finally {
+        try {
+          await raf.close();
+        } catch (_) {}
+      }
+    } on FileSystemException catch (e) {
+      return (
+        text: '',
+        truncated: false,
+        fileBytes: 0,
+        shownBytes: 0,
+        error: e.message
+      );
+    } on RangeError catch (e) {
+      return (
+        text: '',
+        truncated: false,
+        fileBytes: 0,
+        shownBytes: 0,
+        error: e.toString()
+      );
+    } catch (e) {
+      return (
+        text: '',
+        truncated: false,
+        fileBytes: 0,
+        shownBytes: 0,
+        error: e.toString()
+      );
     }
   }
 
