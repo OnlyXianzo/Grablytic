@@ -21,6 +21,10 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   File? _selectedFile;
   String _logContent = 'Loading logs...';
   bool _isLoading = true;
+  String? _loadError;
+  bool _truncated = false;
+  int _fileBytes = 0;
+  int _shownBytes = 0;
   bool _loggingEnabled = AppLogger.isEnabled;
   int _retentionDays = AppLogger.retentionDays;
   int _selectedTab = 0;
@@ -51,9 +55,19 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
 
   Future<void> _readLogContent(File file) async {
     setState(() => _isLoading = true);
-    final content = await AppLogger.readLogFile(file);
+    final requested = file;
+    final tail = await AppLogger.readLogTailText(requested);
+    if (!mounted || _selectedFile?.path != requested.path) return;
     setState(() {
-      _logContent = content.isEmpty ? 'Log file is empty.' : content;
+      _loadError = tail.error;
+      _truncated = tail.truncated;
+      _fileBytes = tail.fileBytes;
+      _shownBytes = tail.shownBytes;
+      if (tail.error != null) {
+        _logContent = 'Could not load log: ${tail.error}';
+      } else {
+        _logContent = tail.text.isEmpty ? 'Log file is empty.' : tail.text;
+      }
       _isLoading = false;
     });
   }
@@ -64,9 +78,16 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   }
 
   void _copyAiPrompt() {
-    final truncated = _logContent.length > 15000
-        ? '... [TRUNCATED FOR LENGTH] ...\n${_logContent.substring(_logContent.length - 15000)}'
+    // _logContent is already capped by readLogTailText (no header baked in).
+    // Keep the historical 15k-char tail cut as a second-level cap, but never
+    // stack a second TRUNCATED marker onto content that already carries one.
+    final needsCut = _logContent.length > 15000;
+    final tail = needsCut
+        ? _logContent.substring(_logContent.length - 15000)
         : _logContent;
+    final truncated = needsCut && !tail.contains('TRUNCATED')
+        ? '... [TRUNCATED FOR LENGTH] ...\n$tail'
+        : tail;
     _copyToClipboard(
       'Please analyze the following error logs from the Grablytic Android/desktop media downloader app.\n'
       'Explain what the bug is, why it happened, and what went wrong. Provide a formatted GitHub Issue '
@@ -471,6 +492,25 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           ),
         ),
         const SizedBox(height: 16),
+        if (_truncated && _loadError == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: cs.secondaryContainer.withAlpha(120),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Text(
+                'Showing last ~${(_shownBytes / 1024).toStringAsFixed(0)} KB '
+                'of ${(_fileBytes / 1024).toStringAsFixed(0)} KB — Export / '
+                'Save to Downloads for the full log.',
+                style: tt.bodySmall,
+              ),
+            ),
+          ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
