@@ -622,6 +622,12 @@ def build_ydl_opts(
                 "key": "FFmpegMetadata",
                 "add_metadata": cfg.get("addmetadata", True),
                 "add_chapters": True,
+                # Iteration 1: yt-dlp's FFmpegMetadataPP defaults
+                # add_infojson='if_exists' (truthy), which would attach the
+                # newly default-ON info.json sidecars into mkv/mka outputs.
+                # Pin off so output bytes stay stable (verified against
+                # installed yt-dlp postprocessor/ffmpeg.py __init__).
+                "add_infojson": False,
             })
 
         if cfg.get("embedthumbnail"):

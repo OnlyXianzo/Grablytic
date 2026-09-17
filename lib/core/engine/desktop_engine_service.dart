@@ -33,6 +33,34 @@ bool shouldResetCrashCounter({
 }) =>
     lastExitAt == null || now.difference(lastExitAt) > window;
 
+/// Item 3: per-method timeout budget. Slow network extractions
+/// (formats/playlist/search) legitimately exceed the 30s fast budget; giving
+/// them headroom stops false timeouts that desync Dart (pending dropped)
+/// from the engine (still working). Cancel/queue-status stay tight so a
+/// wedged extraction cannot mask a stuck cancel.
+@visibleForTesting
+Duration requestTimeoutForMethod(String method) {
+  switch (method) {
+    case EngineMethods.getFormats:
+    case EngineMethods.playlistInfo:
+    case EngineMethods.searchQuery:
+      return const Duration(seconds: 90);
+    default:
+      // ignore: unnecessary_statements – single source is _requestTimeout
+      return DesktopEngineService._requestTimeout;
+  }
+}
+
+/// Item 3: fast lane. Cancel and queue-status bypass the serialized stdin
+/// write queue so one slow formats/playlist extraction cannot hold them
+/// hostage behind Dart's side of the pipe. Writes are synchronous
+/// `IOSink.writeln` calls on Dart's single-threaded event loop, so bypassing
+/// the queue cannot interleave bytes; responses correlate by id anyway.
+@visibleForTesting
+bool isFastLaneMethod(String method) =>
+    method == EngineMethods.cancelDownload ||
+    method == EngineMethods.queueStatus;
+
 class DesktopEngineService implements EngineService {
   final String _pythonPath;
   final String? _workingDirectory;
@@ -465,22 +493,46 @@ class DesktopEngineService implements EngineService {
       params: params,
     );
 
-    final previousQueue = _requestQueue;
-    final currentTask = () async {
-      if (previousQueue != null) {
-        try {
-          await previousQueue;
-        } catch (_) {}
-      }
+    Future<void> writeRequest() async {
       await _ensureRunning();
       _process!.stdin.writeln(request);
       _process!.stdin.flush();
-    }();
-    _requestQueue = currentTask;
+    }
 
-    await currentTask;
+    if (isFastLaneMethod(method)) {
+      // Fast lane: never wait behind a queued slow extraction's write.
+      try {
+        await writeRequest();
+      } catch (e) {
+        // Do not leak the pending entry on a dead transport; the timer
+        // below would otherwise fire on a zombie id and desync by id.
+        _pending.remove(id);
+        if (!completer.isCompleted) completer.completeError(e);
+        rethrow;
+      }
+    } else {
+      final previousQueue = _requestQueue;
+      final currentTask = () async {
+        if (previousQueue != null) {
+          try {
+            await previousQueue;
+          } catch (_) {}
+        }
+        await writeRequest();
+      }();
+      _requestQueue = currentTask;
 
-    final timeout = Timer(_requestTimeout, () {
+      try {
+        await currentTask;
+      } catch (e) {
+        _pending.remove(id);
+        if (!completer.isCompleted) completer.completeError(e);
+        rethrow;
+      }
+    }
+
+    final timeoutBudget = requestTimeoutForMethod(method);
+    final timeout = Timer(timeoutBudget, () {
       if (!completer.isCompleted) {
         _pending.remove(id);
         completer.completeError(Exception('Request $method timed out'));

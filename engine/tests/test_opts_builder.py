@@ -456,9 +456,13 @@ def test_socket_non_positive_ignored():
 
 
 def test_write_flags_default_off():
+    # SPEC CHANGE (iteration 1 — resume sidecar starvation): writeinfojson
+    # is now default-ON so interrupted downloads leave a sidecar resume.py
+    # can recover a URL from; writedescription stays default-OFF. Opt-out
+    # via write_info_json=False is preserved (see test_infojson_sidecar.py).
     opts = build_ydl_opts()
     assert "writedescription" not in opts
-    assert "writeinfojson" not in opts
+    assert opts.get("writeinfojson") is True
 
 
 def test_write_flags_enabled():

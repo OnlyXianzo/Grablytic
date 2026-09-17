@@ -233,4 +233,7 @@ class TestDenoJsRuntimeFromSo:
         # Bogus env/which must not shadow the engine paths store.
         monkeypatch.setenv("DENO_PATH", "/nonexistent/deno")
         monkeypatch.setattr(pot.shutil, "which", lambda *a, **k: None)
+        # Solver gate is OFF by default (no phantom spawn — item 4); this
+        # test pins store-precedence plumbing on the enabled path.
+        monkeypatch.setattr(pot, "PO_TOKEN_SOLVER_ENABLED", True)
         assert pot.generate_po_token("https://youtube.com/watch?v=abc") == "T123"

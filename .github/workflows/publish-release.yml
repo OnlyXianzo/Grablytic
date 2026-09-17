@@ -55,6 +55,18 @@ jobs:
           echo "=== Final Assets to Upload ==="
           ls -lh release_assets/
 
+      # Supply-side checksums (installer SUPPLY fix): publish a SHA256SUMS file
+      # so install.sh can verify payloads even where the GitHub API `digest`
+      # field is absent (older releases). Generated BEFORE signing so the
+      # checksum file itself gets a Sigstore bundle + verification below, and
+      # is uploaded with the rest of release_assets/* without further changes.
+      - name: Generate SHA256SUMS (supply-side checksums)
+        run: |
+          rm -f release_assets/SHA256SUMS
+          ( cd release_assets && sha256sum -- * > SHA256SUMS )
+          echo "=== SHA256SUMS ==="
+          cat release_assets/SHA256SUMS
+
       # Keyless supply-chain signatures (BRUTAL-4 follow-up): each asset gets
       # a Sigstore bundle (Fulcio cert + Rekor transparency entry) bound to
       # this workflow's OIDC identity — no long-lived keys to rotate or leak.
