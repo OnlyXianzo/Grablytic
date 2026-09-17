@@ -248,7 +248,13 @@ class ObservedSourcesPollWorker(
      */
     private fun readPrefsSnapshot(): PollPrefs? {
         try {
-            if (!applicationContext.getSharedPrefsFile(PREFS_FILE).exists()) {
+            // Probe via classic dataDir path (API-1-safe; avoids newer
+            // Context helpers so release builds compile on every target).
+            val prefsFile = java.io.File(
+                applicationContext.applicationInfo.dataDir,
+                "shared_prefs/$PREFS_FILE.xml",
+            )
+            if (!prefsFile.exists()) {
                 Log.i(TAG, "No $PREFS_FILE.xml yet (fresh install or Dart never saved prefs); using defaults")
             }
         } catch (e: Exception) {
