@@ -5,7 +5,8 @@
 #
 # Detects distro (apt/dnf/zypper/pacman) + arch (x64/arm64), fetches the matching
 # asset from the latest GitHub release (or --version X.Y.Z), verifies SHA256
-# against the release API digest, installs with the native package manager,
+# against the published SHA256SUMS file (falling back to the release API
+# digest), installs with the native package manager,
 # and verifies the `grablytic` binary. Test hooks: OS_RELEASE_FILE, UNAME_M,
 # DRY_RUN=1 (print actions without executing).
 #
@@ -32,7 +33,7 @@ Usage: install.sh [--version X.Y.Z] [--uninstall] [--dry-run] [--no-verify] [--h
                    (pre-rename v0.0.1 used package name `truestream` —
                    remove that one manually if present)
   --dry-run        print every action without executing (also: DRY_RUN=1)
-  --no-verify      install even when no checksum digest is published
+  --no-verify      install even when no checksum (SHA256SUMS entry or digest) is published
                    (you accept TLS-only as your trust model — NOT recommended)
   --help           this text
 One-liner: curl -fsSL https://raw.githubusercontent.com/OnlyXianzo/Grablytic/main/install.sh | bash
@@ -111,6 +112,33 @@ pick_url() { # $1 = exact filename -> browser_download_url or ''
 pick_digest() { # $1 = exact filename -> 'sha256:...' or ''
   printf '%s' "$RELEASE_JSON" | python3 -c 'import json, sys; target = sys.argv[1]; assets = json.load(sys.stdin)["assets"]; m = [a for a in assets if a.get("name") == target]; print(m[0].get("digest", "") if m else "")' "$1"
 }
+sums_hash() { # $1 = sums file, $2 = exact filename -> lowercase hex or ''
+  # Static python (-c single-quoted, no interpolation); untrusted file/args only.
+  python3 -c '
+import sys
+target = sys.argv[1]
+path = sys.argv[2]
+found = ""
+with open(path, "r", encoding="utf-8", errors="replace") as f:
+    for line in f:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        parts = s.split(None, 1)
+        if len(parts) < 2:
+            continue
+        h, name = parts[0], parts[1].strip()
+        if name.startswith("*"):
+            name = name[1:]
+        if name.startswith("./"):
+            name = name[2:]
+        if len(h) != 64 or any(c not in "0123456789abcdefABCDEF" for c in h):
+            continue
+        if name == target:
+            found = h.lower()
+            break
+print(found)' "$2" "$1"
+}
 
 # Post-rename transition: new releases publish `grablytic-*` assets; releases
 # cut before the rename (e.g. v0.0.1) only have `truestream-*` assets.
@@ -132,23 +160,43 @@ log "asset: $FILE"
 # --- download + verify + install ----------------------------------------------
 cd "$TMPDIR_WORK"
 run curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$FILE" "$URL"
-DIGEST="$(pick_digest "$FILE")"
-if [ -n "$DIGEST" ] && [ "$DRY_RUN" != "1" ]; then
-  EXPECT="${DIGEST#sha256:}"; ACTUAL="$(sha256sum "$FILE" | awk '{print $1}')"
+
+# Supply-side checksums, newest first: a published SHA256SUMS asset covers
+# every payload with one auditable file (and works where the API `digest`
+# field is absent); the per-asset API digest remains as fallback for older
+# releases. A hash MISMATCH always fails closed; only a *missing* checksum
+# may be overridden with --no-verify / NO_VERIFY=1.
+SUMS_URL="$(pick_url "SHA256SUMS")"
+EXPECT=""
+if [ -n "$SUMS_URL" ] && [ "$DRY_RUN" != "1" ]; then
+  curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o SHA256SUMS "$SUMS_URL"
+  EXPECT="$(sums_hash SHA256SUMS "$FILE")"
+  if [ -n "$EXPECT" ]; then
+    log "SHA256SUMS: pinned $FILE to $EXPECT"
+  else
+    log "SHA256SUMS has no entry for $FILE — falling back to API digest."
+  fi
+fi
+if [ -z "$EXPECT" ]; then
+  DIGEST="$(pick_digest "$FILE")"
+  if [ -n "$DIGEST" ]; then EXPECT="${DIGEST#sha256:}"; fi
+fi
+if [ -n "$EXPECT" ] && [ "$DRY_RUN" != "1" ]; then
+  ACTUAL="$(sha256sum "$FILE" | awk '{print $1}')"
   [ "$EXPECT" = "$ACTUAL" ] || { log "SHA256 MISMATCH (expected $EXPECT, got $ACTUAL)"; exit 1; }
   log "SHA256 verified."
 elif [ "$DRY_RUN" = "1" ]; then
   log "dry-run: skipping hash check + install"
 elif [ "${NO_VERIFY:-0}" = "1" ]; then
-  log "WARNING: no digest published for $FILE — installing unverified (--no-verify / NO_VERIFY=1 was set)."
+  log "WARNING: no checksum published for $FILE (no SHA256SUMS entry or API digest) — installing unverified (--no-verify / NO_VERIFY=1 was set)."
   log "WARNING: you are trusting TLS alone for a binary that will execute on your system."
 else
-  log "ERROR: no SHA256 digest published for $FILE in release $TAG."
+  log "ERROR: no SHA256 checksum published for $FILE in release $TAG (no SHA256SUMS entry or API digest)."
   log "Refusing to install an unverified binary. This is a downloader that"
   log "executes ffmpeg/aria2c/deno — TLS alone is not an acceptable trust model."
   log ""
   log "Options:"
-  log "  1. Wait for the release maintainer to publish a digest."
+  log "  1. Wait for the release maintainer to publish SHA256SUMS/digests."
   log "  2. Override: NO_VERIFY=1 install.sh  (you accept the risk)"
   log "  3. Download manually and verify the checksum yourself:"
   log "     curl -fsSL -o '$FILE' '$URL'"
