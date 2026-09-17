@@ -952,8 +952,8 @@ class MainActivity : FlutterActivity() {
 
     /** Extension → MIME for ACTION_VIEW. Video/audio first (the app's
      * media), common containers covered explicitly; falls back to the
-     * system MimeTypeMap, then */* so a chooser still appears instead of
-     * failing closed. Never throws. */
+     * system MimeTypeMap, then a wildcard type so a chooser still appears
+     * instead of failing closed. Never throws. */
     private fun mimeTypeForFile(name: String): String {
         val lower = name.lowercase()
         val ext = lower.substringAfterLast('.', "")
