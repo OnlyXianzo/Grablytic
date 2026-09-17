@@ -49,6 +49,13 @@ _pending_queue: list[dict] = []
 # throttling, and Android LMK (Low Memory Killer) crashes.
 # We serialize FFmpeg execution with a process-wide semaphore so only one
 # FFmpeg invocation runs at a time across all active downloads.
+# Timed acquire (item 7): a bare `with` lets one hung merge wedge EVERY later
+# download's post-processing forever. The waiter fails fast with a clear
+# error for THAT download while the gate stays usable for the next one.
+# 600s: ~10x a worst-case low-end 4K remux (seconds to a few minutes even
+# throttled), so legit slow merges pass, while a genuine hang is still
+# bounded instead of forever.
+_FFMPEG_GATE_TIMEOUT = 600.0
 _ffmpeg_semaphore = threading.Semaphore(1)
 _ffmpeg_patched = False
 _ffmpeg_patch_lock = threading.Lock()
@@ -66,8 +73,23 @@ def _ensure_ffmpeg_serialized() -> None:
             orig_real_run_ffmpeg = yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg
 
             def serialized_real_run_ffmpeg(self, *args, **kwargs):
-                with _ffmpeg_semaphore:
+                acquired = _ffmpeg_semaphore.acquire(timeout=_FFMPEG_GATE_TIMEOUT)
+                if not acquired:
+                    # NOTE: wording avoids "timeout"/"timed out" so
+                    # classify_error() does not misroute this to
+                    # ERROR_NETWORK (transient list); it surfaces as
+                    # ERROR_UNKNOWN (recoverable) with a Retry action.
+                    msg = (
+                        "FFmpeg post-processing busy: another merge still "
+                        f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
+                        "please retry the download"
+                    )
+                    log.warn(msg)
+                    raise RuntimeError(msg)
+                try:
                     return orig_real_run_ffmpeg(self, *args, **kwargs)
+                finally:
+                    _ffmpeg_semaphore.release()
 
             yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg = serialized_real_run_ffmpeg
             _ffmpeg_patched = True
