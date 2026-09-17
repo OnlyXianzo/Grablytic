@@ -12,6 +12,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import com.chaquo.python.Python
 
 /**
  * Keeps the process alive while downloads run (screen locked, activity dead).
@@ -212,6 +213,11 @@ class DownloadService : Service() {
     override fun onTimeout(startId: Int) {
         android.util.Log.w(TAG, "ForegroundService dataSync timeout (startId=$startId)")
         try {
+            // Item 5: cancel active engine workers BEFORE alerts/sweep/stop.
+            // Without this the Chaquopy/Python threads keep downloading with
+            // no service until SIGKILL, corrupting .part files. Best-effort:
+            // a failing cancel must never block the timeout path.
+            cancelActiveDownloads(active.keys.toList())
             for ((id, title) in active.entries) {
                 val showAlert = alertPrefs[id] ?: true
                 if (showAlert) {
@@ -235,6 +241,35 @@ class DownloadService : Service() {
     override fun onDestroy() {
         releaseLocks()
         super.onDestroy()
+    }
+
+    /**
+     * Item 5: best-effort cancel of every active download through the
+     * EXISTING engine contract (`grablytic_engine.cancel_download(id)` —
+     * same callAttr channel as MainActivity "download/cancel"; no new
+     * contract invented).
+     *
+     * Bounded by design: `cancel_download` only sets the worker's
+     * cancel_event and returns immediately (honest `cancelling` intermediate;
+     * a watchdog closes wedged workers) — it never joins the download
+     * thread, so this loop cannot block on worker exit. Per-id try/catch
+     * keeps one bad id (or a dead interpreter) from skipping the rest, and
+     * the outer try/catch in onTimeout keeps cancel failures from blocking
+     * alerts, DB sweep, releaseLocks, or stopSelf.
+     */
+    private fun cancelActiveDownloads(ids: List<String>) {
+        if (ids.isEmpty()) return
+        if (!Python.isStarted()) {
+            android.util.Log.w(TAG, "onTimeout: Python not started, skipping engine cancel for ${ids.size} id(s)")
+            return
+        }
+        for (id in ids) {
+            try {
+                Python.getInstance().getModule("grablytic_engine").callAttr("cancel_download", id)
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "onTimeout: cancel $id failed: ${e.message}")
+            }
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
