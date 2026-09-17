@@ -52,6 +52,16 @@ APPROVED_JS_HASHES = {
     hashlib.sha256(DENO_STUB_SCRIPT.encode("utf-8")).hexdigest(),
 }
 
+# Item 4 (phantom PO-token) gate: both allowlisted stubs above are inert by
+# design — they can only ever yield None. Spawning `deno eval` (a full
+# subprocess, up to 10s timeout) on every YouTube download to compute a
+# guaranteed-None token is pure latency/battery waste, so generation
+# fast-paths to None until a REAL solver lands. Landing one means: add its
+# script to APPROVED_JS_HASHES, implement it below, and flip this flag.
+# The spawn machinery is gated, not deleted. Callers already fall back to
+# a user-supplied `paths["po_token"]` when this returns None.
+PO_TOKEN_SOLVER_ENABLED = False
+
 
 def verify_js_code(code: str) -> None:
     """Allowlist check for the two local stub scripts ONLY.
@@ -105,6 +115,11 @@ def js_runtime_available() -> bool:
 
 
 def generate_po_token(url: str) -> str | None:
+    # Item 4 fast-path: no real solver configured — return None WITHOUT
+    # probing for a runtime (detect_js_runtime itself can spawn
+    # `deno --version`) and WITHOUT spawning `deno eval`.
+    if not PO_TOKEN_SOLVER_ENABLED:
+        return None
     runtime = detect_js_runtime()
     name = runtime["name"]
 
@@ -117,6 +132,9 @@ def generate_po_token(url: str) -> str | None:
 
 def _generate_with_quickjs(url: str) -> str | None:
     """Generate PO Token via python-quickjs binding."""
+    # Item 4 fast-path: the allowlisted stub is inert (always None).
+    if not PO_TOKEN_SOLVER_ENABLED:
+        return None
     try:
         import quickjs  # type: ignore[import-untyped]
         ctx = quickjs.Context()
@@ -129,6 +147,11 @@ def _generate_with_quickjs(url: str) -> str | None:
 
 def _generate_with_deno(url: str) -> str | None:
     """Generate PO Token via Deno subprocess."""
+    # Item 4 fast-path: the allowlisted stub is inert (always None) — skip
+    # the `deno eval` spawn entirely. The machinery below stays intact for
+    # a future real solver (see PO_TOKEN_SOLVER_ENABLED).
+    if not PO_TOKEN_SOLVER_ENABLED:
+        return None
     # NOTE: intentionally plain `deno eval` with no permission flags.
     # `--no-read/--no-write/--no-env` are not valid Deno flags (negation is
     # `--deny-*`, and `deno eval` runs with implicit full permissions by
