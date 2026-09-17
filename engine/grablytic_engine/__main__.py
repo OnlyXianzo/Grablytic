@@ -1,5 +1,6 @@
 import sys
 import json
+import concurrent.futures as _futures
 import threading
 import time
 import queue as _queue_module
@@ -32,6 +33,23 @@ from grablytic_engine.persistent import (
 log = get_logger("grablytic_engine.main")
 _log_queue: _queue_module.Queue | None = None
 _stdout_lock = threading.Lock()
+
+# Item 3: head-of-line blocking. The stdin reader must never block behind a
+# slow network extraction (formats/get, playlist/info, search/query). Slow
+# methods run on a bounded worker pool; responses are correlated by request
+# id over the single stdout lock, so out-of-order completion is safe. The
+# envelope contract and method ids are byte-identical (BRUTAL-1).
+_MAX_IPC_WORKERS = 8
+# Fast local-only methods bypass the pool entirely and run inline in the
+# reader thread: a 30s extraction must never delay cancel/queue-status.
+# All are in-memory + lock-guarded (no network), so inline is safe.
+_FAST_IPC_METHODS = frozenset({
+    "download/cancel",
+    "download/queue_status",
+    "download/set_concurrency",
+    "download/clear_archive",
+})
+_paths_lock = threading.Lock()
 
 
 def _write_stdout_line(line_str: str) -> None:
@@ -138,56 +156,94 @@ def poll_queues():
         time.sleep(0.1)
 
 
-def main():
-    if len(sys.argv) > 1:
-        command = sys.argv[1]
-        if command == "bootstrap":
-            _write_stdout_line(json.dumps(bootstrap()))
-        elif command == "formats" and len(sys.argv) >= 3:
-            _write_stdout_line(json.dumps(get_formats(sys.argv[2])))
-        else:
-            _write_stdout_line(f"Unknown CLI command: {command}")
-        return
+def _dispatch_method(method, params):
+    """Pure method dispatch (BRUTAL-1 ids frozen). Thread-safe: all targets
+    are themselves thread-safe (network extractions, lock-guarded queue)."""
+    if method == "engine/bootstrap":
+        return bootstrap()
+    elif method == "download/start":
+        return start_download(
+            url=params["url"],
+            download_id=params["download_id"],
+            config=params.get("config"),
+            network_type=params.get("network_type", "wifi")
+        )
+    elif method == "download/cancel":
+        return cancel_download(params["download_id"])
+    elif method == "download/queue_status":
+        return get_queue_status()
+    elif method == "download/set_concurrency":
+        return set_max_concurrent(params.get("max_concurrent", 2))
+    elif method == "download/clear_archive":
+        return clear_download_archive(params.get("archive_path"))
+    elif method == "formats/get":
+        return get_formats(params["url"], params.get("config"))
+    elif method == "playlist/info":
+        return get_playlist_info(params["url"], params.get("config"))
+    elif method == "search/query":
+        return search_query(
+            query=params.get("query", ""),
+            site=params.get("site", "youtube"),
+            limit=params.get("limit", 20),
+            config=params.get("config"),
+        )
+    elif method == "resume/scan":
+        return scan_resume_candidates(
+            params["cache_dir"],
+            limit=params.get("limit", 50),
+            recursive=params.get("recursive", True),
+            max_attempts=params.get("max_attempts", 3),
+        )
+    elif method == "resume/report":
+        return report_resume_attempt(
+            params["cache_dir"],
+            params["filepath"],
+            params.get("success", False),
+        )
+    elif method == "engine/update_check":
+        return update_check()
+    elif method == "engine/set_update_channel":
+        return set_update_channel(params["channel"])
+    else:
+        return {
+            "success": False,
+            "error_type": "ERROR_UNKNOWN_METHOD",
+            "error_message": f"Method {method} not found"
+        }
 
-    threading.Thread(target=poll_queues, daemon=True).start()
 
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        # Bound before parsing: a malformed line must produce an error
-        # envelope, never an UnboundLocalError that kills the whole loop.
-        req_id = None
-        method = "<unparsed>"
-        params = {}
+def _execute_parsed_request(req_id, method, params):
+    """Run one already-parsed request and write its envelope.
+
+    May run on the reader thread (fast lane / paths/set) or a pool worker
+    (slow extractions). Stdout stays serialized via _write_stdout_line so
+    concurrent completions never interleave; Dart correlates by id.
+    """
+    try:
+        # Sanitized copy for the engine log (never raw secrets: proxy
+        # creds, po_token, signed-URL sigs ride in params/config).
         try:
-            req = json.loads(line)
-            req_id = req.get("id")
-            method = req.get("method")
-            params = req.get("params", {})
+            from grablytic_engine.persistent import sanitize as _sanitize
+            _safe_params = _sanitize(params)
+        except Exception:
+            _safe_params = {}
+        log.info(f"Method: {method}", extra={"params": _safe_params})
 
-            # Sanitized copy for the engine log (never raw secrets: proxy
-            # creds, po_token, signed-URL sigs ride in params/config).
-            try:
-                from grablytic_engine.persistent import sanitize as _sanitize
-                _safe_params = _sanitize(params)
-            except Exception:
-                _safe_params = {}
-            log.info(f"Method: {method}", extra={"params": _safe_params})
+        # Sanitized copy for the rotating handler (never raw secrets).
+        try:
+            from grablytic_engine.persistent import sanitize as _sanitize
+            get_std_logger().debug(">> %s params=%s",
+                                   method, _sanitize(params))
+        except Exception:
+            pass
 
-            # Sanitized copy for the rotating handler (never raw secrets).
-            try:
-                from grablytic_engine.persistent import sanitize as _sanitize
-                get_std_logger().debug(">> %s params=%s",
-                                       method, _sanitize(params))
-            except Exception:
-                pass
-
-            res = None
-            if method == "paths/set":
-                # T0-2: forward set_paths' verdict — it fails closed on
-                # non-absolute roots / untrusted binaries. The old code
-                # always answered success, hiding rejections from the UI.
+        res = None
+        if method == "paths/set":
+            # T0-2: forward set_paths' verdict — it fails closed on
+            # non-absolute roots / untrusted binaries. The old code
+            # always answered success, hiding rejections from the UI.
+            # Serialized: mutates the global log queue.
+            with _paths_lock:
                 res = set_paths(
                     data_dir=params["data_dir"],
                     output_dir=params["output_dir"],
@@ -212,101 +268,118 @@ def main():
                     init_persistent_logging(data_dir + "/logs")
                 except Exception:
                     pass
-            else:
-                # Request/response middleware boundary (STEP 3B): latency,
-                # sanitized payloads and full tracebacks via traced_request.
-                def _dispatch():
-                    if method == "engine/bootstrap":
-                        return bootstrap()
-                    elif method == "download/start":
-                        return start_download(
-                            url=params["url"],
-                            download_id=params["download_id"],
-                            config=params.get("config"),
-                            network_type=params.get("network_type", "wifi")
-                        )
-                    elif method == "download/cancel":
-                        return cancel_download(params["download_id"])
-                    elif method == "download/queue_status":
-                        return get_queue_status()
-                    elif method == "download/set_concurrency":
-                        return set_max_concurrent(params.get("max_concurrent", 2))
-                    elif method == "download/clear_archive":
-                        return clear_download_archive(params.get("archive_path"))
-                    elif method == "formats/get":
-                        return get_formats(params["url"], params.get("config"))
-                    elif method == "playlist/info":
-                        return get_playlist_info(params["url"], params.get("config"))
-                    elif method == "search/query":
-                        return search_query(
-                            query=params.get("query", ""),
-                            site=params.get("site", "youtube"),
-                            limit=params.get("limit", 20),
-                            config=params.get("config"),
-                        )
-                    elif method == "resume/scan":
-                        return scan_resume_candidates(
-                            params["cache_dir"],
-                            limit=params.get("limit", 50),
-                            recursive=params.get("recursive", True),
-                            max_attempts=params.get("max_attempts", 3),
-                        )
-                    elif method == "resume/report":
-                        return report_resume_attempt(
-                            params["cache_dir"],
-                            params["filepath"],
-                            params.get("success", False),
-                        )
-                    elif method == "engine/update_check":
-                        return update_check()
-                    elif method == "engine/set_update_channel":
-                        return set_update_channel(params["channel"])
-                    else:
-                        return {
-                            "success": False,
-                            "error_type": "ERROR_UNKNOWN_METHOD",
-                            "error_message": f"Method {method} not found"
-                        }
+        else:
+            # Request/response middleware boundary (STEP 3B): latency,
+            # sanitized payloads and full tracebacks via traced_request.
+            _method = method
+            _params = params
 
-                try:
-                    std_log = get_std_logger()
-                except Exception:
-                    std_log = None  # type: ignore[assignment]
-                res = traced_request(
-                    str(method), params if isinstance(params, dict) else {},
-                    _dispatch, logger=std_log, engine_log=log,
-                )
+            def _dispatch():
+                return _dispatch_method(_method, _params)
 
-            response = {"id": req_id}
-            if isinstance(res, dict) and res.get("success") is False:
-                response["error"] = res
-            else:
-                response["result"] = res
-
-            _write_stdout_line(json.dumps(response))
-
-        except Exception as e:
-            log.log_exception(e, f"Error processing {method}")
             try:
-                persistent_flush()
+                std_log = get_std_logger()
             except Exception:
-                pass
-            # Opt-in auto-report (STEP 3C): gated by GRABLYTIC_AUTO_REPORT=1
-            # inside notify_exception; never blocks the error response.
-            try:
-                from grablytic_engine.github_notifier import notify_exception
-                notify_exception(e, context={"method": str(method)})
-            except Exception:
-                pass
-            err_res = {
-                "id": req_id,
-                "error": {
-                    "success": False,
-                    "error_type": "ERROR_INTERNAL",
-                    "error_message": str(e)
-                }
+                std_log = None  # type: ignore[assignment]
+            res = traced_request(
+                str(method), params if isinstance(params, dict) else {},
+                _dispatch, logger=std_log, engine_log=log,
+            )
+
+        response = {"id": req_id}
+        if isinstance(res, dict) and res.get("success") is False:
+            response["error"] = res
+        else:
+            response["result"] = res
+
+        _write_stdout_line(json.dumps(response))
+
+    except Exception as e:
+        log.log_exception(e, f"Error processing {method}")
+        try:
+            persistent_flush()
+        except Exception:
+            pass
+        # Opt-in auto-report (STEP 3C): gated by GRABLYTIC_AUTO_REPORT=1
+        # inside notify_exception; never blocks the error response.
+        try:
+            from grablytic_engine.github_notifier import notify_exception
+            notify_exception(e, context={"method": str(method)})
+        except Exception:
+            pass
+        err_res = {
+            "id": req_id,
+            "error": {
+                "success": False,
+                "error_type": "ERROR_INTERNAL",
+                "error_message": str(e)
             }
-            _write_stdout_line(json.dumps(err_res))
+        }
+        _write_stdout_line(json.dumps(err_res))
+
+
+def main():
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command == "bootstrap":
+            _write_stdout_line(json.dumps(bootstrap()))
+        elif command == "formats" and len(sys.argv) >= 3:
+            _write_stdout_line(json.dumps(get_formats(sys.argv[2])))
+        else:
+            _write_stdout_line(f"Unknown CLI command: {command}")
+        return
+
+    threading.Thread(target=poll_queues, daemon=True).start()
+
+    with _futures.ThreadPoolExecutor(
+        max_workers=_MAX_IPC_WORKERS, thread_name_prefix="ipc"
+    ) as _pool:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            # Bound before parsing: a malformed line must produce an error
+            # envelope, never an UnboundLocalError that kills the whole loop.
+            req_id = None
+            method = "<unparsed>"
+            params = {}
+            try:
+                req = json.loads(line)
+                req_id = req.get("id")
+                method = req.get("method")
+                params = req.get("params", {})
+            except Exception as e:
+                # Parse failure stays inline: no id to preserve beyond null.
+                log.log_exception(e, f"Error processing {method}")
+                try:
+                    persistent_flush()
+                except Exception:
+                    pass
+                try:
+                    from grablytic_engine.github_notifier import notify_exception
+                    notify_exception(e, context={"method": str(method)})
+                except Exception:
+                    pass
+                _write_stdout_line(json.dumps({
+                    "id": req_id,
+                    "error": {
+                        "success": False,
+                        "error_type": "ERROR_INTERNAL",
+                        "error_message": str(e)
+                    }
+                }))
+                continue
+
+            # Fast lane: local-only cancel/status (and sibling setters) run
+            # inline so a wedged extraction can never hold them hostage.
+            # paths/set is also inline (serialized global init, no network).
+            if method in _FAST_IPC_METHODS or method == "paths/set":
+                _execute_parsed_request(req_id, method, params)
+            else:
+                _pool.submit(_execute_parsed_request, req_id, method, params)
+        # Exiting `with` drains in-flight workers so every accepted request
+        # gets its envelope before EOF shutdown (keeps _run_lines-style
+        # harnesses deterministic).
 
     # Gracefully shut down any in-flight downloads on EOF/exit
     try:
