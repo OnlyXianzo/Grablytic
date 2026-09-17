@@ -4,13 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'Workflow run ID containing artifacts'
-        required: true
-        default: '34767555115'
+        description: 'Build-and-Release run ID to publish. Leave empty to auto-resolve the latest successful build of the tag commit.'
+        required: false
+        default: ''
       tag_name:
-        description: 'Release tag name'
+        description: 'Release tag name (must already exist as a git tag, e.g. v0.0.4)'
         required: true
-        default: 'v0.0.1'
 
 permissions:
   contents: write
@@ -30,12 +29,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Single-dispatch fix: an explicit run_id is still honored (pin an
+      # exact build), but the default path resolves the newest successful
+      # 'Build and Release' run for the tag's own commit, so operators only
+      # supply the tag. Fails closed when no such build exists — it never
+      # silently falls back to an unrelated run's artifacts.
+      - name: Resolve build run (explicit run_id or latest success for the tag)
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RUN_ID: ${{ github.event.inputs.run_id }}
+          TAG_NAME: ${{ github.event.inputs.tag_name }}
+        run: |
+          if [ -n "$INPUT_RUN_ID" ]; then
+            RUN_ID="$INPUT_RUN_ID"
+            echo "Using operator-supplied run_id: $RUN_ID"
+          else
+            git fetch --force origin "refs/tags/$TAG_NAME:refs/tags/$TAG_NAME"
+            TAG_SHA="$(git rev-list -n 1 "$TAG_NAME")"
+            echo "Tag $TAG_NAME -> commit $TAG_SHA"
+            RUN_ID="$(gh run list --workflow 'Build and Release' --status success --commit "$TAG_SHA" --json databaseId --limit 1 --jq '.[0].databaseId // empty')"
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::No successful 'Build and Release' run found for $TAG_NAME ($TAG_SHA). Dispatch 'Build and Release' first, then re-run this workflow."
+              exit 1
+            fi
+            echo "Auto-resolved run_id: $RUN_ID (latest successful build of $TAG_SHA)"
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts from run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ steps.resolve.outputs.run_id }}
         run: |
           mkdir -p downloaded_artifacts
-          gh run download "${{ github.event.inputs.run_id }}" --repo "${{ github.repository }}" --dir downloaded_artifacts
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" --dir downloaded_artifacts
           echo "=== Downloaded Artifacts ==="
           find downloaded_artifacts -type f
 

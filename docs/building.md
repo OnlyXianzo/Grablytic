@@ -242,6 +242,31 @@ The `build.yml` GitHub Actions workflow produces multi-architecture binaries acr
   - 64-bit portable release zip (`grablytic-windows-x64.zip`) and release bundle with engine included
 
 To trigger: go to GitHub → Actions → **Build and Release** → **Run workflow**.
+This is the primary single-dispatch path: it runs the verify gate, builds
+every platform, derives the tag from `pubspec.yaml` (`v<version-core>`), and
+creates/updates that version-tagged GitHub release.
+
+### Hardened Publish (`publish-release.yml`)
+
+The `publish-release.yml` workflow attaches supply-chain hardening to an
+already-created release: a `SHA256SUMS` file (which `install.sh` prefers for
+fail-closed verification) plus keyless cosign/Sigstore bundles for every
+asset, verified fail-closed before upload. `build.yml`'s embedded publish
+does not do this step, so run this workflow after the release exists.
+
+It needs only the tag — `run_id` is optional and auto-resolves to the latest
+successful **Build and Release** run for the tag's own commit (an explicit
+`run_id` still pins an exact build; resolution fails closed when no
+successful build of that commit exists):
+
+```bash
+# 1. Build + create the release (tag derived from pubspec.yaml)
+gh workflow run "Build and Release" --ref main
+# 2. Attach SHA256SUMS + cosign bundles (run_id auto-resolved)
+gh workflow run "Publish Release Assets" --ref main -f tag_name=v0.0.4
+# Pin an exact build instead of auto-resolving (optional):
+gh workflow run "Publish Release Assets" --ref main -f tag_name=v0.0.4 -f run_id=<build-run-id>
+```
 
 > Diagnostics reports stamp the Flutter SDK version via
 > `--dart-define=GRABLYTIC_FLUTTER_VERSION=...` (wired in `build.yml`; read in code
