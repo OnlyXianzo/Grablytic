@@ -7,6 +7,12 @@ name: Build and Release
 # keep native conventions untouched.
 on:
   workflow_dispatch:
+    inputs:
+      publish_to_release:
+        description: 'Run the Publish Release Assets job (version-tagged GitHub release).'
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       asset_suffix:
