@@ -14,6 +14,10 @@
 # produces no nightly and uploads nothing. The rolling `nightly` tag is
 # refreshed in place (old dated assets deleted first); it is a prerelease.
 # Keystore signing flows through automatically when KEYSTORE_BASE64 is set.
+#
+# Auto-run gate: scheduled runs only proceed when ≥10 new commits exist
+# since the `nightly` tag (MIN_COMMITS). Manual `workflow_dispatch` runs
+# always proceed (bypass the gate).
 
 name: Nightly Build
 
@@ -25,13 +29,72 @@ on:
 permissions:
   contents: write
 
+env:
+  MIN_COMMITS: '10'
+
 concurrency:
   group: nightly
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Gate — 10 new commits since nightly?
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      commit_count: ${{ steps.check.outputs.commit_count }}
+      base: ${{ steps.check.outputs.base }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - id: check
+        run: |
+          THRESHOLD="${MIN_COMMITS:-10}"
+          echo "Threshold: $THRESHOLD commits"
+
+          # Manual runs always proceed — the gate only throttles the schedule.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — bypassing commit gate."
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "commit_count=manual" >> $GITHUB_OUTPUT
+            echo "base=manual" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Base = rolling nightly tag; fall back to latest stable v* tag.
+          if git rev-parse --verify --quiet refs/tags/nightly >/dev/null; then
+            BASE="nightly"
+          else
+            BASE=$(git tag --sort=-v:refname --list 'v*.*.*' | head -n 1)
+            if [ -z "$BASE" ]; then
+              echo "No nightly or version tag found — running (first nightly)."
+              echo "should_run=true" >> $GITHUB_OUTPUT
+              echo "commit_count=unknown" >> $GITHUB_OUTPUT
+              echo "base=none" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          COUNT=$(git rev-list --count "$BASE"..HEAD)
+          echo "Commits since $BASE: $COUNT (threshold $THRESHOLD)"
+          echo "base=$BASE" >> $GITHUB_OUTPUT
+          echo "commit_count=$COUNT" >> $GITHUB_OUTPUT
+
+          if [ "$COUNT" -ge "$THRESHOLD" ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "Gate PASSED — proceeding with nightly."
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "Gate SKIPPED — only $COUNT/$THRESHOLD new commits since $BASE."
+          fi
+
   prep:
     name: Compute Nightly Suffix
+    needs: [gate]
+    if: needs.gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       suffix: ${{ steps.stamp.outputs.suffix }}
