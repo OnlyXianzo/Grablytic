@@ -1,9 +1,57 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/download_history_db.dart';
+import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/trust_boundary.dart';
 import '../../../providers/download_history_provider.dart';
 import '../../home/widgets/download_log_sheet.dart';
+
+/// History rows can be played when the media file path is known. Existence
+/// is verified at tap time (the file may have been deleted outside the app).
+bool _isPlayable(DownloadRecord record) =>
+    record.filePath != null && record.filePath!.trim().isNotEmpty;
+
+/// Opens a history record's media file in the system player.
+///
+/// Mirrors the media-preview open path: Android goes through FileProvider
+/// (`intent/open_file`), desktop through the OS resolver. Never throws —
+/// every failure surfaces as a snackbar.
+Future<void> playHistoryRecord(
+    BuildContext context, WidgetRef ref, DownloadRecord record) async {
+  final raw = record.filePath;
+  if (raw == null || raw.trim().isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('No file for this entry yet')),
+    );
+    return;
+  }
+  final path = sanitizeEngineFilePath(raw.trim()) ?? raw.trim();
+  if (!File(path).existsSync()) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('File not found — it may have been moved or deleted'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+    return;
+  }
+  bool opened = false;
+  try {
+    final res = await ref.read(engineProvider).openFile(path);
+    opened = res['success'] == true;
+  } catch (_) {}
+  if (!context.mounted) return;
+  if (opened) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('No app can play this file.\nOpen file at: $path'),
+      backgroundColor: Theme.of(context).colorScheme.error,
+    ),
+  );
+}
 
 class DownloadHistoryScreen extends ConsumerStatefulWidget {
   final bool useGridView;
@@ -289,8 +337,121 @@ class _DownloadHistoryScreenState
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
+/// Thumbnail for a history record with a play badge when playable.
+///
+/// Source order matches the Library: local sidecar ([DownloadRecord.thumbnailPath],
+/// offline-friendly, no tracking-pixel fetch) first, remote
+/// [DownloadRecord.thumbnailUrl] second, platform icon fallback last.
+/// Local paths pass the [sanitizeEngineFilePath] trust boundary and must
+/// exist on disk; decodes are capped like the Library to avoid scroll jank.
+class _HistoryThumbnail extends StatelessWidget {
+  final DownloadRecord record;
+  final ColorScheme colorScheme;
+  final IconData Function(String?) platformIcon;
+  final double width;
+  final double height;
+  final double borderRadius;
+  final bool showPlayBadge;
+
+  const _HistoryThumbnail({
+    required this.record,
+    required this.colorScheme,
+    required this.platformIcon,
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+    this.showPlayBadge = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget image = _fallback();
+    final local = record.thumbnailPath;
+    if (local != null && local.trim().isNotEmpty) {
+      final raw = local.trim().startsWith('file://')
+          ? local.trim().substring(7)
+          : local.trim();
+      final path = sanitizeEngineFilePath(raw);
+      if (path != null && File(path).existsSync()) {
+        image = _fileImage(File(path));
+      }
+    }
+    if (image is _ThumbFallback) {
+      final remote = record.thumbnailUrl;
+      if (remote != null && remote.trim().isNotEmpty) {
+        image = _networkImage(remote.trim());
+      }
+    }
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          image,
+          if (showPlayBadge)
+            const Center(
+              child: Icon(
+                Icons.play_circle_fill,
+                size: 28,
+                color: Colors.white,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fallback() => _ThumbFallback(
+        icon: platformIcon(record.platform),
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+      );
+
+  Widget _fileImage(File file) => RepaintBoundary(
+        child: Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          cacheWidth: 360,
+          errorBuilder: (context, error, stackTrace) => _fallback(),
+        ),
+      );
+
+  Widget _networkImage(String url) {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return _fallback();
+    }
+    return RepaintBoundary(
+      child: Image.network(
+        url,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        cacheWidth: 360,
+        errorBuilder: (context, error, stackTrace) => _fallback(),
+      ),
+    );
+  }
+}
+
+class _ThumbFallback extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _ThumbFallback({required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) =>
+      Center(child: Icon(icon, size: 20, color: color));
+}
+
+class _FilterChip extends StatelessWidget {  final String label;
   final bool selected;
   final VoidCallback onSelected;
   final ColorScheme colorScheme;
@@ -338,7 +499,7 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _HistoryItem extends StatelessWidget {
+class _HistoryItem extends ConsumerWidget {
   final DownloadRecord record;
   final ColorScheme colorScheme;
   final TextTheme textTheme;
@@ -360,8 +521,9 @@ class _HistoryItem extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final statusCol = statusColor(record.status, colorScheme);
+    final playable = _isPlayable(record);
 
     return Dismissible(
       key: ValueKey(record.id),
@@ -388,17 +550,18 @@ class _HistoryItem extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  platformIcon(record.platform),
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  size: 20,
+              GestureDetector(
+                onTap: playable
+                    ? () => playHistoryRecord(context, ref, record)
+                    : null,
+                child: _HistoryThumbnail(
+                  record: record,
+                  colorScheme: colorScheme,
+                  platformIcon: platformIcon,
+                  width: 64,
+                  height: 64,
+                  borderRadius: 12,
+                  showPlayBadge: playable,
                 ),
               ),
               const SizedBox(width: 12),
@@ -474,6 +637,19 @@ class _HistoryItem extends StatelessWidget {
                   ],
                 ),
               ),
+              if (playable)
+                Semantics(
+                  label: 'Play ${record.title}',
+                  child: IconButton(
+                    key: Key('history-play-${record.id}'),
+                    icon: Icon(Icons.play_circle_outline,
+                        size: 20, color: colorScheme.primary),
+                    onPressed: () =>
+                        playHistoryRecord(context, ref, record),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Play',
+                  ),
+                ),
               Semantics(
                 label: 'View download logs',
                 child: IconButton(
@@ -510,7 +686,7 @@ class _HistoryItem extends StatelessWidget {
   }
 }
 
-class _HistoryGridCard extends StatelessWidget {
+class _HistoryGridCard extends ConsumerWidget {
   final DownloadRecord record;
   final ColorScheme colorScheme;
   final TextTheme textTheme;
@@ -532,8 +708,9 @@ class _HistoryGridCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final statusCol = statusColor(record.status, colorScheme);
+    final playable = _isPlayable(record);
 
     return Semantics(
       label:
@@ -553,17 +730,18 @@ class _HistoryGridCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  platformIcon(record.platform),
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  size: 20,
+              GestureDetector(
+                onTap: playable
+                    ? () => playHistoryRecord(context, ref, record)
+                    : null,
+                child: _HistoryThumbnail(
+                  record: record,
+                  colorScheme: colorScheme,
+                  platformIcon: platformIcon,
+                  width: double.infinity,
+                  height: 110,
+                  borderRadius: 8,
+                  showPlayBadge: playable,
                 ),
               ),
               const SizedBox(height: 8),
@@ -630,6 +808,19 @@ class _HistoryGridCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (playable)
+                    Semantics(
+                      label: 'Play ${record.title}',
+                      child: IconButton(
+                        key: Key('history-play-${record.id}'),
+                        icon: Icon(Icons.play_circle_outline,
+                            size: 20, color: colorScheme.primary),
+                        onPressed: () =>
+                            playHistoryRecord(context, ref, record),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Play',
+                      ),
+                    ),
                   Semantics(
                     label: 'View download logs',
                     child: IconButton(
