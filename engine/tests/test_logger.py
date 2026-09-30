@@ -866,3 +866,50 @@ def test_concurrent_get_logger_and_global_setters_race_free():
         t.join(timeout=10)
     assert not errors
     assert callable(_lm.get_logger("race-0").info)
+
+
+# ---------------------------------------------------------------------------
+# flush_log_sinks (export path: engine_*.txt must be durable before copy)
+# ---------------------------------------------------------------------------
+
+
+class TestFlushLogSinks:
+    @pytest.mark.unit
+    def test_flush_without_sinks_never_raises(self) -> None:
+        import grablytic_engine.logger as logger_mod
+
+        logger_mod.close_log_sinks()
+        logger_mod.flush_log_sinks()  # must not raise
+
+    @pytest.mark.unit
+    def test_flush_makes_buffered_debug_durable_and_keeps_sink_open(
+        self, tmp_path: Path
+    ) -> None:
+        """DEBUG rides a 64 KiB buffer: without an explicit flush the export
+        copy can miss the newest bytes. flush_log_sinks must force them to
+        disk while keeping the handle usable for later lines."""
+        import grablytic_engine.logger as logger_mod
+
+        d = tmp_path / "flush-logs"
+        d.mkdir()
+        prev_dir = logger_mod._global_log_dir
+        logger_mod.set_global_log_dir(str(d))
+        try:
+            logger = logger_mod.get_logger("flush-probe")
+            for i in range(5):
+                logger.debug(f"buffered line {i}")
+            logger_mod.flush_log_sinks()
+
+            files = list(d.glob("engine_*.txt"))
+            assert len(files) == 1
+            assert len(files[0].read_text().splitlines()) == 5
+
+            # Sink stays open — logging continues after a flush.
+            logger.debug("after flush")
+            logger_mod.flush_log_sinks()
+            assert len(files[0].read_text().splitlines()) == 6
+        finally:
+            logger_mod.close_log_sinks()
+            logger_mod._global_log_dir = prev_dir
+            for lg in list(logger_mod._loggers.values()):
+                lg._log_dir = prev_dir

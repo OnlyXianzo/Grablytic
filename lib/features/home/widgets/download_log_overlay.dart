@@ -8,12 +8,12 @@ import 'download_log_sheet.dart';
 
 /// Live engine-log strip for one download (ytdlnis-style).
 ///
-/// Translucent black box, white monospace lines, fed by the shared
-/// [LogBuffer]'s per-download store: engine events carry the download id
-/// (`downloadId`, fallback `traceId`), so concurrent downloads never
-/// interleave here. Collapsed: last 8 lines. Tap:
-/// expands to the last 60 with autoscroll. The parent decides visibility
-/// (downloading or errored); empty renders nothing.
+/// Seal/ytdlnis parity: the download card itself shows friendly status
+/// (stage + progress + speed — rendered by the parent), never raw terminal
+/// text. Raw logs live behind this details affordance: collapsed shows a
+/// compact "View logs (N)" button; tap expands to the last 60 lines with
+/// autoscroll + a jump to the full [DownloadLogSheet] (search/filter/copy).
+/// Empty renders nothing.
 class DownloadLogOverlay extends ConsumerStatefulWidget {
   final String downloadId;
   final bool visible;
@@ -97,9 +97,11 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
   @override
   Widget build(BuildContext context) {
     if (!widget.visible) return const SizedBox.shrink();
-    final lines = _linesForDownload(
-        ref.watch(logBufferProvider).forDownload(widget.downloadId));
-    if (lines.isEmpty) return const SizedBox.shrink();
+    final allForDownload =
+        ref.watch(logBufferProvider).forDownload(widget.downloadId);
+    if (allForDownload.isEmpty) return const SizedBox.shrink();
+    final totalCount = allForDownload.length;
+    final lines = _linesForDownload(allForDownload);
     final textTheme = Theme.of(context).textTheme;
 
     Widget line(LogEntry e) {
@@ -115,7 +117,7 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
             fontSize: 10.5,
             height: 1.35,
           ),
-          maxLines: _expanded ? 4 : 2,
+          maxLines: 4,
           overflow: TextOverflow.ellipsis,
         ),
       );
@@ -144,7 +146,7 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
                   const Icon(Icons.terminal, size: 12, color: Colors.white70),
                   const SizedBox(width: 6),
                   Text(
-                    _expanded ? 'LIVE LOG' : 'LIVE',
+                    _expanded ? 'LIVE LOG' : 'View logs ($totalCount)',
                     style: textTheme.mono.copyWith(
                       color: Colors.white70,
                       fontSize: 10,
@@ -178,8 +180,11 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              if (_expanded)
+              // Collapsed: friendly affordance only (no raw terminal text —
+              // Seal shows status + bar on the card, ytdlnis keeps logs in
+              // the details sheet). Expanded: last 60 lines + full sheet.
+              if (_expanded) ...[
+                const SizedBox(height: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 180),
                   child: ListView(
@@ -187,12 +192,8 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
                     shrinkWrap: true,
                     children: lines.map(line).toList(),
                   ),
-                )
-              else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: lines.map(line).toList(),
                 ),
+              ],
             ],
           ),
         ),

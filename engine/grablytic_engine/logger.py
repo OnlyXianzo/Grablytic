@@ -266,6 +266,33 @@ def close_log_sinks() -> None:
         pass
 
 
+def flush_log_sinks() -> None:
+    """Flush buffered daily-file lines to disk WITHOUT closing handles.
+
+    DEBUG lines ride a 64 KiB / 5 s buffer (INFO+ are write-through), so a
+    reader that opens ``engine_YYYY-MM-DD.txt`` directly — e.g. the Android
+    MediaStore export — can miss the newest bytes. Call this before any
+    out-of-band file copy (the export path does). Keeps handles open, so
+    logging continues undisturbed. Idempotent, never raises.
+    """
+    try:
+        with _file_sinks_lock:
+            items = list(_file_sinks.values())
+        for sink in items:
+            try:
+                sink["fh"].flush()
+            except Exception:
+                pass
+        try:
+            with _file_sinks_lock:
+                for sink in _file_sinks.values():
+                    sink["last_flush"] = _time_monotonic()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 try:
     import atexit as _atexit
     _atexit.register(close_log_sinks)

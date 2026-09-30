@@ -43,6 +43,11 @@ class _AppShellState extends ConsumerState<AppShell> {
   final ListQueue<String> _pendingShareUrls = ListQueue();
   static const int _maxPendingShares = 50;
   bool _sharePumping = false;
+  // Exactly-once drain guard: the native push is a wake-up hint only, so
+  // concurrent hints (cold-start + stream for one share) coalesce into a
+  // single queue drain instead of double-enqueueing the same URL.
+  bool _drainingShares = false;
+  bool _needsRedrain = false;
 
   @override
   void initState() {
@@ -60,19 +65,45 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   void _initSharedUrlListening() {
     final engine = ref.read(engineProvider);
-    _intentSubscription = engine.sharedUrlStream.listen((url) {
-      _enqueueSharedUrl(url);
+    // The native intent/shared_url push is a WAKE-UP HINT only (the queue
+    // is the single source of truth). Drain via get_shared so one native
+    // enqueue yields exactly one sheet — the old code enqueued the hint
+    // payload directly AND drained the same URL, showing "choose quality"
+    // twice for a single Instagram share.
+    _intentSubscription = engine.sharedUrlStream.listen((_) {
+      _drainNativeQueue();
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Drain every queued cold-start share, not just the first one.
+      await _drainNativeQueue();
+      _checkBatteryPrompt();
+    });
+  }
+
+  /// Pops every queued native share (exactly-once via poll) into the Dart
+  /// FIFO. Concurrent hints coalesce: a second hint while a drain is in
+  /// flight just re-drains afterwards instead of duplicating.
+  Future<void> _drainNativeQueue() async {
+    if (!mounted) return;
+    if (_drainingShares) {
+      _needsRedrain = true;
+      return;
+    }
+    _drainingShares = true;
+    try {
+      final engine = ref.read(engineProvider);
       for (var i = 0; i < _maxPendingShares; i++) {
         final sharedUrl = await engine.getSharedUrl();
         if (sharedUrl == null || sharedUrl.isEmpty) break;
         _enqueueSharedUrl(sharedUrl);
       }
-      _checkBatteryPrompt();
-    });
+    } finally {
+      _drainingShares = false;
+    }
+    if (_needsRedrain && mounted) {
+      _needsRedrain = false;
+      await _drainNativeQueue();
+    }
   }
 
   /// Enqueue a share URL and drive the sheet pump. Each URL is consumed

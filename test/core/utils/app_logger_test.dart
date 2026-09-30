@@ -42,4 +42,27 @@ void main() {
       expect(buffer.entries.last.message, msg);
     });
   });
+
+  group('AppLogger log-file listing (server/engine visibility)', () {
+    test('lists daily, engine, rolling and server logs', () {
+      expect(AppLogger.isLogFilePath('/logs/log_2026-09-25.txt'), isTrue);
+      expect(AppLogger.isLogFilePath('/logs/engine_2026-09-25.txt'), isTrue);
+      expect(AppLogger.isLogFilePath('/logs/app_logs.txt'), isTrue);
+      expect(AppLogger.isLogFilePath('/logs/server_logs.log'), isTrue);
+    });
+
+    test('lists RotatingFileHandler backups (server_logs.log.1 …)', () {
+      // Previously invisible (don't end with .log) — the newest engine
+      // history after a rollover lives here.
+      expect(AppLogger.isLogFilePath('/logs/server_logs.log.1'), isTrue);
+      expect(AppLogger.isLogFilePath('/logs/server_logs.log.5'), isTrue);
+    });
+
+    test('rejects non-log files', () {
+      expect(AppLogger.isLogFilePath('/logs/site-packages.zip'), isFalse);
+      expect(AppLogger.isLogFilePath('/logs/cookies.txt.bak'), isFalse);
+      expect(AppLogger.isLogFilePath('/logs/server_logs.log.bak'), isFalse);
+      expect(AppLogger.isLogFilePath('/logs/.nomedia'), isFalse);
+    });
+  });
 }

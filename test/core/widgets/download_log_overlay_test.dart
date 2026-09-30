@@ -30,7 +30,8 @@ Widget _harness(LogBuffer buffer, {bool visible = true}) {
 
 void main() {
   group('DownloadLogOverlay', () {
-    testWidgets('shows own download lines, hides others', (tester) async {
+    testWidgets('shows affordance, hides raw lines until expanded',
+        (tester) async {
       final buffer = LogBuffer()
         ..add(_engineLine('dl-1', 'Fetching formats'))
         ..add(_engineLine('dl-2', 'other download chatter'))
@@ -46,9 +47,16 @@ void main() {
       await tester.pumpWidget(_harness(buffer));
       await tester.pump();
 
-      expect(find.textContaining('Fetching formats'), findsOneWidget);
+      // Seal/ytdlnis parity: card shows a friendly affordance, never raw
+      // terminal text. Raw lines appear only after explicit expand.
+      expect(find.textContaining('View logs (1)'), findsOneWidget);
+      expect(find.textContaining('Fetching formats'), findsNothing);
       expect(find.textContaining('other download chatter'), findsNothing);
       expect(find.textContaining('UI line, not engine'), findsNothing);
+
+      await tester.tap(find.byType(DownloadLogOverlay));
+      await tester.pump();
+      expect(find.textContaining('Fetching formats'), findsOneWidget);
     });
 
     testWidgets('renders nothing when invisible or empty', (tester) async {
@@ -82,8 +90,9 @@ void main() {
       await tester.pumpWidget(_harness(buffer));
       await tester.pump();
 
-      // Collapsed: last 8 only.
-      expect(find.textContaining('line 11'), findsOneWidget);
+      // Collapsed: affordance with count, no raw lines.
+      expect(find.textContaining('View logs (12)'), findsOneWidget);
+      expect(find.textContaining('line 11'), findsNothing);
       expect(find.textContaining('line 0'), findsNothing);
 
       await tester.tap(find.byType(DownloadLogOverlay));

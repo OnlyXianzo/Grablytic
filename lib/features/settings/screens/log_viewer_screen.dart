@@ -214,9 +214,13 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         msg = 'Saved to Downloads:\n${res['path']}';
       } else {
         final fallback = await AppLogger.exportLogFile(file);
-        msg = fallback.startsWith('ERROR:')
+        final reason = res['error']?.toString();
+        final where = fallback.startsWith('ERROR:')
             ? fallback
-            : 'Downloads unavailable — exported instead to:\n$fallback';
+            : 'exported instead to:\n$fallback';
+        msg = (reason == null || reason.isEmpty)
+            ? 'Downloads unavailable — $where'
+            : 'Downloads unavailable ($reason) — $where';
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

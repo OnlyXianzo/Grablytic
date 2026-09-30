@@ -229,6 +229,12 @@ class MainActivity : FlutterActivity() {
                     val match = urlRegex.find(sharedText)
                     if (match != null) {
                         enqueueSharedUrl(match.value)
+                        // Consume-once (Seal/asilichenko pattern): without this,
+                        // activity recreation re-runs configureFlutterEngine →
+                        // handleSendText with the SAME intent and re-queues a
+                        // duplicate. removeExtra keeps a second distinct share
+                        // of the same URL working (new intent still has it).
+                        try { intent.removeExtra(Intent.EXTRA_TEXT) } catch (_: Exception) {}
                     }
                 }
             }
@@ -240,6 +246,10 @@ class MainActivity : FlutterActivity() {
                 if (data.length > 8192) return
                 if (data.startsWith("http://") || data.startsWith("https://")) {
                     enqueueSharedUrl(data)
+                    // Consume-once for VIEW (same recreation hazard as SEND):
+                    // clear data so a re-run with the same intent is a no-op,
+                    // while a fresh VIEW intent with the same URL still queues.
+                    try { intent.data = null } catch (_: Exception) {}
                 }
             }
         }
@@ -248,6 +258,11 @@ class MainActivity : FlutterActivity() {
     private fun enqueueSharedUrl(url: String) {
         while (sharedUrls.size >= MAX_QUEUED_SHARES) sharedUrls.poll()
         sharedUrls.offer(url)
+        // The queue is the single source of truth (exactly-once via poll).
+        // This push is a WAKE-UP HINT only: Dart ignores the payload and
+        // drains via intent/get_shared, so one native enqueue yields exactly
+        // one Dart handling (the old Dart code enqueued the push payload AND
+        // drained the same URL → double "choose quality" sheet).
         scope.launch(Dispatchers.Main) {
             methodChannel?.invokeMethod("intent/shared_url", mapOf("url" to url))
         }
@@ -895,6 +910,18 @@ class MainActivity : FlutterActivity() {
                             if (sourcePath.isNullOrEmpty() || displayName.isNullOrEmpty()) {
                                 throw IllegalArgumentException("missing args")
                             }
+                            // Best-effort engine flush so the export includes
+                            // the crash line itself. persistent_flush covers
+                            // server_logs.log (stdlib handler); flush_log_sinks
+                            // covers engine_YYYY-MM-DD.txt (64 KiB / 5 s
+                            // DEBUG batch in logger.py) — without both, the
+                            // copy can miss the newest bytes.
+                            try {
+                                val engine = py?.getModule("grablytic_engine")
+                                engine?.callAttr("persistent_flush")
+                                engine?.callAttr("flush_log_sinks")
+                            } catch (_: Exception) {
+                            }
                             val dest = exportFileToDownloads(File(sourcePath), displayName)
                             withContext(Dispatchers.Main) {
                                 result.success(mapOf("success" to true, "path" to dest))
@@ -989,13 +1016,33 @@ class MainActivity : FlutterActivity() {
      * user can reach it with any file manager — app-private dirs are not
      * browsable on Android 12+. API 29+: MediaStore (no permission needed
      * for our own entries). API 24-28: legacy public path (covered by the
-     * manifest's maxSdkVersion-29 WRITE_EXTERNAL_STORAGE). Files capped at
-     * 5 MB to keep the copy instant.
+     * manifest's maxSdkVersion-29 WRITE_EXTERNAL_STORAGE).
+     *
+     * ytdlnis parity notes: DISPLAY_NAME carries a timestamp prefix so
+     * repeat exports of `server_logs.log` never collide; files over 5 MB
+     * export as a tail (header + last 5 MB) instead of failing with
+     * "log too large" — large engine logs are exactly the ones users need
+     * to hand over for triage.
      */
     private fun exportFileToDownloads(src: File, displayName: String): String {
         if (!src.isFile) throw IllegalArgumentException("log file missing")
-        if (src.length() > 5 * 1024 * 1024) throw IllegalArgumentException("log too large")
-        val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val rawSafe = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .takeIf { it.isNotEmpty() } ?: "export.txt"
+        val stamp = try {
+            java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+        } catch (_: Exception) { "export" }
+        val safeName = "grablytic-$stamp-$rawSafe"
+        val maxBytes = 5 * 1024 * 1024L
+        val srcLen = try { src.length() } catch (_: Exception) { 0L }
+        // Tail-export large files (ytdlnis truncates match-filter noise for
+        // the same reason: the newest bytes are the actionable ones).
+        // Returns null when the whole file fits, else (header, offset).
+        fun tailWindow(): Pair<String, Long>? {
+            if (srcLen <= maxBytes) return null
+            val header = "... [TRUNCATED — showing last 5 MB of ${srcLen / 1024} KB] ...\n"
+            return header to (srcLen - maxBytes)
+        }
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, safeName)
@@ -1011,7 +1058,23 @@ class MainActivity : FlutterActivity() {
             ) ?: throw java.io.IOException("MediaStore insert failed")
             try {
                 contentResolver.openOutputStream(uri)?.use { out ->
-                    src.inputStream().use { it.copyTo(out) }
+                    val window = tailWindow()
+                    if (window == null) {
+                        src.inputStream().use { it.copyTo(out) }
+                    } else {
+                        out.write(window.first.toByteArray(Charsets.UTF_8))
+                        java.io.RandomAccessFile(src, "r").use { raf ->
+                            raf.seek(window.second)
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = raf.read(buf)
+                                if (n <= 0) break
+                                out.write(buf, 0, n)
+                            }
+                        }
+                        // Align to next newline is best-effort here (byte
+                        // copy); the header already marks truncation.
+                    }
                 } ?: throw java.io.IOException("MediaStore open failed")
             } catch (e: Exception) {
                 try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
@@ -1032,7 +1095,23 @@ class MainActivity : FlutterActivity() {
             )
             dir.mkdirs()
             val dest = File(dir, safeName)
-            src.copyTo(dest, overwrite = true)
+            val window = tailWindow()
+            if (window == null) {
+                src.copyTo(dest, overwrite = true)
+            } else {
+                dest.outputStream().use { out ->
+                    out.write(window.first.toByteArray(Charsets.UTF_8))
+                    java.io.RandomAccessFile(src, "r").use { raf ->
+                        raf.seek(window.second)
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = raf.read(buf)
+                            if (n <= 0) break
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+            }
             return dest.absolutePath
         }
     }

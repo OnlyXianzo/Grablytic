@@ -32,6 +32,7 @@ from grablytic_engine.persistent import (
     flush_now as persistent_flush,
     read_log_tail as server_log_tail,
 )
+from grablytic_engine.logger import flush_log_sinks
 from grablytic_engine.github_notifier import notify_exception, fingerprint as issue_fingerprint
 from grablytic_engine.scheduler_check import (
     flat_entry_video_id,
@@ -73,6 +74,7 @@ __all__ = [
     "init_persistent_logging",
     "traced_request",
     "persistent_flush",
+    "flush_log_sinks",
     "server_log_tail",
     "notify_exception",
     "issue_fingerprint",

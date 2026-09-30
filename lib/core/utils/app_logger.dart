@@ -378,7 +378,9 @@ class AppLogger {
   /// Retrieves list of all available log files.
   ///
   /// Includes daily `log_*.txt` files, engine `engine_*.txt` mirrors (if any),
-  /// and the rolling `app_logs.txt` buffer flush target. Newest first, with
+  /// `server_logs.log` + its RotatingFileHandler backups (`server_logs.log.1`
+  /// … — previously invisible because they don't end with `.log`), and the
+  /// rolling `app_logs.txt` buffer flush target. Newest first, with
   /// `app_logs.txt` pinned first for the reporter's convenience.
   static Future<List<File>> getLogFiles() async {
     if (_logsDirPath == null) return [];
@@ -387,7 +389,7 @@ class AppLogger {
       if (!await logsDir.exists()) return [];
 
       final files = await logsDir.list().toList();
-      final logFiles = files.whereType<File>().where((f) => f.path.endsWith('.txt') || f.path.endsWith('.log')).toList();
+      final logFiles = files.whereType<File>().where(_isLogFile).toList();
       // Sort in reverse chronological order (newest first)
       logFiles.sort((a, b) => b.path.compareTo(a.path));
       // Pin app_logs.txt first — it is the consolidated crash-report source.
@@ -407,6 +409,26 @@ class AppLogger {
   static File? get appLogsFile {
     if (_logsDirPath == null) return null;
     return File('$_logsDirPath/$_appLogFileName');
+  }
+
+  /// True for every file the Diagnostics screen should list.
+  ///
+  /// `.txt`/`.log` cover daily/engine/rolling logs; the extra branch covers
+  /// RotatingFileHandler backups (`server_logs.log.1` …) which carry the
+  /// newest engine history after a rollover but don't end with `.log`.
+  /// Pure helper (no I/O) so unit tests can pin the contract.
+  static bool isLogFilePath(String path) => _isLogFile(File(path));
+
+  static bool _isLogFile(File f) {
+    final name = f.path.split('/').last.split('\\').last;
+    if (name.isEmpty) return false;
+    if (name.endsWith('.txt') || name.endsWith('.log')) return true;
+    if (name == 'server_logs.log') return true;
+    if (name.startsWith('server_logs.log.')) {
+      final tail = name.substring('server_logs.log.'.length);
+      if (tail.isNotEmpty && RegExp(r'^[0-9]+$').hasMatch(tail)) return true;
+    }
+    return false;
   }
 
   /// Reads the tail of `app_logs.txt` (or newest daily log as fallback),
