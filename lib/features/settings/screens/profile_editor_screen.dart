@@ -135,6 +135,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                           DropdownMenuItem(value: '4k', child: Text('4K Ultra HD')),
                           DropdownMenuItem(value: '1080p', child: Text('1080p Full HD')),
                           DropdownMenuItem(value: '720p', child: Text('720p HD')),
+                          DropdownMenuItem(value: '480p', child: Text('480p Data Saver')),
                           DropdownMenuItem(value: 'best', child: Text('Best Available')),
                         ],
                         onChanged: (val) {

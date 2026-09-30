@@ -10,6 +10,7 @@ import '../../../providers/download_provider.dart';
 import '../../../providers/metered_guard.dart';
 import '../../../providers/preset_provider.dart';
 import '../../../providers/settings_provider.dart';
+import '../widgets/batch_quality_dialog.dart';
 
 const _uuid = Uuid();
 
@@ -195,18 +196,34 @@ class _PlaylistSelectionScreenState
         'User initiated playlist download for url: ${widget.url} '
         '(${_selected.length} entries)',
         tag: 'PlaylistSelectionScreen');
+
+    // One quality pick for the whole playlist (persisted as the next
+    // batch's default). Cancel leaves the selection untouched.
+    if (!mounted) return;
+    final prefs = ref.read(sharedPreferencesProvider);
+    final activePreset = ref.read(presetsProvider).activePreset;
+    final initial = normalizeBatchCeiling(
+      prefs.getString(lastBatchQualityKey) ?? activePreset.qualityCeiling,
+    );
+    final batchCeiling = await showBatchQualityDialog(
+      context: context,
+      initialCeiling: initial,
+      itemCount: _selected.length,
+    );
+    if (!mounted || batchCeiling == null) return;
+    await prefs.setString(lastBatchQualityKey, batchCeiling);
+
     setState(() => _isStarting = true);
 
     final downloadId = _uuid.v4();
     final engine = ref.read(engineProvider);
-    final activePreset = ref.read(presetsProvider).activePreset;
     // Ascending playlist order; reverse/shuffle travel as engine flags
     // (yt-dlp selects by index, then reverses/shuffles the selected set).
     final ordered = _selected.toList()..sort();
 
     final config = <String, dynamic>{
       'container': activePreset.preferredContainer,
-      'quality_ceiling': activePreset.qualityCeiling,
+      'quality_ceiling': batchCeiling,
       'audio_only': activePreset.audioOnly,
       ...settingsDownloadConfig(settings),
       ...playlistDownloadConfig(

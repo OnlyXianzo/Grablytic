@@ -42,7 +42,10 @@ def test_unsafe_ids_rejected(bad):
 def test_selector_ignores_operator_injection():
     out = build_format_string({"explicit_format_id": "22/47"})
     assert "22/47" not in out
-    assert out.endswith("/bestaudio/best")  # safe ladder fallback
+    # Fail closed to the portrait-safe video ladder: combined /best tail,
+    # never audio-only (a video intent must not resolve to .m4a).
+    assert out.endswith("/best")
+    assert not out.endswith("/bestaudio/best")
 
 
 def test_selector_rejects_all_mergeall_amplification():
@@ -72,8 +75,10 @@ def test_opts_rejects_format_expression_injection():
                  "22[height<=0]", "(22)", "22,47"):
         opts = build_ydl_opts(config={"explicit_format_id": evil})
         assert evil not in opts["format"], evil
-        # fail closed to a safe ladder, never the attacker's expression
-        assert opts["format"].endswith("/bestaudio/best"), opts["format"]
+        # fail closed to a safe ladder, never the attacker's expression;
+        # video-intent tail is combined /best, never audio-only.
+        assert opts["format"].endswith("/best"), opts["format"]
+        assert not opts["format"].endswith("/bestaudio/best")
 
 
 def test_opts_rejects_audio_id_injection():

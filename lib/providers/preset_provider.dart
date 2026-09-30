@@ -7,7 +7,7 @@ class DownloadPreset {
   final String id;
   final String name;
   final bool audioOnly;
-  final String qualityCeiling; // '4k', '1080p', '720p', 'best'
+  final String qualityCeiling; // '4k', '1080p', '720p', '480p', 'best'
   final String preferredCodec; // 'av01', 'vp9', 'h264', 'none'
   final String preferredContainer; // 'mkv', 'mp4', 'webm', 'flac', 'opus', 'mp3'
   final bool isPredefined;
@@ -77,7 +77,7 @@ final List<DownloadPreset> predefinedPresets = [
     id: 'preset_480p',
     name: 'Data Saver (480p)',
     audioOnly: false,
-    qualityCeiling: '720p', // Map to 720p or fallback
+    qualityCeiling: '480p', // Real 480p ceiling (engine height_map).
     preferredCodec: 'h264',
     preferredContainer: 'mp4',
     isPredefined: true,

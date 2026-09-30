@@ -37,6 +37,13 @@ int _compareVideoDesc(Map<String, dynamic> a, Map<String, dynamic> b) {
 
 /// Best video format id for [targetHeight] preferring [preferredCodec].
 /// Returns [fallbackRecommendedId] (or null) when nothing matches.
+///
+/// Orientation-neutral: a format matches when EITHER its height OR its
+/// width fits the ceiling, so portrait reels (720x1280/1080x1920) are not
+/// down-picked to 540x960 under a 1080p ceiling the way a height-only
+/// filter does (same bug class as the engine ladder's audio-only
+/// fallthrough). Entries without dimensions (0/0) still match, preserving
+/// the old null-safe behavior.
 String? selectBestVideoFormat(
   List<Map<String, dynamic>> videoFormats, {
   required int targetHeight,
@@ -44,8 +51,16 @@ String? selectBestVideoFormat(
   String? fallbackRecommendedId,
 }) {
   if (videoFormats.isEmpty) return fallbackRecommendedId;
-  var matching =
-      videoFormats.where((f) => _num(f, 'height') <= targetHeight).toList();
+  // Orientation-neutral ceiling: match when a KNOWN dimension fits.
+  // Unknown (null) dimensions never match on their own — otherwise a
+  // width-less 1440p entry would slip a 1080p ceiling — but the
+  // empty-match fallback below preserves the old leniency.
+  var matching = videoFormats.where((f) {
+    final h = f['height'] as num?;
+    final w = f['width'] as num?;
+    return (h != null && h <= targetHeight) ||
+        (w != null && w <= targetHeight);
+  }).toList();
   if (matching.isEmpty) matching = List.of(videoFormats);
   final want = preferredCodec.toLowerCase();
   final codecHits = matching

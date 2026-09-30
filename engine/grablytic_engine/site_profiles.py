@@ -8,7 +8,9 @@ from grablytic_engine.paths import get_paths
 
 _DEFAULT_PROFILES = {
     "YouTube 1080p": {
-        "format_code": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]",
+        # Portrait-safe (Shorts are 1080x1920): aspect-gated dual-axis
+        # ladder + /best tail so vertical video never falls to audio-only.
+        "format_code": "bestvideo*[height<=1080][aspect_ratio>=1][ext=mp4]+bestaudio[ext=m4a]/bestvideo*[height<=1080][aspect_ratio>=1]+bestaudio[ext=m4a]/bestvideo*[width<=1080][aspect_ratio<1]+bestaudio[ext=m4a]/best[height<=1080]/best[width<=1080]/best",
         "container": "mp4",
         "audio_only": False,
         "embedthumbnail": True,

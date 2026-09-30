@@ -211,8 +211,14 @@ void main() {
           .tap(find.byKey(const Key('playlist-download-cta')));
       await tester.pumpAndSettle();
 
+      // Batch quality dialog: accept the default (active preset 1080p).
+      expect(find.byKey(const Key('batch-quality-start')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('batch-quality-start')));
+      await tester.pumpAndSettle();
+
       expect(engine.startCalls, 1);
       expect(engine.lastStartUrl, _playlistUrl);
+      expect(engine.lastStartConfig?['quality_ceiling'], '1080p');
       // Ascending indices; reverse travels as the engine flag (yt-dlp
       // selects by index, then reverses the selected set).
       expect(engine.lastStartConfig?['playlist_items'], '1,5');
@@ -253,6 +259,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester
           .tap(find.byKey(const Key('playlist-download-cta')));
+      await tester.pumpAndSettle();
+
+      // Batch quality dialog: accept the default, then shuffle assertions.
+      await tester.tap(find.byKey(const Key('batch-quality-start')));
       await tester.pumpAndSettle();
 
       expect(engine.lastStartConfig?['playlist_rand'], isTrue);

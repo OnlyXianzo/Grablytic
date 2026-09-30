@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/batch_provider.dart';
 import '../../../providers/metered_guard.dart';
+import '../../../providers/preset_provider.dart';
+import '../../../providers/settings_provider.dart';
+import '../widgets/batch_quality_dialog.dart';
 
 class BatchDownloadScreen extends ConsumerStatefulWidget {
   final List<BatchItem> items;
@@ -30,10 +33,32 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
         if (mounted) Navigator.pop(context);
         return;
       }
+      if (!mounted) return;
+      // One quality pick for the whole queue (persisted as the next
+      // batch's default). Cancel backs out instead of starting silently.
+      final prefs = ref.read(sharedPreferencesProvider);
+      final activeCeiling =
+          ref.read(presetsProvider).activePreset.qualityCeiling;
+      final initial = normalizeBatchCeiling(
+        prefs.getString(lastBatchQualityKey) ?? activeCeiling,
+      );
+      final chosen = await showBatchQualityDialog(
+        context: context,
+        initialCeiling: initial,
+        itemCount: widget.items.length,
+      );
+      if (!mounted) return;
+      if (chosen == null) {
+        Navigator.pop(context);
+        return;
+      }
+      await prefs.setString(lastBatchQualityKey, chosen);
       if (mounted && widget.items.isNotEmpty) {
-        ref
-            .read(batchProvider.notifier)
-            .startBatch(widget.items, playlistId: widget.playlistId);
+        ref.read(batchProvider.notifier).startBatch(
+              widget.items,
+              playlistId: widget.playlistId,
+              qualityCeiling: chosen,
+            );
       }
     });
   }
@@ -69,8 +94,9 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               color: colorScheme.primaryContainer.withValues(alpha: 0.15),
-              child: Text(
-                '$total items selected',
+                child: Text(
+                  '$total items selected'
+                  '${batchState.qualityCeiling != null ? ' · ${batchQualityLabel(batchState.qualityCeiling!)}' : ''}',
                 style: textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w500,

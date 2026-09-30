@@ -69,15 +69,38 @@ def build_format_string(cfg: dict) -> str:
         return fmt_map.get(audio_fmt, "bestaudio/best")
 
     ceiling = cfg.get("quality_ceiling", "4k")
-    height_map = {"4k": 2160, "1080p": 1080, "720p": 720, "best": 99999}
+    height_map = {
+        "4k": 2160,
+        "1080p": 1080,
+        "720p": 720,
+        "480p": 480,
+        "best": 99999,
+    }
     max_h = height_map.get(ceiling, 2160)
 
     if max_h >= 99999:
         return "bestvideo+bestaudio/best"
 
+    # Portrait-safe ladder. yt-dlp `height` is the literal pixel height, so
+    # portrait reels (720x1280/1080x1920) fail every `height<=1080` rung and
+    # used to fall through to `bestaudio` → silent .m4a audio-only (field
+    # report 2026-09-30, 54 confirmed). Orientation is split by
+    # `aspect_ratio` (auto-computed by yt-dlp as width/height at processing
+    # time): landscape rungs keep the historical height cap unchanged, while
+    # the portrait rung matches the same cap by the short edge — so a
+    # 1080x1920 reel is served at full quality instead of falling back to a
+    # 540x960 variant or audio (maintainer-prescribed pattern, yt-dlp#4117;
+    # Parabolic 2026.4.x shipped the same dual-axis ladder). `bv*` (not
+    # strict `bv`) so combined-only listings still match. Tail is `/best`,
+    # never `/bestaudio`: for a video intent an audio-only result is never
+    # acceptable — a visible "requested format" error beats a wrong file.
+    # Deliberately NOT `height<=1920` (admits 1440p landscape, breaking the
+    # cap) and not uncapped (4K/8K + AV1/webm surprises on metered mobile).
     return (
-        f"bestvideo[height<={max_h}][ext=mp4]+bestaudio[ext=m4a]"
-        f"/bestvideo[height<={max_h}]+bestaudio"
+        f"bestvideo*[height<={max_h}][aspect_ratio>=1][ext=mp4]+bestaudio[ext=m4a]"
+        f"/bestvideo*[height<={max_h}][aspect_ratio>=1]+bestaudio"
+        f"/bestvideo*[width<={max_h}][aspect_ratio<1]+bestaudio"
         f"/best[height<={max_h}]"
-        f"/bestaudio/best"
+        f"/best[width<={max_h}]"
+        f"/best"
     )

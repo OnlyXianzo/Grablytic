@@ -48,11 +48,19 @@ class BatchState {
   final bool isRunning;
   final String? playlistId;
 
+  /// Quality ceiling snapshot for the whole batch (e.g. '480p', '720p',
+  /// '1080p', 'best'). Null means "follow the live active preset".
+  /// Snapshotting at [BatchNotifier.startBatch] keeps every item on the
+  /// quality the user picked before the batch started, even if the global
+  /// preset changes mid-queue.
+  final String? qualityCeiling;
+
   const BatchState({
     required this.items,
     this.currentIndex = 0,
     this.isRunning = false,
     this.playlistId,
+    this.qualityCeiling,
   });
 
   BatchState copyWith({
@@ -60,12 +68,14 @@ class BatchState {
     int? currentIndex,
     bool? isRunning,
     String? playlistId,
+    String? qualityCeiling,
   }) {
     return BatchState(
       items: items ?? this.items,
       currentIndex: currentIndex ?? this.currentIndex,
       isRunning: isRunning ?? this.isRunning,
       playlistId: playlistId ?? this.playlistId,
+      qualityCeiling: qualityCeiling ?? this.qualityCeiling,
     );
   }
 }
@@ -75,8 +85,14 @@ class BatchNotifier extends StateNotifier<BatchState> {
 
   BatchNotifier(this._ref) : super(const BatchState(items: []));
 
-  void startBatch(List<BatchItem> items, {String? playlistId}) {
-    state = BatchState(items: items, isRunning: true, playlistId: playlistId);
+  void startBatch(List<BatchItem> items,
+      {String? playlistId, String? qualityCeiling}) {
+    state = BatchState(
+      items: items,
+      isRunning: true,
+      playlistId: playlistId,
+      qualityCeiling: qualityCeiling,
+    );
     processNext();
   }
 
@@ -138,10 +154,13 @@ class BatchNotifier extends StateNotifier<BatchState> {
     final engine = _ref.read(engineProvider);
     final downloadId = _uuid.v4();
     final activePreset = _ref.read(presetsProvider).activePreset;
+    // Batch snapshot wins over the live preset so a mid-queue preset
+    // change cannot split the batch across two qualities.
+    final ceiling = state.qualityCeiling ?? activePreset.qualityCeiling;
 
     final config = <String, dynamic>{
       'container': activePreset.preferredContainer,
-      'quality_ceiling': activePreset.qualityCeiling,
+      'quality_ceiling': ceiling,
       'audio_only': activePreset.audioOnly,
       ...settingsDownloadConfig(_ref.read(settingsProvider)),
     };

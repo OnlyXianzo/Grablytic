@@ -1,12 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grablytic/core/utils/format_selector.dart';
 
-Map<String, dynamic> _v(String id, int? height, String vcodec, {num? tbr, num? fps}) => {
+Map<String, dynamic> _v(String id, int? height, String vcodec,
+        {num? tbr, num? fps, num? width}) => {
       'format_id': id,
       'height': height,
       'vcodec': vcodec,
       ...?tbr == null ? null : {'tbr': tbr},
       ...?fps == null ? null : {'fps': fps},
+      ...?width == null ? null : {'width': width},
     };
 
 Map<String, dynamic> _a(String id, {num? abr, num? tbr, String acodec = 'opus'}) => {
@@ -83,6 +85,33 @@ void main() {
       expect(
         selectBestVideoFormat(formats, targetHeight: 1080, preferredCodec: 'vp9'),
         '248',
+      );
+    });
+
+    test('portrait matches by width: 720x1280 wins over 540x960 at 1080p',
+        () {
+      final formats = [
+        _v('p1080', 1920, 'avc1.640028', tbr: 8000, width: 1080),
+        _v('p720', 1280, 'avc1.640028', tbr: 4500, width: 720),
+        _v('p540', 960, 'avc1.640028', tbr: 2000, width: 540),
+      ];
+      // Height-only filtering would pick p540 (960 <= 1080); the
+      // orientation-neutral rule matches p720/p1080 by width and the
+      // height-desc sort takes the tallest of those.
+      expect(
+        selectBestVideoFormat(formats, targetHeight: 1080, preferredCodec: 'avc1'),
+        'p1080',
+      );
+    });
+
+    test('portrait-only list at 720p picks 720x1280, not nothing', () {
+      final formats = [
+        _v('p720', 1280, 'avc1.640028', tbr: 4500, width: 720),
+        _v('p1080', 1920, 'avc1.640028', tbr: 8000, width: 1080),
+      ];
+      expect(
+        selectBestVideoFormat(formats, targetHeight: 720, preferredCodec: 'avc1'),
+        'p720',
       );
     });
   });
