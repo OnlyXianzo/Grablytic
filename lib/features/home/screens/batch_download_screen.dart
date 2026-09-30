@@ -73,6 +73,12 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
     final completed = batchState.items
         .where((i) => i.status == BatchItemStatus.completed)
         .length;
+    final failedItems = batchState.items
+        .where((i) => i.status == BatchItemStatus.failed)
+        .toList();
+    final failedCount = failedItems.length;
+    final skippedCount = failedItems.where(batchItemSkipped).length;
+    final retryableCount = failedCount - skippedCount;
     final progress = total > 0 ? completed / total : 0.0;
     final allDone = batchState.items.every(
       (i) => i.status == BatchItemStatus.completed ||
@@ -138,6 +144,36 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
                           AlwaysStoppedAnimation<Color>(colorScheme.primary),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$completed completed · $failedCount failed · $skippedCount skipped',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (failedCount > 0 && !batchState.isRunning) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          ref.read(batchProvider.notifier).retryFailed();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: Text('Retry $failedCount failed'),
+                      ),
+                    ),
+                    if (skippedCount > 0 && retryableCount == 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'All failures are photo posts or private items with no video to retry.',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -178,7 +214,9 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          _statusLabel(item.status),
+                          item.status == BatchItemStatus.failed
+                              ? batchFailureLabel(item)
+                              : _statusLabel(item.status),
                           style: textTheme.labelSmall?.copyWith(
                             color: _statusColor(item.status, colorScheme),
                           ),

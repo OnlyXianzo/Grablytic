@@ -13,6 +13,7 @@ import '../../home/widgets/bootstrap_status_card.dart';
 import 'command_templates_screen.dart';
 import 'cookies_screen.dart';
 import 'observed_sources_screen.dart';
+import '../widgets/storage_meter_card.dart';
 import 'presets_screen.dart';
 import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
@@ -163,6 +164,13 @@ class SettingsScreen extends ConsumerWidget {
                         }
                       },
                     ),
+                  // FEATURE 6: read-mostly storage meter for the download
+                  // folder (usage + largest files with safe per-file delete).
+                  // Keyed by path so a folder change triggers a rescan.
+                  StorageMeterCard(
+                    key: ValueKey(settings.downloadPath),
+                    downloadPath: settings.downloadPath,
+                  ),
                 ],
               ).animate().fadeIn(delay: 50.ms, duration: 300.ms).slideX(begin: 0.05),
 

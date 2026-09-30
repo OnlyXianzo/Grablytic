@@ -10,7 +10,7 @@ import 'playlist_selection_screen.dart';
 import 'search_results_screen.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
-import 'batch_import_dialog.dart';
+import 'batch_import_screen.dart';
 import '../widgets/error_recovery_card.dart';
 import '../widgets/download_log_overlay.dart';
 import '../widgets/download_overflow_menu.dart';
@@ -297,9 +297,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                   borderRadius: BorderRadius.circular(8),
                   onTap: () {
                     AppLogger.info('User clicked Batch import URLs button', tag: 'HomeScreen');
-                    showDialog(
-                      context: context,
-                      builder: (_) => const BatchImportDialog(),
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const BatchImportScreen(),
+                      ),
                     );
                   },
                   child: Container(

@@ -723,6 +723,135 @@ def _delete_infojson_sidecars(file_path: str | None) -> list[str]:
     return removed
 
 
+# ── Transient auto-retry (FEATURE 5) ─────────────────────────────────────
+# Bulk sessions hit transient "empty media response"-class failures that
+# succeed on manual retry. Auto-retry those in-slot: max 2 retries per item
+# with exponential backoff (5s, 15s). The retry verdict reuses
+# errors.classify_error() — recoverable AND not in the permanent denylist —
+# so private/deleted/no-video/photo-post-class permanents NEVER retry.
+# The loop runs inside the already-admitted slot (same slot_token, single
+# terminal event, single pump in finally): retries respect the concurrency
+# gate and admission queue instead of bypassing them.
+_MAX_AUTO_RETRIES = 2
+_RETRY_BACKOFF_SECONDS = (5.0, 15.0)
+_NO_RETRY_PERMANENT = frozenset({
+    "ERROR_PRIVATE",          # private video — retry cannot help
+    "ERROR_UNAVAILABLE",      # deleted/unavailable video
+    "ERROR_DRM",              # DRM-protected — deterministic
+    "ERROR_QUOTA_EXCEEDED",   # disk full — retry cannot help
+    "ERROR_FORMAT_UNAVAILABLE",  # no-video / photo-post class: no media
+    "ERROR_FFMPEG_MISSING",   # environment issue, not per-item transient
+    "ERROR_CANCELLED",        # user intent — never retry
+})
+
+
+def _is_transient_retryable(err) -> bool:
+    """True only for failures worth an auto-retry.
+
+    Reuses classify_error()'s verdict (recoverable flag) minus the
+    permanent denylist above. Never raises — unknown shapes do not retry.
+    """
+    try:
+        if not bool(getattr(err, "recoverable", False)):
+            return False
+        return str(getattr(err, "error_type", "")) not in _NO_RETRY_PERMANENT
+    except Exception:
+        return False
+
+
+def _note_attempt(download_id: str, attempt_no: int) -> None:
+    """Record the per-item attempt counter on the active slot entry.
+
+    Additive keys only (attempts/retries); never raises.
+    """
+    try:
+        with _downloads_lock:
+            info = _active_downloads.get(download_id)
+            if isinstance(info, dict):
+                info["attempts"] = attempt_no
+                info["retries"] = max(0, attempt_no - 1)
+    except Exception:
+        pass
+
+
+def _maybe_retry_transient(err, attempts_made: int, cancel, download_id: str) -> bool:
+    """Sleep through backoff and approve one more attempt, or return False.
+
+    Returns False when the attempts budget is spent, the failure is
+    permanent, or cancellation was requested. Raises KeyboardInterrupt when
+    cancellation lands during backoff so the normal cancelled path runs.
+    Logs each approved retry at WARN with the attempt number.
+    """
+    if cancel is not None:
+        try:
+            if cancel.is_set():
+                return False
+        except Exception:
+            pass
+    if attempts_made > _MAX_AUTO_RETRIES:
+        return False
+    if not _is_transient_retryable(err):
+        return False
+    idx = min(attempts_made - 1, len(_RETRY_BACKOFF_SECONDS) - 1)
+    delay = _RETRY_BACKOFF_SECONDS[idx]
+    try:
+        log.warn(
+            f"Transient failure ({err.error_type}); auto-retry "
+            f"attempt {attempts_made + 1}/{_MAX_AUTO_RETRIES + 1} after {delay:g}s",
+            extra={"download_id": download_id},
+        )
+    except Exception:
+        pass
+    time.sleep(delay)
+    if cancel is not None:
+        try:
+            if cancel.is_set():
+                raise KeyboardInterrupt("Download cancelled by user")
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            pass
+    return True
+
+
+def _single_item_error(url, opts, config, ydl_logger):
+    """Classify a single-item logger.error tail, or None when not failing.
+
+    Mirrors the single-vs-playlist determination: playlists keep lenient
+    behavior (per-item deleted/private errors are normal), while any
+    logger.error on a SINGLE item means broken output. Returns the
+    GrablyticError for a failing single item, else None. Never raises.
+    """
+    try:
+        errors = getattr(ydl_logger, "errors", None)
+        if not errors:
+            return None
+        try:
+            is_playlist_url = detect_playlist(url) if isinstance(url, str) else False
+        except Exception:
+            is_playlist_url = False
+        try:
+            safe_opts = opts or {}
+            safe_config = config or {}
+            if safe_opts.get("noplaylist") or safe_config.get("no_playlist") \
+                    or safe_opts.get("playlist_items") == "1":
+                single = True
+            elif is_playlist_url:
+                single = False
+            else:
+                single = safe_opts.get("playlist_items") in (None, "1")
+        except Exception:
+            single = True
+        if not single:
+            return None
+        last = errors[-1]
+        # AARAV-1: classify the real message instead of a blanket
+        # ERROR_POSTPROCESS_FAILED (Dart maps every known type).
+        return classify_error(Exception(last))
+    except Exception:
+        return None
+
+
 def download_thread(
     url: str,
     download_id: str,
@@ -826,8 +955,6 @@ def download_thread(
                 # into app-internal cache subject to Android OS silent eviction.
                 opts["cachedir"] = get_paths()["cache_dir"]
 
-            ydl_logger = YDLogger(log, download_id=download_id)
-            opts["logger"] = ydl_logger
             opts["verbose"] = True
             # One-line effective config: future "it just sat there" reports can
             # be triaged from this alone (wrong format? no aria2c? no JS?).
@@ -851,16 +978,99 @@ def download_thread(
             except Exception:
                 pass
 
-            ydl = YoutubeDL(opts)
+            # FEATURE 5: per-attempt loop for transient auto-retry. The loop
+            # runs inside the already-admitted slot (same slot_token, one
+            # terminal, one pump in finally) so retries respect the
+            # concurrency gate and admission queue instead of bypassing
+            # them. Fresh YDLogger per attempt: a previous attempt's
+            # logger.errors must not poison this attempt's outcome.
+            attempts_made = 0
+            while True:
+                attempts_made += 1
+                _note_attempt(download_id, attempts_made)
+                ydl_logger = YDLogger(log, download_id=download_id)
+                opts["logger"] = ydl_logger
+                try:
+                    ydl = YoutubeDL(opts)
 
-            def ydl_hook(d):
-                if cancel.is_set():
-                    raise KeyboardInterrupt("Download cancelled by user")
-                return d
+                    def ydl_hook(d):
+                        if cancel.is_set():
+                            raise KeyboardInterrupt("Download cancelled by user")
+                        return d
 
-            ydl.add_progress_hook(ydl_hook)
+                    ydl.add_progress_hook(ydl_hook)
 
-            ydl.download([url])
+                    ydl.download([url])
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    err = classify_error(exc)
+                    if _maybe_retry_transient(err, attempts_made, cancel, download_id):
+                        continue
+                    log.log_exception(exc, f"Download failed: {safe_url}", extra={"download_id": download_id})
+                    terminal_event = json.dumps({
+                        "type": "event",
+                        "event": "error",
+                        "download_id": download_id,
+                        "error_type": err.error_type,
+                        "error_message": err.message,
+                        "recoverable": err.recoverable,
+                        # Drives ErrorRecoveryCard VPN recommendations (re-audit #5).
+                        "suggests_vpn": err.suggests_vpn,
+                        "attempts": attempts_made,
+                    })
+                    if event_callback is not None:
+                        _emit_event(event_callback, terminal_event)
+                    else:
+                        res_q.put({
+                            "success": False,
+                            "download_id": download_id,
+                            "error_type": err.error_type,
+                            "error_message": err.message,
+                            "recoverable": err.recoverable,
+                            "suggests_vpn": err.suggests_vpn,
+                            "attempts": attempts_made,
+                        })
+                    return
+                # ignoreerrors=True lets post-processing failures return
+                # normally — a SINGLE item's logger.error still means broken
+                # output, routed through the same transient-retry verdict.
+                single_err = _single_item_error(url, opts, config, ydl_logger)
+                if single_err is not None:
+                    if _maybe_retry_transient(single_err, attempts_made, cancel, download_id):
+                        continue
+                    try:
+                        last_msg = ydl_logger.errors[-1] if ydl_logger.errors else ""
+                    except Exception:
+                        last_msg = ""
+                    log.error(
+                        f"Download failed, failing item: {last_msg[:200]}",
+                        extra={"download_id": download_id},
+                    )
+                    terminal_event = json.dumps({
+                        "type": "event",
+                        "event": "error",
+                        "download_id": download_id,
+                        "error_type": single_err.error_type,
+                        "error_message": single_err.message,
+                        "recoverable": single_err.recoverable,
+                        "suggests_vpn": single_err.suggests_vpn,
+                        "attempts": attempts_made,
+                    })
+                    if event_callback is not None:
+                        _emit_event(event_callback, terminal_event)
+                    else:
+                        res_q.put({
+                            "success": False,
+                            "download_id": download_id,
+                            "error_type": single_err.error_type,
+                            "error_message": single_err.message,
+                            "recoverable": single_err.recoverable,
+                            "suggests_vpn": single_err.suggests_vpn,
+                            "attempts": attempts_made,
+                        })
+                    return
+                break
 
             if cancel.is_set():
                 log.warn(f"Download cancelled: {download_id}", extra={"download_id": download_id})
@@ -881,57 +1091,9 @@ def download_thread(
                         "error_message": "Download cancelled by user",
                     })
             else:
-                # ignoreerrors=True lets post-processing failures return
-                # normally — but for a SINGLE video any logger.error means the
-                # output is broken (missing merge, failed embed), while the UI
-                # would otherwise celebrate a 'finished' with no file.
-                # Playlists keep lenient behavior: per-item errors there are
-                # normal (deleted/private entries) and must not fail the batch.
-                # Single = URL is not a playlist AND caller didn't request a
-                # multi-item pull (playlist_items other than "1").
-                try:
-                    is_playlist_url = detect_playlist(url) if isinstance(url, str) else False
-                except Exception:
-                    is_playlist_url = False
-                if opts.get("noplaylist") or config.get("no_playlist") or opts.get("playlist_items") == "1":
-                    single = True
-                elif is_playlist_url:
-                    single = False
-                else:
-                    single = opts.get("playlist_items") in (None, "1")
-                if single and ydl_logger.errors:
-                    last = ydl_logger.errors[-1]
-                    # AARAV-1: any logger.error on a single item used to
-                    # surface as ERROR_POSTPROCESS_FAILED — including format
-                    # resolution failures that never reached post-processing.
-                    # Classify the real message instead (Dart maps every
-                    # known type; unknowns fall back safely).
-                    err = classify_error(Exception(last))
-                    log.error(
-                        f"Download failed, failing item: {last[:200]}",
-                        extra={"download_id": download_id},
-                    )
-                    terminal_event = json.dumps({
-                        "type": "event",
-                        "event": "error",
-                        "download_id": download_id,
-                        "error_type": err.error_type,
-                        "error_message": err.message,
-                        "recoverable": err.recoverable,
-                        "suggests_vpn": err.suggests_vpn,
-                    })
-                    if event_callback is not None:
-                        _emit_event(event_callback, terminal_event)
-                    else:
-                        res_q.put({
-                            "success": False,
-                            "download_id": download_id,
-                            "error_type": err.error_type,
-                            "error_message": err.message,
-                            "recoverable": err.recoverable,
-                            "suggests_vpn": err.suggests_vpn,
-                        })
-                    return
+                # Single-item logger failures were already handled (with the
+                # same transient-retry verdict) inside the attempt loop above;
+                # reaching here means the final attempt had no item failure.
                 log.info("Download completed", extra={"download_id": download_id})
                 # Terminal finished event carries the last known byte count and file path
                 # so the UI never zeroes out sizes or file paths (filesize_bytes contract).
@@ -972,6 +1134,7 @@ def download_thread(
                     "total_bytes": final_bytes,
                     "file_path": final_path,
                     "thumbnail_path": thumbnail_path,
+                    "attempts": attempts_made,
                 })
                 if event_callback is not None:
                     _emit_event(event_callback, terminal_event)
@@ -982,6 +1145,7 @@ def download_thread(
                         "filesize_bytes": final_bytes,
                         "file_path": final_path,
                         "thumbnail_path": thumbnail_path,
+                        "attempts": attempts_made,
                     })
 
         except KeyboardInterrupt:
