@@ -48,12 +48,38 @@ class SettingsScreen extends ConsumerWidget {
               _SettingNavItem(
                 icon: Icons.tune,
                 title: 'General & Interface',
-                subtitle: 'Theme, grid, alerts, background',
+                subtitle: 'Auto-start, defaults',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const GeneralSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.security,
+                title: 'Permissions',
+                subtitle: 'Notifications, background',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PermissionsSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.palette_outlined,
+                title: 'Appearance',
+                subtitle: 'Theme, grid view',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AppearanceSettingsScreen(),
                     ),
                   );
                 },
@@ -195,21 +221,56 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class GeneralSettingsScreen extends ConsumerWidget {
-  const GeneralSettingsScreen({super.key});
+class PermissionsSettingsScreen extends ConsumerWidget {
+  const PermissionsSettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('General & Interface')),
+      appBar: AppBar(title: const Text('Permissions')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
         children: [
           _SettingsSection(
-            title: 'General & Interface',
-            icon: Icons.tune,
+            title: 'Permissions',
+            icon: Icons.security,
+            children: [
+              _SettingSwitch(
+                icon: Icons.notifications_outlined,
+                title: 'Download Completion Alerts',
+                subtitle: 'Notify when a file finishes',
+                value: settings.completionAlerts,
+                onChanged: () => ref
+                    .read(settingsProvider.notifier)
+                    .toggleCompletionAlerts(),
+                colorScheme: colorScheme,
+              ),
+              const _BackgroundPermissionsSection(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AppearanceSettingsScreen extends ConsumerWidget {
+  const AppearanceSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Appearance')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'Appearance',
+            icon: Icons.palette_outlined,
             children: [
               _SettingThemeSelector(
                 currentTheme: settings.themeMode,
@@ -226,16 +287,30 @@ class GeneralSettingsScreen extends ConsumerWidget {
                     ref.read(settingsProvider.notifier).toggleGridView(),
                 colorScheme: colorScheme,
               ),
-              _SettingSwitch(
-                icon: Icons.notifications_outlined,
-                title: 'Download Completion Alerts',
-                subtitle: 'Notify when a file finishes',
-                value: settings.completionAlerts,
-                onChanged: () => ref
-                    .read(settingsProvider.notifier)
-                    .toggleCompletionAlerts(),
-                colorScheme: colorScheme,
-              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GeneralSettingsScreen extends ConsumerWidget {
+  const GeneralSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('General & Interface')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'General & Interface',
+            icon: Icons.tune,
+            children: [
               _SettingSwitch(
                 icon: Icons.share_outlined,
                 title: 'Auto-start Download on Share',
@@ -247,7 +322,6 @@ class GeneralSettingsScreen extends ConsumerWidget {
                     .toggleAutoStartDownloadOnShare(),
                 colorScheme: colorScheme,
               ),
-              const _BackgroundPermissionsSection(),
             ],
           ),
         ],
