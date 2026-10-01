@@ -5,11 +5,13 @@ import 'dart:io' show File;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
+import '../core/utils/thumbnail_cache.dart';
 import '../core/utils/trust_boundary.dart';
 import 'resume_provider.dart';
 import 'settings_provider.dart';
@@ -312,7 +314,38 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   void addDownload(DownloadItem item) {
     state = [...state, item];
     AppLogger.beginLogSession(item.id);
+    _prefetchThumbnail(item.id, item.thumbnailUrl, item.thumbnailPath);
     _persistRecord(item);
+  }
+
+  /// T07: fire-and-forget thumbnail prefetch into app-private storage at job
+  /// creation (async IO, never UI-blocking). Records the path on the item
+  /// and DB only when still missing, so a finished sidecar is never
+  /// clobbered by a late fetch.
+  void _prefetchThumbnail(String id, String? url, String? existingPath) {
+    final thumbUrl = url ?? '';
+    if (thumbUrl.isEmpty || (existingPath ?? '').isNotEmpty) return;
+    unawaited(() async {
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        final path = await ThumbnailCache.fetchToCache(
+          cacheDir: '${docs.path}/${ThumbnailCache.subdir}',
+          id: id,
+          url: thumbUrl,
+        );
+        if (path == null) return;
+        final index = state.indexWhere((d) => d.id == id);
+        if (index == -1) return;
+        final current = state[index];
+        if ((current.thumbnailPath ?? '').isNotEmpty) return;
+        final updated = current.copyWith(thumbnailPath: path);
+        state = [
+          for (final d in state)
+            if (d.id != id) d else updated,
+        ];
+        _persistRecord(updated);
+      } catch (_) {}
+    }());
   }
 
   void updateProgress(String id, double progress, int downloadedBytes) {
@@ -471,7 +504,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               downloadedBytes: filesize,
               totalBytes: filesize,
               filePath: filePath ?? d.filePath,
-              thumbnailPath: thumbnailPath ?? d.thumbnailPath,
+              // T07: keep the creation-time app-private cache over the
+              // post-download sidecar (persistent across file deletes).
+              thumbnailPath: d.thumbnailPath ?? thumbnailPath,
               speed: 0,
               eta: -1,
               clearStage: true,
@@ -768,6 +803,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         state = [...state, item];
       }
       AppLogger.beginLogSession(record.id);
+      _prefetchThumbnail(record.id, item.thumbnailUrl, item.thumbnailPath);
 
       _engine
           .startDownload(
@@ -866,6 +902,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           ),
     ];
     AppLogger.beginLogSession(id);
+    _prefetchThumbnail(id, item.thumbnailUrl, item.thumbnailPath);
 
     _engine
         .startDownload(
