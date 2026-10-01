@@ -12,6 +12,7 @@ import '../../../core/utils/download_config.dart';
 import '../../../core/utils/format_selector.dart';
 import '../../../core/utils/history_guard.dart';
 import '../../../core/utils/schedule_guard.dart';
+import '../../../core/utils/picker_session_state.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/metered_guard.dart';
 import '../../../providers/playlist_provider.dart';
@@ -25,6 +26,40 @@ class FormatPickerScreen extends ConsumerStatefulWidget {
   final String title;
 
   const FormatPickerScreen({super.key, required this.url, required this.title});
+
+  static int? parseTimeToSeconds(String input) {
+    final s = input.trim();
+    if (s.isEmpty) return null;
+    final parts = s.split(':');
+    if (parts.length == 1) {
+      final sec = int.tryParse(parts[0]);
+      if (sec == null || sec < 0) return null;
+      return sec;
+    } else if (parts.length == 2) {
+      final m = int.tryParse(parts[0]);
+      final sec = int.tryParse(parts[1]);
+      if (m == null || sec == null || sec < 0 || sec >= 60 || m < 0) {
+        return null;
+      }
+      return m * 60 + sec;
+    } else if (parts.length == 3) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final sec = int.tryParse(parts[2]);
+      if (h == null ||
+          m == null ||
+          sec == null ||
+          sec < 0 ||
+          sec >= 60 ||
+          m < 0 ||
+          m >= 60 ||
+          h < 0) {
+        return null;
+      }
+      return h * 3600 + m * 60 + sec;
+    }
+    return null;
+  }
 
   @override
   ConsumerState<FormatPickerScreen> createState() => _FormatPickerScreenState();
@@ -67,9 +102,37 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   Playlist? _selectedPlaylist;
   bool _isStarting = false; // guard against duplicate download taps
 
+  // T03: Picker-integrated toggles with session persistence
+  String _qualityCeiling = 'best';
+  bool _embedSubtitles = false;
+  bool _clipEnabled = false;
+  late final TextEditingController _clipStartController;
+  late final TextEditingController _clipEndController;
+  String? _clipValidationError;
+
+  static String normalizeCeiling(String? val) {
+    if (val == null) return 'best';
+    final v = val.toLowerCase().trim();
+    if (v == '2160p') return '4k';
+    if (v == '2k') return '1440p';
+    const valid = {'best', '4k', '1440p', '1080p', '720p', '480p', '360p'};
+    return valid.contains(v) ? v : 'best';
+  }
+
   @override
   void initState() {
     super.initState();
+    final session = PickerSessionState.instance;
+    final settings = ref.read(settingsProvider);
+    _qualityCeiling = normalizeCeiling(
+      session.qualityCeiling ?? settings.qualityCeiling,
+    );
+    _embedSubtitles = session.embedSubtitles ?? settings.embedSubtitles;
+    _clipEnabled = session.clipEnabled;
+    _clipStartController = TextEditingController(text: session.clipStart);
+    _clipEndController = TextEditingController(text: session.clipEnd);
+    _validateClip();
+
     final cached = ExtractionCache.instance.get(widget.url);
     if (cached != null && cached['success'] == true) {
       _applyFormatsResult(cached);
@@ -77,6 +140,102 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     } else {
       _fetchFormats();
     }
+  }
+
+  @override
+  void dispose() {
+    _clipStartController.dispose();
+    _clipEndController.dispose();
+    super.dispose();
+  }
+
+  void _validateClip() {
+    if (!_clipEnabled) {
+      _clipValidationError = null;
+      return;
+    }
+    final startText = _clipStartController.text.trim();
+    final endText = _clipEndController.text.trim();
+
+    if (endText.isEmpty) {
+      _clipValidationError = 'Enter clip end time (e.g. 01:30)';
+      return;
+    }
+
+    final startSec = startText.isEmpty
+        ? 0
+        : FormatPickerScreen.parseTimeToSeconds(startText);
+    if (startSec == null) {
+      _clipValidationError = 'Invalid start time (use mm:ss or hh:mm:ss)';
+      return;
+    }
+
+    final endSec = FormatPickerScreen.parseTimeToSeconds(endText);
+    if (endSec == null) {
+      _clipValidationError = 'Invalid end time (use mm:ss or hh:mm:ss)';
+      return;
+    }
+
+    if (endSec <= startSec) {
+      _clipValidationError = 'End time must be after start time';
+      return;
+    }
+
+    if (_durationSeconds != null && endSec > _durationSeconds!) {
+      _clipValidationError =
+          'End time exceeds duration (${_formatDuration(_durationSeconds)})';
+      return;
+    }
+
+    _clipValidationError = null;
+  }
+
+  String? get _clipRangeSpec {
+    if (!_clipEnabled || _clipValidationError != null) return null;
+    final startText = _clipStartController.text.trim();
+    final endText = _clipEndController.text.trim();
+    final startSec = startText.isEmpty
+        ? 0
+        : (FormatPickerScreen.parseTimeToSeconds(startText) ?? 0);
+    final endSec = FormatPickerScreen.parseTimeToSeconds(endText);
+    if (endSec == null || endSec <= startSec) return null;
+    return '*$startSec-$endSec';
+  }
+
+  void _onQualityCeilingChanged(String newCeiling) {
+    setState(() {
+      _qualityCeiling = normalizeCeiling(newCeiling);
+      PickerSessionState.instance.qualityCeiling = _qualityCeiling;
+      if (!_isAudioOnlyMode) {
+        final activePreset = ref.read(presetsProvider).activePreset;
+        _selectedVideoFormat = selectBestVideoFormat(
+          _videoFormats,
+          targetHeight: targetHeightForCeiling(
+            _qualityCeiling,
+            activePreset.id,
+          ),
+          preferredCodec: activePreset.preferredCodec,
+          fallbackRecommendedId: _recommendedVideoFormatId,
+        );
+      }
+    });
+  }
+
+  void _onEmbedSubtitlesChanged(bool value) {
+    setState(() {
+      _embedSubtitles = value;
+      PickerSessionState.instance.embedSubtitles = value;
+    });
+  }
+
+  void _onClipChanged() {
+    setState(() {
+      _validateClip();
+      final session = PickerSessionState.instance;
+      session.clipEnabled = _clipEnabled;
+      session.clipStart = _clipStartController.text;
+      session.clipEnd = _clipEndController.text;
+    });
   }
 
   void _showVpnDialog() {
@@ -134,8 +293,16 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       _recommendedVideoFormatId =
           result['recommended_video_format_id'] as String?;
       final isPureAudio = _videoFormats.isEmpty && _muxedFormats.isEmpty;
-      _isAudioOnlyMode = activePreset.audioOnly || isPureAudio;
+      final session = PickerSessionState.instance;
+      _qualityCeiling = normalizeCeiling(
+        session.qualityCeiling ?? ref.read(settingsProvider).qualityCeiling,
+      );
+      _embedSubtitles =
+          session.embedSubtitles ?? ref.read(settingsProvider).embedSubtitles;
+      _isAudioOnlyMode =
+          session.audioOnly ?? (activePreset.audioOnly || isPureAudio);
       _selectedContainer = activePreset.preferredContainer;
+      _validateClip();
 
       // P0: sort-then-first (never unsorted .first). Audio = max bitrate.
       _selectedAudioFormat = selectBestAudioFormat(_audioFormats);
@@ -150,7 +317,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         }
       } else {
         final targetHeight = targetHeightForCeiling(
-          activePreset.qualityCeiling,
+          _qualityCeiling,
           activePreset.id,
         );
 
@@ -364,12 +531,31 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
             _selectedMuxedFormat == null &&
             _selectedAudioFormat != null);
 
+    final clipSpec = _clipRangeSpec;
+    if (_clipEnabled && clipSpec == null) {
+      if (!mounted) return;
+      setState(() => _isStarting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_clipValidationError ?? 'Invalid clip range')),
+      );
+      return;
+    }
+
     final config = <String, dynamic>{
       'container': _selectedContainer,
       // P1: forward user settings under exact engine contract keys
       // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
       ...settingsDownloadConfig(settings),
+      'quality_ceiling': _qualityCeiling,
+      if (_embedSubtitles && !isAudioOnly) ...{
+        'embed_subtitles': true,
+        'download_subtitles': true,
+      },
+      if (_clipEnabled && clipSpec != null) ...{
+        'download_sections': [clipSpec],
+        'force_keyframes_at_cuts': true,
+      },
       // Opt-in command template wins over settings (explicit format ids
       // below always win over everything — templates never touch them).
       if (_selectedTemplate != null && _selectedTemplate!.isNotEmpty)
@@ -631,6 +817,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 .activePreset;
                             setState(() {
                               _isAudioOnlyMode = val.first;
+                              PickerSessionState.instance.audioOnly =
+                                  _isAudioOnlyMode;
                               if (_isAudioOnlyMode) {
                                 _selectedVideoFormat = null;
                                 _selectedMuxedFormat = null;
@@ -651,7 +839,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 _selectedVideoFormat = selectBestVideoFormat(
                                   _videoFormats,
                                   targetHeight: targetHeightForCeiling(
-                                    activePreset.qualityCeiling,
+                                    _qualityCeiling,
                                     activePreset.id,
                                   ),
                                   preferredCodec: activePreset.preferredCodec,
@@ -811,6 +999,219 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         ),
                       ],
                     ),
+                    if (!_isAudioOnlyMode) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Quality Ceiling:', style: textTheme.bodyMedium),
+                          Semantics(
+                            label:
+                                'Quality Ceiling, currently $_qualityCeiling',
+                            child: DropdownButton<String>(
+                              value: _qualityCeiling,
+                              dropdownColor: colorScheme.surfaceContainerHigh,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'best',
+                                  child: Text('Best Available'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '4k',
+                                  child: Text('4K (2160p)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '1440p',
+                                  child: Text('1440p (2K)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '1080p',
+                                  child: Text('1080p (FHD)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '720p',
+                                  child: Text('720p (HD)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '480p',
+                                  child: Text('480p (SD)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '360p',
+                                  child: Text('360p'),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) _onQualityCeilingChanged(val);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      key: const Key('embed_subtitles_toggle'),
+                      title: const Text('Embed Subtitles'),
+                      subtitle: Text(
+                        _isAudioOnlyMode
+                            ? 'Requires video stream'
+                            : 'Embed subtitles directly into media file',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: _isAudioOnlyMode ? colorScheme.outline : null,
+                        ),
+                      ),
+                      value: _isAudioOnlyMode ? false : _embedSubtitles,
+                      onChanged: _isAudioOnlyMode
+                          ? null
+                          : _onEmbedSubtitlesChanged,
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        Icons.subtitles_outlined,
+                        color: _isAudioOnlyMode
+                            ? colorScheme.outline
+                            : colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      elevation: 0,
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: _clipValidationError != null
+                              ? colorScheme.error
+                              : colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.content_cut,
+                                      size: 20,
+                                      color: _clipEnabled
+                                          ? colorScheme.primary
+                                          : colorScheme.outline,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Clip / Trim Range',
+                                      style: textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Switch(
+                                  key: const Key('clip_range_switch'),
+                                  value: _clipEnabled,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _clipEnabled = val;
+                                      _onClipChanged();
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            if (_clipEnabled) ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      key: const Key('clip_start_field'),
+                                      controller: _clipStartController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Start Time',
+                                        hintText: '00:00',
+                                        isDense: true,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        prefixIcon: const Icon(
+                                          Icons.timer_outlined,
+                                          size: 18,
+                                        ),
+                                      ),
+                                      keyboardType: TextInputType.text,
+                                      onChanged: (_) => _onClipChanged(),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      key: const Key('clip_end_field'),
+                                      controller: _clipEndController,
+                                      decoration: InputDecoration(
+                                        labelText: 'End Time',
+                                        hintText: '01:30',
+                                        isDense: true,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        prefixIcon: const Icon(
+                                          Icons.timer_off_outlined,
+                                          size: 18,
+                                        ),
+                                      ),
+                                      keyboardType: TextInputType.text,
+                                      onChanged: (_) => _onClipChanged(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_durationSeconds != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Total duration: ${_formatDuration(_durationSeconds)}',
+                                  style: textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.outline,
+                                  ),
+                                ),
+                              ],
+                              if (_clipValidationError != null) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.error_outline,
+                                      size: 16,
+                                      color: colorScheme.error,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        _clipValidationError!,
+                                        style: textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.error,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -891,7 +1292,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                             (!_isStarting &&
                                 (_selectedVideoFormat != null ||
                                     _selectedAudioFormat != null ||
-                                    _selectedMuxedFormat != null))
+                                    _selectedMuxedFormat != null) &&
+                                (!_clipEnabled || _clipValidationError == null))
                             ? _startDownload
                             : null,
                         style: ElevatedButton.styleFrom(
@@ -1050,7 +1452,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     final isSelected = isVideo
         ? _selectedVideoFormat == formatId
         : _selectedAudioFormat == formatId;
-    final isHdr = isVideo && fmt['dynamic_range'] != 'SDR';
+    final isHdr =
+        isVideo &&
+        fmt['dynamic_range'] != null &&
+        fmt['dynamic_range'] != 'SDR' &&
+        fmt['dynamic_range'].toString().isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1119,7 +1525,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                fmt['dynamic_range'],
+                                fmt['dynamic_range']?.toString() ?? '',
                                 style: textTheme.labelSmall?.copyWith(
                                   color: colorScheme.onTertiaryContainer,
                                   fontSize: 9,

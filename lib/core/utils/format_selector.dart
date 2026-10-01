@@ -13,10 +13,13 @@ library;
 
 /// Map a preset ceiling/id to a target height (matches previous screen logic).
 int targetHeightForCeiling(String qualityCeiling, String presetId) {
-  if (qualityCeiling == '4k') return 2160;
-  if (qualityCeiling == '1080p') return 1080;
-  if (qualityCeiling == '720p') return 720;
-  if (qualityCeiling == '480p' || presetId == 'preset_480p') return 480;
+  final q = qualityCeiling.toLowerCase().trim();
+  if (q == '4k' || q == '2160p') return 2160;
+  if (q == '1440p' || q == '2k') return 1440;
+  if (q == '1080p') return 1080;
+  if (q == '720p') return 720;
+  if (q == '480p' || presetId == 'preset_480p') return 480;
+  if (q == '360p') return 360;
   return 99999;
 }
 
@@ -32,7 +35,9 @@ int _compareVideoDesc(Map<String, dynamic> a, Map<String, dynamic> b) {
   final fa = _num(a, 'fps');
   final fb = _num(b, 'fps');
   if (fa != fb) return fb.compareTo(fa);
-  return (a['format_id'] as String? ?? '').compareTo(b['format_id'] as String? ?? '');
+  return (a['format_id'] as String? ?? '').compareTo(
+    b['format_id'] as String? ?? '',
+  );
 }
 
 /// Best video format id for [targetHeight] preferring [preferredCodec].
@@ -58,8 +63,7 @@ String? selectBestVideoFormat(
   var matching = videoFormats.where((f) {
     final h = f['height'] as num?;
     final w = f['width'] as num?;
-    return (h != null && h <= targetHeight) ||
-        (w != null && w <= targetHeight);
+    return (h != null && h <= targetHeight) || (w != null && w <= targetHeight);
   }).toList();
   if (matching.isEmpty) matching = List.of(videoFormats);
   final want = preferredCodec.toLowerCase();
@@ -78,7 +82,9 @@ int _compareAudioDesc(Map<String, dynamic> a, Map<String, dynamic> b) {
   final ta = (a['tbr'] as num?) ?? 0;
   final tb = (b['tbr'] as num?) ?? 0;
   if (ta != tb) return tb.compareTo(ta);
-  return (a['format_id'] as String? ?? '').compareTo(b['format_id'] as String? ?? '');
+  return (a['format_id'] as String? ?? '').compareTo(
+    b['format_id'] as String? ?? '',
+  );
 }
 
 /// Best audio format id by descending bitrate (abr, fallback tbr).
