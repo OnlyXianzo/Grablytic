@@ -388,11 +388,42 @@ class _AppShellState extends ConsumerState<AppShell> {
       _currentIndex = index;
     });
     _animTarget = index;
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    // T16: the indicator bar drives the controller itself on drag-settle;
+    // taps still animate here (jump under reduced motion).
+    try {
+      final cur = _pageController.hasClients ? _pageController.page : null;
+      if (cur != null && (cur - index).abs() <= 0.02) return;
+    } catch (_) {}
+    final noAnim = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .reduceMotion;
+    if (noAnim) {
+      try {
+        _pageController.jumpToPage(index);
+      } catch (_) {}
+    } else {
+      _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  /// T16: drag release already animated the controller in the bar — record
+  /// the index (fly-through guard in [_onPageChanged] handles the rest).
+  void _onIndicatorSettled(int index) {
+    if (index == _currentIndex) {
+      _animTarget = null;
+      return;
+    }
+    AppLogger.info('Indicator settled to tab: $index');
+    setState(() {
+      _currentIndex = index;
+    });
+    _animTarget = index;
   }
 
   @override
@@ -488,7 +519,9 @@ class _AppShellState extends ConsumerState<AppShell> {
       bottomNavigationBar: _FluidBottomNavBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: _onDestinationSelected,
+        onIndicatorSettled: _onIndicatorSettled,
         colorScheme: colorScheme,
+        pageController: _pageController,
       ),
     );
   }
@@ -504,27 +537,26 @@ class _NavItemData {
 class _FluidBottomNavBar extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final ValueChanged<int> onIndicatorSettled;
   final ColorScheme colorScheme;
+  final PageController pageController;
 
   const _FluidBottomNavBar({
     required this.selectedIndex,
     required this.onDestinationSelected,
+    required this.onIndicatorSettled,
     required this.colorScheme,
+    required this.pageController,
   });
 
   @override
   State<_FluidBottomNavBar> createState() => _FluidBottomNavBarState();
 }
 
-class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _morphController;
-  late Animation<double> _posAnim;
-
-  double _currentPos = 0.0;
-  double _animStartPos = 0.0;
-  double _animTargetPos = 0.0;
-  bool _isDragging = false;
+class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
+  // T16: the PageController is the single source of truth. Position flows
+  // controller → _pos → AnimatedBuilder with zero per-frame setState calls.
+  final ValueNotifier<double> _pos = ValueNotifier(0.0);
 
   static const List<_NavItemData> _items = [
     _NavItemData(icon: Icons.download, label: 'Download'),
@@ -532,35 +564,57 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
     _NavItemData(icon: Icons.settings, label: 'Settings'),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _currentPos = widget.selectedIndex.toDouble();
-    _animStartPos = _currentPos;
-    _animTargetPos = _currentPos;
-    _morphController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-    );
-    _posAnim = AlwaysStoppedAnimation(_currentPos);
+  double _readPos() {
+    try {
+      if (widget.pageController.hasClients) {
+        final p = widget.pageController.page;
+        if (p != null) {
+          return p.clamp(0.0, (_items.length - 1).toDouble());
+        }
+      }
+    } catch (_) {}
+    return widget.selectedIndex.toDouble();
+  }
+
+  double get _viewport {
+    try {
+      if (widget.pageController.hasClients) {
+        return widget.pageController.position.viewportDimension;
+      }
+    } catch (_) {}
+    return 0.0;
   }
 
   @override
-  void dispose() {
-    _morphController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _pos.value = widget.selectedIndex.toDouble();
+    widget.pageController.addListener(_onPage);
   }
 
   @override
   void didUpdateWidget(covariant _FluidBottomNavBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.selectedIndex != oldWidget.selectedIndex && !_isDragging) {
-      final target = widget.selectedIndex.toDouble();
-      _animateTo(target, immediate: _animationsDisabled(context));
+    if (!identical(widget.pageController, oldWidget.pageController)) {
+      oldWidget.pageController.removeListener(_onPage);
+      widget.pageController.addListener(_onPage);
     }
+    // Nothing else: taps/swipes animate the controller in the parent and
+    // this bar follows it; drags below drive the controller directly.
   }
 
-  /// Reduced-motion gate for the pill animation.
+  @override
+  void dispose() {
+    widget.pageController.removeListener(_onPage);
+    _pos.dispose();
+    super.dispose();
+  }
+
+  void _onPage() {
+    _pos.value = _readPos();
+  }
+
+  /// Reduced-motion gate for the settle animation.
   ///
   /// Android "Remove animations" arrives via [MediaQuery.disableAnimations],
   /// but iOS Reduce Motion does NOT set that flag — it surfaces separately
@@ -575,236 +629,243 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
         .reduceMotion;
   }
 
-  void _animateTo(double target, {bool immediate = false}) {
-    if (immediate) {
-      _morphController.stop();
-      setState(() {
-        _currentPos = target;
-        _animStartPos = target;
-        _animTargetPos = target;
-      });
-      return;
-    }
-
-    _animStartPos = _currentPos;
-    _animTargetPos = target;
-    _morphController.stop();
-    _morphController.reset();
-
-    _posAnim =
-        Tween<double>(begin: _animStartPos, end: _animTargetPos).animate(
-          CurvedAnimation(
-            parent: _morphController,
-            curve: Curves.easeInOutCubic,
-          ),
-        )..addListener(() {
-          setState(() {
-            _currentPos = _posAnim.value;
-          });
-        });
-
-    _morphController.forward();
-  }
-
-  void _handleDrag(double localX, double totalWidth) {
-    final slotWidth = totalWidth / _items.length;
-    final pos = ((localX / slotWidth) - 0.5).clamp(
+  /// Drag scrubs pages 1:1 through the controller (the pill follows via
+  /// the listener above).
+  void _scrubTo(double localX, double barWidth) {
+    final vp = _viewport;
+    if (vp <= 0) return;
+    final slot = barWidth / _items.length;
+    final target = ((localX / slot) - 0.5).clamp(
       0.0,
       (_items.length - 1).toDouble(),
     );
-    setState(() {
-      _currentPos = pos;
-    });
+    widget.pageController.jumpTo(target * vp);
+  }
+
+  /// Release settles to the nearest page; fast flings carry one extra page.
+  /// Duration scales with fling velocity (120–350 ms). The parent only
+  /// records the index — it must not re-animate (the bar already did).
+  void _settle(double velocityPxPerSec, BuildContext context) {
+    final vp = _viewport;
+    final page = _pos.value;
+    var target = page.round();
+    if (vp > 0) {
+      final vPages = velocityPxPerSec / vp;
+      if (vPages.abs() > 1.5) {
+        target = (page + (vPages > 0 ? 0.5 : -0.5)).round();
+      }
+    }
+    target = target.clamp(0, _items.length - 1);
+    final distance = (target - page).abs();
+    if (distance <= 0.001 || vp <= 0) {
+      widget.onIndicatorSettled(target);
+      return;
+    }
+    var ms = 320;
+    final vAbs = (velocityPxPerSec / vp).abs();
+    if (vAbs > 0.01) {
+      ms = (distance / vAbs * 1000).round().clamp(120, 350);
+    }
+    if (_animationsDisabled(context)) {
+      widget.pageController.jumpTo(target * vp);
+    } else {
+      widget.pageController.animateTo(
+        target * vp,
+        duration: Duration(milliseconds: ms),
+        curve: Curves.easeOut,
+      );
+    }
+    widget.onIndicatorSettled(target);
+  }
+
+  void _cancelBack(BuildContext context) {
+    final target = widget.selectedIndex;
+    final vp = _viewport;
+    if (vp > 0 && !_animationsDisabled(context)) {
+      widget.pageController.animateTo(
+        target * vp,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    } else if (vp > 0) {
+      widget.pageController.jumpTo(target * vp);
+    }
+    widget.onIndicatorSettled(target);
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.colorScheme.surfaceContainerLowest,
-        border: Border(
-          top: BorderSide(
-            color: widget.colorScheme.outlineVariant.withValues(alpha: 0.3),
+    // T16: one AnimatedBuilder on controller-driven notifiers — the pill,
+    // colors, and stretch all derive from the fractional page, never from
+    // per-frame setState.
+    return AnimatedBuilder(
+      animation: _pos,
+      builder: (context, _) {
+        final currentPos = _pos.value;
+        return Container(
+          decoration: BoxDecoration(
+            color: widget.colorScheme.surfaceContainerLowest,
+            border: Border(
+              top: BorderSide(
+                color: widget.colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+            ),
           ),
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final totalWidth = constraints.maxWidth;
-              final slotWidth = totalWidth / _items.length;
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final totalWidth = constraints.maxWidth;
+                  final slotWidth = totalWidth / _items.length;
 
-              // Fluid / liquid morph calculations:
-              // During transition, the highlight stretches horizontally and slightly
-              // compresses vertically, mimicking liquid surface tension and volume preservation.
-              double stretchFactor = 0.0;
-              double squishFactor = 0.0;
+                  // Liquid morph from the fractional page offset: the
+                  // highlight stretches mid-transition, equally for taps,
+                  // swipes, and indicator drags (all flow through the
+                  // controller now).
+                  final distFromInt = (currentPos - currentPos.round()).abs();
+                  final stretchFactor = (distFromInt * 0.22).clamp(0.0, 0.35);
+                  final squishFactor = (distFromInt * 0.06).clamp(0.0, 0.1);
 
-              if (_morphController.isAnimating) {
-                final animProgress = _morphController.value;
-                final morphFactor = math.sin(animProgress * math.pi);
-                final travelDist = (_animTargetPos - _animStartPos).abs();
-                stretchFactor = (morphFactor * 0.28 * travelDist).clamp(
-                  0.0,
-                  0.45,
-                );
-                squishFactor = (morphFactor * 0.08).clamp(0.0, 0.15);
-              } else if (_isDragging) {
-                final distFromInt = (_currentPos - _currentPos.round()).abs();
-                stretchFactor = (distFromInt * 0.22).clamp(0.0, 0.35);
-                squishFactor = (distFromInt * 0.06).clamp(0.0, 0.1);
-              }
+                  const baseHeight = 44.0;
+                  final baseWidth = math.min(slotWidth - 8.0, 96.0);
+                  final pillWidth = baseWidth * (1.0 + stretchFactor);
+                  final pillHeight = baseHeight * (1.0 - squishFactor);
 
-              const baseHeight = 44.0;
-              final baseWidth = math.min(slotWidth - 8.0, 96.0);
-              final pillWidth = baseWidth * (1.0 + stretchFactor);
-              final pillHeight = baseHeight * (1.0 - squishFactor);
-
-              final centerX = (_currentPos + 0.5) * slotWidth;
-              final pillLeft = (centerX - (pillWidth / 2)).clamp(
-                0.0,
-                totalWidth - pillWidth,
-              );
-              const containerHeight = 56.0;
-              final pillTop = (containerHeight - pillHeight) / 2;
-
-              return GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onHorizontalDragStart: (details) {
-                  _isDragging = true;
-                  _morphController.stop();
-                  _handleDrag(details.localPosition.dx, totalWidth);
-                },
-                onHorizontalDragUpdate: (details) {
-                  _handleDrag(details.localPosition.dx, totalWidth);
-                },
-                onHorizontalDragEnd: (details) {
-                  _isDragging = false;
-                  final target = _currentPos.round().clamp(
-                    0,
-                    _items.length - 1,
+                  final centerX = (currentPos + 0.5) * slotWidth;
+                  final pillLeft = (centerX - (pillWidth / 2)).clamp(
+                    0.0,
+                    totalWidth - pillWidth,
                   );
-                  _animateTo(
-                    target.toDouble(),
-                    immediate: _animationsDisabled(context),
-                  );
-                  widget.onDestinationSelected(target);
-                },
-                onHorizontalDragCancel: () {
-                  _isDragging = false;
-                  final target = widget.selectedIndex.toDouble();
-                  _animateTo(target, immediate: _animationsDisabled(context));
-                },
-                child: SizedBox(
-                  height: containerHeight,
-                  width: totalWidth,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // Smoothly sliding and morphing liquid pill highlight
-                      Positioned(
-                        left: pillLeft,
-                        top: pillTop,
-                        width: pillWidth,
-                        height: pillHeight,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: widget.colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(pillHeight / 2),
-                          ),
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
+                  const containerHeight = 56.0;
+                  final pillTop = (containerHeight - pillHeight) / 2;
+
+                  return GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: (details) {
+                      _scrubTo(details.localPosition.dx, totalWidth);
+                    },
+                    onHorizontalDragUpdate: (details) {
+                      _scrubTo(details.localPosition.dx, totalWidth);
+                    },
+                    onHorizontalDragEnd: (details) {
+                      _settle(details.primaryVelocity ?? 0.0, context);
+                    },
+                    onHorizontalDragCancel: () => _cancelBack(context),
+                    child: SizedBox(
+                      height: containerHeight,
+                      width: totalWidth,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Smoothly sliding and morphing liquid pill highlight
+                          Positioned(
+                            left: pillLeft,
+                            top: pillTop,
+                            width: pillWidth,
+                            height: pillHeight,
                             child: Container(
-                              margin: const EdgeInsets.only(bottom: 3),
-                              width: 16 * (1.0 + stretchFactor),
-                              height: 2.5,
                               decoration: BoxDecoration(
-                                color: widget.colorScheme.primary,
-                                borderRadius: BorderRadius.circular(1.25),
+                                color: widget.colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(
+                                  pillHeight / 2,
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Navigation items
-                      Row(
-                        children: List.generate(_items.length, (index) {
-                          final item = _items[index];
-                          final dist = (index - _currentPos).abs().clamp(
-                            0.0,
-                            1.0,
-                          );
-                          final activeWeight = 1.0 - dist;
-
-                          final iconColor = Color.lerp(
-                            widget.colorScheme.onSurfaceVariant,
-                            widget.colorScheme.onPrimaryContainer,
-                            activeWeight,
-                          )!;
-                          final textColor = Color.lerp(
-                            widget.colorScheme.onSurfaceVariant,
-                            widget.colorScheme.onPrimaryContainer,
-                            activeWeight,
-                          )!;
-
-                          final isSelected = widget.selectedIndex == index;
-
-                          return Expanded(
-                            child: Semantics(
-                              button: true,
-                              selected: isSelected,
-                              label: item.label,
-                              child: InkResponse(
-                                onTap: () =>
-                                    widget.onDestinationSelected(index),
-                                containedInkWell: true,
-                                highlightShape: BoxShape.rectangle,
-                                borderRadius: BorderRadius.circular(24),
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    minWidth: 48,
-                                    minHeight: 48,
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        item.icon,
-                                        size: 22,
-                                        color: iconColor,
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        item.label,
-                                        style: textTheme.labelSmall?.copyWith(
-                                          fontWeight: activeWeight > 0.5
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                          color: textColor,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ],
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 3),
+                                  width: 16 * (1.0 + stretchFactor),
+                                  height: 2.5,
+                                  decoration: BoxDecoration(
+                                    color: widget.colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(1.25),
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        }),
+                          ),
+                          // Navigation items
+                          Row(
+                            children: List.generate(_items.length, (index) {
+                              final item = _items[index];
+                              final dist = (index - currentPos).abs().clamp(
+                                0.0,
+                                1.0,
+                              );
+                              final activeWeight = 1.0 - dist;
+
+                              final iconColor = Color.lerp(
+                                widget.colorScheme.onSurfaceVariant,
+                                widget.colorScheme.onPrimaryContainer,
+                                activeWeight,
+                              )!;
+                              final textColor = Color.lerp(
+                                widget.colorScheme.onSurfaceVariant,
+                                widget.colorScheme.onPrimaryContainer,
+                                activeWeight,
+                              )!;
+
+                              final isSelected = widget.selectedIndex == index;
+
+                              return Expanded(
+                                child: Semantics(
+                                  button: true,
+                                  selected: isSelected,
+                                  label: item.label,
+                                  child: InkResponse(
+                                    onTap: () =>
+                                        widget.onDestinationSelected(index),
+                                    containedInkWell: true,
+                                    highlightShape: BoxShape.rectangle,
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        minWidth: 48,
+                                        minHeight: 48,
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            item.icon,
+                                            size: 22,
+                                            color: iconColor,
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            item.label,
+                                            style: textTheme.labelSmall
+                                                ?.copyWith(
+                                                  fontWeight: activeWeight > 0.5
+                                                      ? FontWeight.bold
+                                                      : FontWeight.w600,
+                                                  color: textColor,
+                                                  fontSize: 11,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
