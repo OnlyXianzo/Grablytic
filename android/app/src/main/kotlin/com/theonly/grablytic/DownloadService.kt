@@ -100,10 +100,104 @@ class DownloadService : Service() {
         } catch (_: Exception) {}
     }
 
+    private val idleStopRunnable = Runnable {
+        if (active.isEmpty()) {
+            lastShownId = null
+            releaseLocks()
+            stopSelf()
+        }
+    }
+
+    private fun checkIdleStop() {
+        if (active.isEmpty()) {
+            lastShownId = null
+            // 30-second grace period for subsequent queued downloads to arrive without losing FGS
+            lockRenewalHandler.removeCallbacks(idleStopRunnable)
+            lockRenewalHandler.postDelayed(idleStopRunnable, 30_000L)
+        } else {
+            lockRenewalHandler.removeCallbacks(idleStopRunnable)
+            promote()
+        }
+    }
+
+    fun handleStart(id: String, title: String, showAlert: Boolean) {
+        lockRenewalHandler.removeCallbacks(idleStopRunnable)
+        active[id] = title
+        alertPrefs[id] = showAlert
+        promote()
+        updateLocks()
+    }
+
+    fun handleUpdate(
+        id: String,
+        percent: Int,
+        stage: String?,
+        speedBps: Long,
+        downloadedBytes: Long,
+        totalBytes: Long,
+    ) {
+        if (active.containsKey(id)) {
+            val p = prog.getOrPut(id) { Prog() }
+            if (percent in 0..100) {
+                p.percent = percent
+            }
+            if (stage != null) {
+                p.stage = stage
+            } else if (p.percent in 0..99) {
+                p.stage = null
+            }
+            if (speedBps > 0) p.speedBps = speedBps
+            if (downloadedBytes > 0) p.downloadedBytes = downloadedBytes
+            if (totalBytes > 0) p.totalBytes = totalBytes
+            lastShownId = id
+            val now = android.os.SystemClock.elapsedRealtime()
+            val force = stage != null || p.percent >= 99 || p.percent < 0
+            if (force || now - lastPromoteMs >= 500) {
+                lastPromoteMs = now
+                promote()
+            }
+        }
+    }
+
+    fun handleFinished(id: String) {
+        val title = active[id] ?: id
+        val showAlert = alertPrefs[id] ?: true
+        active.remove(id)
+        prog.remove(id)
+        alertPrefs.remove(id)
+        if (showAlert) {
+            postTerminalAlert(id, title, succeeded = true, detail = null)
+        }
+        updateLocks()
+        checkIdleStop()
+    }
+
+    fun handleFailed(id: String, detail: String?) {
+        val title = active[id] ?: id
+        val showAlert = alertPrefs[id] ?: true
+        active.remove(id)
+        prog.remove(id)
+        alertPrefs.remove(id)
+        if (showAlert) {
+            postTerminalAlert(id, title, succeeded = false, detail = detail)
+        }
+        updateLocks()
+        checkIdleStop()
+    }
+
+    fun handleDone(id: String) {
+        active.remove(id)
+        prog.remove(id)
+        alertPrefs.remove(id)
+        updateLocks()
+        checkIdleStop()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         ensureChannel()
     }
 
@@ -111,95 +205,33 @@ class DownloadService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val id = intent.getStringExtra(EXTRA_ID) ?: return START_NOT_STICKY
-                active[id] = intent.getStringExtra(EXTRA_TITLE) ?: id
-                alertPrefs[id] = intent.getBooleanExtra(EXTRA_SHOW_ALERT, true)
-                promote()
-                updateLocks()
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: id
+                val showAlert = intent.getBooleanExtra(EXTRA_SHOW_ALERT, true)
+                handleStart(id, title, showAlert)
             }
             ACTION_UPDATE -> {
                 val id = intent.getStringExtra(EXTRA_ID) ?: return START_NOT_STICKY
-                if (active.containsKey(id)) {
-                    val p = prog.getOrPut(id) { Prog() }
-                    if (intent.hasExtra(EXTRA_PERCENT)) {
-                        p.percent = intent.getIntExtra(EXTRA_PERCENT, p.percent)
-                    }
-                    val stage = intent.getStringExtra(EXTRA_STAGE)
-                    if (stage != null) {
-                        p.stage = stage
-                    } else if (p.percent in 0..99) {
-                        p.stage = null
-                    }
-                    if (intent.hasExtra(EXTRA_SPEED)) {
-                        p.speedBps = intent.getLongExtra(EXTRA_SPEED, p.speedBps)
-                    }
-                    if (intent.hasExtra(EXTRA_DOWNLOADED)) {
-                        p.downloadedBytes = intent.getLongExtra(EXTRA_DOWNLOADED, p.downloadedBytes)
-                    }
-                    if (intent.hasExtra(EXTRA_TOTAL)) {
-                        p.totalBytes = intent.getLongExtra(EXTRA_TOTAL, p.totalBytes)
-                    }
-                    lastShownId = id
-                    // Coalesce rebuilds: engine `downloading` events arrive
-                    // far faster than the OS can usefully re-render.
-                    // Always refresh on stage change or near-completion.
-                    val now = android.os.SystemClock.elapsedRealtime()
-                    val force = stage != null || p.percent >= 99 || p.percent < 0
-                    if (force || now - lastPromoteMs >= 500) {
-                        lastPromoteMs = now
-                        promote()
-                    }
-                }
+                val percent = intent.getIntExtra(EXTRA_PERCENT, -1)
+                val stage = intent.getStringExtra(EXTRA_STAGE)
+                val speed = intent.getLongExtra(EXTRA_SPEED, 0)
+                val dl = intent.getLongExtra(EXTRA_DOWNLOADED, 0)
+                val total = intent.getLongExtra(EXTRA_TOTAL, 0)
+                handleUpdate(id, percent, stage, speed, dl, total)
             }
             ACTION_FINISHED -> {
                 val id = intent.getStringExtra(EXTRA_ID)
-                val title = id?.let { active[it] } ?: id ?: "Download"
-                val showAlert = id?.let { alertPrefs[it] } ?: true
-                active.remove(id)
-                prog.remove(id)
-                alertPrefs.remove(id)
-                if (showAlert && id != null) {
-                    postTerminalAlert(id, title, succeeded = true, detail = null)
-                }
-                updateLocks()
-                if (active.isEmpty()) {
-                    lastShownId = null
-                    stopSelf()
-                } else {
-                    promote()
-                }
+                if (id != null) handleFinished(id)
             }
             ACTION_FAILED -> {
                 val id = intent.getStringExtra(EXTRA_ID)
-                val title = id?.let { active[it] } ?: id ?: "Download"
-                val detail = intent.getStringExtra(EXTRA_DETAIL)
-                val showAlert = id?.let { alertPrefs[it] } ?: true
-                active.remove(id)
-                prog.remove(id)
-                alertPrefs.remove(id)
-                if (showAlert && id != null) {
-                    postTerminalAlert(id, title, succeeded = false, detail = detail)
-                }
-                updateLocks()
-                if (active.isEmpty()) {
-                    lastShownId = null
-                    stopSelf()
-                } else {
-                    promote()
-                }
+                if (id != null) handleFailed(id, intent.getStringExtra(EXTRA_DETAIL))
             }
             ACTION_DONE, ACTION_CANCEL -> {
-                active.remove(intent?.getStringExtra(EXTRA_ID))
-                prog.remove(intent?.getStringExtra(EXTRA_ID))
-                alertPrefs.remove(intent?.getStringExtra(EXTRA_ID))
-                updateLocks()
-                if (active.isEmpty()) {
-                    lastShownId = null
-                    stopSelf()
-                } else {
-                    promote()
-                }
+                val id = intent?.getStringExtra(EXTRA_ID)
+                if (id != null) handleDone(id)
             }
             ACTION_STOP -> {
+                lockRenewalHandler.removeCallbacks(idleStopRunnable)
                 active.clear()
                 prog.clear()
                 alertPrefs.clear()
@@ -239,6 +271,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         releaseLocks()
         super.onDestroy()
     }
@@ -549,6 +582,11 @@ class DownloadService : Service() {
         private const val CHANNEL_ERROR = "grablytic_error"
         private const val NOTIF_ID = 1001
 
+        @Volatile
+        private var instance: DownloadService? = null
+
+        fun isRunning(): Boolean = instance != null
+
         /** Stable per-download alert ID that never collides with NOTIF_ID. */
         fun alertNotifId(downloadId: String): Int {
             val h = downloadId.hashCode() and 0x00FFFFFF
@@ -556,6 +594,13 @@ class DownloadService : Service() {
         }
 
         fun start(ctx: Context, downloadId: String, title: String, showAlert: Boolean = true) {
+            val s = instance
+            if (s != null) {
+                s.lockRenewalHandler.post {
+                    s.handleStart(downloadId, title, showAlert)
+                }
+                return
+            }
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_ID, downloadId)
@@ -573,6 +618,13 @@ class DownloadService : Service() {
             downloadedBytes: Long = 0,
             totalBytes: Long = 0,
         ) {
+            val s = instance
+            if (s != null) {
+                s.lockRenewalHandler.post {
+                    s.handleUpdate(downloadId, percent, null, speedBps, downloadedBytes, totalBytes)
+                }
+                return
+            }
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_ID, downloadId)
@@ -585,6 +637,13 @@ class DownloadService : Service() {
         }
 
         fun updateStage(ctx: Context, downloadId: String, stageLabel: String) {
+            val s = instance
+            if (s != null) {
+                s.lockRenewalHandler.post {
+                    s.handleUpdate(downloadId, 99, stageLabel, 0, 0, 0)
+                }
+                return
+            }
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_ID, downloadId)
@@ -595,6 +654,13 @@ class DownloadService : Service() {
         }
 
         fun done(ctx: Context, downloadId: String, cancelled: Boolean = false) {
+            val s = instance
+            if (s != null) {
+                s.lockRenewalHandler.post {
+                    s.handleDone(downloadId)
+                }
+                return
+            }
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = if (cancelled) ACTION_CANCEL else ACTION_DONE
                 putExtra(EXTRA_ID, downloadId)
@@ -603,6 +669,13 @@ class DownloadService : Service() {
         }
 
         fun finished(ctx: Context, downloadId: String) {
+            val s = instance
+            if (s != null) {
+                s.lockRenewalHandler.post {
+                    s.handleFinished(downloadId)
+                }
+                return
+            }
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_FINISHED
                 putExtra(EXTRA_ID, downloadId)
@@ -611,6 +684,13 @@ class DownloadService : Service() {
         }
 
         fun failed(ctx: Context, downloadId: String, detail: String? = null) {
+            val s = instance
+            if (s != null) {
+                s.lockRenewalHandler.post {
+                    s.handleFailed(downloadId, detail)
+                }
+                return
+            }
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 action = ACTION_FAILED
                 putExtra(EXTRA_ID, downloadId)

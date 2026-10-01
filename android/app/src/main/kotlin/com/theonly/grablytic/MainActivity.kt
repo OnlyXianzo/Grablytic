@@ -588,6 +588,43 @@ class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     val networkType = call.argument<String>("network_type")
 
+                    val showAlert = try {
+                        @Suppress("UNCHECKED_CAST")
+                        (config as? Map<*, *>)?.get("completion_alerts") as? Boolean
+                    } catch (_: Exception) {
+                        null
+                    } ?: true
+                    val title = try {
+                        android.net.Uri.parse(url).host ?: url
+                    } catch (_: Exception) {
+                        downloadId
+                    }
+
+                    // T09: Start FGS synchronously on Main thread during user gesture
+                    try {
+                        DownloadService.start(
+                            this@MainActivity,
+                            downloadId ?: "unknown",
+                            title ?: "Download",
+                            showAlert,
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("GrablyticEngine", "DownloadService.start failed: ${e.message}")
+                    }
+
+                    // Keep-alive: check POST_NOTIFICATIONS on Main thread while foreground
+                    if (!notifPromptShown && !notificationsGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notifPromptShown = true
+                        try {
+                            androidx.core.app.ActivityCompat.requestPermissions(
+                                this@MainActivity,
+                                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                                REQ_POST_NOTIFICATIONS,
+                            )
+                        } catch (_: Exception) {
+                        }
+                    }
+
                     scope.launch(Dispatchers.IO) {
                         try {
                             val python = py ?: return@launch
@@ -596,44 +633,6 @@ class MainActivity : FlutterActivity() {
                             val eventCallback = ProcessEngineEventListener(applicationContext, outputDir)
                             if (downloadId != null) {
                                 activeCallbacks[downloadId] = eventCallback
-                            }
-
-                            // Keep-alive: user gesture (foreground) → dataSync FGS.
-                            // Completion/failure alerts are NOT FGS-exempt, so
-                            // make sure POST_NOTIFICATIONS is granted while we
-                            // still have a foreground moment to ask in (once —
-                            // repeat prompts nag and the OS auto-denies them).
-                            if (!notifPromptShown && !notificationsGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                notifPromptShown = true
-                                try {
-                                    androidx.core.app.ActivityCompat.requestPermissions(
-                                        this@MainActivity,
-                                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                                        REQ_POST_NOTIFICATIONS,
-                                    )
-                                } catch (_: Exception) {
-                                }
-                            }
-                            val showAlert = try {
-                                @Suppress("UNCHECKED_CAST")
-                                (config as? Map<*, *>)?.get("completion_alerts") as? Boolean
-                            } catch (_: Exception) {
-                                null
-                            } ?: true
-                            try {
-                                val title = try {
-                                    android.net.Uri.parse(url).host ?: url
-                                } catch (_: Exception) {
-                                    downloadId
-                                }
-                                DownloadService.start(
-                                    this@MainActivity,
-                                    downloadId ?: "unknown",
-                                    title ?: "Download",
-                                    showAlert,
-                                )
-                            } catch (e: Exception) {
-                                android.util.Log.w("GrablyticEngine", "DownloadService.start failed: ${e.message}")
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
