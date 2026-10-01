@@ -175,7 +175,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (url.isEmpty || !mounted) return;
 
     final settings = ref.read(settingsProvider);
-    if (settings.autoStartDownloadOnShare) {
+    final isAuto =
+        settings.shareBehavior == 'auto' || settings.autoStartDownloadOnShare;
+    if (isAuto) {
       // Engine-readiness gate: never auto-start into an unbootstrapped
       // engine (empty/failed download). Fall back to the preview sheet path
       // so the user sees a "still setting up" state instead of silence.
@@ -192,7 +194,9 @@ class _AppShellState extends ConsumerState<AppShell> {
         _pageController.jumpToPage(0);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Engine still setting up — review the link, then retry.'),
+            content: Text(
+              'Engine still setting up — review the link, then retry.',
+            ),
           ),
         );
         return;
@@ -201,7 +205,9 @@ class _AppShellState extends ConsumerState<AppShell> {
         final go = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: const Text('Outside scheduled window'),
             content: Text(
               'Your download schedule is ${scheduleSummary(settings)}.\n\n'
@@ -237,7 +243,9 @@ class _AppShellState extends ConsumerState<AppShell> {
       final notifier = ref.read(downloadProvider.notifier);
       if (notifier.isDownloading(url)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Download already in progress for this link')),
+          const SnackBar(
+            content: Text('Download already in progress for this link'),
+          ),
         );
         _currentIndex = 0;
         _pageController.jumpToPage(0);
@@ -252,31 +260,68 @@ class _AppShellState extends ConsumerState<AppShell> {
         ...settingsDownloadConfig(settings),
       };
 
-      final startRes = await ref.read(engineProvider).startDownload(
-        url: url,
-        downloadId: downloadId,
-        config: config,
-        networkType: 'wifi',
-      );
+      try {
+        final startRes = await ref
+            .read(engineProvider)
+            .startDownload(
+              url: url,
+              downloadId: downloadId,
+              config: config,
+              networkType: 'wifi',
+            );
 
-      notifier.addDownload(
-        DownloadItem(
-          id: downloadId,
-          title: url,
-          url: url,
-          status: startRes['queued'] == true ? 'queued' : 'downloading',
-          config: config,
-          networkType: 'wifi',
-        ),
-      );
+        if (startRes['success'] == true) {
+          notifier.addDownload(
+            DownloadItem(
+              id: downloadId,
+              title: url,
+              url: url,
+              status: startRes['queued'] == true ? 'queued' : 'downloading',
+              config: config,
+              networkType: 'wifi',
+            ),
+          );
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(startRes['queued'] == true
-                ? 'Queued — starts when a slot frees up'
-                : 'Auto-starting download from shared link')),
-      );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                startRes['queued'] == true
+                    ? 'Queued — starts when a slot frees up'
+                    : 'Auto-starting download from shared link',
+              ),
+            ),
+          );
+        } else {
+          final errorMsg =
+              startRes['error_message'] as String? ??
+              'Could not start download';
+          await ref
+              .read(engineProvider)
+              .showErrorNotification(
+                downloadId: downloadId,
+                title: 'Download failed',
+                error: errorMsg,
+              );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Auto-download failed: $errorMsg')),
+          );
+        }
+      } catch (e) {
+        AppLogger.error('Auto-start download failed: $e', tag: 'AppShell');
+        await ref
+            .read(engineProvider)
+            .showErrorNotification(
+              downloadId: downloadId,
+              title: 'Download failed',
+              error: e.toString(),
+            );
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Auto-download failed: $e')));
+      }
 
       _currentIndex = 0;
       _pageController.jumpToPage(0);
@@ -317,7 +362,9 @@ class _AppShellState extends ConsumerState<AppShell> {
       return;
     }
     if (index == _currentIndex) return;
-    AppLogger.info('User swiped to tab: $index (${_screens[index].runtimeType})');
+    AppLogger.info(
+      'User swiped to tab: $index (${_screens[index].runtimeType})',
+    );
     setState(() {
       _currentIndex = index;
     });
@@ -363,8 +410,12 @@ class _AppShellState extends ConsumerState<AppShell> {
               onDestinationSelected: _onDestinationSelected,
               backgroundColor: colorScheme.surfaceContainerLowest,
               indicatorColor: colorScheme.primaryContainer,
-              selectedIconTheme: IconThemeData(color: colorScheme.onPrimaryContainer),
-              unselectedIconTheme: IconThemeData(color: colorScheme.onSurfaceVariant),
+              selectedIconTheme: IconThemeData(
+                color: colorScheme.onPrimaryContainer,
+              ),
+              unselectedIconTheme: IconThemeData(
+                color: colorScheme.onSurfaceVariant,
+              ),
               labelType: NavigationRailLabelType.all,
               selectedLabelTextStyle: TextStyle(
                 fontWeight: FontWeight.bold,
@@ -375,18 +426,36 @@ class _AppShellState extends ConsumerState<AppShell> {
               ),
               destinations: [
                 NavigationRailDestination(
-                  icon: Semantics(label: 'Download', child: Icon(Icons.download)),
-                  selectedIcon: Semantics(label: 'Download', child: Icon(Icons.download)),
+                  icon: Semantics(
+                    label: 'Download',
+                    child: Icon(Icons.download),
+                  ),
+                  selectedIcon: Semantics(
+                    label: 'Download',
+                    child: Icon(Icons.download),
+                  ),
                   label: Text('Download'),
                 ),
                 NavigationRailDestination(
-                  icon: Semantics(label: 'Library', child: Icon(Icons.folder_open)),
-                  selectedIcon: Semantics(label: 'Library', child: Icon(Icons.folder)),
+                  icon: Semantics(
+                    label: 'Library',
+                    child: Icon(Icons.folder_open),
+                  ),
+                  selectedIcon: Semantics(
+                    label: 'Library',
+                    child: Icon(Icons.folder),
+                  ),
                   label: Text('Library'),
                 ),
                 NavigationRailDestination(
-                  icon: Semantics(label: 'Settings', child: Icon(Icons.settings)),
-                  selectedIcon: Semantics(label: 'Settings', child: Icon(Icons.settings)),
+                  icon: Semantics(
+                    label: 'Settings',
+                    child: Icon(Icons.settings),
+                  ),
+                  selectedIcon: Semantics(
+                    label: 'Settings',
+                    child: Icon(Icons.settings),
+                  ),
                   label: Text('Settings'),
                 ),
               ],
@@ -429,10 +498,7 @@ class _NavItemData {
   final IconData icon;
   final String label;
 
-  const _NavItemData({
-    required this.icon,
-    required this.label,
-  });
+  const _NavItemData({required this.icon, required this.label});
 }
 
 class _FluidBottomNavBar extends StatefulWidget {
@@ -503,7 +569,10 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
   bool _animationsDisabled(BuildContext context) {
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return true;
     return WidgetsBinding
-        .instance.platformDispatcher.accessibilityFeatures.reduceMotion;
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .reduceMotion;
   }
 
   void _animateTo(double target, {bool immediate = false}) {
@@ -522,23 +591,27 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
     _morphController.stop();
     _morphController.reset();
 
-    _posAnim = Tween<double>(begin: _animStartPos, end: _animTargetPos).animate(
-      CurvedAnimation(
-        parent: _morphController,
-        curve: Curves.easeInOutCubic,
-      ),
-    )..addListener(() {
-        setState(() {
-          _currentPos = _posAnim.value;
+    _posAnim =
+        Tween<double>(begin: _animStartPos, end: _animTargetPos).animate(
+          CurvedAnimation(
+            parent: _morphController,
+            curve: Curves.easeInOutCubic,
+          ),
+        )..addListener(() {
+          setState(() {
+            _currentPos = _posAnim.value;
+          });
         });
-      });
 
     _morphController.forward();
   }
 
   void _handleDrag(double localX, double totalWidth) {
     final slotWidth = totalWidth / _items.length;
-    final pos = ((localX / slotWidth) - 0.5).clamp(0.0, (_items.length - 1).toDouble());
+    final pos = ((localX / slotWidth) - 0.5).clamp(
+      0.0,
+      (_items.length - 1).toDouble(),
+    );
     setState(() {
       _currentPos = pos;
     });
@@ -575,7 +648,10 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
                 final animProgress = _morphController.value;
                 final morphFactor = math.sin(animProgress * math.pi);
                 final travelDist = (_animTargetPos - _animStartPos).abs();
-                stretchFactor = (morphFactor * 0.28 * travelDist).clamp(0.0, 0.45);
+                stretchFactor = (morphFactor * 0.28 * travelDist).clamp(
+                  0.0,
+                  0.45,
+                );
                 squishFactor = (morphFactor * 0.08).clamp(0.0, 0.15);
               } else if (_isDragging) {
                 final distFromInt = (_currentPos - _currentPos.round()).abs();
@@ -589,7 +665,10 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
               final pillHeight = baseHeight * (1.0 - squishFactor);
 
               final centerX = (_currentPos + 0.5) * slotWidth;
-              final pillLeft = (centerX - (pillWidth / 2)).clamp(0.0, totalWidth - pillWidth);
+              final pillLeft = (centerX - (pillWidth / 2)).clamp(
+                0.0,
+                totalWidth - pillWidth,
+              );
               const containerHeight = 56.0;
               final pillTop = (containerHeight - pillHeight) / 2;
 
@@ -605,16 +684,20 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
                 },
                 onHorizontalDragEnd: (details) {
                   _isDragging = false;
-                  final target = _currentPos.round().clamp(0, _items.length - 1);
-                  _animateTo(target.toDouble(),
-                      immediate: _animationsDisabled(context));
+                  final target = _currentPos.round().clamp(
+                    0,
+                    _items.length - 1,
+                  );
+                  _animateTo(
+                    target.toDouble(),
+                    immediate: _animationsDisabled(context),
+                  );
                   widget.onDestinationSelected(target);
                 },
                 onHorizontalDragCancel: () {
                   _isDragging = false;
                   final target = widget.selectedIndex.toDouble();
-                  _animateTo(target,
-                      immediate: _animationsDisabled(context));
+                  _animateTo(target, immediate: _animationsDisabled(context));
                 },
                 child: SizedBox(
                   height: containerHeight,
@@ -651,7 +734,10 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
                       Row(
                         children: List.generate(_items.length, (index) {
                           final item = _items[index];
-                          final dist = (index - _currentPos).abs().clamp(0.0, 1.0);
+                          final dist = (index - _currentPos).abs().clamp(
+                            0.0,
+                            1.0,
+                          );
                           final activeWeight = 1.0 - dist;
 
                           final iconColor = Color.lerp(
@@ -673,7 +759,8 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar>
                               selected: isSelected,
                               label: item.label,
                               child: InkResponse(
-                                onTap: () => widget.onDestinationSelected(index),
+                                onTap: () =>
+                                    widget.onDestinationSelected(index),
                                 containedInkWell: true,
                                 highlightShape: BoxShape.rectangle,
                                 borderRadius: BorderRadius.circular(24),

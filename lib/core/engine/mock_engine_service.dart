@@ -3,7 +3,8 @@ import 'engine_codec.dart';
 import 'engine_service.dart';
 
 class MockEngineService implements EngineService {
-  final _progressController = StreamController<Map<String, dynamic>>.broadcast();
+  final _progressController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   @override
   Future<Map<String, dynamic>> bootstrap() async {
@@ -75,20 +76,12 @@ class MockEngineService implements EngineService {
       }
     });
 
-    return {
-      'success': true,
-      'download_id': downloadId,
-      'thread_started': true,
-    };
+    return {'success': true, 'download_id': downloadId, 'thread_started': true};
   }
 
   @override
   Future<Map<String, dynamic>> cancelDownload(String downloadId) async {
-    return {
-      'success': true,
-      'download_id': downloadId,
-      'cancelled': true,
-    };
+    return {'success': true, 'download_id': downloadId, 'cancelled': true};
   }
 
   @override
@@ -274,11 +267,10 @@ class MockEngineService implements EngineService {
   Stream<String> get sharedUrlStream => const Stream.empty();
 
   @override
-  Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir}) async {
-    return {
-      'success': true,
-      'candidates': <Map<String, dynamic>>[],
-    };
+  Future<Map<String, dynamic>> scanResumeCandidates({
+    required String cacheDir,
+  }) async {
+    return {'success': true, 'candidates': <Map<String, dynamic>>[]};
   }
 
   @override
@@ -301,7 +293,7 @@ class MockEngineService implements EngineService {
           'current_sha256': 'def456mock',
           'manifest_sha256': 'def456mock',
           'update_available': false,
-        }
+        },
       ],
       'updates_queued': <String>[],
     };
@@ -316,8 +308,11 @@ class MockEngineService implements EngineService {
     required String filepath,
     required bool success,
   }) async {
-    reportedAttempts.add(
-        {'cacheDir': cacheDir, 'filepath': filepath, 'success': success});
+    reportedAttempts.add({
+      'cacheDir': cacheDir,
+      'filepath': filepath,
+      'success': success,
+    });
     return {'success': true, 'attempts': success ? 0 : 1};
   }
 
@@ -340,76 +335,89 @@ class MockEngineService implements EngineService {
   @override
   Future<Map<String, dynamic>> batteryExemptionStatus() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   /// Test seam: flip to simulate a metered link in widget tests.
   bool mockMetered = false;
 
   @override
-  Future<Map<String, dynamic>> networkMeteredStatus() async =>
-      {'success': true, 'supported': true, 'metered': mockMetered};
+  Future<Map<String, dynamic>> networkMeteredStatus() async => {
+    'success': true,
+    'supported': true,
+    'metered': mockMetered,
+  };
 
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> notificationPermissionStatus() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> queueStatus() async => {
-        'success': true,
-        'active': <String>[],
-        'queued': <String>[],
-        'max_concurrent': 2,
-      };
+    'success': true,
+    'active': <String>[],
+    'queued': <String>[],
+    'max_concurrent': 2,
+  };
 
   @override
   Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async => {
-        'success': true,
-        'max_concurrent': maxConcurrent.clamp(1, 5),
-      };
+    'success': true,
+    'max_concurrent': maxConcurrent.clamp(1, 5),
+  };
 
   @override
-  Future<Map<String, dynamic>> clearArchive() async =>
-      {'success': true, 'removed': false, 'path': null};
+  Future<Map<String, dynamic>> clearArchive() async => {
+    'success': true,
+    'removed': false,
+    'path': null,
+  };
 
   @override
   Future<Map<String, dynamic>> openNotificationSettings() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> openUrl(String url) async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> openFile(String path) async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> syncSchedule({
@@ -417,8 +425,22 @@ class MockEngineService implements EngineService {
     int intervalMinutes = 60,
     bool wifiOnly = true,
     bool requiresCharging = false,
-  }) async =>
-      {'success': true};
+  }) async => {'success': true};
+
+  final List<Map<String, String>> errorNotifications = [];
+
+  @override
+  Future<void> showErrorNotification({
+    required String downloadId,
+    required String title,
+    required String error,
+  }) async {
+    errorNotifications.add({
+      'download_id': downloadId,
+      'title': title,
+      'error': error,
+    });
+  }
 
   @override
   void dispose() {

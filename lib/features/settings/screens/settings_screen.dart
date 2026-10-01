@@ -315,8 +315,8 @@ class GeneralSettingsScreen extends ConsumerWidget {
                 icon: Icons.share_outlined,
                 title: 'Auto-start Download on Share',
                 subtitle:
-                    'Skip the preview sheet and start immediately when a link is shared',
-                value: settings.autoStartDownloadOnShare,
+                    'When enabled (share_behavior: auto), bypasses the picker UI and starts directly in the background service',
+                value: settings.shareBehavior == 'auto',
                 onChanged: () => ref
                     .read(settingsProvider.notifier)
                     .toggleAutoStartDownloadOnShare(),

@@ -127,5 +127,92 @@ void main() {
 
       expect(find.text('No valid link received'), findsOneWidget);
     });
+
+    testWidgets(
+      'auto-starts download without showing picker when shareBehavior=auto',
+      (tester) async {
+        final prefs = await _prefs(initial: {'share_behavior': 'auto'});
+        final mockEngine = MockEngineService();
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              sharedPreferencesProvider.overrideWithValue(prefs),
+              engineProvider.overrideWithValue(mockEngine),
+              engineStatusProvider.overrideWith(
+                (ref) => Future.value(const EngineStatus(ready: true)),
+              ),
+            ],
+            child: const MaterialApp(
+              home: ShareOverlayScreen(
+                initialUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 700));
+
+        // Picker UI should NOT be shown
+        expect(find.byType(FormatPickerScreen), findsNothing);
+        expect(find.textContaining('Auto-starting download'), findsOneWidget);
+
+        // Drain SnackBar timer
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets('triggers error notification when auto-start fails', (
+      tester,
+    ) async {
+      final prefs = await _prefs(initial: {'share_behavior': 'auto'});
+      final mockEngine = _FailingStartMockEngine();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            engineProvider.overrideWithValue(mockEngine),
+            engineStatusProvider.overrideWith(
+              (ref) => Future.value(const EngineStatus(ready: true)),
+            ),
+          ],
+          child: const MaterialApp(
+            home: ShareOverlayScreen(
+              initialUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 700));
+
+      expect(mockEngine.errorNotifications, isNotEmpty);
+      expect(
+        mockEngine.errorNotifications.first['error'],
+        contains('Format extraction failed'),
+      );
+
+      // Drain SnackBar timer
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    });
   });
+}
+
+class _FailingStartMockEngine extends MockEngineService {
+  @override
+  Future<Map<String, dynamic>> startDownload({
+    required String url,
+    required String downloadId,
+    required Map<String, dynamic> config,
+    required String networkType,
+  }) async {
+    return {
+      'success': false,
+      'error_type': 'ERROR_EXTRACTION',
+      'error_message': 'Format extraction failed: unsupported URL',
+    };
+  }
 }

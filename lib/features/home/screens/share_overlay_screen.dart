@@ -173,34 +173,65 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
         networkType: 'wifi',
       );
 
-      notifier.addDownload(
-        DownloadItem(
-          id: downloadId,
-          title: url,
-          url: url,
-          status: startRes['queued'] == true ? 'queued' : 'downloading',
-          config: config,
-          networkType: 'wifi',
-        ),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              startRes['queued'] == true
-                  ? 'Queued — starts when a slot frees up'
-                  : 'Auto-starting download from shared link',
-            ),
-            duration: const Duration(seconds: 2),
+      if (startRes['success'] == true) {
+        notifier.addDownload(
+          DownloadItem(
+            id: downloadId,
+            title: url,
+            url: url,
+            status: startRes['queued'] == true ? 'queued' : 'downloading',
+            config: config,
+            networkType: 'wifi',
           ),
         );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                startRes['queued'] == true
+                    ? 'Queued — starts when a slot frees up'
+                    : 'Auto-starting download from shared link',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        final errorMsg =
+            startRes['error_message'] as String? ?? 'Could not start download';
+        await engine.showErrorNotification(
+          downloadId: downloadId,
+          title: 'Download failed',
+          error: errorMsg,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Auto-download failed: $errorMsg'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     } catch (e) {
       AppLogger.error('Auto-start download failed: $e', tag: 'ShareOverlay');
+      await engine.showErrorNotification(
+        downloadId: downloadId,
+        title: 'Download failed',
+        error: e.toString(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Auto-download failed: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
 
-    // Dismiss overlay once auto-start triggers
+    // Dismiss overlay once auto-start completes or reports error
     await Future.delayed(const Duration(milliseconds: 600));
     _finish();
   }

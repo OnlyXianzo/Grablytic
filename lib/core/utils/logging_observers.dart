@@ -428,6 +428,20 @@ class TracedEngineService implements EngineService {
   Stream<Map<String, dynamic>> get logStream => _inner.logStream;
 
   @override
+  Future<void> showErrorNotification({
+    required String downloadId,
+    required String title,
+    required String error,
+  }) => _traced(
+    'notification/show_error',
+    () => _inner.showErrorNotification(
+      downloadId: downloadId,
+      title: title,
+      error: error,
+    ),
+  );
+
+  @override
   void dispose() {
     try {
       _inner.dispose();

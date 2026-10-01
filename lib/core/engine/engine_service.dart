@@ -108,6 +108,14 @@ abstract class EngineService {
     bool requiresCharging = false,
   });
 
+  /// Displays a system notification for download/extraction failure
+  /// (posted to CHANNEL_ERROR). Never throws.
+  Future<void> showErrorNotification({
+    required String downloadId,
+    required String title,
+    required String error,
+  });
+
   /// Releases transport resources (broadcast controllers, native process
   /// handles, pending completers). Idempotent, never throws. The provider
   /// calls it for every implementation on dispose — previously only the

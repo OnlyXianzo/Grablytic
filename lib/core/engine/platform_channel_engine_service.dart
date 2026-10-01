@@ -524,4 +524,19 @@ class PlatformChannelEngineService implements EngineService {
       );
     }
   }
+
+  @override
+  Future<void> showErrorNotification({
+    required String downloadId,
+    required String title,
+    required String error,
+  }) async {
+    try {
+      await _channel.invokeMethod('notification/show_error', {
+        'download_id': downloadId,
+        'title': title,
+        'error': error,
+      });
+    } catch (_) {}
+  }
 }

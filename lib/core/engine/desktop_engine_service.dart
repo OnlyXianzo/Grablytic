@@ -30,8 +30,7 @@ bool shouldResetCrashCounter({
   required DateTime? lastExitAt,
   required DateTime now,
   Duration window = const Duration(minutes: 5),
-}) =>
-    lastExitAt == null || now.difference(lastExitAt) > window;
+}) => lastExitAt == null || now.difference(lastExitAt) > window;
 
 /// Item 3: per-method timeout budget. Slow network extractions
 /// (formats/playlist/search) legitimately exceed the 30s fast budget; giving
@@ -71,7 +70,8 @@ class DesktopEngineService implements EngineService {
   String? _dataDir;
 
   final _pending = <String, Completer<Map<String, dynamic>>>{};
-  final _progressController = StreamController<Map<String, dynamic>>.broadcast();
+  final _progressController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   bool _disposed = false;
   bool _running = false;
@@ -94,9 +94,9 @@ class DesktopEngineService implements EngineService {
     String pythonPath = 'python',
     String? workingDirectory,
     String? dataDir,
-  })  : _pythonPath = pythonPath,
-        _workingDirectory = workingDirectory,
-        _dataDir = dataDir;
+  }) : _pythonPath = pythonPath,
+       _workingDirectory = workingDirectory,
+       _dataDir = dataDir;
 
   @visibleForTesting
   void restart() => _restart();
@@ -184,7 +184,8 @@ class DesktopEngineService implements EngineService {
     if (executable == 'python' && (Platform.isLinux || Platform.isMacOS)) {
       try {
         final result = await Process.run('which', ['python3']);
-        if (result.exitCode == 0 && result.stdout.toString().trim().isNotEmpty) {
+        if (result.exitCode == 0 &&
+            result.stdout.toString().trim().isNotEmpty) {
           return 'python3';
         }
       } catch (_) {
@@ -201,17 +202,23 @@ class DesktopEngineService implements EngineService {
     if (_running && _process != null) return;
     if (_disposed) throw Exception('Engine disposed');
     if (_reconnectAttempts >= _maxReconnectAttempts) {
-      throw Exception('Engine failed to start after $_maxReconnectAttempts attempts');
+      throw Exception(
+        'Engine failed to start after $_maxReconnectAttempts attempts',
+      );
     }
     // Crash-loop breaker: exits spaced wider than the window are
     // independent incidents; rapid ones accumulate and refuse to restart.
     if (shouldResetCrashCounter(
-        lastExitAt: _lastAbnormalExitAt, now: DateTime.now(), window: _crashWindow)) {
+      lastExitAt: _lastAbnormalExitAt,
+      now: DateTime.now(),
+      window: _crashWindow,
+    )) {
       _consecutiveAbnormalExits = 0;
     }
     if (_consecutiveAbnormalExits >= _maxReconnectAttempts) {
       throw Exception(
-          'Engine crashed $_consecutiveAbnormalExits times in quick succession; refusing to restart');
+        'Engine crashed $_consecutiveAbnormalExits times in quick succession; refusing to restart',
+      );
     }
 
     if (_startFuture != null) {
@@ -255,7 +262,6 @@ class DesktopEngineService implements EngineService {
     }
 
     env['PYTHONPATH'] = pythonPaths.join(Platform.isWindows ? ';' : ':');
-
 
     _process = await Process.start(
       executable,
@@ -385,17 +391,20 @@ class DesktopEngineService implements EngineService {
       // BRUTAL-6: malformed engine stdout lines used to vanish. Protocol
       // violations are engine bugs — surface them (truncated) instead.
       final preview = line.length > 200 ? '${line.substring(0, 200)}…' : line;
-      AppLogger.warn('Engine protocol: unparseable stdout line: $preview',
-          tag: 'engine');
+      AppLogger.warn(
+        'Engine protocol: unparseable stdout line: $preview',
+        tag: 'engine',
+      );
     }
   }
 
   Future<bool> _hasYtDlp(String pythonPath) async {
     try {
-      final result = await Process.run(
-        pythonPath,
-        ['-m', 'yt_dlp', '--version'],
-      ).timeout(const Duration(seconds: 10));
+      final result = await Process.run(pythonPath, [
+        '-m',
+        'yt_dlp',
+        '--version',
+      ]).timeout(const Duration(seconds: 10));
       return result.exitCode == 0;
     } catch (_) {
       return false;
@@ -419,27 +428,29 @@ class DesktopEngineService implements EngineService {
   }
 
   Future<String> _installYtDlpViaUv(String uvPath) async {
-    final venvDir = _dataDir != null ? '$_dataDir/venv' : '${Directory.systemTemp.path}/grablytic-venv';
+    final venvDir = _dataDir != null
+        ? '$_dataDir/venv'
+        : '${Directory.systemTemp.path}/grablytic-venv';
     final venvPython = Platform.isWindows
         ? '$venvDir\\Scripts\\python.exe'
         : '$venvDir/bin/python';
 
     AppLogger.info('Creating uv venv at $venvDir...', tag: 'engine-deps');
-    var result = await Process.run(
-      uvPath,
-      ['venv', venvDir],
-    ).timeout(const Duration(seconds: 60));
+    var result = await Process.run(uvPath, [
+      'venv',
+      venvDir,
+    ]).timeout(const Duration(seconds: 60));
 
     if (result.exitCode != 0) {
       AppLogger.warn('uv venv failed: ${result.stderr}', tag: 'engine-deps');
     }
 
     AppLogger.info('Installing yt-dlp into venv...', tag: 'engine-deps');
-    result = await Process.run(
-      uvPath,
-      ['pip', 'install', 'yt-dlp'],
-      workingDirectory: venvDir,
-    ).timeout(const Duration(seconds: 120));
+    result = await Process.run(uvPath, [
+      'pip',
+      'install',
+      'yt-dlp',
+    ], workingDirectory: venvDir).timeout(const Duration(seconds: 120));
 
     if (result.exitCode != 0) {
       throw Exception('Failed to install yt-dlp: ${result.stderr}');
@@ -455,9 +466,16 @@ class DesktopEngineService implements EngineService {
 
     final uvPath = await _findUv();
     if (uvPath == null) {
-      AppLogger.warn('uv not found, attempting pip fallback...', tag: 'engine-deps');
+      AppLogger.warn(
+        'uv not found, attempting pip fallback...',
+        tag: 'engine-deps',
+      );
       final pipCmd = Platform.isWindows ? 'pip' : 'pip3';
-      final pipResult = await Process.run(pipCmd, ['install', '--user', 'yt-dlp']);
+      final pipResult = await Process.run(pipCmd, [
+        'install',
+        '--user',
+        'yt-dlp',
+      ]);
       if (pipResult.exitCode == 0 && await _hasYtDlp(pythonPath)) {
         return pythonPath;
       }
@@ -539,13 +557,15 @@ class DesktopEngineService implements EngineService {
       }
     });
 
-    return completer.future.then((result) {
-      timeout.cancel();
-      return result;
-    }).catchError((error) {
-      timeout.cancel();
-      throw error;
-    });
+    return completer.future
+        .then((result) {
+          timeout.cancel();
+          return result;
+        })
+        .catchError((error) {
+          timeout.cancel();
+          throw error;
+        });
   }
 
   @override
@@ -585,8 +605,8 @@ class DesktopEngineService implements EngineService {
   Stream<Map<String, dynamic>> get progressStream => _progressController.stream;
 
   @override
-  Stream<Map<String, dynamic>> get logStream => _progressController.stream
-      .where((data) => data['type'] == 'log');
+  Stream<Map<String, dynamic>> get logStream =>
+      _progressController.stream.where((data) => data['type'] == 'log');
 
   @override
   Future<Map<String, dynamic>> getFormats({
@@ -632,10 +652,10 @@ class DesktopEngineService implements EngineService {
   Stream<String> get sharedUrlStream => const Stream.empty();
 
   @override
-  Future<Map<String, dynamic>> scanResumeCandidates({required String cacheDir}) async {
-    return _sendRequest(EngineMethods.scanResume, {
-      'cache_dir': cacheDir,
-    });
+  Future<Map<String, dynamic>> scanResumeCandidates({
+    required String cacheDir,
+  }) async {
+    return _sendRequest(EngineMethods.scanResume, {'cache_dir': cacheDir});
   }
 
   @override
@@ -652,7 +672,9 @@ class DesktopEngineService implements EngineService {
       });
     } catch (_) {
       return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Engine request failed',
+      );
     }
   }
 
@@ -663,9 +685,7 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> setUpdateChannel(String channel) async {
-    return _sendRequest(EngineMethods.setUpdateChannel, {
-      'channel': channel,
-    });
+    return _sendRequest(EngineMethods.setUpdateChannel, {'channel': channel});
   }
 
   @override
@@ -679,20 +699,24 @@ class DesktopEngineService implements EngineService {
       final src = File(sourcePath);
       if (!await src.exists()) {
         return EngineEnvelope.error(
-            errorType: 'ERROR_TRANSPORT', message: 'Log file not found');
+          errorType: 'ERROR_TRANSPORT',
+          message: 'Log file not found',
+        );
       }
       Directory base;
       try {
         // path_provider is intentionally NOT imported here to keep the
         // engine layer free of plugin channels; resolve Downloads manually.
-        final home = Platform.environment['HOME'] ??
+        final home =
+            Platform.environment['HOME'] ??
             Platform.environment['USERPROFILE'] ??
             '.';
         base = Directory('$home/Downloads/Grablytic-logs');
       } catch (_) {
         return EngineEnvelope.error(
-            errorType: 'ERROR_TRANSPORT',
-            message: 'Could not resolve Downloads folder');
+          errorType: 'ERROR_TRANSPORT',
+          message: 'Could not resolve Downloads folder',
+        );
       }
       await base.create(recursive: true);
       final safeName = sanitizeExportFileName(displayName);
@@ -706,16 +730,19 @@ class DesktopEngineService implements EngineService {
       return {'success': true, 'path': dest.path};
     } catch (_) {
       return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Engine request failed',
+      );
     }
   }
 
   @override
   Future<Map<String, dynamic>> batteryExemptionStatus() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> networkMeteredStatus() async {
@@ -723,7 +750,8 @@ class DesktopEngineService implements EngineService {
     // Fail closed (metered) on errors — prompt, don't silently spend.
     try {
       final results = await Connectivity().checkConnectivity();
-      final unmetered = results.contains(ConnectivityResult.wifi) ||
+      final unmetered =
+          results.contains(ConnectivityResult.wifi) ||
           results.contains(ConnectivityResult.ethernet);
       return {'success': true, 'supported': true, 'metered': !unmetered};
     } catch (_) {
@@ -734,23 +762,26 @@ class DesktopEngineService implements EngineService {
   @override
   Future<Map<String, dynamic>> requestBatteryExemption() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> notificationPermissionStatus() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> requestNotificationPermission() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> queueStatus() async {
@@ -758,7 +789,9 @@ class DesktopEngineService implements EngineService {
       return await _sendRequest(EngineMethods.queueStatus, {});
     } catch (_) {
       return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Engine request failed',
+      );
     }
   }
 
@@ -770,7 +803,9 @@ class DesktopEngineService implements EngineService {
       });
     } catch (_) {
       return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Engine request failed',
+      );
     }
   }
 
@@ -780,23 +815,27 @@ class DesktopEngineService implements EngineService {
       return await _sendRequest(EngineMethods.clearArchive, {});
     } catch (_) {
       return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT', message: 'Engine request failed');
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Engine request failed',
+      );
     }
   }
 
   @override
   Future<Map<String, dynamic>> openNotificationSettings() async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> openUrl(String url) async =>
       EngineEnvelope.error(
-          errorType: 'ERROR_UNSUPPORTED',
-          message: 'Not supported on this platform',
-          extra: {'supported': false});
+        errorType: 'ERROR_UNSUPPORTED',
+        message: 'Not supported on this platform',
+        extra: {'supported': false},
+      );
 
   @override
   Future<Map<String, dynamic>> openFile(String path) async {
@@ -812,14 +851,17 @@ class DesktopEngineService implements EngineService {
         await Process.run('explorer', [path]);
       } else {
         return EngineEnvelope.error(
-            errorType: 'ERROR_UNSUPPORTED',
-            message: 'Not supported on this platform',
-            extra: {'supported': false});
+          errorType: 'ERROR_UNSUPPORTED',
+          message: 'Not supported on this platform',
+          extra: {'supported': false},
+        );
       }
       return {'success': true};
     } catch (e) {
       return EngineEnvelope.error(
-          errorType: 'ERROR_OPEN_FAILED', message: 'Could not open file: $e');
+        errorType: 'ERROR_OPEN_FAILED',
+        message: 'Could not open file: $e',
+      );
     }
   }
 
@@ -829,6 +871,12 @@ class DesktopEngineService implements EngineService {
     int intervalMinutes = 60,
     bool wifiOnly = true,
     bool requiresCharging = false,
-  }) async =>
-      {'success': true, 'supported': false};
+  }) async => {'success': true, 'supported': false};
+
+  @override
+  Future<void> showErrorNotification({
+    required String downloadId,
+    required String title,
+    required String error,
+  }) async {}
 }

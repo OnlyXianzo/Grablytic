@@ -421,6 +421,13 @@ open class MainActivity : FlutterActivity() {
                     finish()
                     result.success(mapOf("success" to true))
                 }
+                "notification/show_error" -> {
+                    val downloadId = call.argument<String>("download_id") ?: "err_${System.currentTimeMillis()}"
+                    val title = call.argument<String>("title") ?: "Download failed"
+                    val error = call.argument<String>("error") ?: "Extraction or download failed"
+                    DownloadService.failed(applicationContext, downloadId, "$title: $error")
+                    result.success(mapOf("success" to true))
+                }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
                     // drain loop collects every queued share, in order.
