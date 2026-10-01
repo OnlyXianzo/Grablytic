@@ -15,6 +15,7 @@ import '../../../providers/metered_guard.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/schedule_guard.dart';
 
@@ -173,6 +174,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   Future<void> _handleSharedUrl(String url) async {
     if (url.isEmpty || !mounted) return;
+    unawaited(LocalAnalytics.recordIntake(LocalAnalytics.kindShare, url));
 
     final settings = ref.read(settingsProvider);
     final isAuto =

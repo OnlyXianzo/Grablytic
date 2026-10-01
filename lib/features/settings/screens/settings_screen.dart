@@ -18,6 +18,7 @@ import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
 import 'sponsorblock_settings_screen.dart';
 import 'about_screen.dart';
+import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -877,6 +878,17 @@ class SystemSettingsScreen extends ConsumerWidget {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.query_stats_outlined,
+                title: 'Analytics',
+                subtitle: 'On-device counts, no tracking',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
                   );
                 },
               ),

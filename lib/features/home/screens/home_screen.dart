@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import '../widgets/download_overflow_menu.dart';
 import '../widgets/download_sparkline.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils.dart';
 import '../../../core/utils/playlist_selection.dart';
 
@@ -227,6 +229,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
 
     if (looksLikeUrl(input)) {
       AppLogger.info('User submitted URL: $input', tag: 'HomeScreen');
+      unawaited(LocalAnalytics.recordIntake(LocalAnalytics.kindPaste, input));
       // Playlist URLs get entry selection (03-B) instead of the
       // single-video format picker — otherwise a playlist "downloads as
       // it wants" with no subset/reverse/shuffle control.

@@ -11,6 +11,7 @@ import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
 import '../core/engine/engine_service.dart';
 import '../core/utils/app_logger.dart';
+import '../core/utils/local_analytics.dart';
 import '../core/utils/thumbnail_cache.dart';
 import '../core/utils/trust_boundary.dart';
 import 'resume_provider.dart';
@@ -523,6 +524,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       _reportResumeOutcome(item.url, true);
       _dropSmoother(downloadId);
       AppLogger.endLogSession(downloadId);
+      unawaited(
+        LocalAnalytics.recordOutcome(
+          jobId: downloadId,
+          outcome: LocalAnalytics.outcomeSuccess,
+          url: item.url,
+          title: item.title,
+        ),
+      );
     } else if (eventType == 'error') {
       final errorType = event['error_type'] as String?;
       final errorMessage = event['error_message'] as String?;
@@ -556,6 +565,15 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       _reportResumeOutcome(item.url, false);
       _dropSmoother(downloadId);
       AppLogger.endLogSession(downloadId);
+      unawaited(
+        LocalAnalytics.recordOutcome(
+          jobId: downloadId,
+          outcome: LocalAnalytics.outcomeFailure,
+          url: item.url,
+          title: item.title,
+          errorType: errorType ?? '',
+        ),
+      );
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
       state = [
@@ -804,6 +822,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       }
       AppLogger.beginLogSession(record.id);
       _prefetchThumbnail(record.id, item.thumbnailUrl, item.thumbnailPath);
+      unawaited(
+        LocalAnalytics.recordOutcome(
+          jobId: record.id,
+          outcome: LocalAnalytics.outcomeRetry,
+          url: record.url,
+          title: record.title,
+        ),
+      );
 
       _engine
           .startDownload(
@@ -903,6 +929,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     ];
     AppLogger.beginLogSession(id);
     _prefetchThumbnail(id, item.thumbnailUrl, item.thumbnailPath);
+    unawaited(
+      LocalAnalytics.recordOutcome(
+        jobId: id,
+        outcome: LocalAnalytics.outcomeRetry,
+        url: item.url,
+        title: item.title,
+      ),
+    );
 
     _engine
         .startDownload(
