@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'log_buffer.dart';
 import 'log_entry.dart';
-import 'trust_boundary.dart';
 
 class AppLogger {
   static String? _logsDirPath;
@@ -83,19 +82,27 @@ class AppLogger {
   /// Hot path: formatting + in-memory buffer push are synchronous and cheap.
   /// Disk I/O is batched — lines go to [_pending] and are flushed every 30s
   /// by the background worker, or instantly for ERROR/FATAL.
-  static void log(String level, String message, {String? tag, Object? error, StackTrace? stackTrace}) {
+  static void log(
+    String level,
+    String message, {
+    String? tag,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
     final entry = _buildEntry(level, message, tag: tag, error: error);
     _buffer?.add(entry);
 
     final now = DateTime.now();
-    final timeStr = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}.${now.millisecond.toString().padLeft(3, '0')}';
+    final timeStr =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}.${now.millisecond.toString().padLeft(3, '0')}';
     final safeMessage = _redact(message);
     final safeError = error != null ? _redact(error.toString()) : null;
     var logLine =
         '[$timeStr] [$level]${tag != null ? " [$tag]" : ""}: $safeMessage${safeError != null ? "\nError: $safeError" : ""}';
     if (stackTrace != null) {
       final st = stackTrace.toString();
-      logLine += '\nStackTrace:\n${st.length > 4000 ? st.substring(0, 4000) : st}';
+      logLine +=
+          '\nStackTrace:\n${st.length > 4000 ? st.substring(0, 4000) : st}';
     }
     logLine += '\n';
 
@@ -221,7 +228,9 @@ class AppLogger {
     for (final p in patterns) {
       out = out.replaceAllMapped(RegExp(p, caseSensitive: false), (m) {
         // Userinfo pattern keeps scheme/user + host: only the password goes.
-        if (m.groupCount == 3) return '${m.group(1)}***REDACTED***${m.group(3)}';
+        if (m.groupCount == 3) {
+          return '${m.group(1)}***REDACTED***${m.group(3)}';
+        }
         return '${m.group(1)}***REDACTED***';
       });
     }
@@ -242,13 +251,25 @@ class AppLogger {
     _fatalHook = onFatal;
     FlutterError.onError = (details) {
       try {
-        log('FATAL', 'Unhandled Flutter framework error: ${details.exceptionAsString()}',
-            tag: 'global', error: details.exception, stackTrace: details.stack);
-        unawaited(flushNow().then((_) {
-          if (_fatalHook != null) {
-            return _fatalHook!(details.exception, details.stack ?? StackTrace.empty);
-          }
-        }).catchError((_) {}));
+        log(
+          'FATAL',
+          'Unhandled Flutter framework error: ${details.exceptionAsString()}',
+          tag: 'global',
+          error: details.exception,
+          stackTrace: details.stack,
+        );
+        unawaited(
+          flushNow()
+              .then((_) {
+                if (_fatalHook != null) {
+                  return _fatalHook!(
+                    details.exception,
+                    details.stack ?? StackTrace.empty,
+                  );
+                }
+              })
+              .catchError((_) {}),
+        );
       } catch (_) {
         // Logger must never throw inside the error handler itself.
       }
@@ -257,18 +278,31 @@ class AppLogger {
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       try {
-        log('FATAL', 'Unhandled async/platform error: $error',
-            tag: 'global', error: error, stackTrace: stack);
-        unawaited(flushNow().then((_) {
-          if (_fatalHook != null) return _fatalHook!(error, stack);
-        }).catchError((_) {}));
+        log(
+          'FATAL',
+          'Unhandled async/platform error: $error',
+          tag: 'global',
+          error: error,
+          stackTrace: stack,
+        );
+        unawaited(
+          flushNow()
+              .then((_) {
+                if (_fatalHook != null) return _fatalHook!(error, stack);
+              })
+              .catchError((_) {}),
+        );
       } catch (_) {}
       return true;
     };
   }
 
-  static LogEntry _buildEntry(String level, String message,
-      {String? tag, Object? error}) {
+  static LogEntry _buildEntry(
+    String level,
+    String message, {
+    String? tag,
+    Object? error,
+  }) {
     // Buffer entries feed the live viewer + clipboard/file exports, so they
     // get the same redaction as disk lines (SEC-02). Search still matches
     // the non-secret remainder of the message.
@@ -299,26 +333,48 @@ class AppLogger {
     }
   }
 
-  static void debug(String message, {String? tag}) => log('DEBUG', message, tag: tag);
-  static void info(String message, {String? tag}) => log('INFO', message, tag: tag);
-  static void warn(String message, {String? tag, Object? error}) => log('WARN', message, tag: tag, error: error);
-  static void error(String message, {String? tag, Object? error, StackTrace? stackTrace}) =>
-      log('ERROR', message, tag: tag, error: error, stackTrace: stackTrace);
-  static void fatal(String message, {String? tag, Object? error, StackTrace? stackTrace}) =>
-      log('FATAL', message, tag: tag, error: error, stackTrace: stackTrace);
+  static void debug(String message, {String? tag}) =>
+      log('DEBUG', message, tag: tag);
+  static void info(String message, {String? tag}) =>
+      log('INFO', message, tag: tag);
+  static void warn(String message, {String? tag, Object? error}) =>
+      log('WARN', message, tag: tag, error: error);
+  static void error(
+    String message, {
+    String? tag,
+    Object? error,
+    StackTrace? stackTrace,
+  }) => log('ERROR', message, tag: tag, error: error, stackTrace: stackTrace);
+  static void fatal(
+    String message, {
+    String? tag,
+    Object? error,
+    StackTrace? stackTrace,
+  }) => log('FATAL', message, tag: tag, error: error, stackTrace: stackTrace);
 
   /// Measures how long a synchronous or asynchronous action takes and logs it.
-  static Future<T> trace<T>(String label, Future<T> Function() action, {String? tag}) async {
+  static Future<T> trace<T>(
+    String label,
+    Future<T> Function() action, {
+    String? tag,
+  }) async {
     final stopwatch = Stopwatch()..start();
     info('START: $label', tag: tag);
     try {
       final result = await action();
       stopwatch.stop();
-      info('END: $label — took ${stopwatch.elapsed.inMilliseconds}ms', tag: tag);
+      info(
+        'END: $label — took ${stopwatch.elapsed.inMilliseconds}ms',
+        tag: tag,
+      );
       return result;
     } catch (e) {
       stopwatch.stop();
-      error('FAILED: $label — took ${stopwatch.elapsed.inMilliseconds}ms', tag: tag, error: e);
+      error(
+        'FAILED: $label — took ${stopwatch.elapsed.inMilliseconds}ms',
+        tag: tag,
+        error: e,
+      );
       rethrow;
     }
   }
@@ -330,11 +386,18 @@ class AppLogger {
     try {
       final result = action();
       stopwatch.stop();
-      info('END: $label — took ${stopwatch.elapsed.inMilliseconds}ms', tag: tag);
+      info(
+        'END: $label — took ${stopwatch.elapsed.inMilliseconds}ms',
+        tag: tag,
+      );
       return result;
     } catch (e) {
       stopwatch.stop();
-      error('FAILED: $label — took ${stopwatch.elapsed.inMilliseconds}ms', tag: tag, error: e);
+      error(
+        'FAILED: $label — took ${stopwatch.elapsed.inMilliseconds}ms',
+        tag: tag,
+        error: e,
+      );
       rethrow;
     }
   }
@@ -471,14 +534,19 @@ class AppLogger {
   /// and a null [error] on success. Never throws and never calls `flushNow()`
   /// (generic `File` helper — the caller flushes if it needs to).
   static Future<
-      ({
-        String text,
-        bool truncated,
-        int fileBytes,
-        int shownBytes,
-        String? error
-      })> readLogTailText(File file,
-      {int maxBytes = 100 * 1024, int maxLines = 1000}) async {
+    ({
+      String text,
+      bool truncated,
+      int fileBytes,
+      int shownBytes,
+      String? error,
+    })
+  >
+  readLogTailText(
+    File file, {
+    int maxBytes = 100 * 1024,
+    int maxLines = 1000,
+  }) async {
     try {
       final capBytes = maxBytes < 0 ? 0 : maxBytes;
       final capLines = maxLines < 0 ? 0 : maxLines;
@@ -491,20 +559,21 @@ class AppLogger {
             truncated: false,
             fileBytes: len,
             shownBytes: len,
-            error: null
+            error: null,
           );
         }
         final endsWithNewline = full.endsWith('\n');
         final lines = full.split('\n');
-        final contentLineCount =
-            endsWithNewline ? lines.length - 1 : lines.length;
+        final contentLineCount = endsWithNewline
+            ? lines.length - 1
+            : lines.length;
         if (contentLineCount <= capLines) {
           return (
             text: full,
             truncated: false,
             fileBytes: len,
             shownBytes: len,
-            error: null
+            error: null,
           );
         }
         if (capLines == 0) {
@@ -513,20 +582,20 @@ class AppLogger {
             truncated: true,
             fileBytes: len,
             shownBytes: 0,
-            error: null
+            error: null,
           );
         }
-        final contentLines =
-            endsWithNewline ? lines.sublist(0, lines.length - 1) : lines;
-        final kept =
-            contentLines.sublist(contentLines.length - capLines);
+        final contentLines = endsWithNewline
+            ? lines.sublist(0, lines.length - 1)
+            : lines;
+        final kept = contentLines.sublist(contentLines.length - capLines);
         final keptText = kept.join('\n') + (endsWithNewline ? '\n' : '');
         return (
           text: keptText,
           truncated: true,
           fileBytes: len,
           shownBytes: utf8.encode(keptText).length,
-          error: null
+          error: null,
         );
       }
       final raf = await file.open(mode: FileMode.read);
@@ -548,8 +617,7 @@ class AppLogger {
             if (capLines == 0) {
               text = '';
             } else {
-              final kept =
-                  contentLines.sublist(contentLines.length - capLines);
+              final kept = contentLines.sublist(contentLines.length - capLines);
               text = kept.join('\n') + (endsWithNewline ? '\n' : '');
             }
           }
@@ -559,7 +627,7 @@ class AppLogger {
           truncated: true,
           fileBytes: len,
           shownBytes: utf8.encode(text).length,
-          error: null
+          error: null,
         );
       } finally {
         try {
@@ -572,7 +640,7 @@ class AppLogger {
         truncated: false,
         fileBytes: 0,
         shownBytes: 0,
-        error: e.message
+        error: e.message,
       );
     } on RangeError catch (e) {
       return (
@@ -580,7 +648,7 @@ class AppLogger {
         truncated: false,
         fileBytes: 0,
         shownBytes: 0,
-        error: e.toString()
+        error: e.toString(),
       );
     } catch (e) {
       return (
@@ -588,7 +656,7 @@ class AppLogger {
         truncated: false,
         fileBytes: 0,
         shownBytes: 0,
-        error: e.toString()
+        error: e.toString(),
       );
     }
   }
@@ -654,7 +722,20 @@ class AppLogger {
     }
   }
 
-  /// Exports [src] to a user-visible folder and returns the destination path.
+  /// Spec filename for Downloads exports (T10): colons are illegal in
+  /// MediaStore display names on some launchers/MTP, so time uses dashes.
+  /// Example: `grablytic logs - 2026-10-02 03-45-12.log`.
+  static String exportFileName([DateTime? at]) {
+    final now = at ?? DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    String four(int n) => n.toString().padLeft(4, '0');
+    return 'grablytic logs - ${four(now.year)}-${two(now.month)}-${two(now.day)} '
+        '${two(now.hour)}-${two(now.minute)}-${two(now.second)}.log';
+  }
+
+  /// Failure fallback for log exports (T10). Default export is Downloads via
+  /// MediaStore ([engine.exportLogToDownloads]); this app-dir copy runs only
+  /// when MediaStore is unavailable.
   ///
   /// Android: app-specific external dir, e.g.
   /// `.../Android/data/APP_ID/files/log-exports/` — writable with NO
@@ -678,17 +759,13 @@ class AppLogger {
       }
       final destDir = Directory('${base.path}/$sub');
       await destDir.create(recursive: true);
-      final now = DateTime.now();
-      String two(int n) => n.toString().padLeft(2, '0');
-      final stamp =
-          '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
-      final name = sanitizeExportFileName(src.path);
+      final baseName = exportFileName().replaceFirst('.log', '');
       // 1s timestamp resolution → same-second exports must not overwrite.
-      var dest = File('${destDir.path}/grablytic-$stamp-$name');
+      var dest = File('${destDir.path}/$baseName.log');
       var n = 1;
       while (await dest.exists()) {
         n++;
-        dest = File('${destDir.path}/grablytic-$stamp-$name-$n');
+        dest = File('${destDir.path}/$baseName-$n.log');
       }
       await src.copy(dest.path);
       return dest.path;

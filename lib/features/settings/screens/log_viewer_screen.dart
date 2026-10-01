@@ -178,44 +178,21 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     }
   }
 
-  /// Copies the selected log file to a user-visible folder
-  /// (external app dir on Android — no permission needed; Downloads on
-  /// desktop) and shows the destination path.
-  Future<void> _exportLogFile() async {
-    if (_exporting || _selectedFile == null) return;
-    setState(() => _exporting = true);
-    try {
-      await AppLogger.flushNow();
-      final dest = await AppLogger.exportLogFile(_selectedFile!);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            dest.startsWith('ERROR:') ? dest : 'Log exported to:\n$dest',
-          ),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
-  }
-
   /// Saves the selected log into the PUBLIC Downloads folder
   /// (Download/Grablytic-logs/ via MediaStore on Android 10+), which IS
   /// browsable in any file manager — unlike app-private dirs on Android
   /// 12+. Falls back to the external-app-dir export on failure.
+  /// Default export per T10; filename `grablytic logs - YYYY-MM-DD HH-mm-ss.log`.
   Future<void> _saveToDownloads() async {
     if (_exporting || _selectedFile == null) return;
     setState(() => _exporting = true);
     try {
       await AppLogger.flushNow();
       final file = _selectedFile!;
-      final name = file.path.split('/').last;
       final engine = ref.read(engineProvider);
       final res = await engine.exportLogToDownloads(
         sourcePath: file.path,
-        displayName: name,
+        displayName: AppLogger.exportFileName(),
       );
       String msg;
       if (res['success'] == true && res['path'] != null) {
@@ -587,20 +564,23 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                 ],
               ),
               const SizedBox(height: 8),
+              // T10: single default export = Downloads via MediaStore.
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: (_exporting || _selectedFile == null)
                       ? null
-                      : _exportLogFile,
+                      : _saveToDownloads,
                   icon: _exporting
                       ? const SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.file_download_outlined),
-                  label: Text(_exporting ? 'Exporting…' : 'Export log file'),
+                      : const Icon(Icons.download_outlined),
+                  label: Text(
+                    _exporting ? 'Exporting…' : 'Export to Downloads',
+                  ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -610,46 +590,25 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (_exporting || _selectedFile == null)
-                          ? null
-                          : _saveToDownloads,
-                      icon: const Icon(Icons.download_outlined),
-                      label: const Text('Save to Downloads'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _reporting ? null : _reportToGithub,
+                  icon: _reporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bug_report_outlined),
+                  label: Text(_reporting ? 'Reporting…' : 'Report to GitHub'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _reporting ? null : _reportToGithub,
-                      icon: _reporting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.bug_report_outlined),
-                      label: Text(
-                        _reporting ? 'Reporting…' : 'Report to GitHub',
-                      ),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
               const SizedBox(height: 12),
               Row(

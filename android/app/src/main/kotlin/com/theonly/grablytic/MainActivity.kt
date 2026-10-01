@@ -1025,13 +1025,12 @@ class MainActivity : FlutterActivity() {
      */
     private fun exportFileToDownloads(src: File, displayName: String): String {
         if (!src.isFile) throw IllegalArgumentException("log file missing")
-        val rawSafe = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-            .takeIf { it.isNotEmpty() } ?: "export.txt"
-        val stamp = try {
-            java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-                .format(java.util.Date())
-        } catch (_: Exception) { "export" }
-        val safeName = "grablytic-$stamp-$rawSafe"
+        // T10: Dart passes `grablytic logs - YYYY-MM-DD HH-mm-ss.log` (no
+        // colons). Preserve spaces/dots/dashes; strip path separators and
+        // colons; ensure .log. Falls back to a spec-shaped name, never blank.
+        var safeName = displayName.replace(Regex("[/\\\\:]"), "_").trim()
+            .takeIf { it.isNotEmpty() } ?: "grablytic logs - export.log"
+        if (!safeName.endsWith(".log", ignoreCase = true)) safeName += ".log"
         val maxBytes = 5 * 1024 * 1024L
         val srcLen = try { src.length() } catch (_: Exception) { 0L }
         // Tail-export large files (ytdlnis truncates match-filter noise for
