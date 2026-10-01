@@ -24,20 +24,25 @@ class DownloadItem {
   final double progress;
   final int downloadedBytes;
   final int totalBytes;
+
   /// Current transfer speed in bytes/second (0 when unknown/stalled).
   final double speed;
+
   /// Estimated seconds remaining (-1 when unknown).
   final int eta;
+
   /// Rolling per-download speed history (smoothed bytes/sec samples, oldest
   /// first, capped at [kSpeedHistoryCap]). Transient UI signal for the
   /// sparkline only — never persisted. Empty until samples arrive.
   final List<double> speedHistory;
+
   /// Post-processing stage key (merging, embedding_thumbnail, …) or null
   /// while plain downloading.
   final String? stage;
   final String? stageLabel;
   final String? thumbnailUrl;
   final String? filePath;
+
   /// Local thumbnail sidecar file path reported by the engine finished
   /// event (task 03). Preferred over [thumbnailUrl] for Library rendering.
   final String? thumbnailPath;
@@ -119,8 +124,9 @@ class DownloadItem {
       totalBytes: totalBytes ?? this.totalBytes,
       speed: speed ?? this.speed,
       eta: eta ?? this.eta,
-      speedHistory:
-          clearHistory ? const [] : (speedHistory ?? this.speedHistory),
+      speedHistory: clearHistory
+          ? const []
+          : (speedHistory ?? this.speedHistory),
       stage: clearStage ? null : (stage ?? this.stage),
       stageLabel: clearStageLabel ? null : (stageLabel ?? this.stageLabel),
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
@@ -193,7 +199,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// ResumeNotifier.reportAttempt in downloadProvider; null in tests that
   /// don't cover it. Must never throw.
   final Future<void> Function({required String url, required bool success})?
-      onDownloadOutcome;
+  onDownloadOutcome;
 
   /// Gate for unattended admissions (startup auto-resume). True = the
   /// network is suitable for downloads the user didn't just tap.
@@ -218,13 +224,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   @visibleForTesting
   int get smootherCount => _smoothers.length;
 
-  DownloadNotifier(this._engine,
-      {DateTime Function()? clock,
-      this.onDownloadOutcome,
-      this.unattendedNetworkAllowed,
-      this.resolveDownloadDir})
-      : _clock = clock ?? DateTime.now,
-        super([]);
+  DownloadNotifier(
+    this._engine, {
+    DateTime Function()? clock,
+    this.onDownloadOutcome,
+    this.unattendedNetworkAllowed,
+    this.resolveDownloadDir,
+  }) : _clock = clock ?? DateTime.now,
+       super([]);
 
   Future<bool> _unattendedAllowed() async {
     final gate = unattendedNetworkAllowed;
@@ -232,8 +239,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     try {
       return await gate();
     } catch (e) {
-      AppLogger.warn('Network gate failed ($e); auto-resume allowed',
-          tag: 'download');
+      AppLogger.warn(
+        'Network gate failed ($e); auto-resume allowed',
+        tag: 'download',
+      );
       return true;
     }
   }
@@ -241,11 +250,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   void _reportResumeOutcome(String url, bool success) {
     final cb = onDownloadOutcome;
     if (cb == null) return;
-    unawaited(Future(() async {
-      try {
-        await cb(url: url, success: success);
-      } catch (_) {}
-    }));
+    unawaited(
+      Future(() async {
+        try {
+          await cb(url: url, success: success);
+        } catch (_) {}
+      }),
+    );
   }
 
   List<DownloadItem> get completed =>
@@ -263,21 +274,25 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// Guards redownload-while-active collisions (engine also rejects with
   /// ERROR_ALREADY_ACTIVE as backstop).
   bool isActive(String url) {
-    return state.any((d) =>
-        d.url == url &&
-        (d.status == 'downloading' ||
-            d.status == 'pending' ||
-            d.status == 'cancelling' ||
-            d.status == 'queued'));
+    return state.any(
+      (d) =>
+          d.url == url &&
+          (d.status == 'downloading' ||
+              d.status == 'pending' ||
+              d.status == 'cancelling' ||
+              d.status == 'queued'),
+    );
   }
 
   bool isActiveId(String id) {
-    return state.any((d) =>
-        d.id == id &&
-        (d.status == 'downloading' ||
-            d.status == 'pending' ||
-            d.status == 'cancelling' ||
-            d.status == 'queued'));
+    return state.any(
+      (d) =>
+          d.id == id &&
+          (d.status == 'downloading' ||
+              d.status == 'pending' ||
+              d.status == 'cancelling' ||
+              d.status == 'queued'),
+    );
   }
 
   /// Legacy alias for [syncConcurrency] (kept for API stability — one
@@ -296,6 +311,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
   void addDownload(DownloadItem item) {
     state = [...state, item];
+    AppLogger.beginLogSession(item.id);
     _persistRecord(item);
   }
 
@@ -310,7 +326,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           // does that (after FFmpeg merge + post-processing). Hold at 99%.
           // Queued items promoted by the engine arrive here first.
           d.copyWith(
-            status: (d.status == 'downloading' ||
+            status:
+                (d.status == 'downloading' ||
                     d.status == 'pending' ||
                     d.status == 'queued')
                 ? 'downloading'
@@ -339,10 +356,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       // so the card can render "Queued #N" instead of a stalled 0%.
       state = [
         for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(status: 'queued'),
+          if (d.id != downloadId) d else d.copyWith(status: 'queued'),
       ];
     } else if (eventType == 'downloading') {
       // Engine sends bytes via JSON — numbers may decode as int OR double
@@ -360,8 +374,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       // HTTP callbacks would otherwise rebuild every watcher at tens of Hz
       // and repaint the sparkline per block.
       final now = _clock();
-      final smoother =
-          _smoothers.putIfAbsent(downloadId, _DownloadSmoother.new);
+      final smoother = _smoothers.putIfAbsent(
+        downloadId,
+        _DownloadSmoother.new,
+      );
       final lastEmit = smoother.lastEmitAt;
       if (lastEmit != null &&
           now.difference(lastEmit) < kProgressCoalesceWindow) {
@@ -369,12 +385,15 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       }
       smoother.lastEmitAt = now;
       final current = state[index];
-      final display = _admitSample(smoother, rawSpeed,
-          downloadId: downloadId,
-          downloaded: downloaded,
-          total: total,
-          now: now,
-          previous: current.speedHistory);
+      final display = _admitSample(
+        smoother,
+        rawSpeed,
+        downloadId: downloadId,
+        downloaded: downloaded,
+        total: total,
+        now: now,
+        previous: current.speedHistory,
+      );
       state = [
         for (final d in state)
           if (d.id != downloadId)
@@ -429,14 +448,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       // touch state, SQLite, deletion, or image rendering. Non-absolute or
       // out-of-folder paths keep the previous value and warn.
       final filePath = _sanitizeEnginePath(event['file_path'] as String?);
-      final thumbnailPath =
-          _sanitizeEnginePath(event['thumbnail_path'] as String?);
+      final thumbnailPath = _sanitizeEnginePath(
+        event['thumbnail_path'] as String?,
+      );
       final sizeStr = _formatFilesize(filesize);
       // Terminal outcome — one line per download (never per-progress) so
       // diagnostics reports always show what happened. ID + outcome only,
       // never the URL (may carry auth query params).
-      AppLogger.info('Download finished: $downloadId ($sizeStr)',
-          tag: 'download');
+      AppLogger.info(
+        'Download finished: $downloadId ($sizeStr)',
+        tag: 'download',
+      );
 
       state = [
         for (final d in state)
@@ -458,17 +480,22 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               completedDate: 'Today',
             ),
       ];
-      final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
+      final item = state.firstWhere(
+        (d) => d.id == downloadId,
+        orElse: () => state.last,
+      );
       _persistRecord(item);
       _reportResumeOutcome(item.url, true);
       _dropSmoother(downloadId);
+      AppLogger.endLogSession(downloadId);
     } else if (eventType == 'error') {
       final errorType = event['error_type'] as String?;
       final errorMessage = event['error_message'] as String?;
       final suggestsVpn = event['suggests_vpn'] as bool? ?? false;
       AppLogger.warn(
-          'Download failed: $downloadId [$errorType]${suggestsVpn ? ' (VPN may help)' : ''}',
-          tag: 'download');
+        'Download failed: $downloadId [$errorType]${suggestsVpn ? ' (VPN may help)' : ''}',
+        tag: 'download',
+      );
 
       state = [
         for (final d in state)
@@ -486,10 +513,14 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               suggestsVpn: suggestsVpn,
             ),
       ];
-      final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
+      final item = state.firstWhere(
+        (d) => d.id == downloadId,
+        orElse: () => state.last,
+      );
       _persistRecord(item);
       _reportResumeOutcome(item.url, false);
       _dropSmoother(downloadId);
+      AppLogger.endLogSession(downloadId);
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
       state = [
@@ -508,9 +539,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               recoveryAction: 'none',
             ),
       ];
-      final item = state.firstWhere((d) => d.id == downloadId, orElse: () => state.last);
+      final item = state.firstWhere(
+        (d) => d.id == downloadId,
+        orElse: () => state.last,
+      );
       _persistRecord(item);
       _dropSmoother(downloadId);
+      AppLogger.endLogSession(downloadId);
     }
   }
 
@@ -554,7 +589,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     }
 
     var eta = s.lastEta;
-    final graceOk = s.samples >= kEtaGraceSamples ||
+    final graceOk =
+        s.samples >= kEtaGraceSamples ||
         now.difference(s.firstSampleAt!) >= kEtaGracePeriod;
     if (rawSpeed > 0 &&
         displaySpeed > 0 &&
@@ -591,14 +627,16 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             )
             .then((_) => s.heartbeatFailStreak = 0)
             .catchError((e) {
-          s.heartbeatFailStreak++;
-          if (s.heartbeatFailStreak == 1 || s.heartbeatFailStreak % 12 == 0) {
-            AppLogger.warn(
-                'History heartbeat failed (streak ${s.heartbeatFailStreak}): $e',
-                tag: 'download');
-          }
-          return 0;
-        });
+              s.heartbeatFailStreak++;
+              if (s.heartbeatFailStreak == 1 ||
+                  s.heartbeatFailStreak % 12 == 0) {
+                AppLogger.warn(
+                  'History heartbeat failed (streak ${s.heartbeatFailStreak}): $e',
+                  tag: 'download',
+                );
+              }
+              return 0;
+            });
       }
     }
 
@@ -607,9 +645,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
   void _persistRecord(DownloadItem item) {
     try {
-      final configJson =
-          item.config != null ? jsonEncode(item.config) : null;
-      final qPos = item.queuePosition ??
+      final configJson = item.config != null ? jsonEncode(item.config) : null;
+      final qPos =
+          item.queuePosition ??
           (state.indexWhere((d) => d.id == item.id) >= 0
               ? state.indexWhere((d) => d.id == item.id)
               : null);
@@ -641,13 +679,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       DownloadHistoryDb.instance.insert(record).catchError((e) {
         // BRUTAL-6: never throw (state is source of truth), but never go
         // silent either — a failing insert means history diverges from UI.
-        AppLogger.warn('History persist failed for ${item.id}: $e',
-            tag: 'download');
+        AppLogger.warn(
+          'History persist failed for ${item.id}: $e',
+          tag: 'download',
+        );
         return 0;
       });
     } catch (e) {
-      AppLogger.warn('History persist build failed for ${item.id}: $e',
-          tag: 'download');
+      AppLogger.warn(
+        'History persist build failed for ${item.id}: $e',
+        tag: 'download',
+      );
     }
   }
 
@@ -699,11 +741,13 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
       // Auto-resume: increment attempt and re-start
       final nextAttempts = attempts + 1;
-      await DownloadHistoryDb.instance.update(record.copyWith(
-        attempts: nextAttempts,
-        status: 'queued',
-        updatedAt: DateTime.now().toIso8601String(),
-      ));
+      await DownloadHistoryDb.instance.update(
+        record.copyWith(
+          attempts: nextAttempts,
+          status: 'queued',
+          updatedAt: DateTime.now().toIso8601String(),
+        ),
+      );
 
       final item = DownloadItem(
         id: record.id,
@@ -723,22 +767,24 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       if (!state.any((d) => d.id == record.id)) {
         state = [...state, item];
       }
+      AppLogger.beginLogSession(record.id);
 
       _engine
           .startDownload(
-        url: record.url,
-        downloadId: record.id,
-        config: config,
-        networkType: config['network_type']?.toString() ?? 'wifi',
-      )
+            url: record.url,
+            downloadId: record.id,
+            config: config,
+            networkType: config['network_type']?.toString() ?? 'wifi',
+          )
           .then((result) {
-        if (result['queued'] == true) {
-          state = [
-            for (final d in state)
-              if (d.id != record.id) d else d.copyWith(status: 'queued'),
-          ];
-        }
-      }).catchError((_) {});
+            if (result['queued'] == true) {
+              state = [
+                for (final d in state)
+                  if (d.id != record.id) d else d.copyWith(status: 'queued'),
+              ];
+            }
+          })
+          .catchError((_) {});
       resumed++;
     }
     return resumed;
@@ -754,7 +800,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     if (lower.contains('tiktok')) return 'tiktok';
     if (lower.contains('instagram')) return 'instagram';
     if (lower.contains('twitter') || lower.contains('x.com')) return 'twitter';
-    if (lower.contains('facebook') || lower.contains('fb.com')) return 'facebook';
+    if (lower.contains('facebook') || lower.contains('fb.com')) {
+      return 'facebook';
+    }
     if (lower.contains('reddit')) return 'reddit';
     return 'web';
   }
@@ -785,12 +833,16 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         item.status == 'pending' ||
         item.status == 'cancelling' ||
         item.status == 'queued') {
-      AppLogger.warn('Retry blocked: $id is still active (${item.status})',
-          tag: 'download');
+      AppLogger.warn(
+        'Retry blocked: $id is still active (${item.status})',
+        tag: 'download',
+      );
       return;
     }
 
-    final config = Map<String, dynamic>.from(item.config ?? <String, dynamic>{});
+    final config = Map<String, dynamic>.from(
+      item.config ?? <String, dynamic>{},
+    );
     if (fresh) {
       config['force_overwrite'] = true;
       config['ignore_archive'] = true;
@@ -813,27 +865,33 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             config: config,
           ),
     ];
+    AppLogger.beginLogSession(id);
 
-    _engine.startDownload(
-      url: item.url,
-      downloadId: id,
-      config: config,
-      networkType: item.networkType ?? 'wifi',
-    ).then((result) {
-      // Engine backstop may park this as queued (at-limit): reflect it so
-      // the card renders Queued instead of a stalled 0%.
-      if (result['queued'] == true) {
-        state = [
-          for (final d in state)
-            if (d.id != id) d else d.copyWith(status: 'queued'),
-        ];
-      }
-      if (result['success'] != true &&
-          result['error_type'] == 'ERROR_ALREADY_ACTIVE') {
-        AppLogger.warn('Redownload rejected: $id already active',
-            tag: 'download');
-      }
-    }).catchError((_) {});
+    _engine
+        .startDownload(
+          url: item.url,
+          downloadId: id,
+          config: config,
+          networkType: item.networkType ?? 'wifi',
+        )
+        .then((result) {
+          // Engine backstop may park this as queued (at-limit): reflect it so
+          // the card renders Queued instead of a stalled 0%.
+          if (result['queued'] == true) {
+            state = [
+              for (final d in state)
+                if (d.id != id) d else d.copyWith(status: 'queued'),
+            ];
+          }
+          if (result['success'] != true &&
+              result['error_type'] == 'ERROR_ALREADY_ACTIVE') {
+            AppLogger.warn(
+              'Redownload rejected: $id already active',
+              tag: 'download',
+            );
+          }
+        })
+        .catchError((_) {});
   }
 
   /// "Extract audio" (source re-fetch variant): enqueues a NEW audio-only
@@ -846,7 +904,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     if (index == -1) return null;
     final item = state[index];
     final newId = _uuid.v4();
-    final config = Map<String, dynamic>.from(item.config ?? <String, dynamic>{});
+    final config = Map<String, dynamic>.from(
+      item.config ?? <String, dynamic>{},
+    );
     config['audio_only'] = true;
     // Fresh artifact: never hit the completed-file skip or archive skip.
     config['force_overwrite'] = true;
@@ -863,15 +923,17 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       return null;
     }
     if (result['success'] != true) return null;
-    addDownload(DownloadItem(
-      id: newId,
-      title: '${item.title} (audio)',
-      url: item.url,
-      status: result['queued'] == true ? 'queued' : 'downloading',
-      config: config,
-      networkType: item.networkType ?? 'wifi',
-      thumbnailUrl: item.thumbnailUrl,
-    ));
+    addDownload(
+      DownloadItem(
+        id: newId,
+        title: '${item.title} (audio)',
+        url: item.url,
+        status: result['queued'] == true ? 'queued' : 'downloading',
+        config: config,
+        networkType: item.networkType ?? 'wifi',
+        thumbnailUrl: item.thumbnailUrl,
+      ),
+    );
     return newId;
   }
 
@@ -896,8 +958,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         item.status == 'pending' ||
         item.status == 'cancelling' ||
         item.status == 'queued') {
-      AppLogger.warn('Delete blocked: $id is still active (${item.status})',
-          tag: 'download');
+      AppLogger.warn(
+        'Delete blocked: $id is still active (${item.status})',
+        tag: 'download',
+      );
       return false;
     }
     var deletedFile = false;
@@ -908,8 +972,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         final dir = _downloadDir();
         if (sanitized == null ||
             (dir != null && !isPathWithinDir(sanitized, dir))) {
-          AppLogger.warn('Delete refused: $id path outside download folder',
-              tag: 'download');
+          AppLogger.warn(
+            'Delete refused: $id path outside download folder',
+            tag: 'download',
+          );
         } else {
           final file = File(sanitized);
           if (await file.exists()) {
@@ -928,18 +994,23 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         final dir = _downloadDir();
         const allowedExts = {'.jpg', '.jpeg', '.png', '.webp'};
         final thumbExt = sanitizedThumb != null && sanitizedThumb.contains('.')
-            ? sanitizedThumb.substring(sanitizedThumb.lastIndexOf('.')).toLowerCase()
+            ? sanitizedThumb
+                  .substring(sanitizedThumb.lastIndexOf('.'))
+                  .toLowerCase()
             : '';
 
         if (sanitizedThumb != null &&
             allowedExts.contains(thumbExt) &&
             (dir == null || isPathWithinDir(sanitizedThumb, dir))) {
-          final isShared = state.any((d) =>
-              d.id != id &&
-              d.thumbnailPath != null &&
-              d.thumbnailPath == thumbPath);
+          final isShared = state.any(
+            (d) =>
+                d.id != id &&
+                d.thumbnailPath != null &&
+                d.thumbnailPath == thumbPath,
+          );
           final cleanPath = path != null ? sanitizeEngineFilePath(path) : null;
-          final isSameAsMedia = cleanPath != null && cleanPath == sanitizedThumb;
+          final isSameAsMedia =
+              cleanPath != null && cleanPath == sanitizedThumb;
 
           if (!isShared && !isSameAsMedia) {
             final thumbFile = File(sanitizedThumb);
@@ -959,7 +1030,9 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       await DownloadHistoryDb.instance.delete(id);
     } catch (_) {}
     AppLogger.info(
-        'Deleted ${deletedFile ? 'file + ' : ''}history: $id', tag: 'download');
+      'Deleted ${deletedFile ? 'file + ' : ''}history: $id',
+      tag: 'download',
+    );
     return true;
   }
 
@@ -1016,21 +1089,26 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final clean = sanitizeEngineFilePath(raw);
     if (clean == null) {
       if (raw != null && raw.trim().isNotEmpty) {
-        AppLogger.warn('Ignoring engine path outside trust boundary',
-            tag: 'download');
+        AppLogger.warn(
+          'Ignoring engine path outside trust boundary',
+          tag: 'download',
+        );
       }
       return null;
     }
     final dir = _downloadDir();
     if (dir != null && !isPathWithinDir(clean, dir)) {
-      AppLogger.warn('Ignoring engine path outside download folder',
-          tag: 'download');
+      AppLogger.warn(
+        'Ignoring engine path outside download folder',
+        tag: 'download',
+      );
       return null;
     }
     return clean;
   }
 
-  String _formatFilesize(int bytes) {   if (bytes < 1024) return '$bytes B';
+  String _formatFilesize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
     if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
     if (bytes < 1073741824) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
     return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
@@ -1039,50 +1117,56 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
 
 final downloadProvider =
     StateNotifierProvider<DownloadNotifier, List<DownloadItem>>((ref) {
-  final engine = ref.watch(engineProvider);
-  final notifier = DownloadNotifier(
-    engine,
-    // Trust boundary: engine-reported file paths must resolve inside the
-    // user's download folder before state, history, or deletion touch them.
-    resolveDownloadDir: () => ref.read(settingsProvider).downloadPath,
-    // Resume strike loop (BRUTAL-5): terminal outcomes feed the engine's
-    // per-file attempt counter; unresumed URLs are ignored downstream.
-    onDownloadOutcome: ({required String url, required bool success}) =>
-        ref.read(resumeProvider.notifier).reportAttempt(url: url, success: success),
-    // Wi-Fi Only finally gates something: unattended auto-resume yields
-    // on metered/offline networks. Explicit user taps are consent and
-    // stay ungated. Fail-open on plugin errors (old behavior + warning).
-    unattendedNetworkAllowed: () async {
-      if (!ref.read(settingsProvider).wifiOnly) return true;
-      try {
-        final results = await Connectivity().checkConnectivity();
-        return results.contains(ConnectivityResult.wifi) ||
-            results.contains(ConnectivityResult.ethernet);
-      } catch (e) {
-        AppLogger.warn('Connectivity check failed ($e); auto-resume allowed',
-            tag: 'download');
-        return true;
-      }
-    },
-  );
-  // Auto-sweep and restore interrupted downloads across process restart / LMK
-  notifier.restoreInterruptedDownloads().catchError((e, st) {
-    AppLogger.warn('Restore interrupted downloads error: $e', tag: 'download');
-    return 0;
-  });
-  final subscription = engine.progressStream.listen(
-    (event) {
-      notifier.handleProgressEvent(event);
-    },
-    onError: (err, stack) {
-      AppLogger.warn('Progress stream error: $err', tag: 'download');
-    },
-  );
-  ref.onDispose(() {
-    subscription.cancel();
-  });
-  return notifier;
-});
+      final engine = ref.watch(engineProvider);
+      final notifier = DownloadNotifier(
+        engine,
+        // Trust boundary: engine-reported file paths must resolve inside the
+        // user's download folder before state, history, or deletion touch them.
+        resolveDownloadDir: () => ref.read(settingsProvider).downloadPath,
+        // Resume strike loop (BRUTAL-5): terminal outcomes feed the engine's
+        // per-file attempt counter; unresumed URLs are ignored downstream.
+        onDownloadOutcome: ({required String url, required bool success}) => ref
+            .read(resumeProvider.notifier)
+            .reportAttempt(url: url, success: success),
+        // Wi-Fi Only finally gates something: unattended auto-resume yields
+        // on metered/offline networks. Explicit user taps are consent and
+        // stay ungated. Fail-open on plugin errors (old behavior + warning).
+        unattendedNetworkAllowed: () async {
+          if (!ref.read(settingsProvider).wifiOnly) return true;
+          try {
+            final results = await Connectivity().checkConnectivity();
+            return results.contains(ConnectivityResult.wifi) ||
+                results.contains(ConnectivityResult.ethernet);
+          } catch (e) {
+            AppLogger.warn(
+              'Connectivity check failed ($e); auto-resume allowed',
+              tag: 'download',
+            );
+            return true;
+          }
+        },
+      );
+      // Auto-sweep and restore interrupted downloads across process restart / LMK
+      notifier.restoreInterruptedDownloads().catchError((e, st) {
+        AppLogger.warn(
+          'Restore interrupted downloads error: $e',
+          tag: 'download',
+        );
+        return 0;
+      });
+      final subscription = engine.progressStream.listen(
+        (event) {
+          notifier.handleProgressEvent(event);
+        },
+        onError: (err, stack) {
+          AppLogger.warn('Progress stream error: $err', tag: 'download');
+        },
+      );
+      ref.onDispose(() {
+        subscription.cancel();
+      });
+      return notifier;
+    });
 
 final sharedUrlProvider = StateProvider<String?>((ref) => null);
 
@@ -1153,11 +1237,11 @@ class DownloadSections {
 
   @override
   int get hashCode => Object.hash(
-        _key(allIds),
-        _key(pendingIds),
-        _key(failedIds),
-        _key(completedIds),
-      );
+    _key(allIds),
+    _key(pendingIds),
+    _key(failedIds),
+    _key(completedIds),
+  );
 }
 
 /// Structural-only view: notifies on add/status-flip/remove, silent on
@@ -1169,8 +1253,7 @@ final downloadSectionsProvider = Provider<DownloadSections>((ref) {
 /// Per-item view. Unchanged items keep the IDENTICAL instance across ticks
 /// (handleProgressEvent only copyWith's the ticking id), so a Consumer of
 /// this family rebuilds only when its own item actually changes.
-final downloadItemProvider =
-    Provider.family<DownloadItem?, String>((ref, id) {
+final downloadItemProvider = Provider.family<DownloadItem?, String>((ref, id) {
   final items = ref.watch(downloadProvider);
   for (final d in items) {
     if (d.id == id) return d;

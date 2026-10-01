@@ -26,6 +26,9 @@ class AppLogger {
   static const Duration _flushInterval = Duration(seconds: 30);
   static const String _appLogFileName = 'app_logs.txt';
   static const int _maxSealedChunks = 5;
+  // T12: ids of video sessions with logs in flight (begin at enqueue/start,
+  // end at finished/error/cancelled; interrupted keeps its session).
+  static final Set<String> _activeSessions = <String>{};
   static Future<void> Function(Object error, StackTrace stack)? _fatalHook;
 
   /// Initialize the logger with the application directory and shared preferences.
@@ -57,6 +60,13 @@ class AppLogger {
   }
 
   static bool get isEnabled => _loggingEnabled;
+
+  /// T12: mark a video session's logs in flight; rotation defers past 1 MB
+  /// until every session ends (4 MB force valve).
+  static void beginLogSession(String id) => _activeSessions.add(id);
+
+  /// T12: close a video session (job terminal state).
+  static void endLogSession(String id) => _activeSessions.remove(id);
 
   /// Enable or disable logging.
   static Future<void> setEnabled(bool enabled) async {
@@ -158,16 +168,31 @@ class AppLogger {
       final appFile = File('$_logsDirPath/$_appLogFileName');
       // T11: 1 MB chunked rotation on the serialized flush chain (async,
       // never UI-blocking). Sealed chunks keep newest-first listing order.
+      // T12: never cut a video's log mid-session — defer past 1 MB while any
+      // session is active; 4 MB force valve seals with a (continued) header.
       final incoming = blob.length;
       var current = await appFile.exists() ? await appFile.length() : 0;
+      final hasActive = _activeSessions.isNotEmpty;
+      var continued = false;
       if (await appFile.exists() &&
           LogRotation.shouldRotate(current, incoming)) {
-        await _sealChunk(appFile);
-        current = 0;
+        if (LogRotation.shouldDefer(
+          current,
+          incoming,
+          hasActiveSessions: hasActive,
+        )) {
+          // Defer: append past the cap; next flush re-evaluates at session end.
+        } else {
+          continued = hasActive;
+          await _sealChunk(appFile);
+          current = 0;
+        }
       }
       if (current == 0) {
         await appFile.writeAsString(
-          LogRotation.header(now),
+          continued
+              ? LogRotation.continuedHeader(now)
+              : LogRotation.header(now),
           mode: FileMode.append,
         );
       }

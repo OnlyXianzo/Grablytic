@@ -32,4 +32,44 @@ void main() {
       expect(LogRotation.isSealedChunk('log_2026-10-02.txt'), false);
     });
   });
+
+  group('LogRotation boundary guard (T12)', () {
+    test('defers past 1 MB while a session is active', () {
+      expect(
+        LogRotation.shouldDefer(
+          LogRotation.chunkMaxBytes,
+          1,
+          hasActiveSessions: true,
+        ),
+        true,
+      );
+      expect(
+        LogRotation.shouldDefer(
+          LogRotation.chunkMaxBytes,
+          1,
+          hasActiveSessions: false,
+        ),
+        false,
+      );
+    });
+
+    test('4 MB force valve seals even with sessions active', () {
+      expect(LogRotation.forceRotateBytes, 4 * 1024 * 1024);
+      expect(
+        LogRotation.shouldDefer(
+          LogRotation.forceRotateBytes,
+          1,
+          hasActiveSessions: true,
+        ),
+        false,
+      );
+    });
+
+    test('continued header marks session carry-over', () {
+      final h = LogRotation.continuedHeader(DateTime(2026, 10, 2, 3, 4, 5));
+      expect(h.startsWith('grablytic logs - '), true);
+      expect(h, contains('(continued)'));
+      expect(h.endsWith('\n'), true);
+    });
+  });
 }
