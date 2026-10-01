@@ -874,6 +874,12 @@ class DesktopEngineService implements EngineService {
   }) async => {'success': true, 'supported': false};
 
   @override
+  Future<Map<String, dynamic>> syncQueueReminder({
+    required bool enabled,
+    int intervalMinutes = 180,
+  }) async => {'success': true, 'supported': false};
+
+  @override
   Future<void> showErrorNotification({
     required String downloadId,
     required String title,

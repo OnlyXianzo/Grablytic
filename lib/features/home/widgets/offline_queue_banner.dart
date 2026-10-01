@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/offline_link_queue.dart';
+import '../../../providers/settings_provider.dart';
 
 /// Banner displayed on [HomeScreen] when links are saved in the offline queue (T19).
 ///
@@ -22,6 +24,7 @@ class _OfflineQueueBannerState extends ConsumerState<OfflineQueueBanner> {
     final queue = ref.watch(offlineQueueProvider);
     if (queue.isEmpty) return const SizedBox.shrink();
 
+    final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -161,8 +164,58 @@ class _OfflineQueueBannerState extends ConsumerState<OfflineQueueBanner> {
             ],
             const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                IconButton(
+                  key: const Key('offline_queue_reminder_button'),
+                  icon: Icon(
+                    settings.queueReminderEnabled
+                        ? Icons.notifications_active
+                        : Icons.notifications_none,
+                    size: 20,
+                    color: settings.queueReminderEnabled
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: settings.queueReminderEnabled
+                      ? 'Queue reminders: ${formatQueueReminderInterval(settings.queueReminderIntervalMinutes)}'
+                      : 'Enable queue reminders',
+                  onPressed: () async {
+                    if (!settings.queueReminderEnabled) {
+                      final granted = await requestQueueReminderPermission(
+                        ref.read(engineProvider),
+                      );
+                      if (!context.mounted) return;
+                      if (!granted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Notification permission is required for queue reminders',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setQueueReminderEnabled(true);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Queue reminders enabled'),
+                        ),
+                      );
+                    } else {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setQueueReminderEnabled(false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Queue reminders turned off'),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                const Spacer(),
                 TextButton(
                   key: const Key('offline_queue_clear_button'),
                   onPressed: () =>

@@ -353,6 +353,18 @@ class TracedEngineService implements EngineService {
   );
 
   @override
+  Future<Map<String, dynamic>> syncQueueReminder({
+    required bool enabled,
+    int intervalMinutes = 180,
+  }) => _traced(
+    'queue_reminder/sync',
+    () => _inner.syncQueueReminder(
+      enabled: enabled,
+      intervalMinutes: intervalMinutes,
+    ),
+  );
+
+  @override
   Future<Map<String, dynamic>> getFormats({
     required String url,
     required Map<String, dynamic> config,

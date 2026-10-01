@@ -526,6 +526,26 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
+  Future<Map<String, dynamic>> syncQueueReminder({
+    required bool enabled,
+    int intervalMinutes = 180,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>(
+        EngineMethods.syncQueueReminder,
+        {'enabled': enabled, 'interval_minutes': intervalMinutes},
+      );
+      if (result == null) return {'success': true};
+      return Map<String, dynamic>.from(result);
+    } catch (_) {
+      return EngineEnvelope.error(
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Native call failed',
+      );
+    }
+  }
+
+  @override
   Future<void> showErrorNotification({
     required String downloadId,
     required String title,

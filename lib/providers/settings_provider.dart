@@ -120,6 +120,8 @@ class AppSettings {
   final bool downloadArchive;
   final bool archiveByFolder;
   final bool hasSeenBatteryPrompt;
+  final bool queueReminderEnabled;
+  final int queueReminderIntervalMinutes;
 
   /// Max simultaneous downloads (queue gate). 2 default (Seal-proven 3,
   /// YTDLnis default 1, 10 crash-prone); allowed 1–5, enforced in engine
@@ -173,6 +175,8 @@ class AppSettings {
     this.downloadArchive = false,
     this.archiveByFolder = true,
     this.maxConcurrentDownloads = 2,
+    this.queueReminderEnabled = false,
+    this.queueReminderIntervalMinutes = 180,
   });
 
   static const Object _sentinel = Object();
@@ -224,6 +228,8 @@ class AppSettings {
     bool? downloadArchive,
     bool? archiveByFolder,
     int? maxConcurrentDownloads,
+    bool? queueReminderEnabled,
+    int? queueReminderIntervalMinutes,
   }) {
     return AppSettings(
       wifiOnly: wifiOnly ?? this.wifiOnly,
@@ -281,6 +287,9 @@ class AppSettings {
       archiveByFolder: archiveByFolder ?? this.archiveByFolder,
       maxConcurrentDownloads:
           maxConcurrentDownloads ?? this.maxConcurrentDownloads,
+      queueReminderEnabled: queueReminderEnabled ?? this.queueReminderEnabled,
+      queueReminderIntervalMinutes:
+          queueReminderIntervalMinutes ?? this.queueReminderIntervalMinutes,
     );
   }
 }
@@ -375,6 +384,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       } catch (_) {}
     }
 
+    final queueReminderEnabled =
+        _prefs.getBool('queueReminderEnabled') ?? false;
+    final queueReminderIntervalMinutes =
+        _prefs.getInt('queueReminderIntervalMinutes') ?? 180;
+
     state = AppSettings(
       wifiOnly: wifiOnly,
       turboMode: turboMode,
@@ -422,6 +436,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       downloadArchive: downloadArchive,
       archiveByFolder: archiveByFolder,
       maxConcurrentDownloads: maxConcurrentDownloads,
+      queueReminderEnabled: queueReminderEnabled,
+      queueReminderIntervalMinutes: queueReminderIntervalMinutes,
     );
   }
 
@@ -711,6 +727,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setScheduleRequiresCharging(bool value) {
     _prefs.setBool('scheduleRequiresCharging', value);
     state = state.copyWith(scheduleRequiresCharging: value);
+  }
+
+  void setQueueReminderEnabled(bool value) {
+    _prefs.setBool('queueReminderEnabled', value);
+    state = state.copyWith(queueReminderEnabled: value);
+  }
+
+  void setQueueReminderIntervalMinutes(int value) {
+    _prefs.setInt('queueReminderIntervalMinutes', value);
+    state = state.copyWith(queueReminderIntervalMinutes: value);
   }
 
   void setSponsorBlockCats(List<String> cats) {

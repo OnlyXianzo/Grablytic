@@ -8,10 +8,43 @@ import '../../features/home/screens/batch_download_screen.dart';
 import '../../providers/batch_provider.dart';
 import '../../providers/preset_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../engine/engine_service.dart';
 import 'app_logger.dart';
 
 /// SharedPreferences key for the persisted offline link queue.
 const String offlineLinkQueueKey = 'grablytic_offline_link_queue';
+
+/// SharedPreferences key for the cached offline link count.
+const String offlineQueueCountKey = 'offlineQueueCount';
+
+/// Interval presets in minutes for queue reminders (T20).
+const List<int> queueReminderIntervalPresets = [60, 180, 360, 720, 1440];
+
+/// Formats queue reminder interval for human-readable UI.
+String formatQueueReminderInterval(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final hours = minutes ~/ 60;
+  if (hours == 1) return '1 hour';
+  if (hours == 3) return '3 hours (default)';
+  if (hours < 24) return '$hours hours';
+  final days = hours ~/ 24;
+  return days == 1 ? '24 hours' : '$days days';
+}
+
+/// Requests POST_NOTIFICATIONS permission on Android 13+ only when
+/// the user opts into queue reminders (T20).
+Future<bool> requestQueueReminderPermission(EngineService engine) async {
+  try {
+    final status = await engine.notificationPermissionStatus();
+    if (status['granted'] == true) {
+      return true;
+    }
+    final req = await engine.requestNotificationPermission();
+    return req['granted'] == true;
+  } catch (_) {
+    return true; // Fail-open on non-Android platforms
+  }
+}
 
 /// Represents a URL queued while the device was offline (T19).
 class QueuedLink {
@@ -114,6 +147,7 @@ class OfflineQueueStore {
   Future<void> save(List<QueuedLink> links) async {
     final encoded = links.map((l) => jsonEncode(l.toJson())).toList();
     await _prefs.setStringList(offlineLinkQueueKey, encoded);
+    await _prefs.setInt(offlineQueueCountKey, links.length);
   }
 
   Future<bool> addLink(
@@ -164,6 +198,7 @@ class OfflineQueueStore {
 
   Future<void> clear() async {
     await _prefs.remove(offlineLinkQueueKey);
+    await _prefs.setInt(offlineQueueCountKey, 0);
   }
 }
 

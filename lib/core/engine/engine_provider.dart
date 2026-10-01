@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
 import '../utils/logging_observers.dart';
+import '../utils/offline_link_queue.dart';
 import 'engine_service.dart';
 import 'platform_channel_engine_service.dart';
 import 'desktop_engine_service.dart';
@@ -11,8 +12,8 @@ final engineProvider = Provider<EngineService>((ref) {
   final engine = Platform.isAndroid
       ? PlatformChannelEngineService()
       : (Platform.isWindows || Platform.isLinux || Platform.isMacOS
-          ? DesktopEngineService()
-          : MockEngineService());
+            ? DesktopEngineService()
+            : MockEngineService());
 
   final settings = ref.read(settingsProvider);
   final initialOutputDir = settings.downloadPath == '/Internal/Videos'
@@ -20,9 +21,10 @@ final engineProvider = Provider<EngineService>((ref) {
       : settings.downloadPath;
   // ytdlnis parity: cookies only reach yt-dlp when the master switch is
   // on (per-site toggles are merged into the file by the Cookies screen).
-  String? effectiveCookiesPath(
-      {required bool useCookies, required String? cookiesPath}) =>
-      useCookies ? cookiesPath : null;
+  String? effectiveCookiesPath({
+    required bool useCookies,
+    required String? cookiesPath,
+  }) => useCookies ? cookiesPath : null;
 
   if (_appDir != null) {
     _setPathsFuture = engine.setPaths({
@@ -33,14 +35,17 @@ final engineProvider = Provider<EngineService>((ref) {
       'aria2c_path': _aria2cPath,
       'deno_path': _denoPath,
       'cookies_path': effectiveCookiesPath(
-          useCookies: settings.useCookies, cookiesPath: settings.cookiesPath),
+        useCookies: settings.useCookies,
+        cookiesPath: settings.cookiesPath,
+      ),
     });
   }
 
   ref.listen<AppSettings>(settingsProvider, (previous, next) {
     if (previous?.downloadPath != next.downloadPath ||
         previous?.cookiesPath != next.cookiesPath ||
-        previous?.useCookies != next.useCookies) {      final outputDir = next.downloadPath == '/Internal/Videos'
+        previous?.useCookies != next.useCookies) {
+      final outputDir = next.downloadPath == '/Internal/Videos'
           ? '$_appDir/Grablytic'
           : next.downloadPath;
       engine.setPaths({
@@ -51,7 +56,9 @@ final engineProvider = Provider<EngineService>((ref) {
         'aria2c_path': _aria2cPath,
         'deno_path': _denoPath,
         'cookies_path': effectiveCookiesPath(
-            useCookies: next.useCookies, cookiesPath: next.cookiesPath),
+          useCookies: next.useCookies,
+          cookiesPath: next.cookiesPath,
+        ),
       });
     }
     // Queue gate: push the persisted preference whenever it changes (the
@@ -78,6 +85,39 @@ final engineProvider = Provider<EngineService>((ref) {
         );
       } catch (_) {}
     }
+
+    // Offline queue reminders sync (T20).
+    if (previous?.queueReminderEnabled != next.queueReminderEnabled ||
+        previous?.queueReminderIntervalMinutes !=
+            next.queueReminderIntervalMinutes) {
+      try {
+        final queue = ref.read(offlineQueueProvider);
+        if (!next.queueReminderEnabled || queue.isEmpty) {
+          engine.syncQueueReminder(enabled: false);
+        } else {
+          engine.syncQueueReminder(
+            enabled: true,
+            intervalMinutes: next.queueReminderIntervalMinutes,
+          );
+        }
+      } catch (_) {}
+    }
+  });
+
+  // Watch offline queue transitions to cancel or schedule reminders (T20).
+  ref.listen(offlineQueueProvider, (previous, next) {
+    final currentSettings = ref.read(settingsProvider);
+    if (!currentSettings.queueReminderEnabled) return;
+    try {
+      if (next.isEmpty) {
+        engine.syncQueueReminder(enabled: false);
+      } else if (previous == null || previous.isEmpty) {
+        engine.syncQueueReminder(
+          enabled: true,
+          intervalMinutes: currentSettings.queueReminderIntervalMinutes,
+        );
+      }
+    } catch (_) {}
   });
 
   // Initial sync: the engine backstop defaults to 2, so push the persisted
@@ -95,6 +135,19 @@ final engineProvider = Provider<EngineService>((ref) {
       wifiOnly: settings.scheduleWifiOnly,
       requiresCharging: settings.scheduleRequiresCharging,
     );
+  } catch (_) {}
+
+  // Initial queue reminders sync to platform WorkManager (T20).
+  try {
+    final initialQueue = ref.read(offlineQueueProvider);
+    if (settings.queueReminderEnabled && initialQueue.isNotEmpty) {
+      engine.syncQueueReminder(
+        enabled: true,
+        intervalMinutes: settings.queueReminderIntervalMinutes,
+      );
+    } else {
+      engine.syncQueueReminder(enabled: false);
+    }
   } catch (_) {}
 
   // Every transport owns closable resources (broadcast controllers,

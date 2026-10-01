@@ -41,6 +41,7 @@ abstract final class EngineMethods {
   static const String notificationRequest = 'system/notification_request';
   static const String notificationSettings = 'system/notification_settings';
   static const String syncSchedule = 'schedule/sync';
+  static const String syncQueueReminder = 'queue_reminder/sync';
 }
 
 /// Shared encode/decode for the engine envelope (BRUTAL-1).

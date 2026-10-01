@@ -358,21 +358,24 @@ class MockEngineService implements EngineService {
         extra: {'supported': false},
       );
 
-  @override
-  Future<Map<String, dynamic>> notificationPermissionStatus() async =>
-      EngineEnvelope.error(
-        errorType: 'ERROR_UNSUPPORTED',
-        message: 'Not supported on this platform',
-        extra: {'supported': false},
-      );
+  bool mockNotificationsGranted = false;
 
   @override
-  Future<Map<String, dynamic>> requestNotificationPermission() async =>
-      EngineEnvelope.error(
-        errorType: 'ERROR_UNSUPPORTED',
-        message: 'Not supported on this platform',
-        extra: {'supported': false},
-      );
+  Future<Map<String, dynamic>> notificationPermissionStatus() async => {
+    'success': true,
+    'supported': true,
+    'granted': mockNotificationsGranted,
+  };
+
+  @override
+  Future<Map<String, dynamic>> requestNotificationPermission() async {
+    mockNotificationsGranted = true;
+    return {
+      'success': true,
+      'supported': true,
+      'granted': true,
+    };
+  }
 
   @override
   Future<Map<String, dynamic>> queueStatus() async => {
@@ -426,6 +429,20 @@ class MockEngineService implements EngineService {
     bool wifiOnly = true,
     bool requiresCharging = false,
   }) async => {'success': true};
+
+  Map<String, dynamic>? lastQueueReminderSync;
+
+  @override
+  Future<Map<String, dynamic>> syncQueueReminder({
+    required bool enabled,
+    int intervalMinutes = 180,
+  }) async {
+    lastQueueReminderSync = {
+      'enabled': enabled,
+      'intervalMinutes': intervalMinutes,
+    };
+    return {'success': true};
+  }
 
   final List<Map<String, String>> errorNotifications = [];
 

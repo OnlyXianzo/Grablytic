@@ -958,6 +958,16 @@ open class MainActivity : FlutterActivity() {
                     )
                     result.success(mapOf("success" to true))
                 }
+                "queue_reminder/sync" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val intervalMinutes = (call.argument<Int>("interval_minutes") ?: 180).toLong().coerceAtLeast(15L)
+                    QueueReminderWorker.schedule(
+                        context = applicationContext,
+                        enabled = enabled,
+                        intervalMinutes = intervalMinutes,
+                    )
+                    result.success(mapOf("success" to true))
+                }
                 else -> result.notImplemented()
             }
         }

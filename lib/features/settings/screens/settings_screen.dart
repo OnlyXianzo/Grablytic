@@ -20,6 +20,7 @@ import 'sponsorblock_settings_screen.dart';
 import 'about_screen.dart';
 import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
+import '../../../core/utils/offline_link_queue.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -246,6 +247,40 @@ class PermissionsSettingsScreen extends ConsumerWidget {
                 onChanged: () => ref
                     .read(settingsProvider.notifier)
                     .toggleCompletionAlerts(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.notifications_active_outlined,
+                title: 'Queue Reminders',
+                subtitle: settings.queueReminderEnabled
+                    ? 'Notify every ${formatQueueReminderInterval(settings.queueReminderIntervalMinutes)} when offline links wait'
+                    : 'Remind about unprocessed offline links',
+                value: settings.queueReminderEnabled,
+                onChanged: () async {
+                  if (!settings.queueReminderEnabled) {
+                    final granted = await requestQueueReminderPermission(
+                      ref.read(engineProvider),
+                    );
+                    if (!context.mounted) return;
+                    if (!granted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Notification permission is required for queue reminders',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setQueueReminderEnabled(true);
+                  } else {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setQueueReminderEnabled(false);
+                  }
+                },
                 colorScheme: colorScheme,
               ),
               const _BackgroundPermissionsSection(),
@@ -673,6 +708,7 @@ class AutomationSettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Automation & Scheduling')),
@@ -723,6 +759,65 @@ class AutomationSettingsScreen extends ConsumerWidget {
                   );
                 },
               ),
+              _SettingSwitch(
+                icon: Icons.notifications_active_outlined,
+                title: 'Queue reminders',
+                subtitle: settings.queueReminderEnabled
+                    ? 'Remind every ${formatQueueReminderInterval(settings.queueReminderIntervalMinutes)} about unprocessed links'
+                    : 'Remind about unprocessed offline links',
+                value: settings.queueReminderEnabled,
+                colorScheme: colorScheme,
+                onChanged: () async {
+                  if (!settings.queueReminderEnabled) {
+                    final granted = await requestQueueReminderPermission(
+                      ref.read(engineProvider),
+                    );
+                    if (!context.mounted) return;
+                    if (!granted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Notification permission is required for queue reminders',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setQueueReminderEnabled(true);
+                  } else {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setQueueReminderEnabled(false);
+                  }
+                },
+              ),
+              if (settings.queueReminderEnabled)
+                _SettingSelect<int>(
+                  icon: Icons.timer_outlined,
+                  title: 'Reminder interval',
+                  subtitle: formatQueueReminderInterval(
+                    settings.queueReminderIntervalMinutes,
+                  ),
+                  value: settings.queueReminderIntervalMinutes,
+                  items: queueReminderIntervalPresets
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(formatQueueReminderInterval(m)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setQueueReminderIntervalMinutes(val);
+                    }
+                  },
+                  colorScheme: colorScheme,
+                ),
             ],
           ),
         ],
@@ -1203,6 +1298,72 @@ class _SettingAction extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SettingSelect<T> extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final T value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+  final ColorScheme colorScheme;
+
+  const _SettingSelect({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    required this.colorScheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: colorScheme.outline, size: 20),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: textTheme.bodyLarge),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          DropdownButton<T>(
+            value: value,
+            underline: const SizedBox.shrink(),
+            onChanged: onChanged,
+            dropdownColor: colorScheme.surfaceContainerHigh,
+            items: items,
+          ),
+        ],
       ),
     );
   }
