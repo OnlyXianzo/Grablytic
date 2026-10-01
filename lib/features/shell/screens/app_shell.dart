@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../home/screens/home_screen.dart';
@@ -17,6 +18,7 @@ import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils/download_config.dart';
+import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/schedule_guard.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -26,7 +28,8 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
   late final PageController _pageController;
   StreamSubscription<String>? _intentSubscription;
@@ -50,18 +53,64 @@ class _AppShellState extends ConsumerState<AppShell> {
   bool _drainingShares = false;
   bool _needsRedrain = false;
 
+  String? _lastInspectedClipboardText;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController(initialPage: _currentIndex);
     _initSharedUrlListening();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _intentSubscription?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkClipboardOnForeground();
+    }
+  }
+
+  Future<void> _checkClipboardOnForeground() async {
+    final offline = await isDeviceOffline();
+    if (!offline || !mounted) return;
+
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text == null || text.isEmpty || text == _lastInspectedClipboardText) {
+        return;
+      }
+      _lastInspectedClipboardText = text;
+
+      final normalized = normalizeQueueUrl(text);
+      if (normalized != null) {
+        final added = await ref
+            .read(offlineQueueProvider.notifier)
+            .addLink(normalized, source: 'clipboard');
+        if (added && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Offline: Copied link added to queue ($normalized)',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.warn(
+        'Failed reading clipboard on foreground: $e',
+        tag: 'AppShell',
+      );
+    }
   }
 
   void _initSharedUrlListening() {
@@ -175,6 +224,26 @@ class _AppShellState extends ConsumerState<AppShell> {
   Future<void> _handleSharedUrl(String url) async {
     if (url.isEmpty || !mounted) return;
     unawaited(LocalAnalytics.recordIntake(LocalAnalytics.kindShare, url));
+
+    final offline = await isDeviceOffline();
+    if (!mounted) return;
+    if (offline) {
+      final added = await ref
+          .read(offlineQueueProvider.notifier)
+          .addLink(url, source: 'share');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              added
+                  ? 'Offline: Shared link saved to queue'
+                  : 'Shared link is already in offline queue',
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     final settings = ref.read(settingsProvider);
     final isAuto =

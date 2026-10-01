@@ -22,7 +22,9 @@ import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils.dart';
+import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
+import '../widgets/offline_queue_banner.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -50,7 +52,9 @@ class HomeScreen extends ConsumerWidget {
                 colorScheme: colorScheme,
                 textTheme: textTheme,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              const OfflineQueueBanner(),
+              const SizedBox(height: 8),
               // Hero section
               _HeroSection(colorScheme: colorScheme)
                   .animate()
@@ -222,7 +226,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     super.dispose();
   }
 
-  void _submitUrl() {
+  Future<void> _submitUrl() async {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
     _focusNode.unfocus();
@@ -230,6 +234,25 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     if (looksLikeUrl(input)) {
       AppLogger.info('User submitted URL: $input', tag: 'HomeScreen');
       unawaited(LocalAnalytics.recordIntake(LocalAnalytics.kindPaste, input));
+      final offline = await isDeviceOffline();
+      if (!mounted) return;
+      if (offline) {
+        final added = await ref
+            .read(offlineQueueProvider.notifier)
+            .addLink(input, source: 'paste');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              added
+                  ? 'Offline: Link saved to queue'
+                  : 'Link is already in offline queue',
+            ),
+          ),
+        );
+        _controller.clear();
+        return;
+      }
       // Playlist URLs get entry selection (03-B) instead of the
       // single-video format picker — otherwise a playlist "downloads as
       // it wants" with no subset/reverse/shuffle control.

@@ -8,6 +8,7 @@ import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/download_config.dart';
+import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/settings_provider.dart';
@@ -135,8 +136,23 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
     }
   }
 
-  void _onUrlResolved(String url) {
+  Future<void> _onUrlResolved(String url) async {
     if (!mounted) return;
+    final offline = await isDeviceOffline();
+    if (!mounted) return;
+    if (offline) {
+      await ref
+          .read(offlineQueueProvider.notifier)
+          .addLink(url, source: 'share');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Offline: Shared link saved to queue')),
+      );
+      await Future.delayed(const Duration(milliseconds: 600));
+      _finish();
+      return;
+    }
+
     final settings = ref.read(settingsProvider);
     if (settings.shareBehavior == 'auto' || settings.autoStartDownloadOnShare) {
       _triggerAutoDownload(url);
