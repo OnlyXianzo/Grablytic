@@ -29,7 +29,7 @@ interface EngineEventListener {
     fun onEvent(eventJson: String)
 }
 
-class MainActivity : FlutterActivity() {
+open class MainActivity : FlutterActivity() {
     private val ENGINE_CHANNEL = "com.theonly.grablytic/engine"
     private val PROGRESS_CHANNEL = "com.theonly.grablytic/progress"
 
@@ -417,6 +417,10 @@ class MainActivity : FlutterActivity() {
         methodChannel = channel
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "activity/finish" -> {
+                    finish()
+                    result.success(mapOf("success" to true))
+                }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
                     // drain loop collects every queued share, in order.

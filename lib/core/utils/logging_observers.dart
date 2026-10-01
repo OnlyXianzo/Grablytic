@@ -113,55 +113,86 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
   field('completionAlerts', previous.completionAlerts, next.completionAlerts);
   field('downloadPath', previous.downloadPath, next.downloadPath);
   field('themeMode', previous.themeMode, next.themeMode);
-  field('onboardingCompleted', previous.onboardingCompleted,
-      next.onboardingCompleted);
-  field('hasSeenBatteryPrompt', previous.hasSeenBatteryPrompt,
-      next.hasSeenBatteryPrompt);
+  field(
+    'onboardingCompleted',
+    previous.onboardingCompleted,
+    next.onboardingCompleted,
+  );
+  field(
+    'hasSeenBatteryPrompt',
+    previous.hasSeenBatteryPrompt,
+    next.hasSeenBatteryPrompt,
+  );
   field('qualityCeiling', previous.qualityCeiling, next.qualityCeiling);
   field('audioOnly', previous.audioOnly, next.audioOnly);
   field('proxy', previous.proxy, next.proxy, sensitive: true);
   field('verbose', previous.verbose, next.verbose);
-  field('autoStartDownloadOnShare', previous.autoStartDownloadOnShare,
-      next.autoStartDownloadOnShare);
+  field(
+    'autoStartDownloadOnShare',
+    previous.autoStartDownloadOnShare,
+    next.autoStartDownloadOnShare,
+  );
+  field('shareBehavior', previous.shareBehavior, next.shareBehavior);
   field('cookiesPath', previous.cookiesPath, next.cookiesPath);
   field('youtubeLoggedIn', previous.youtubeLoggedIn, next.youtubeLoggedIn);
-  field('instagramLoggedIn', previous.instagramLoggedIn,
-      next.instagramLoggedIn);
+  field(
+    'instagramLoggedIn',
+    previous.instagramLoggedIn,
+    next.instagramLoggedIn,
+  );
   field('twitterLoggedIn', previous.twitterLoggedIn, next.twitterLoggedIn);
-  field('bilibiliLoggedIn', previous.bilibiliLoggedIn,
-      next.bilibiliLoggedIn);
+  field('bilibiliLoggedIn', previous.bilibiliLoggedIn, next.bilibiliLoggedIn);
   field('twitchLoggedIn', previous.twitchLoggedIn, next.twitchLoggedIn);
   field('splitChapters', previous.splitChapters, next.splitChapters);
   field('updateChannel', previous.updateChannel, next.updateChannel);
-  field('downloadSubtitles', previous.downloadSubtitles,
-      next.downloadSubtitles);
-  listField('subtitleLanguages', previous.subtitleLanguages,
-      next.subtitleLanguages);
-  field('downloadAutoSubtitles', previous.downloadAutoSubtitles,
-      next.downloadAutoSubtitles);
+  field(
+    'downloadSubtitles',
+    previous.downloadSubtitles,
+    next.downloadSubtitles,
+  );
+  listField(
+    'subtitleLanguages',
+    previous.subtitleLanguages,
+    next.subtitleLanguages,
+  );
+  field(
+    'downloadAutoSubtitles',
+    previous.downloadAutoSubtitles,
+    next.downloadAutoSubtitles,
+  );
   field('embedSubtitles', previous.embedSubtitles, next.embedSubtitles);
   field('aria2cEnabled', previous.aria2cEnabled, next.aria2cEnabled);
   field('aria2cChunks', previous.aria2cChunks, next.aria2cChunks);
   field('aria2cMaxSpeed', previous.aria2cMaxSpeed, next.aria2cMaxSpeed);
   field('useGridView', previous.useGridView, next.useGridView);
-  listField('customTemplates', previous.customTemplates,
-      next.customTemplates);
-  listField('observedSources', previous.observedSources,
-      next.observedSources);
+  listField('customTemplates', previous.customTemplates, next.customTemplates);
+  listField('observedSources', previous.observedSources, next.observedSources);
   field('scheduleEnabled', previous.scheduleEnabled, next.scheduleEnabled);
   field('scheduleTime', previous.scheduleTime, next.scheduleTime);
   listField('scheduleDays', previous.scheduleDays, next.scheduleDays);
-  field('scheduleIntervalMinutes', previous.scheduleIntervalMinutes,
-      next.scheduleIntervalMinutes);
+  field(
+    'scheduleIntervalMinutes',
+    previous.scheduleIntervalMinutes,
+    next.scheduleIntervalMinutes,
+  );
   field('scheduleWifiOnly', previous.scheduleWifiOnly, next.scheduleWifiOnly);
-  field('scheduleRequiresCharging', previous.scheduleRequiresCharging,
-      next.scheduleRequiresCharging);
-  listField('sponsorBlockCats', previous.sponsorBlockCats,
-      next.sponsorBlockCats);
+  field(
+    'scheduleRequiresCharging',
+    previous.scheduleRequiresCharging,
+    next.scheduleRequiresCharging,
+  );
+  listField(
+    'sponsorBlockCats',
+    previous.sponsorBlockCats,
+    next.sponsorBlockCats,
+  );
   field('downloadArchive', previous.downloadArchive, next.downloadArchive);
   field('archiveByFolder', previous.archiveByFolder, next.archiveByFolder);
-  field('maxConcurrentDownloads', previous.maxConcurrentDownloads,
-      next.maxConcurrentDownloads);
+  field(
+    'maxConcurrentDownloads',
+    previous.maxConcurrentDownloads,
+    next.maxConcurrentDownloads,
+  );
   return changes;
 }
 
@@ -209,10 +240,8 @@ class TracedEngineService implements EngineService {
       _traced('engine/bootstrap', _inner.bootstrap);
 
   @override
-  Future<void> setPaths(Map<String, dynamic> paths) => _traced(
-        'paths/set',
-        () => _inner.setPaths(_redactedPaths(paths)),
-      );
+  Future<void> setPaths(Map<String, dynamic> paths) =>
+      _traced('paths/set', () => _inner.setPaths(_redactedPaths(paths)));
 
   @override
   Future<Map<String, dynamic>> startDownload({
@@ -247,14 +276,13 @@ class TracedEngineService implements EngineService {
   Future<Map<String, dynamic>> exportLogToDownloads({
     required String sourcePath,
     required String displayName,
-  }) =>
-      _traced(
-        'log/export_to_downloads',
-        () => _inner.exportLogToDownloads(
-          sourcePath: sourcePath,
-          displayName: displayName,
-        ),
-      );
+  }) => _traced(
+    'log/export_to_downloads',
+    () => _inner.exportLogToDownloads(
+      sourcePath: sourcePath,
+      displayName: displayName,
+    ),
+  );
 
   @override
   Future<Map<String, dynamic>> networkMeteredStatus() =>
@@ -269,20 +297,26 @@ class TracedEngineService implements EngineService {
       _traced('system/battery_request', () => _inner.requestBatteryExemption());
 
   @override
-  Future<Map<String, dynamic>> notificationPermissionStatus() =>
-      _traced('system/notification_status', () => _inner.notificationPermissionStatus());
+  Future<Map<String, dynamic>> notificationPermissionStatus() => _traced(
+    'system/notification_status',
+    () => _inner.notificationPermissionStatus(),
+  );
 
   @override
-  Future<Map<String, dynamic>> requestNotificationPermission() =>
-      _traced('system/notification_request', () => _inner.requestNotificationPermission());
+  Future<Map<String, dynamic>> requestNotificationPermission() => _traced(
+    'system/notification_request',
+    () => _inner.requestNotificationPermission(),
+  );
 
   @override
   Future<Map<String, dynamic>> queueStatus() =>
       _traced('download/queue_status', () => _inner.queueStatus());
 
   @override
-  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) =>
-      _traced('download/set_concurrency', () => _inner.setConcurrency(maxConcurrent));
+  Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) => _traced(
+    'download/set_concurrency',
+    () => _inner.setConcurrency(maxConcurrent),
+  );
 
   @override
   Future<Map<String, dynamic>> clearArchive() =>
@@ -290,7 +324,9 @@ class TracedEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> openNotificationSettings() => _traced(
-      'system/notification_settings', () => _inner.openNotificationSettings());
+    'system/notification_settings',
+    () => _inner.openNotificationSettings(),
+  );
 
   @override
   Future<Map<String, dynamic>> openUrl(String url) =>
@@ -306,16 +342,15 @@ class TracedEngineService implements EngineService {
     int intervalMinutes = 60,
     bool wifiOnly = true,
     bool requiresCharging = false,
-  }) =>
-      _traced(
-        'schedule/sync',
-        () => _inner.syncSchedule(
-          enabled: enabled,
-          intervalMinutes: intervalMinutes,
-          wifiOnly: wifiOnly,
-          requiresCharging: requiresCharging,
-        ),
-      );
+  }) => _traced(
+    'schedule/sync',
+    () => _inner.syncSchedule(
+      enabled: enabled,
+      intervalMinutes: intervalMinutes,
+      wifiOnly: wifiOnly,
+      requiresCharging: requiresCharging,
+    ),
+  );
 
   @override
   Future<Map<String, dynamic>> getFormats({
@@ -329,9 +364,9 @@ class TracedEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) => _traced(
-        'playlist/info',
-        () => _inner.getPlaylistInfo(url: url, config: config),
-      );
+    'playlist/info',
+    () => _inner.getPlaylistInfo(url: url, config: config),
+  );
 
   @override
   Future<Map<String, dynamic>> search({
@@ -340,46 +375,54 @@ class TracedEngineService implements EngineService {
     int limit = 20,
     required Map<String, dynamic> config,
   }) => _traced(
-        'search/query',
-        () => _inner.search(query: query, site: site, limit: limit, config: config),
-      );
+    'search/query',
+    () => _inner.search(query: query, site: site, limit: limit, config: config),
+  );
 
   @override
   Future<String?> getSharedUrl() =>
       _traced('intent/get_shared', _inner.getSharedUrl);
 
   @override
-  Stream<String> get sharedUrlStream =>
-      _inner.sharedUrlStream.map((url) {
-        AppLogger.info('Share intent received: ${_redactUrl(url)}',
-            tag: 'share-intent');
-        return url;
-      });
+  Stream<String> get sharedUrlStream => _inner.sharedUrlStream.map((url) {
+    AppLogger.info(
+      'Share intent received: ${_redactUrl(url)}',
+      tag: 'share-intent',
+    );
+    return url;
+  });
 
   @override
-  Future<Map<String, dynamic>> scanResumeCandidates(
-          {required String cacheDir}) =>
-      _traced('resume/scan',
-          () => _inner.scanResumeCandidates(cacheDir: cacheDir));
+  Future<Map<String, dynamic>> scanResumeCandidates({
+    required String cacheDir,
+  }) => _traced(
+    'resume/scan',
+    () => _inner.scanResumeCandidates(cacheDir: cacheDir),
+  );
 
   @override
-  Future<Map<String, dynamic>> reportResumeAttempt(
-          {required String cacheDir,
-          required String filepath,
-          required bool success}) =>
-      _traced(
-          'resume/report',
-          () => _inner.reportResumeAttempt(
-              cacheDir: cacheDir, filepath: filepath, success: success));
+  Future<Map<String, dynamic>> reportResumeAttempt({
+    required String cacheDir,
+    required String filepath,
+    required bool success,
+  }) => _traced(
+    'resume/report',
+    () => _inner.reportResumeAttempt(
+      cacheDir: cacheDir,
+      filepath: filepath,
+      success: success,
+    ),
+  );
 
   @override
   Future<Map<String, dynamic>> updateCheck() =>
       _traced('engine/update_check', _inner.updateCheck);
 
   @override
-  Future<Map<String, dynamic>> setUpdateChannel(String channel) =>
-      _traced('engine/set_update_channel',
-          () => _inner.setUpdateChannel(channel));
+  Future<Map<String, dynamic>> setUpdateChannel(String channel) => _traced(
+    'engine/set_update_channel',
+    () => _inner.setUpdateChannel(channel),
+  );
 
   @override
   Stream<Map<String, dynamic>> get logStream => _inner.logStream;
@@ -400,7 +443,13 @@ class TracedEngineService implements EngineService {
     try {
       final uri = Uri.parse(url);
       if (uri.queryParameters.isEmpty) {
-        return uri.replace(path: uri.path.length > 60 ? '...${uri.path.substring(uri.path.length - 60)}' : uri.path).toString();
+        return uri
+            .replace(
+              path: uri.path.length > 60
+                  ? '...${uri.path.substring(uri.path.length - 60)}'
+                  : uri.path,
+            )
+            .toString();
       }
       // Strip query tokens (sig, token, key) — keep param names for debugging.
       final redacted = uri.replace(
