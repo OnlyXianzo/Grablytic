@@ -6,16 +6,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'log_buffer.dart';
 import 'log_entry.dart';
+import 'log_rotation.dart';
 
 class AppLogger {
   static String? _logsDirPath;
   static SharedPreferences? _prefs;
   static bool _loggingEnabled = true;
-  static int _retentionDays = 7;
   static LogBuffer? _buffer;
 
   static const String _keyEnabled = 'logging_enabled';
-  static const String _keyRetention = 'logging_retention_days';
 
   // ── Persistent buffer (STEP 3A: time-buffered disk flush) ──────────────
   /// Lines waiting to be flushed to disk. Appended synchronously (cheap),
@@ -26,7 +25,7 @@ class AppLogger {
   static bool _flushInProgress = false;
   static const Duration _flushInterval = Duration(seconds: 30);
   static const String _appLogFileName = 'app_logs.txt';
-  static const int _appLogMaxBytes = 2 * 1024 * 1024; // 2 MB rolling cap
+  static const int _maxSealedChunks = 5;
   static Future<void> Function(Object error, StackTrace stack)? _fatalHook;
 
   /// Initialize the logger with the application directory and shared preferences.
@@ -36,7 +35,6 @@ class AppLogger {
 
     // Load user settings
     _loggingEnabled = prefs.getBool(_keyEnabled) ?? true;
-    _retentionDays = prefs.getInt(_keyRetention) ?? 7;
 
     if (_loggingEnabled) {
       try {
@@ -44,7 +42,6 @@ class AppLogger {
         if (!await logsDir.exists()) {
           await logsDir.create(recursive: true);
         }
-        await _runRetentionCleanup();
       } catch (e) {
         // Fallback or print in debug
         // ignore: avoid_print
@@ -60,21 +57,12 @@ class AppLogger {
   }
 
   static bool get isEnabled => _loggingEnabled;
-  static int get retentionDays => _retentionDays;
 
   /// Enable or disable logging.
   static Future<void> setEnabled(bool enabled) async {
     _loggingEnabled = enabled;
     await _prefs?.setBool(_keyEnabled, enabled);
     info('Logging ${enabled ? "enabled" : "disabled"}');
-  }
-
-  /// Set log retention in days.
-  static Future<void> setRetentionDays(int days) async {
-    _retentionDays = days;
-    await _prefs?.setInt(_keyRetention, days);
-    info('Log retention set to $days days');
-    await _runRetentionCleanup();
   }
 
   /// Write a log entry.
@@ -168,8 +156,23 @@ class AppLogger {
       final dayFile = File('$_logsDirPath/log_$dayStr.txt');
       await dayFile.writeAsString(blob, mode: FileMode.append);
       final appFile = File('$_logsDirPath/$_appLogFileName');
+      // T11: 1 MB chunked rotation on the serialized flush chain (async,
+      // never UI-blocking). Sealed chunks keep newest-first listing order.
+      final incoming = blob.length;
+      var current = await appFile.exists() ? await appFile.length() : 0;
+      if (await appFile.exists() &&
+          LogRotation.shouldRotate(current, incoming)) {
+        await _sealChunk(appFile);
+        current = 0;
+      }
+      if (current == 0) {
+        await appFile.writeAsString(
+          LogRotation.header(now),
+          mode: FileMode.append,
+        );
+      }
       await appFile.writeAsString(blob, mode: FileMode.append);
-      await _enforceAppLogCap(appFile);
+      await _pruneSealedChunks();
     } catch (e) {
       // Re-queue on transient I/O failure (disk full excluded to avoid loop).
       // ignore: avoid_print
@@ -179,25 +182,45 @@ class AppLogger {
     }
   }
 
-  /// Keeps `app_logs.txt` under [_appLogMaxBytes] by trimming the head,
-  /// preserving the most recent (most actionable) lines.
-  static Future<void> _enforceAppLogCap(File appFile) async {
+  /// Seals the full active chunk to `app_logs-YYYY-MM-DD-HH-mm-ss.txt`.
+  static Future<void> _sealChunk(File appFile) async {
     try {
-      final len = await appFile.length();
-      if (len <= _appLogMaxBytes) return;
-      final bytes = await appFile.readAsBytes();
-      final keep = bytes.sublist(bytes.length - _appLogMaxBytes);
-      // Align to next newline so we never start mid-line.
-      var start = 0;
-      for (var i = 0; i < keep.length && i < 4096; i++) {
-        if (keep[i] == 10) {
-          start = i + 1;
-          break;
-        }
+      final sealed = File('${appFile.parent.path}/${LogRotation.sealedName()}');
+      if (await sealed.exists()) {
+        await sealed.delete();
       }
-      await appFile.writeAsBytes(keep.sublist(start), mode: FileMode.write);
+      await appFile.rename(sealed.path);
     } catch (_) {
-      // Cap enforcement is best-effort; never crash the app over logs.
+      // Best-effort; next flush retries (append may briefly exceed cap).
+    }
+  }
+
+  /// Keeps only the newest [_maxSealedChunks] sealed chunks (T11 ASSUMPTION:
+  /// spec caps chunk size, not count; 5 x 1 MB bounds disk without a
+  /// day-based retention pref).
+  static Future<void> _pruneSealedChunks() async {
+    try {
+      final dir = Directory(_logsDirPath!);
+      final sealed = await dir
+          .list()
+          .where(
+            (e) =>
+                e is File &&
+                LogRotation.isSealedChunk(
+                  e.path.split(Platform.pathSeparator).last,
+                ),
+          )
+          .cast<File>()
+          .toList();
+      if (sealed.length <= _maxSealedChunks) return;
+      sealed.sort((a, b) => a.path.compareTo(b.path));
+      for (var i = 0; i < sealed.length - _maxSealedChunks; i++) {
+        try {
+          await sealed[i].delete();
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Pruning is best-effort; never crash the app over logs.
     }
   }
 
@@ -402,48 +425,13 @@ class AppLogger {
     }
   }
 
-  /// Automatically deletes log files older than the retention days configuration.
-  static Future<void> _runRetentionCleanup() async {
-    if (_logsDirPath == null) return;
-    try {
-      final logsDir = Directory(_logsDirPath!);
-      if (!await logsDir.exists()) return;
-
-      final now = DateTime.now();
-      final retentionThreshold = now.subtract(Duration(days: _retentionDays));
-
-      final files = await logsDir.list().toList();
-      for (final entity in files) {
-        if (entity is File && entity.path.endsWith('.txt')) {
-          final fileName = entity.uri.pathSegments.last;
-          if (fileName.startsWith('log_')) {
-            try {
-              // Extract date from log_YYYY-MM-DD.txt
-              final dateStr = fileName.substring(4, 14);
-              final logDate = DateTime.parse(dateStr);
-              if (logDate.isBefore(retentionThreshold)) {
-                await entity.delete();
-                // ignore: avoid_print
-                print('Deleted expired log file: $fileName');
-              }
-            } catch (e) {
-              // Skip if filename format is unexpected
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // ignore: avoid_print
-      print('Retention cleanup failed: $e');
-    }
-  }
-
   /// Retrieves list of all available log files.
   ///
-  /// Includes daily `log_*.txt` files, engine `engine_*.txt` mirrors (if any),
+  /// Includes daily `log_*.txt` files, 1 MB sealed `app_logs-*.txt` chunks
+  /// (T11), engine `engine_*.txt` mirrors (if any),
   /// `server_logs.log` + its RotatingFileHandler backups (`server_logs.log.1`
   /// … — previously invisible because they don't end with `.log`), and the
-  /// rolling `app_logs.txt` buffer flush target. Newest first, with
+  /// active `app_logs.txt` chunk flush target. Newest first, with
   /// `app_logs.txt` pinned first for the reporter's convenience.
   static Future<List<File>> getLogFiles() async {
     if (_logsDirPath == null) return [];

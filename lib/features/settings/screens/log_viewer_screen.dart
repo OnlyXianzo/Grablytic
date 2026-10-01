@@ -26,7 +26,6 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   int _fileBytes = 0;
   int _shownBytes = 0;
   bool _loggingEnabled = AppLogger.isEnabled;
-  int _retentionDays = AppLogger.retentionDays;
   int _selectedTab = 0;
   bool _includeFullLog = false;
   bool _exporting = false;
@@ -361,50 +360,26 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
             const Divider(height: 24),
             Row(
               children: [
-                Icon(Icons.calendar_today, color: cs.primary, size: 18),
+                Icon(Icons.folder_open_outlined, color: cs.primary, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Keep logs for $_retentionDays days',
+                        '1 MB chunked rotation',
                         style: tt.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                       Text(
-                        'Older logs will be automatically deleted',
+                        'Newest 5 chunks kept automatically',
                         style: tt.bodySmall?.copyWith(color: cs.outline),
                       ),
                     ],
                   ),
                 ),
               ],
-            ),
-            Slider(
-              value: _retentionDays.toDouble(),
-              min: 1,
-              max: 30,
-              divisions: 29,
-              label: '$_retentionDays days',
-              // onChanged = live label only (cheap setState). Persisting
-              // here would write prefs + rescan the log dir on every drag
-              // tick — persistence happens once in onChangeEnd.
-              onChanged: _loggingEnabled
-                  ? (val) {
-                      setState(() => _retentionDays = val.toInt());
-                    }
-                  : null,
-              onChangeEnd: _loggingEnabled
-                  ? (val) async {
-                      final days = val.toInt();
-                      if (days == AppLogger.retentionDays) return;
-                      await AppLogger.setRetentionDays(days);
-                      if (!mounted) return;
-                      setState(() => _retentionDays = days);
-                    }
-                  : null,
             ),
           ],
         ),
