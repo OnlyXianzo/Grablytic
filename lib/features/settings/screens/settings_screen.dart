@@ -2,7 +2,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/search_provider.dart';
@@ -20,7 +19,6 @@ import 'schedule_settings_screen.dart';
 import 'sponsorblock_settings_screen.dart';
 import 'about_screen.dart';
 import 'log_viewer_screen.dart';
-
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -46,503 +44,133 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              // 1. General & Interface
-              _SettingsSection(
-                title: 'General & Interface',
-                icon: Icons.tune,
-                children: [
-                  _SettingThemeSelector(
-                    currentTheme: settings.themeMode,
-                    onChanged: (mode) => ref.read(settingsProvider.notifier).setThemeMode(mode),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.grid_view_outlined,
-                    title: 'Library Grid View',
-                    subtitle: 'Display media cards in two-column masonry grid',
-                    value: settings.useGridView,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleGridView(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.notifications_outlined,
-                    title: 'Download Completion Alerts',
-                    subtitle: 'Notify when a file finishes',
-                    value: settings.completionAlerts,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleCompletionAlerts(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.share_outlined,
-                    title: 'Auto-start Download on Share',
-                    subtitle: 'Skip the preview sheet and start immediately when a link is shared',
-                    value: settings.autoStartDownloadOnShare,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleAutoStartDownloadOnShare(),
-                    colorScheme: colorScheme,
-                  ),
-                  const _BackgroundPermissionsSection(),
-                ],
-              ).animate().fadeIn(duration: 300.ms).slideX(begin: 0.05),
-
-              // 2. Directories & Storage
-              _SettingsSection(
-                title: 'Directories & Storage',
-                icon: Icons.folder_outlined,
-                children: [
-                  _SettingNavItem(
-                    icon: Icons.folder_outlined,
-                    title: 'Download folder',
-                    subtitle: settings.downloadPath,
-                    colorScheme: colorScheme,
-                    onTap: () async {
-                      try {
-                        final selectedDirectory = await FilePicker.getDirectoryPath();
-                        if (selectedDirectory != null && context.mounted) {
-                          ref.read(settingsProvider.notifier).setDownloadPath(selectedDirectory);
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Error picking folder: $e')),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.archive_outlined,
-                    title: 'Skip already-downloaded videos',
-                    subtitle: 'yt-dlp avoids re-downloading duplicates',
-                    value: settings.downloadArchive,
-                    onChanged: () => ref.read(settingsProvider.notifier).setDownloadArchive(!settings.downloadArchive),
-                    colorScheme: colorScheme,
-                  ),
-                  if (settings.downloadArchive)
-                    _SettingSwitch(
-                      icon: Icons.folder_special_outlined,
-                      title: 'Separate history per folder',
-                      subtitle: 'Separate archive per download folder',
-                      value: settings.archiveByFolder,
-                      onChanged: () => ref.read(settingsProvider.notifier).setArchiveByFolder(!settings.archiveByFolder),
-                      colorScheme: colorScheme,
-                    ),
-                  _SettingAction(
-                    icon: Icons.history,
-                    title: 'Clear Search History',
-                    subtitle: 'Remove cached search queries',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      ref.read(searchProvider.notifier).clear();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Search history cleared')),
-                      );
-                    },
-                  ),
-                  if (settings.downloadArchive)
-                    _SettingAction(
-                      icon: Icons.playlist_remove_outlined,
-                      title: 'Clear download archive',
-                      subtitle:
-                          'Allow skipped videos to download again',
-                      colorScheme: colorScheme,
-                      onTap: () async {
-                        Map<String, dynamic> res = {'success': false};
-                        try {
-                          res = await ref
-                              .read(engineProvider)
-                              .clearArchive();
-                        } catch (_) {}
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(res['removed'] == true
-                                    ? 'Download archive cleared'
-                                    : res['success'] == true
-                                        ? 'Archive already empty'
-                                        : 'Could not clear archive')),
-                          );
-                        }
-                      },
-                    ),
-                  // FEATURE 6: read-mostly storage meter for the download
-                  // folder (usage + largest files with safe per-file delete).
-                  // Keyed by path so a folder change triggers a rescan.
-                  StorageMeterCard(
-                    key: ValueKey(settings.downloadPath),
-                    downloadPath: settings.downloadPath,
-                  ),
-                ],
-              ).animate().fadeIn(delay: 50.ms, duration: 300.ms).slideX(begin: 0.05),
-
-              // 3. Network & Acceleration
-              _SettingsSection(
-                title: 'Network & Acceleration',
-                icon: Icons.speed,
-                children: [
-                  _SettingSwitch(
-                    icon: Icons.cloud_outlined,
-                    title: 'Wi-Fi Only Downloads',
-                    subtitle: 'Auto-resumed downloads wait for Wi-Fi',
-                    value: settings.wifiOnly,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleWifiOnly(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.speed,
-                    title: 'Turbo download mode',
-                    subtitle: 'Accelerate speed with multi-threading',
-                    value: settings.turboMode,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleTurboMode(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.air,
-                    title: 'Use aria2c accelerator',
-                    subtitle: 'Multi-connection download acceleration',
-                    value: settings.aria2cEnabled,
-                    onChanged: () => ref.read(settingsProvider.notifier).setAria2cEnabled(!settings.aria2cEnabled),
-                    colorScheme: colorScheme,
-                  ),
-                  if (settings.aria2cEnabled) ...[
-                    _Aria2cChunkSlider(
-                      chunks: settings.aria2cChunks,
-                      onChanged: (v) => ref.read(settingsProvider.notifier).setAria2cChunks(v),
-                      colorScheme: colorScheme,
-                    ),
-                    _Aria2cSpeedField(
-                      maxSpeed: settings.aria2cMaxSpeed,
-                      onChanged: (v) => ref.read(settingsProvider.notifier).setAria2cMaxSpeed(v),
-                      colorScheme: colorScheme,
-                    ),
-                  ],
-                  _SettingNavItem(
-                    icon: Icons.vpn_key_outlined,
-                    title: 'Proxy server',
-                    subtitle: (settings.proxy?.isNotEmpty ?? false)
-                        ? settings.proxy!
-                        : 'Not set — direct connection',
-                    colorScheme: colorScheme,
-                    onTap: () async {
-                      final controller =
-                          TextEditingController(text: settings.proxy ?? '');
-                      final picked = await showDialog<String>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
-                          title: const Text('Proxy server'),
-                          content: TextField(
-                            controller: controller,
-                            decoration: const InputDecoration(
-                              labelText: 'Proxy URL',
-                              hintText: 'http://proxy:8080',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.url,
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('Cancel'),
-                            ),
-                            if (settings.proxy?.isNotEmpty ?? false)
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, ''),
-                                child: const Text('Remove'),
-                              ),
-                            FilledButton(
-                              onPressed: () =>
-                                  Navigator.pop(ctx, controller.text.trim()),
-                              child: const Text('Save'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (picked != null && context.mounted) {
-                        ref
-                            .read(settingsProvider.notifier)
-                            .setProxy(picked.isEmpty ? null : picked);
-                      }
-                    },
-                  ),
-                  _ConcurrencySlider(
-                    value: settings.maxConcurrentDownloads,
-                    onChanged: (v) {
-                      ref
-                          .read(settingsProvider.notifier)
-                          .setMaxConcurrentDownloads(v);
-                      try {
-                        ref
-                            .read(engineProvider)
-                            .setConcurrency(v);
-                      } catch (_) {}
-                    },
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingNavItem(
-                    icon: Icons.tune,
-                    title: 'Quality presets',
-                    subtitle: 'Configure quality & container settings',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const PresetsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ).animate().fadeIn(delay: 100.ms, duration: 300.ms).slideX(begin: 0.05),
-
-              // 4. Media & Post-Processing
-              _SettingsSection(
-                title: 'Media & Subtitles',
-                icon: Icons.movie_filter_outlined,
-                children: [
-                  _SettingNavItem(
-                    icon: Icons.closed_caption_outlined,
-                    title: 'Subtitles',
-                    subtitle: 'Language, auto-captions & embedding',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SubtitleSettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _SettingNavItem(
-                    icon: Icons.block,
-                    title: 'SponsorBlock',
-                    subtitle: 'Skip sponsored segments',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SponsorBlockSettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.content_cut,
-                    title: 'Split video by chapters',
-                    subtitle: 'Split video into chapters after download',
-                    value: settings.splitChapters,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleSplitChapters(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.description_outlined,
-                    title: 'Save video description',
-                    subtitle: 'Save video description as a text file',
-                    value: settings.saveDescription,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleSaveDescription(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.image_outlined,
-                    title: 'Save thumbnails',
-                    subtitle: 'Download and keep the cover image next to each file',
-                    value: settings.saveThumbnails,
-                    onChanged: () => ref.read(settingsProvider.notifier).toggleSaveThumbnails(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingSwitch(
-                    icon: Icons.image_outlined,
-                    title: 'Lossless thumbnails (PNG)',
-                    subtitle: 'Save thumbnail image as PNG instead of JPG',
-                    value: settings.pngThumbnails,
-                    onChanged: () => ref.read(settingsProvider.notifier).togglePngThumbnails(),
-                    colorScheme: colorScheme,
-                  ),
-                ],
-              ).animate().fadeIn(delay: 150.ms, duration: 300.ms).slideX(begin: 0.05),
-
-              // 5. Automation & Scheduling
-              _SettingsSection(
-                title: 'Automation & Scheduling',
-                icon: Icons.auto_mode,
-                children: [
-                  _SettingNavItem(
-                    icon: Icons.schedule,
-                    title: 'Scheduled downloads',
-                    subtitle: 'Set time windows for downloads',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ScheduleSettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _SettingNavItem(
-                    icon: Icons.visibility_outlined,
-                    title: 'Observed Sources',
-                    subtitle: 'Monitor channels and playlists for automated downloads',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ObservedSourcesScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _SettingNavItem(
-                    icon: Icons.terminal,
-                    title: 'Custom download commands',
-                    subtitle: 'Custom yt-dlp argument templates',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const CommandTemplatesScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ).animate().fadeIn(delay: 200.ms, duration: 300.ms).slideX(begin: 0.05),
-
-              // 6. Accounts & Authentication
-              _SettingsSection(
-                title: 'Accounts & Authentication',
-                icon: Icons.security,
-                children: [
-                  _SettingNavItem(
-                    icon: Icons.cookie_outlined,
-                    title: 'Logins for members-only videos',
-                    subtitle: 'Site logins for members-only content',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const CookiesScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ).animate().fadeIn(delay: 250.ms, duration: 300.ms).slideX(begin: 0.05),
-
-              // 7. Packages
-              Padding(
-                padding: const EdgeInsets.only(top: 24, bottom: 8),
-                child: Text(
-                  'Packages',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              _PackagesSection(
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-              ).animate().fadeIn(delay: 280.ms, duration: 300.ms).slideX(begin: 0.05),
+              // T14: root is a category list; options live in sub-menus.
               _SettingNavItem(
-                icon: Icons.refresh_outlined,
-                title: 'Update channel',
-                subtitle: settings.updateChannel,
+                icon: Icons.tune,
+                title: 'General & Interface',
+                subtitle: 'Theme, grid, alerts, background',
                 colorScheme: colorScheme,
-                onTap: () async {
-                  final picked = await showDialog<String>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      title: const Text('Update channel'),
-                      content: RadioGroup<String>(
-                        groupValue: settings.updateChannel,
-                        onChanged: (v) => Navigator.pop(ctx, v),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            RadioListTile<String>(
-                              title: Text('stable'),
-                              value: 'stable',
-                            ),
-                            RadioListTile<String>(
-                              title: Text('nightly'),
-                              value: 'nightly',
-                            ),
-                            RadioListTile<String>(
-                              title: Text('master'),
-                              value: 'master',
-                            ),
-                          ],
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancel'),
-                        ),
-                      ],
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const GeneralSettingsScreen(),
                     ),
                   );
-                  if (picked != null && context.mounted) {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setUpdateChannel(picked);
-                    try {
-                      await ref.read(engineProvider).setUpdateChannel(picked);
-                    } catch (_) {}
-                  }
                 },
-              ).animate().fadeIn(delay: 285.ms, duration: 300.ms).slideX(begin: 0.05),
-
-              // 8. System & Diagnostics
-              _SettingsSection(
-                title: 'System & Diagnostics',
+              ),
+              _SettingNavItem(
+                icon: Icons.folder_outlined,
+                title: 'Directories & Storage',
+                subtitle: settings.downloadPath,
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StorageSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.speed,
+                title: 'Network & Acceleration',
+                subtitle: 'Wi-Fi, turbo, proxy, presets',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const NetworkSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.movie_filter_outlined,
+                title: 'Media & Subtitles',
+                subtitle: 'Subtitles, SponsorBlock, thumbnails',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MediaSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.auto_mode,
+                title: 'Automation & Scheduling',
+                subtitle: 'Schedules, sources, command templates',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AutomationSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.security,
+                title: 'Accounts & Authentication',
+                subtitle: 'Site logins for members-only content',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AccountsSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.inventory_2_outlined,
+                title: 'Packages & Updates',
+                subtitle: settings.updateChannel,
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PackagesSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
                 icon: Icons.info_outline,
-                children: [
-                  _SettingSwitch(
-                    icon: Icons.bug_report,
-                    title: 'Detailed engine logging',
-                    subtitle: 'Record extra engine detail for troubleshooting',
-                    value: settings.verbose,
-                    onChanged: () =>
-                        ref.read(settingsProvider.notifier).toggleVerbose(),
-                    colorScheme: colorScheme,
-                  ),
-                  _SettingNavItem(
-                    icon: Icons.bug_report_outlined,
-                    title: 'App logs & diagnostics',
-                    subtitle: 'View, export, delete, or report app logs',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const LogViewerScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _SettingNavItem(
-                    icon: Icons.info_outline,
-                    title: 'About Grablytic',
-                    subtitle: 'v0.0.1-beta · The Only',
-                    colorScheme: colorScheme,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const AboutScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ).animate().fadeIn(delay: 300.ms, duration: 300.ms).slideX(begin: 0.05),
+                title: 'System & Diagnostics',
+                subtitle: 'Logs, diagnostics, about',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SystemSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+
+              // (T14: moved to StorageSettingsScreen)
+
+              // (T14: moved to NetworkSettingsScreen)
+
+              // (T14: moved to MediaSettingsScreen)
+
+              // (T14: moved to AutomationSettingsScreen)
+
+              // (T14: moved to AccountsSettingsScreen)
+
+              // (T14: moved to PackagesSettingsScreen)
+
+              // (T14: moved to SystemSettingsScreen)
               const SizedBox(height: 32),
               // Version badge
               Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
                     borderRadius: BorderRadius.circular(12),
@@ -562,6 +190,636 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class GeneralSettingsScreen extends ConsumerWidget {
+  const GeneralSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('General & Interface')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'General & Interface',
+            icon: Icons.tune,
+            children: [
+              _SettingThemeSelector(
+                currentTheme: settings.themeMode,
+                onChanged: (mode) =>
+                    ref.read(settingsProvider.notifier).setThemeMode(mode),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.grid_view_outlined,
+                title: 'Library Grid View',
+                subtitle: 'Display media cards in two-column masonry grid',
+                value: settings.useGridView,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleGridView(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.notifications_outlined,
+                title: 'Download Completion Alerts',
+                subtitle: 'Notify when a file finishes',
+                value: settings.completionAlerts,
+                onChanged: () => ref
+                    .read(settingsProvider.notifier)
+                    .toggleCompletionAlerts(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.share_outlined,
+                title: 'Auto-start Download on Share',
+                subtitle:
+                    'Skip the preview sheet and start immediately when a link is shared',
+                value: settings.autoStartDownloadOnShare,
+                onChanged: () => ref
+                    .read(settingsProvider.notifier)
+                    .toggleAutoStartDownloadOnShare(),
+                colorScheme: colorScheme,
+              ),
+              const _BackgroundPermissionsSection(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StorageSettingsScreen extends ConsumerWidget {
+  const StorageSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Directories & Storage')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'Directories & Storage',
+            icon: Icons.folder_outlined,
+            children: [
+              _SettingNavItem(
+                icon: Icons.folder_outlined,
+                title: 'Download folder',
+                subtitle: settings.downloadPath,
+                colorScheme: colorScheme,
+                onTap: () async {
+                  try {
+                    final selectedDirectory =
+                        await FilePicker.getDirectoryPath();
+                    if (selectedDirectory != null && context.mounted) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setDownloadPath(selectedDirectory);
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error picking folder: $e')),
+                      );
+                    }
+                  }
+                },
+              ),
+              _SettingSwitch(
+                icon: Icons.archive_outlined,
+                title: 'Skip already-downloaded videos',
+                subtitle: 'yt-dlp avoids re-downloading duplicates',
+                value: settings.downloadArchive,
+                onChanged: () => ref
+                    .read(settingsProvider.notifier)
+                    .setDownloadArchive(!settings.downloadArchive),
+                colorScheme: colorScheme,
+              ),
+              if (settings.downloadArchive)
+                _SettingSwitch(
+                  icon: Icons.folder_special_outlined,
+                  title: 'Separate history per folder',
+                  subtitle: 'Separate archive per download folder',
+                  value: settings.archiveByFolder,
+                  onChanged: () => ref
+                      .read(settingsProvider.notifier)
+                      .setArchiveByFolder(!settings.archiveByFolder),
+                  colorScheme: colorScheme,
+                ),
+              _SettingAction(
+                icon: Icons.history,
+                title: 'Clear Search History',
+                subtitle: 'Remove cached search queries',
+                colorScheme: colorScheme,
+                onTap: () {
+                  ref.read(searchProvider.notifier).clear();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Search history cleared')),
+                  );
+                },
+              ),
+              if (settings.downloadArchive)
+                _SettingAction(
+                  icon: Icons.playlist_remove_outlined,
+                  title: 'Clear download archive',
+                  subtitle: 'Allow skipped videos to download again',
+                  colorScheme: colorScheme,
+                  onTap: () async {
+                    Map<String, dynamic> res = {'success': false};
+                    try {
+                      res = await ref.read(engineProvider).clearArchive();
+                    } catch (_) {}
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            res['removed'] == true
+                                ? 'Download archive cleared'
+                                : res['success'] == true
+                                ? 'Archive already empty'
+                                : 'Could not clear archive',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              StorageMeterCard(
+                key: ValueKey(settings.downloadPath),
+                downloadPath: settings.downloadPath,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class NetworkSettingsScreen extends ConsumerWidget {
+  const NetworkSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Network & Acceleration')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'Network & Acceleration',
+            icon: Icons.speed,
+            children: [
+              _SettingSwitch(
+                icon: Icons.cloud_outlined,
+                title: 'Wi-Fi Only Downloads',
+                subtitle: 'Auto-resumed downloads wait for Wi-Fi',
+                value: settings.wifiOnly,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleWifiOnly(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.speed,
+                title: 'Turbo download mode',
+                subtitle: 'Accelerate speed with multi-threading',
+                value: settings.turboMode,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleTurboMode(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.air,
+                title: 'Use aria2c accelerator',
+                subtitle: 'Multi-connection download acceleration',
+                value: settings.aria2cEnabled,
+                onChanged: () => ref
+                    .read(settingsProvider.notifier)
+                    .setAria2cEnabled(!settings.aria2cEnabled),
+                colorScheme: colorScheme,
+              ),
+              if (settings.aria2cEnabled) ...[
+                _Aria2cChunkSlider(
+                  chunks: settings.aria2cChunks,
+                  onChanged: (v) =>
+                      ref.read(settingsProvider.notifier).setAria2cChunks(v),
+                  colorScheme: colorScheme,
+                ),
+                _Aria2cSpeedField(
+                  maxSpeed: settings.aria2cMaxSpeed,
+                  onChanged: (v) =>
+                      ref.read(settingsProvider.notifier).setAria2cMaxSpeed(v),
+                  colorScheme: colorScheme,
+                ),
+              ],
+              _SettingNavItem(
+                icon: Icons.vpn_key_outlined,
+                title: 'Proxy server',
+                subtitle: (settings.proxy?.isNotEmpty ?? false)
+                    ? settings.proxy!
+                    : 'Not set — direct connection',
+                colorScheme: colorScheme,
+                onTap: () async {
+                  final controller = TextEditingController(
+                    text: settings.proxy ?? '',
+                  );
+                  final picked = await showDialog<String>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      title: const Text('Proxy server'),
+                      content: TextField(
+                        controller: controller,
+                        decoration: const InputDecoration(
+                          labelText: 'Proxy URL',
+                          hintText: 'http://proxy:8080',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.url,
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel'),
+                        ),
+                        if (settings.proxy?.isNotEmpty ?? false)
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, ''),
+                            child: const Text('Remove'),
+                          ),
+                        FilledButton(
+                          onPressed: () =>
+                              Navigator.pop(ctx, controller.text.trim()),
+                          child: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (picked != null && context.mounted) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setProxy(picked.isEmpty ? null : picked);
+                  }
+                },
+              ),
+              _ConcurrencySlider(
+                value: settings.maxConcurrentDownloads,
+                onChanged: (v) {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setMaxConcurrentDownloads(v);
+                  try {
+                    ref.read(engineProvider).setConcurrency(v);
+                  } catch (_) {}
+                },
+                colorScheme: colorScheme,
+              ),
+              _SettingNavItem(
+                icon: Icons.tune,
+                title: 'Quality presets',
+                subtitle: 'Configure quality & container settings',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PresetsScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class MediaSettingsScreen extends ConsumerWidget {
+  const MediaSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Media & Subtitles')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'Media & Subtitles',
+            icon: Icons.movie_filter_outlined,
+            children: [
+              _SettingNavItem(
+                icon: Icons.closed_caption_outlined,
+                title: 'Subtitles',
+                subtitle: 'Language, auto-captions & embedding',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SubtitleSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.block,
+                title: 'SponsorBlock',
+                subtitle: 'Skip sponsored segments',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SponsorBlockSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingSwitch(
+                icon: Icons.content_cut,
+                title: 'Split video by chapters',
+                subtitle: 'Split video into chapters after download',
+                value: settings.splitChapters,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleSplitChapters(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.description_outlined,
+                title: 'Save video description',
+                subtitle: 'Save video description as a text file',
+                value: settings.saveDescription,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleSaveDescription(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.image_outlined,
+                title: 'Save thumbnails',
+                subtitle: 'Download and keep the cover image next to each file',
+                value: settings.saveThumbnails,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleSaveThumbnails(),
+                colorScheme: colorScheme,
+              ),
+              _SettingSwitch(
+                icon: Icons.image_outlined,
+                title: 'Lossless thumbnails (PNG)',
+                subtitle: 'Save thumbnail image as PNG instead of JPG',
+                value: settings.pngThumbnails,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).togglePngThumbnails(),
+                colorScheme: colorScheme,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AutomationSettingsScreen extends ConsumerWidget {
+  const AutomationSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Automation & Scheduling')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'Automation & Scheduling',
+            icon: Icons.auto_mode,
+            children: [
+              _SettingNavItem(
+                icon: Icons.schedule,
+                title: 'Scheduled downloads',
+                subtitle: 'Set time windows for downloads',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ScheduleSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.visibility_outlined,
+                title: 'Observed Sources',
+                subtitle:
+                    'Monitor channels and playlists for automated downloads',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ObservedSourcesScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.terminal,
+                title: 'Custom download commands',
+                subtitle: 'Custom yt-dlp argument templates',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CommandTemplatesScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AccountsSettingsScreen extends ConsumerWidget {
+  const AccountsSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Accounts & Authentication')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'Accounts & Authentication',
+            icon: Icons.security,
+            children: [
+              _SettingNavItem(
+                icon: Icons.cookie_outlined,
+                title: 'Logins for members-only videos',
+                subtitle: 'Site logins for members-only content',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const CookiesScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PackagesSettingsScreen extends ConsumerWidget {
+  const PackagesSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Packages & Updates')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 8),
+            child: Text(
+              'Packages',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _PackagesSection(colorScheme: colorScheme, textTheme: textTheme),
+          _SettingNavItem(
+            icon: Icons.refresh_outlined,
+            title: 'Update channel',
+            subtitle: settings.updateChannel,
+            colorScheme: colorScheme,
+            onTap: () async {
+              final picked = await showDialog<String>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: const Text('Update channel'),
+                  content: RadioGroup<String>(
+                    groupValue: settings.updateChannel,
+                    onChanged: (v) => Navigator.pop(ctx, v),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RadioListTile<String>(
+                          title: Text('stable'),
+                          value: 'stable',
+                        ),
+                        RadioListTile<String>(
+                          title: Text('nightly'),
+                          value: 'nightly',
+                        ),
+                        RadioListTile<String>(
+                          title: Text('master'),
+                          value: 'master',
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              );
+              if (picked != null && context.mounted) {
+                ref.read(settingsProvider.notifier).setUpdateChannel(picked);
+                try {
+                  await ref.read(engineProvider).setUpdateChannel(picked);
+                } catch (_) {}
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SystemSettingsScreen extends ConsumerWidget {
+  const SystemSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('System & Diagnostics')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+        children: [
+          _SettingsSection(
+            title: 'System & Diagnostics',
+            icon: Icons.info_outline,
+            children: [
+              _SettingSwitch(
+                icon: Icons.bug_report,
+                title: 'Detailed engine logging',
+                subtitle: 'Record extra engine detail for troubleshooting',
+                value: settings.verbose,
+                onChanged: () =>
+                    ref.read(settingsProvider.notifier).toggleVerbose(),
+                colorScheme: colorScheme,
+              ),
+              _SettingNavItem(
+                icon: Icons.bug_report_outlined,
+                title: 'App logs & diagnostics',
+                subtitle: 'View, export, delete, or report app logs',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.info_outline,
+                title: 'About Grablytic',
+                subtitle: 'v0.0.1-beta · The Only',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AboutScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -777,8 +1035,13 @@ class _SettingNavItem extends StatelessWidget {
               const SizedBox(width: 8),
               Semantics(
                 label: 'Navigate',
-                child: trailing ??
-                    Icon(Icons.chevron_right, color: colorScheme.outline, size: 20),
+                child:
+                    trailing ??
+                    Icon(
+                      Icons.chevron_right,
+                      color: colorScheme.outline,
+                      size: 20,
+                    ),
               ),
             ],
           ),
@@ -835,7 +1098,9 @@ class _SettingAction extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                      style: textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
@@ -896,8 +1161,11 @@ class _ConcurrencySlider extends StatelessWidget {
                       color: colorScheme.surfaceContainer,
                       shape: BoxShape.circle,
                     ),
-                    child:
-                        Icon(Icons.download_outlined, color: colorScheme.outline, size: 20),
+                    child: Icon(
+                      Icons.download_outlined,
+                      color: colorScheme.outline,
+                      size: 20,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -905,7 +1173,10 @@ class _ConcurrencySlider extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Simultaneous downloads', style: textTheme.bodyLarge),
+                      Text(
+                        'Simultaneous downloads',
+                        style: textTheme.bodyLarge,
+                      ),
                       Text(
                         value == 1
                             ? '1 at a time — extras queue'
@@ -941,7 +1212,9 @@ class _ConcurrencySlider extends StatelessWidget {
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: colorScheme.errorContainer.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(8),
@@ -949,8 +1222,11 @@ class _ConcurrencySlider extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.warning_amber_outlined,
-                            size: 16, color: colorScheme.onErrorContainer),
+                        Icon(
+                          Icons.warning_amber_outlined,
+                          size: 16,
+                          color: colorScheme.onErrorContainer,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1099,7 +1375,11 @@ class _Aria2cSpeedFieldState extends State<_Aria2cSpeedField> {
                 color: widget.colorScheme.surfaceContainer,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.speed, color: widget.colorScheme.outline, size: 20),
+              child: Icon(
+                Icons.speed,
+                color: widget.colorScheme.outline,
+                size: 20,
+              ),
             ),
           ),
           const SizedBox(width: 16),
@@ -1121,21 +1401,28 @@ class _Aria2cSpeedFieldState extends State<_Aria2cSpeedField> {
             width: 100,
             child: TextField(
               controller: _controller,
-              style: TextStyle(fontFamily: 'InstrumentSans',
+              style: TextStyle(
+                fontFamily: 'InstrumentSans',
                 fontSize: 14,
                 color: widget.colorScheme.onSurface,
               ),
               decoration: InputDecoration(
                 hintText: 'Unlimited',
-                hintStyle: TextStyle(fontFamily: 'InstrumentSans',
+                hintStyle: TextStyle(
+                  fontFamily: 'InstrumentSans',
                   color: widget.colorScheme.onSurfaceVariant,
                   fontSize: 14,
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: widget.colorScheme.outlineVariant),
+                  borderSide: BorderSide(
+                    color: widget.colorScheme.outlineVariant,
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 isDense: true,
               ),
               keyboardType: TextInputType.text,
@@ -1181,7 +1468,11 @@ class _SettingThemeSelector extends StatelessWidget {
                   color: colorScheme.surfaceContainer,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.palette_outlined, color: colorScheme.outline, size: 20),
+                child: Icon(
+                  Icons.palette_outlined,
+                  color: colorScheme.outline,
+                  size: 20,
+                ),
               ),
             ),
             const SizedBox(width: 16),
@@ -1319,7 +1610,8 @@ class _BackgroundPermissionsSectionState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-              'Notifications are off — progress still shows in the app.'),
+            'Notifications are off — progress still shows in the app.',
+          ),
           action: SnackBarAction(
             label: 'Open settings',
             onPressed: () async {
@@ -1353,9 +1645,7 @@ class _BackgroundPermissionsSectionState
           trailing: _exempt == true
               ? Icon(Icons.check_circle, color: colorScheme.tertiary)
               : null,
-          onTap: _working
-              ? () {}
-              : () => _run(engine.requestBatteryExemption),
+          onTap: _working ? () {} : () => _run(engine.requestBatteryExemption),
         ),
         _SettingNavItem(
           icon: Icons.notifications_outlined,
@@ -1378,10 +1668,7 @@ class _PackagesSection extends ConsumerWidget {
   final ColorScheme colorScheme;
   final TextTheme textTheme;
 
-  const _PackagesSection({
-    required this.colorScheme,
-    required this.textTheme,
-  });
+  const _PackagesSection({required this.colorScheme, required this.textTheme});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1405,7 +1692,9 @@ class _PackagesSection extends ConsumerWidget {
               children: [
                 Text(
                   status.error!,
-                  style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.error,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _buildRebootstrapAllButton(ref),
@@ -1423,32 +1712,40 @@ class _PackagesSection extends ConsumerWidget {
         }
 
         final ytDlp = lookup(
-            'yt-dlp',
-            BinaryStatus(
-                name: 'yt-dlp',
-                ok: status.ytDlpVersion != null,
-                version: status.ytDlpVersion));
+          'yt-dlp',
+          BinaryStatus(
+            name: 'yt-dlp',
+            ok: status.ytDlpVersion != null,
+            version: status.ytDlpVersion,
+          ),
+        );
         final ffmpeg = lookup(
-            'ffmpeg',
-            BinaryStatus(
-                name: 'ffmpeg',
-                ok: status.ffmpegOk,
-                version: status.ffmpegVersion));
+          'ffmpeg',
+          BinaryStatus(
+            name: 'ffmpeg',
+            ok: status.ffmpegOk,
+            version: status.ffmpegVersion,
+          ),
+        );
         final aria2c = lookup(
-            'aria2c',
-            BinaryStatus(
-                name: 'aria2c',
-                ok: status.aria2cOk,
-                version: status.aria2cVersion));
+          'aria2c',
+          BinaryStatus(
+            name: 'aria2c',
+            ok: status.aria2cOk,
+            version: status.aria2cVersion,
+          ),
+        );
         final jsName = status.jsRuntime != null && status.jsRuntime != 'none'
             ? status.jsRuntime!
             : (Platform.isAndroid ? 'QuickJS' : 'Deno');
         final jsRecord = lookup(
-            jsName,
-            BinaryStatus(
-                name: jsName,
-                ok: status.jsRuntimeOk,
-                version: status.jsRuntimeOk ? status.jsRuntimeVersion : null));
+          jsName,
+          BinaryStatus(
+            name: jsName,
+            ok: status.jsRuntimeOk,
+            version: status.jsRuntimeOk ? status.jsRuntimeVersion : null,
+          ),
+        );
 
         final packages = [
           _SettingsBinaryInfo(
@@ -1456,7 +1753,8 @@ class _PackagesSection extends ConsumerWidget {
             ok: ytDlp.ok,
             version: ytDlp.version,
             source: ytDlp.source,
-            detail: ytDlp.detail ?? 'Core media extraction engine (Python package)',
+            detail:
+                ytDlp.detail ?? 'Core media extraction engine (Python package)',
             actionable: ytDlp.isActionable,
           ),
           _SettingsBinaryInfo(
@@ -1464,13 +1762,17 @@ class _PackagesSection extends ConsumerWidget {
             ok: ffmpeg.ok,
             version: ffmpeg.version,
             source: ffmpeg.source,
-            detail: ffmpeg.detail ?? 'Media processor for audio/video muxing and encoding',
+            detail:
+                ffmpeg.detail ??
+                'Media processor for audio/video muxing and encoding',
             actionable: ffmpeg.isActionable,
           ),
           _SettingsBinaryInfo(
             name: 'aria2c',
             ok: aria2c.ok || Platform.isAndroid,
-            version: aria2c.version ?? (Platform.isAndroid ? 'Compiled v1.37.0' : null),
+            version:
+                aria2c.version ??
+                (Platform.isAndroid ? 'Compiled v1.37.0' : null),
             source: Platform.isAndroid ? 'bundled' : aria2c.source,
             detail: Platform.isAndroid
                 ? 'Compiled static native downloader (bundled execution)'
@@ -1482,7 +1784,9 @@ class _PackagesSection extends ConsumerWidget {
             ok: jsRecord.ok,
             version: jsRecord.version,
             source: jsRecord.source,
-            detail: jsRecord.detail ?? 'JavaScript runtime for signature deciphering & extractors',
+            detail:
+                jsRecord.detail ??
+                'JavaScript runtime for signature deciphering & extractors',
             actionable: jsRecord.isActionable,
           ),
         ];
@@ -1491,9 +1795,7 @@ class _PackagesSection extends ConsumerWidget {
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerLowest,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withAlpha(40),
-            ),
+            border: Border.all(color: colorScheme.outlineVariant.withAlpha(40)),
           ),
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1525,19 +1827,32 @@ class _PackagesSection extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
-                    onTap: () => _showPackageDetails(context, ref, pkg, colorScheme, textTheme),
+                    onTap: () => _showPackageDetails(
+                      context,
+                      ref,
+                      pkg,
+                      colorScheme,
+                      textTheme,
+                    ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 8,
+                      ),
                       child: Row(
                         children: [
                           Icon(
                             pkg.ok
                                 ? Icons.check_circle
-                                : (pkg.optional ? Icons.hourglass_empty : Icons.cancel),
+                                : (pkg.optional
+                                      ? Icons.hourglass_empty
+                                      : Icons.cancel),
                             size: 18,
                             color: pkg.ok
                                 ? colorScheme.tertiary
-                                : (pkg.optional ? colorScheme.outline : colorScheme.error),
+                                : (pkg.optional
+                                      ? colorScheme.outline
+                                      : colorScheme.error),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1563,7 +1878,9 @@ class _PackagesSection extends ConsumerWidget {
                                   Text(
                                     pkg.ok
                                         ? 'Installed'
-                                        : (pkg.optional ? 'Optional' : 'Not installed'),
+                                        : (pkg.optional
+                                              ? 'Optional'
+                                              : 'Not installed'),
                                     style: textTheme.mono.copyWith(
                                       color: pkg.ok
                                           ? colorScheme.tertiary
@@ -1598,9 +1915,7 @@ class _PackagesSection extends ConsumerWidget {
                   label: const Text('Check All Packages'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: colorScheme.primary,
-                    side: BorderSide(
-                      color: colorScheme.primary.withAlpha(100),
-                    ),
+                    side: BorderSide(color: colorScheme.primary.withAlpha(100)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1654,11 +1969,15 @@ class _PackagesSection extends ConsumerWidget {
                     Icon(
                       binary.ok
                           ? Icons.check_circle
-                          : (binary.optional ? Icons.info_outline : Icons.cancel),
+                          : (binary.optional
+                                ? Icons.info_outline
+                                : Icons.cancel),
                       size: 24,
                       color: binary.ok
                           ? colorScheme.tertiary
-                          : (binary.optional ? colorScheme.outline : colorScheme.error),
+                          : (binary.optional
+                                ? colorScheme.outline
+                                : colorScheme.error),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1684,7 +2003,10 @@ class _PackagesSection extends ConsumerWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: binary.ok
                             ? colorScheme.tertiaryContainer.withAlpha(60)
@@ -1695,7 +2017,9 @@ class _PackagesSection extends ConsumerWidget {
                         binary.ok ? 'INSTALLED' : 'STATUS',
                         style: textTheme.labelSmall?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: binary.ok ? colorScheme.tertiary : colorScheme.onSurfaceVariant,
+                          color: binary.ok
+                              ? colorScheme.tertiary
+                              : colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -1733,7 +2057,10 @@ class _PackagesSection extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  binary.detail ?? (binary.ok ? 'Verified operational on this system.' : 'No additional diagnostic details available.'),
+                  binary.detail ??
+                      (binary.ok
+                          ? 'Verified operational on this system.'
+                          : 'No additional diagnostic details available.'),
                   style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -1746,7 +2073,9 @@ class _PackagesSection extends ConsumerWidget {
                       ref.invalidate(engineStatusProvider);
                       Navigator.pop(ctx);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Re-checked ${binary.name} status.')),
+                        SnackBar(
+                          content: Text('Re-checked ${binary.name} status.'),
+                        ),
                       );
                     },
                     icon: const Icon(Icons.refresh, size: 18),
@@ -1779,12 +2108,8 @@ class _PackagesSection extends ConsumerWidget {
         label: const Text('Re-check all packages'),
         style: OutlinedButton.styleFrom(
           foregroundColor: colorScheme.primary,
-          side: BorderSide(
-            color: colorScheme.primary.withAlpha(100),
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          side: BorderSide(color: colorScheme.primary.withAlpha(100)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
     );
@@ -1797,6 +2122,7 @@ class _SettingsBinaryInfo {
   final String? version;
   final String source;
   final String? detail;
+
   /// False for states no re-bootstrap can fix (e.g. unsupported platform).
   final bool actionable;
 
@@ -1837,4 +2163,3 @@ class _SettingsBinaryInfo {
     return null;
   }
 }
-
