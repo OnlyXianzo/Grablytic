@@ -90,21 +90,25 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         : tail;
     _copyToClipboard(
       'Please analyze the following error logs from the Grablytic Android/desktop media downloader app.\n'
-      'Explain what the bug is, why it happened, and what went wrong. Provide a formatted GitHub Issue '
-      'description following standard bug report templates so I can paste it into GitHub Issues for review.\n\n'
-      'SYSTEM LOG DETAILS:\n$truncated',
+          'Explain what the bug is, why it happened, and what went wrong. Provide a formatted GitHub Issue '
+          'description following standard bug report templates so I can paste it into GitHub Issues for review.\n\n'
+          'SYSTEM LOG DETAILS:\n$truncated',
       'System prompt and log content copied! Paste this into any AI (Gemini, Grok, ChatGPT, Claude) '
-      'to generate your GitHub Issue.',
+          'to generate your GitHub Issue.',
     );
   }
 
   void _openGithubIssues() {
     Clipboard.setData(
-      const ClipboardData(text: 'https://github.com/OnlyXianzo/Grablytic/issues/new'),
+      const ClipboardData(
+        text: 'https://github.com/OnlyXianzo/Grablytic/issues/new',
+      ),
     );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('GitHub link copied! Open your browser and paste to create the issue.'),
+        content: Text(
+          'GitHub link copied! Open your browser and paste to create the issue.',
+        ),
       ),
     );
   }
@@ -118,25 +122,23 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     setState(() => _reporting = true);
     try {
       final reporter = GithubReporter();
-      final fileName =
-          _selectedFile != null ? _selectedFile!.path.split('/').last : 'none';
+      final fileName = _selectedFile != null
+          ? _selectedFile!.path.split('/').last
+          : 'none';
       final result = await reporter.reportManual(
         userSummary: _selectedFile != null
             ? 'Log report from $fileName'
             : 'Manual log report from Diagnostics screen',
         userSteps: 'Filed manually from Diagnostics & Logs screen.',
         fullLog: _includeFullLog,
-        context: {
-          'log_file': fileName,
-          'full_log': _includeFullLog,
-        },
+        context: {'log_file': fileName, 'full_log': _includeFullLog},
       );
       if (!mounted) return;
       switch (result.status) {
         case GithubReportStatus.created:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Issue filed: ${result.url}')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Issue filed: ${result.url}')));
           break;
         case GithubReportStatus.duplicate:
           ScaffoldMessenger.of(context).showSnackBar(
@@ -144,24 +146,30 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           );
           break;
         case GithubReportStatus.manualNeeded:
-          await Clipboard.setData(ClipboardData(
-              text: '${result.title}\n\n${result.body}'));
+          await Clipboard.setData(
+            ClipboardData(text: '${result.title}\n\n${result.body}'),
+          );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                  'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new'),
+                'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new',
+              ),
               duration: Duration(seconds: 5),
             ),
           );
           break;
         case GithubReportStatus.failed:
-          await Clipboard.setData(ClipboardData(
-              text: '${result.title}\n\n${result.body}'));
+          await Clipboard.setData(
+            ClipboardData(text: '${result.title}\n\n${result.body}'),
+          );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('Upload failed — issue text copied for manual filing.')),
+              content: Text(
+                'Upload failed — issue text copied for manual filing.',
+              ),
+            ),
           );
           break;
       }
@@ -182,9 +190,9 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(dest.startsWith('ERROR:')
-              ? dest
-              : 'Log exported to:\n$dest'),
+          content: Text(
+            dest.startsWith('ERROR:') ? dest : 'Log exported to:\n$dest',
+          ),
           duration: const Duration(seconds: 5),
         ),
       );
@@ -311,7 +319,8 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                     ),
                   ],
                   selected: {_selectedTab},
-                  onSelectionChanged: (v) => setState(() => _selectedTab = v.first),
+                  onSelectionChanged: (v) =>
+                      setState(() => _selectedTab = v.first),
                 ),
               ),
             ),
@@ -337,77 +346,90 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: cs.outlineVariant.withAlpha(80)),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.bug_report, color: cs.primary, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Enable Diagnostics Logging',
-                      style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  Switch(
-                    value: _loggingEnabled,
-                    onChanged: (val) async {
-                      await AppLogger.setEnabled(val);
-                      setState(() => _loggingEnabled = val);
-                    },
-                  ),
-                ],
-              ),
-              const Divider(height: 24),
-              Row(
-                children: [
-                  Icon(Icons.calendar_today, color: cs.primary, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Keep logs for $_retentionDays days',
-                          style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-                        ),
-                        Text(
-                          'Older logs will be automatically deleted',
-                          style: tt.bodySmall?.copyWith(color: cs.outline),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              Slider(
-                value: _retentionDays.toDouble(),
-                min: 1,
-                max: 30,
-                divisions: 29,
-                label: '$_retentionDays days',
-                // onChanged = live label only (cheap setState). Persisting
-                // here would write prefs + rescan the log dir on every drag
-                // tick — persistence happens once in onChangeEnd.
-                onChanged: _loggingEnabled
-                    ? (val) {
-                        setState(() => _retentionDays = val.toInt());
-                      }
-                    : null,
-                onChangeEnd: _loggingEnabled
-                    ? (val) async {
-                        final days = val.toInt();
-                        if (days == AppLogger.retentionDays) return;
-                        await AppLogger.setRetentionDays(days);
-                        if (!mounted) return;
-                        setState(() => _retentionDays = days);
-                      }
-                    : null,
-              ),
-            ],
+        // T13: collapsible so the log takes the full viewport when collapsed.
+        // Single-level scroll is preserved: outer Column is fixed + Expanded
+        // tab, with exactly one inner scrollable (no nested unbounded views).
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: Icon(Icons.bug_report, color: cs.primary, size: 20),
+          title: Text(
+            'Diagnostics',
+            style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
+          subtitle: Text(
+            'Logging controls — collapse for full log viewport',
+            style: tt.bodySmall?.copyWith(color: cs.outline),
+          ),
+          children: [
+            Row(
+              children: [
+                const SizedBox(width: 28),
+                Expanded(
+                  child: Text(
+                    'Enable Diagnostics Logging',
+                    style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Switch(
+                  value: _loggingEnabled,
+                  onChanged: (val) async {
+                    await AppLogger.setEnabled(val);
+                    setState(() => _loggingEnabled = val);
+                  },
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            Row(
+              children: [
+                Icon(Icons.calendar_today, color: cs.primary, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Keep logs for $_retentionDays days',
+                        style: tt.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        'Older logs will be automatically deleted',
+                        style: tt.bodySmall?.copyWith(color: cs.outline),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: _retentionDays.toDouble(),
+              min: 1,
+              max: 30,
+              divisions: 29,
+              label: '$_retentionDays days',
+              // onChanged = live label only (cheap setState). Persisting
+              // here would write prefs + rescan the log dir on every drag
+              // tick — persistence happens once in onChangeEnd.
+              onChanged: _loggingEnabled
+                  ? (val) {
+                      setState(() => _retentionDays = val.toInt());
+                    }
+                  : null,
+              onChangeEnd: _loggingEnabled
+                  ? (val) async {
+                      final days = val.toInt();
+                      if (days == AppLogger.retentionDays) return;
+                      await AppLogger.setRetentionDays(days);
+                      if (!mounted) return;
+                      setState(() => _retentionDays = days);
+                    }
+                  : null,
+            ),
+          ],
         ),
       ),
     );
@@ -441,7 +463,10 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                       items: _logFiles.map((f) {
                         return DropdownMenuItem<File>(
                           value: f,
-                          child: Text(f.path.split('/').last, style: tt.bodyMedium),
+                          child: Text(
+                            f.path.split('/').last,
+                            style: tt.bodyMedium,
+                          ),
                         );
                       }).toList(),
                       onChanged: (File? val) {
@@ -547,8 +572,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.description_outlined,
-                      size: 18, color: cs.primary),
+                  Icon(Icons.description_outlined, size: 18, color: cs.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -558,8 +582,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                   ),
                   Switch(
                     value: _includeFullLog,
-                    onChanged: (val) =>
-                        setState(() => _includeFullLog = val),
+                    onChanged: (val) => setState(() => _includeFullLog = val),
                   ),
                 ],
               ),
@@ -574,15 +597,15 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child:
-                              CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.file_download_outlined),
-                  label: Text(
-                      _exporting ? 'Exporting…' : 'Export log file'),
+                  label: Text(_exporting ? 'Exporting…' : 'Export log file'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
@@ -599,7 +622,8 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),
@@ -611,18 +635,21 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.bug_report_outlined),
                       label: Text(
-                          _reporting ? 'Reporting…' : 'Report to GitHub'),
+                        _reporting ? 'Reporting…' : 'Report to GitHub',
+                      ),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),
-              ],
+                ],
               ),
               const SizedBox(height: 12),
               Row(
@@ -634,7 +661,9 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                       label: const Text('Copy Prompt for AI'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),
@@ -646,7 +675,9 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                       label: const Text('Copy GitHub Link'),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),
