@@ -38,9 +38,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             Positioned.fill(
               child: Opacity(
                 opacity: 0.1,
-                child: CustomPaint(
-                  painter: _ParticlesPainter(),
-                ),
+                child: CustomPaint(painter: _ParticlesPainter()),
               ),
             ),
 
@@ -89,18 +87,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               bottom: 48,
               left: 0,
               right: 0,
-              child: Center(
-                child: Text(
-                  'Tap anywhere to continue',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: Colors.white38,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ).animate(onComplete: (c) => c.repeat(reverse: true))
-                  .fadeIn(duration: 600.ms)
-                  .then(delay: 1200.ms)
-                  .fadeOut(duration: 600.ms),
+              child:
+                  Center(
+                        child: Text(
+                          'Tap anywhere to continue',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: Colors.white38,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      )
+                      .animate(onComplete: (c) => c.repeat(reverse: true))
+                      .fadeIn(duration: 600.ms)
+                      .then(delay: 1200.ms)
+                      .fadeOut(duration: 600.ms),
             ),
         ],
       ),
@@ -119,27 +119,35 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: Image.asset(
-                'assets/brand/grablytic_logo.png',
-                width: 96,
-                height: 96,
-                fit: BoxFit.cover,
-              ),
-            )
+                  borderRadius: BorderRadius.circular(28),
+                  child: Image.asset(
+                    'assets/brand/grablytic_logo.png',
+                    width: 96,
+                    height: 96,
+                    fit: BoxFit.contain,
+                  ),
+                )
                 .animate()
-                .scale(begin: const Offset(0.8, 0.8), curve: Curves.easeOutBack, duration: 800.ms)
+                .scale(
+                  begin: const Offset(0.8, 0.8),
+                  curve: Curves.easeOutBack,
+                  duration: 800.ms,
+                )
                 .fadeIn(duration: 800.ms),
             const SizedBox(height: 24),
             Text(
-              'Grablytic',
-              style: textTheme.displayLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w300,
-              ),
-            )
+                  'Grablytic',
+                  style: textTheme.displayLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w300,
+                  ),
+                )
                 .animate()
-                .slideY(begin: 0.3, curve: Curves.easeOutCubic, duration: 800.ms)
+                .slideY(
+                  begin: 0.3,
+                  curve: Curves.easeOutCubic,
+                  duration: 800.ms,
+                )
                 .fadeIn(duration: 800.ms),
             const SizedBox(height: 16),
             Text(
@@ -148,9 +156,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 color: Colors.white70,
                 fontStyle: FontStyle.italic,
               ),
-            )
-                .animate(delay: 400.ms)
-                .fadeIn(duration: 600.ms),
+            ).animate(delay: 400.ms).fadeIn(duration: 600.ms),
           ],
         );
       case 2:
@@ -159,14 +165,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              '1,000+ sources',
-              style: textTheme.displayLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w300,
-              ),
-            )
+                  '1,000+ sources',
+                  style: textTheme.displayLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w300,
+                  ),
+                )
                 .animate()
-                .scale(begin: const Offset(0.8, 0.8), curve: Curves.easeOutBack, duration: 800.ms)
+                .scale(
+                  begin: const Offset(0.8, 0.8),
+                  curve: Curves.easeOutBack,
+                  duration: 800.ms,
+                )
                 .fadeIn(duration: 800.ms),
             const SizedBox(height: 24),
             Row(
@@ -208,20 +218,36 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ).animate(delay: 200.ms).fadeIn(),
               const SizedBox(height: 24),
               _buildFeatureCard(
-                title: 'Embedded Python & yt-dlp',
-                subtitle: 'Houses a sandboxed Python 3.11 environment to decrypt Google/Instagram signatures directly on-device.',
-                icon: Icons.code,
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-              ).animate(delay: 400.ms).slideY(begin: 0.2, curve: Curves.easeOutCubic, duration: 400.ms).fadeIn(),
+                    title: 'Embedded Python & yt-dlp',
+                    subtitle:
+                        'Houses a sandboxed Python 3.11 environment to decrypt Google/Instagram signatures directly on-device.',
+                    icon: Icons.code,
+                    colorScheme: colorScheme,
+                    textTheme: textTheme,
+                  )
+                  .animate(delay: 400.ms)
+                  .slideY(
+                    begin: 0.2,
+                    curve: Curves.easeOutCubic,
+                    duration: 400.ms,
+                  )
+                  .fadeIn(),
               const SizedBox(height: 16),
               _buildFeatureCard(
-                title: 'Bundled Static FFmpeg',
-                subtitle: 'Embeds post-processing binaries to merge separate high-bitrate video & audio streams on-device.',
-                icon: Icons.settings_input_component,
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-              ).animate(delay: 800.ms).slideY(begin: 0.2, curve: Curves.easeOutCubic, duration: 400.ms).fadeIn(),
+                    title: 'Bundled Static FFmpeg',
+                    subtitle:
+                        'Embeds post-processing binaries to merge separate high-bitrate video & audio streams on-device.',
+                    icon: Icons.settings_input_component,
+                    colorScheme: colorScheme,
+                    textTheme: textTheme,
+                  )
+                  .animate(delay: 800.ms)
+                  .slideY(
+                    begin: 0.2,
+                    curve: Curves.easeOutCubic,
+                    duration: 400.ms,
+                  )
+                  .fadeIn(),
               const SizedBox(height: 20),
               Text(
                 'No external apps required. Absolute maximum quality, processed locally.',
@@ -243,28 +269,51 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildFeatureCard(
-                title: '4K AV1. No compromise.',
-                subtitle: 'Downloads the absolute highest fidelity available.',
-                icon: Icons.high_quality,
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-              ).animate().slideX(begin: 0.5, curve: Curves.easeOutCubic, duration: 400.ms).fadeIn(),
+                    title: '4K AV1. No compromise.',
+                    subtitle:
+                        'Downloads the absolute highest fidelity available.',
+                    icon: Icons.high_quality,
+                    colorScheme: colorScheme,
+                    textTheme: textTheme,
+                  )
+                  .animate()
+                  .slideX(
+                    begin: 0.5,
+                    curve: Curves.easeOutCubic,
+                    duration: 400.ms,
+                  )
+                  .fadeIn(),
               const SizedBox(height: 16),
               _buildFeatureCard(
-                title: 'Zero throttle. Full speed.',
-                subtitle: '16 parallel connections bypass client-side limits.',
-                icon: Icons.speed,
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-              ).animate(delay: 400.ms).slideX(begin: 0.5, curve: Curves.easeOutCubic, duration: 400.ms).fadeIn(),
+                    title: 'Zero throttle. Full speed.',
+                    subtitle:
+                        '16 parallel connections bypass client-side limits.',
+                    icon: Icons.speed,
+                    colorScheme: colorScheme,
+                    textTheme: textTheme,
+                  )
+                  .animate(delay: 400.ms)
+                  .slideX(
+                    begin: 0.5,
+                    curve: Curves.easeOutCubic,
+                    duration: 400.ms,
+                  )
+                  .fadeIn(),
               const SizedBox(height: 16),
               _buildFeatureCard(
-                title: 'No ads. No account.',
-                subtitle: 'Fully anonymous and secure media acquisition.',
-                icon: Icons.lock_outline,
-                colorScheme: colorScheme,
-                textTheme: textTheme,
-              ).animate(delay: 800.ms).slideX(begin: 0.5, curve: Curves.easeOutCubic, duration: 400.ms).fadeIn(),
+                    title: 'No ads. No account.',
+                    subtitle: 'Fully anonymous and secure media acquisition.',
+                    icon: Icons.lock_outline,
+                    colorScheme: colorScheme,
+                    textTheme: textTheme,
+                  )
+                  .animate(delay: 800.ms)
+                  .slideX(
+                    begin: 0.5,
+                    curve: Curves.easeOutCubic,
+                    duration: 400.ms,
+                  )
+                  .fadeIn(),
               const SizedBox(height: 40),
               ElevatedButton(
                 onPressed: _nextBeat,
@@ -304,7 +353,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -344,9 +396,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: Colors.white70,
-                  ),
+                  style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
                 ),
               ],
             ),
@@ -364,7 +414,11 @@ class _ParticlesPainter extends CustomPainter {
     canvas.drawCircle(Offset(size.width * 0.2, size.height * 0.3), 2, paint);
     canvas.drawCircle(Offset(size.width * 0.8, size.height * 0.15), 1.5, paint);
     canvas.drawCircle(Offset(size.width * 0.45, size.height * 0.75), 3, paint);
-    canvas.drawCircle(Offset(size.width * 0.15, size.height * 0.65), 1.2, paint);
+    canvas.drawCircle(
+      Offset(size.width * 0.15, size.height * 0.65),
+      1.2,
+      paint,
+    );
     canvas.drawCircle(Offset(size.width * 0.7, size.height * 0.8), 2.5, paint);
   }
 

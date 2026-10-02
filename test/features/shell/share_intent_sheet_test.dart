@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/extraction_cache.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/home/screens/format_picker_screen.dart';
 import 'package:grablytic/features/home/widgets/share_intent_sheet.dart';
@@ -35,6 +37,19 @@ Future<SharedPreferences> _prefs() async {
 }
 
 void main() {
+  // Same connectivity mock as search_flow_test: the offline interception
+  // awaits a platform channel that never answers in widget tests.
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (MethodCall call) async {
+        if (call.method == 'check') return ['wifi'];
+        return null;
+      },
+    );
+  });
+
   group('ShareIntentSheet', () {
     testWidgets('shows URL and gated Continue when engine is ready',
         (tester) async {
@@ -148,6 +163,10 @@ void main() {
   });
 
   group('FormatPicker metadata preview header', () {
+    // T01's process-global extraction cache would leak the null-thumbnail
+    // result across tests sharing one URL — isolate each test.
+    setUp(() => ExtractionCache.instance.clear());
+
     testWidgets('shows duration + stream counts + fallback art',
         (tester) async {
       final prefs = await _prefs();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/engine_status_provider.dart';
+import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../screens/format_picker_screen.dart';
 import '../screens/playlist_selection_screen.dart';
@@ -30,9 +31,7 @@ class ShareIntentSheet extends ConsumerWidget {
     final target = isPlaylistUrl(url)
         ? PlaylistSelectionScreen(url: url, title: url)
         : FormatPickerScreen(url: url, title: url);
-    navigator.push(
-      MaterialPageRoute(builder: (_) => target),
-    );
+    navigator.push(MaterialPageRoute(builder: (_) => target));
   }
 
   @override
@@ -70,8 +69,7 @@ class ShareIntentSheet extends ConsumerWidget {
               label: 'Shared URL: $url',
               child: Text(
                 url,
-                style: textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
+                style: textTheme.mono.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
                 maxLines: 3,
@@ -114,7 +112,8 @@ class ShareIntentSheet extends ConsumerWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        statusError ?? 'Engine is not ready yet — try again shortly.',
+                        statusError ??
+                            'Engine is not ready yet — try again shortly.',
                         style: textTheme.bodySmall?.copyWith(
                           color: colorScheme.error,
                         ),
@@ -130,11 +129,10 @@ class ShareIntentSheet extends ConsumerWidget {
                 button: true,
                 label: 'Choose quality and download',
                 child: ElevatedButton(
-                  onPressed:
-                      ready ? () => _continueToPicker(context) : null,
+                  onPressed: ready ? () => _continueToPicker(context) : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colorScheme.primary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

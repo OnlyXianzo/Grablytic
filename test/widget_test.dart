@@ -63,10 +63,12 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 2));
 
       expect(find.text('Settings'), findsWidgets);
-      expect(find.text('Wi-Fi Only Downloads'), findsOneWidget);
-      expect(find.text('Download folder'), findsOneWidget);
+      // Folder hierarchy: options live in sub-menus.
+      expect(find.text('Network & Acceleration'), findsOneWidget);
+      expect(find.text('Directories & Storage'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);
-      expect(find.text('About Grablytic'), findsOneWidget);
+      expect(find.text('System & Diagnostics'), findsOneWidget);
+      expect(find.text('Wi-Fi Only Downloads'), findsNothing);
     });
 
     testWidgets('Navigation switches between tabs correctly',

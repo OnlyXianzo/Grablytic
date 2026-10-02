@@ -13,7 +13,11 @@ class AboutScreen extends ConsumerWidget {
   static const _profileUrl = 'https://github.com/OnlyXianzo';
   static const _feedbackEmail = 'xianzo.help@gmail.com';
 
-  Future<void> _openOrCopy(BuildContext context, WidgetRef ref, String target) async {
+  Future<void> _openOrCopy(
+    BuildContext context,
+    WidgetRef ref,
+    String target,
+  ) async {
     bool opened = false;
     try {
       final res = await ref.read(engineProvider).openUrl(target);
@@ -24,7 +28,9 @@ class AboutScreen extends ConsumerWidget {
     await Clipboard.setData(ClipboardData(text: target));
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Nothing could open it — copied instead:\n$target')),
+      SnackBar(
+        content: Text('Nothing could open it — copied instead:\n$target'),
+      ),
     );
   }
 
@@ -54,7 +60,7 @@ class AboutScreen extends ConsumerWidget {
                       'assets/brand/grablytic_logo.png',
                       width: 96,
                       height: 96,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -106,12 +112,17 @@ class AboutScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                     Text(
                       'Help us keep the project alive by contributing code, reporting bugs, or starring the repository on GitHub!',
-                      style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: () => _openOrCopy(context, ref, _repoUrl),
-                      icon: Semantics(label: 'GitHub star', child: Icon(Icons.star_border)),
+                      icon: Semantics(
+                        label: 'GitHub star',
+                        child: Icon(Icons.star_border),
+                      ),
                       label: const Text('Open repository on GitHub'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: colorScheme.primary,
@@ -142,18 +153,30 @@ class AboutScreen extends ConsumerWidget {
             _buildSectionHeader(context, 'SUPPORT & FEEDBACK'),
             const SizedBox(height: 12),
             ListTile(
-              leading: Semantics(label: 'Feedback', child: Icon(Icons.feedback_outlined)),
+              leading: Semantics(
+                label: 'Feedback',
+                child: Icon(Icons.feedback_outlined),
+              ),
               title: const Text('Send Feedback'),
               subtitle: const Text('Report bugs or request features'),
-              trailing: Semantics(label: 'Open', child: Icon(Icons.chevron_right)),
+              trailing: Semantics(
+                label: 'Open',
+                child: Icon(Icons.chevron_right),
+              ),
               onTap: () => _openOrCopy(context, ref, 'mailto:$_feedbackEmail'),
             ),
             const Divider(),
             ListTile(
-              leading: Semantics(label: 'Licenses', child: Icon(Icons.policy_outlined)),
+              leading: Semantics(
+                label: 'Licenses',
+                child: Icon(Icons.policy_outlined),
+              ),
               title: const Text('Open Source Licenses'),
               subtitle: const Text('Third-party software notices'),
-              trailing: Semantics(label: 'Open', child: Icon(Icons.chevron_right)),
+              trailing: Semantics(
+                label: 'Open',
+                child: Icon(Icons.chevron_right),
+              ),
               onTap: () {
                 showLicensePage(
                   context: context,
@@ -161,7 +184,11 @@ class AboutScreen extends ConsumerWidget {
                   applicationVersion: '0.0.1-beta',
                   applicationIcon: Padding(
                     padding: const EdgeInsets.all(8.0),
-                    child: Icon(Icons.cloud_download, color: colorScheme.primary, size: 48),
+                    child: Icon(
+                      Icons.cloud_download,
+                      color: colorScheme.primary,
+                      size: 48,
+                    ),
                   ),
                 );
               },

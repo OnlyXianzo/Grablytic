@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 /// Single source of truth for the engine IPC contract (BRUTAL-1).
 ///
@@ -40,6 +41,7 @@ abstract final class EngineMethods {
   static const String notificationRequest = 'system/notification_request';
   static const String notificationSettings = 'system/notification_settings';
   static const String syncSchedule = 'schedule/sync';
+  static const String syncQueueReminder = 'queue_reminder/sync';
 }
 
 /// Shared encode/decode for the engine envelope (BRUTAL-1).
@@ -54,8 +56,24 @@ abstract final class EngineEnvelope {
     required String id,
     required String method,
     required Map<String, dynamic> params,
-  }) =>
-      jsonEncode({'id': id, 'method': method, 'params': params});
+  }) => jsonEncode({'id': id, 'method': method, 'params': params});
+
+  /// Nullable JSON response string → map. Null/garbage/non-object maps to
+  /// `{}` (the historical platform-transport fallback), never throws.
+  /// Offloads payloads >= 50KB to a background isolate via [Isolate.run].
+  static Future<Map<String, dynamic>> decodeResponseAsync(String? raw) async {
+    if (raw == null || raw.isEmpty) return {};
+    if (raw.length < 50000) return decodeResponse(raw);
+    try {
+      return await Isolate.run(() {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        return <String, dynamic>{};
+      });
+    } catch (_) {
+      return {};
+    }
+  }
 
   /// Nullable JSON response string → map. Null/garbage/non-object maps to
   /// `{}` (the historical platform-transport fallback), never throws.
@@ -75,11 +93,10 @@ abstract final class EngineEnvelope {
     required String errorType,
     required String message,
     Map<String, dynamic>? extra,
-  }) =>
-      {
-        'success': false,
-        'error_type': errorType,
-        'error_message': message,
-        ...?extra,
-      };
+  }) => {
+    'success': false,
+    'error_type': errorType,
+    'error_message': message,
+    ...?extra,
+  };
 }

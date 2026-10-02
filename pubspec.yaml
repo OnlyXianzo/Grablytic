@@ -48,6 +48,7 @@ dependencies:
   connectivity_plus: ^7.1.1
   file_picker: ^11.0.2
   webview_flutter: ^4.13.1
+  video_player: ^2.9.2
 
 dev_dependencies:
   flutter_test:

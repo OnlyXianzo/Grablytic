@@ -56,7 +56,8 @@ Future<String> getDefaultDownloadPath() async {
   if (Platform.isAndroid) {
     try {
       return await _resolveDownloadDir(
-          Directory('/storage/emulated/0/Download'));
+        Directory('/storage/emulated/0/Download'),
+      );
     } catch (_) {
       final appDoc = await getApplicationDocumentsDirectory();
       return '${appDoc.path}/Downloads';
@@ -71,12 +72,7 @@ Future<String> getDefaultDownloadPath() async {
   }
 }
 
-
-enum AppThemeMode {
-  system,
-  light,
-  dark,
-}
+enum AppThemeMode { system, light, dark }
 
 class AppSettings {
   final bool wifiOnly;
@@ -90,6 +86,7 @@ class AppSettings {
   final String? proxy;
   final bool verbose;
   final bool autoStartDownloadOnShare;
+  final String shareBehavior;
   final String? cookiesPath;
   final bool useCookies;
   final List<Map<String, dynamic>> cookieProfiles;
@@ -123,6 +120,9 @@ class AppSettings {
   final bool downloadArchive;
   final bool archiveByFolder;
   final bool hasSeenBatteryPrompt;
+  final bool queueReminderEnabled;
+  final int queueReminderIntervalMinutes;
+
   /// Max simultaneous downloads (queue gate). 2 default (Seal-proven 3,
   /// YTDLnis default 1, 10 crash-prone); allowed 1–5, enforced in engine
   /// backstop + Dart queued UI.
@@ -141,6 +141,7 @@ class AppSettings {
     this.proxy,
     this.verbose = false,
     this.autoStartDownloadOnShare = false,
+    this.shareBehavior = 'ask',
     this.cookiesPath,
     this.useCookies = false,
     this.cookieProfiles = const [],
@@ -174,6 +175,8 @@ class AppSettings {
     this.downloadArchive = false,
     this.archiveByFolder = true,
     this.maxConcurrentDownloads = 2,
+    this.queueReminderEnabled = false,
+    this.queueReminderIntervalMinutes = 180,
   });
 
   static const Object _sentinel = Object();
@@ -191,6 +194,7 @@ class AppSettings {
     String? proxy,
     bool? verbose,
     bool? autoStartDownloadOnShare,
+    String? shareBehavior,
     Object? cookiesPath = _sentinel,
     bool? useCookies,
     List<Map<String, dynamic>>? cookieProfiles,
@@ -224,6 +228,8 @@ class AppSettings {
     bool? downloadArchive,
     bool? archiveByFolder,
     int? maxConcurrentDownloads,
+    bool? queueReminderEnabled,
+    int? queueReminderIntervalMinutes,
   }) {
     return AppSettings(
       wifiOnly: wifiOnly ?? this.wifiOnly,
@@ -237,8 +243,12 @@ class AppSettings {
       audioOnly: audioOnly ?? this.audioOnly,
       proxy: proxy ?? this.proxy,
       verbose: verbose ?? this.verbose,
-      autoStartDownloadOnShare: autoStartDownloadOnShare ?? this.autoStartDownloadOnShare,
-      cookiesPath: cookiesPath == _sentinel ? this.cookiesPath : (cookiesPath as String?),
+      autoStartDownloadOnShare:
+          autoStartDownloadOnShare ?? this.autoStartDownloadOnShare,
+      shareBehavior: shareBehavior ?? this.shareBehavior,
+      cookiesPath: cookiesPath == _sentinel
+          ? this.cookiesPath
+          : (cookiesPath as String?),
       useCookies: useCookies ?? this.useCookies,
       cookieProfiles: cookieProfiles ?? this.cookieProfiles,
       youtubeLoggedIn: youtubeLoggedIn ?? this.youtubeLoggedIn,
@@ -250,27 +260,36 @@ class AppSettings {
       updateChannel: updateChannel ?? this.updateChannel,
       downloadSubtitles: downloadSubtitles ?? this.downloadSubtitles,
       subtitleLanguages: subtitleLanguages ?? this.subtitleLanguages,
-      downloadAutoSubtitles: downloadAutoSubtitles ?? this.downloadAutoSubtitles,
+      downloadAutoSubtitles:
+          downloadAutoSubtitles ?? this.downloadAutoSubtitles,
       embedSubtitles: embedSubtitles ?? this.embedSubtitles,
       saveDescription: saveDescription ?? this.saveDescription,
       pngThumbnails: pngThumbnails ?? this.pngThumbnails,
       saveThumbnails: saveThumbnails ?? this.saveThumbnails,
       aria2cEnabled: aria2cEnabled ?? this.aria2cEnabled,
       aria2cChunks: aria2cChunks ?? this.aria2cChunks,
-      aria2cMaxSpeed: aria2cMaxSpeed == _sentinel ? this.aria2cMaxSpeed : (aria2cMaxSpeed as String?),
+      aria2cMaxSpeed: aria2cMaxSpeed == _sentinel
+          ? this.aria2cMaxSpeed
+          : (aria2cMaxSpeed as String?),
       observedSources: observedSources ?? this.observedSources,
       useGridView: useGridView ?? this.useGridView,
       customTemplates: customTemplates ?? this.customTemplates,
       scheduleEnabled: scheduleEnabled ?? this.scheduleEnabled,
       scheduleTime: scheduleTime ?? this.scheduleTime,
       scheduleDays: scheduleDays ?? this.scheduleDays,
-      scheduleIntervalMinutes: scheduleIntervalMinutes ?? this.scheduleIntervalMinutes,
+      scheduleIntervalMinutes:
+          scheduleIntervalMinutes ?? this.scheduleIntervalMinutes,
       scheduleWifiOnly: scheduleWifiOnly ?? this.scheduleWifiOnly,
-      scheduleRequiresCharging: scheduleRequiresCharging ?? this.scheduleRequiresCharging,
+      scheduleRequiresCharging:
+          scheduleRequiresCharging ?? this.scheduleRequiresCharging,
       sponsorBlockCats: sponsorBlockCats ?? this.sponsorBlockCats,
       downloadArchive: downloadArchive ?? this.downloadArchive,
       archiveByFolder: archiveByFolder ?? this.archiveByFolder,
-      maxConcurrentDownloads: maxConcurrentDownloads ?? this.maxConcurrentDownloads,
+      maxConcurrentDownloads:
+          maxConcurrentDownloads ?? this.maxConcurrentDownloads,
+      queueReminderEnabled: queueReminderEnabled ?? this.queueReminderEnabled,
+      queueReminderIntervalMinutes:
+          queueReminderIntervalMinutes ?? this.queueReminderIntervalMinutes,
     );
   }
 }
@@ -293,12 +312,17 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final downloadPath = _prefs.getString('downloadPath') ?? '/Internal/Videos';
     final themeIndex = _prefs.getInt('themeMode') ?? AppThemeMode.light.index;
     final onboardingCompleted = _prefs.getBool('onboardingCompleted') ?? false;
-    final hasSeenBatteryPrompt = _prefs.getBool('hasSeenBatteryPrompt') ?? false;
+    final hasSeenBatteryPrompt =
+        _prefs.getBool('hasSeenBatteryPrompt') ?? false;
     final qualityCeiling = _prefs.getString('qualityCeiling') ?? '4k';
     final audioOnly = _prefs.getBool('audioOnly') ?? false;
     final proxy = _prefs.getString('proxy');
     final verbose = _prefs.getBool('verbose') ?? false;
-    final autoStartDownloadOnShare = _prefs.getBool('autoStartDownloadOnShare') ?? false;
+    final autoStartDownloadOnShare =
+        _prefs.getBool('autoStartDownloadOnShare') ?? false;
+    final shareBehavior =
+        _prefs.getString('share_behavior') ??
+        (autoStartDownloadOnShare ? 'auto' : 'ask');
     final cookiesPath = _prefs.getString('cookiesPath');
     final youtubeLoggedIn = _prefs.getBool('youtubeLoggedIn') ?? false;
     final instagramLoggedIn = _prefs.getBool('instagramLoggedIn') ?? false;
@@ -308,8 +332,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final splitChapters = _prefs.getBool('splitChapters') ?? false;
     final updateChannel = _prefs.getString('updateChannel') ?? 'stable';
     final downloadSubtitles = _prefs.getBool('downloadSubtitles') ?? false;
-    final subtitleLanguages = _prefs.getStringList('subtitleLanguages') ?? ['en'];
-    final downloadAutoSubtitles = _prefs.getBool('downloadAutoSubtitles') ?? false;
+    final subtitleLanguages =
+        _prefs.getStringList('subtitleLanguages') ?? ['en'];
+    final downloadAutoSubtitles =
+        _prefs.getBool('downloadAutoSubtitles') ?? false;
     final embedSubtitles = _prefs.getBool('embedSubtitles') ?? false;
     final saveDescription = _prefs.getBool('saveDescription') ?? false;
     final pngThumbnails = _prefs.getBool('pngThumbnails') ?? false;
@@ -325,17 +351,25 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final observedSourcesJson = _prefs.getString('observedSources');
     final observedSources = observedSourcesJson != null
         ? List<Map<String, dynamic>>.from(
-            (jsonDecode(observedSourcesJson) as List).map((e) => Map<String, dynamic>.from(e as Map)),
+            (jsonDecode(observedSourcesJson) as List).map(
+              (e) => Map<String, dynamic>.from(e as Map),
+            ),
           )
         : <Map<String, dynamic>>[];
     final scheduleEnabled = _prefs.getBool('scheduleEnabled') ?? false;
     final scheduleTime = _prefs.getString('scheduleTime') ?? '22:00';
-    final scheduleDaysRaw = _prefs.getStringList('scheduleDays') ?? ['1', '2', '3', '4', '5'];
-    final scheduleDays = scheduleDaysRaw.map((e) => int.tryParse(e) ?? 1).toList();
-    final scheduleIntervalMinutes = _prefs.getInt('scheduleIntervalMinutes') ?? 60;
+    final scheduleDaysRaw =
+        _prefs.getStringList('scheduleDays') ?? ['1', '2', '3', '4', '5'];
+    final scheduleDays = scheduleDaysRaw
+        .map((e) => int.tryParse(e) ?? 1)
+        .toList();
+    final scheduleIntervalMinutes =
+        _prefs.getInt('scheduleIntervalMinutes') ?? 60;
     final scheduleWifiOnly = _prefs.getBool('scheduleWifiOnly') ?? true;
-    final scheduleRequiresCharging = _prefs.getBool('scheduleRequiresCharging') ?? false;
-    final sponsorBlockCats = _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
+    final scheduleRequiresCharging =
+        _prefs.getBool('scheduleRequiresCharging') ?? false;
+    final sponsorBlockCats =
+        _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
     final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
     final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
     final maxConcurrentDownloads =
@@ -350,6 +384,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       } catch (_) {}
     }
 
+    final queueReminderEnabled =
+        _prefs.getBool('queueReminderEnabled') ?? false;
+    final queueReminderIntervalMinutes =
+        _prefs.getInt('queueReminderIntervalMinutes') ?? 180;
+
     state = AppSettings(
       wifiOnly: wifiOnly,
       turboMode: turboMode,
@@ -363,6 +402,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       proxy: proxy,
       verbose: verbose,
       autoStartDownloadOnShare: autoStartDownloadOnShare,
+      shareBehavior: shareBehavior,
       cookiesPath: cookiesPath,
       youtubeLoggedIn: youtubeLoggedIn,
       instagramLoggedIn: instagramLoggedIn,
@@ -396,6 +436,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       downloadArchive: downloadArchive,
       archiveByFolder: archiveByFolder,
       maxConcurrentDownloads: maxConcurrentDownloads,
+      queueReminderEnabled: queueReminderEnabled,
+      queueReminderIntervalMinutes: queueReminderIntervalMinutes,
     );
   }
 
@@ -465,8 +507,22 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   void toggleAutoStartDownloadOnShare() {
     final newValue = !state.autoStartDownloadOnShare;
+    final newBehavior = newValue ? 'auto' : 'ask';
     _prefs.setBool('autoStartDownloadOnShare', newValue);
-    state = state.copyWith(autoStartDownloadOnShare: newValue);
+    _prefs.setString('share_behavior', newBehavior);
+    state = state.copyWith(
+      autoStartDownloadOnShare: newValue,
+      shareBehavior: newBehavior,
+    );
+  }
+
+  void setShareBehavior(String behavior) {
+    _prefs.setString('share_behavior', behavior);
+    _prefs.setBool('autoStartDownloadOnShare', behavior == 'auto');
+    state = state.copyWith(
+      shareBehavior: behavior,
+      autoStartDownloadOnShare: behavior == 'auto',
+    );
   }
 
   void setCookiesPath(String? path) {
@@ -651,7 +707,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   void setScheduleDays(List<int> value) {
-    _prefs.setStringList('scheduleDays', value.map((e) => e.toString()).toList());
+    _prefs.setStringList(
+      'scheduleDays',
+      value.map((e) => e.toString()).toList(),
+    );
     state = state.copyWith(scheduleDays: value);
   }
 
@@ -668,6 +727,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setScheduleRequiresCharging(bool value) {
     _prefs.setBool('scheduleRequiresCharging', value);
     state = state.copyWith(scheduleRequiresCharging: value);
+  }
+
+  void setQueueReminderEnabled(bool value) {
+    _prefs.setBool('queueReminderEnabled', value);
+    state = state.copyWith(queueReminderEnabled: value);
+  }
+
+  void setQueueReminderIntervalMinutes(int value) {
+    _prefs.setInt('queueReminderIntervalMinutes', value);
+    state = state.copyWith(queueReminderIntervalMinutes: value);
   }
 
   void setSponsorBlockCats(List<String> cats) {
@@ -754,8 +823,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
+  ref,
+) {
   final prefs = ref.watch(sharedPreferencesProvider);
   return SettingsNotifier(prefs);
 });
@@ -780,7 +850,10 @@ String? validateTemplateArgs(String args) {
         if (t.startsWith(prefix)) value = t.substring(prefix.length);
       }
       // Short -oVALUE form (e.g. -o%(title)s).
-      if (value == null && t.startsWith('-o') && t.length > 2 && !t.startsWith('--')) {
+      if (value == null &&
+          t.startsWith('-o') &&
+          t.length > 2 &&
+          !t.startsWith('--')) {
         value = t.substring(2);
       }
     }
@@ -801,6 +874,7 @@ String? validateTemplateArgs(String args) {
 /// as Seal-style custom commands) but the UI must warn: only run templates
 /// you typed yourself.
 bool templateWantsExec(String args) {
-  return RegExp(r'(^|\s)--exec(-before-download|-after-move)?(\s|=|$)')
-      .hasMatch(args);
+  return RegExp(
+    r'(^|\s)--exec(-before-download|-after-move)?(\s|=|$)',
+  ).hasMatch(args);
 }

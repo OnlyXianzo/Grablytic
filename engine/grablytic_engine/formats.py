@@ -114,7 +114,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 "stream_type": stream_type,
                 "format_note": f.get("format_note", ""),
                 "protocol": f.get("protocol", ""),
-                "url": f.get("webpage_url") or f.get("url", ""),
+                "url": f.get("url") or f.get("webpage_url") or "",
             })
 
         best_video = None
@@ -131,7 +131,66 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 if best_muxed is None or (f.get("height") or 0) > (best_muxed.get("height") or 0):
                     best_muxed = f
 
-        log.info(f"Found {len(parsed)} formats for {url}")
+        # T08: Select best progressive (muxed) MP4 stream <= 480p from single extraction
+        preview_stream = None
+        preview_candidates = []
+        for f in formats_raw:
+            vcodec = f.get("vcodec") or "none"
+            acodec = f.get("acodec") or "none"
+            if vcodec == "none" or acodec == "none":
+                continue
+            ext = (f.get("ext") or "").lower()
+            if ext != "mp4":
+                continue
+            proto = (f.get("protocol") or "").lower()
+            if proto.startswith("m3u8") or proto.startswith("http_dash"):
+                continue
+            stream_url = f.get("url") or ""
+            if not stream_url or stream_url.endswith(".m3u8") or stream_url.endswith(".mpd"):
+                continue
+            height = f.get("height")
+            width = f.get("width")
+            if height is not None:
+                if height <= 0 or height > 480:
+                    continue
+            elif width is not None:
+                if width <= 0 or width > 854:
+                    continue
+            else:
+                continue
+
+            preview_candidates.append(f)
+
+        if preview_candidates:
+            preview_candidates.sort(
+                key=lambda x: (x.get("height") or 0, x.get("tbr") or 0, x.get("width") or 0),
+                reverse=True,
+            )
+            candidate = preview_candidates[0]
+            stream_url = candidate.get("url") or ""
+            headers = dict(info.get("http_headers") or {})
+            if candidate.get("http_headers"):
+                headers.update(candidate.get("http_headers"))
+            if "User-Agent" not in headers and "user_agent" in info:
+                headers["User-Agent"] = info["user_agent"]
+            try:
+                if hasattr(ydl, "cookiejar") and ydl.cookiejar:
+                    cookie_str = ydl.cookiejar.get_cookie_header(stream_url)
+                    if cookie_str and "Cookie" not in headers:
+                        headers["Cookie"] = cookie_str
+            except Exception:
+                pass
+
+            preview_stream = {
+                "url": stream_url,
+                "headers": {str(k): str(v) for k, v in headers.items()},
+                "format_id": str(candidate.get("format_id", "")),
+                "height": candidate.get("height"),
+                "width": candidate.get("width"),
+                "ext": candidate.get("ext", "mp4"),
+            }
+
+        log.info(f"Found {len(parsed)} formats for {url} (preview: {preview_stream is not None})")
         thumb = info.get("thumbnail")
         if not thumb and info.get("thumbnails"):
             thumbs = info.get("thumbnails")
@@ -171,6 +230,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             "recommended_video_format_id": best_video["format_id"] if best_video else None,
             "recommended_audio_format_id": best_audio["format_id"] if best_audio else None,
             "recommended_muxed_format_id": best_muxed["format_id"] if best_muxed else None,
+            "preview_stream": preview_stream,
         }
 
     except Exception as exc:

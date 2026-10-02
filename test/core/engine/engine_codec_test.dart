@@ -63,7 +63,8 @@ void main() {
 
     test('RED: decodeResponse parses a JSON object string', () {
       final out = EngineEnvelope.decodeResponse(
-          jsonEncode({'success': true, 'max_concurrent': 2}));
+        jsonEncode({'success': true, 'max_concurrent': 2}),
+      );
       expect(out['success'], isTrue);
       expect(out['max_concurrent'], 2);
     });
@@ -74,9 +75,34 @@ void main() {
       expect(EngineEnvelope.decodeResponse(''), isEmpty);
     });
 
+    test(
+      'T09: decodeResponseAsync parses both small and large JSON payloads',
+      () async {
+        final small = await EngineEnvelope.decodeResponseAsync(
+          jsonEncode({'k': 'v'}),
+        );
+        expect(small['k'], 'v');
+
+        final empty = await EngineEnvelope.decodeResponseAsync(null);
+        expect(empty, isEmpty);
+
+        // Large payload (>50KB) to exercise Isolate.run path
+        final largeMap = <String, dynamic>{
+          'large': List.generate(5000, (i) => 'item-$i'),
+        };
+        final largeRaw = jsonEncode(largeMap);
+        expect(largeRaw.length, greaterThan(50000));
+        final decodedLarge = await EngineEnvelope.decodeResponseAsync(largeRaw);
+        expect(decodedLarge['large'], hasLength(5000));
+      },
+    );
+
     test('RED: encodeRequest builds the stdio envelope shape', () {
       final raw = EngineEnvelope.encodeRequest(
-          id: 'abc', method: EngineMethods.startDownload, params: {'a': 1});
+        id: 'abc',
+        method: EngineMethods.startDownload,
+        params: {'a': 1},
+      );
       final back = jsonDecode(raw) as Map<String, dynamic>;
       expect(back['id'], 'abc');
       expect(back['method'], 'download/start');
@@ -85,7 +111,10 @@ void main() {
 
     test('RED: error builds the standard failure envelope', () {
       final out = EngineEnvelope.error(
-          errorType: 'ERROR_X', message: 'nope', extra: {'k': 1});
+        errorType: 'ERROR_X',
+        message: 'nope',
+        extra: {'k': 1},
+      );
       expect(out['success'], isFalse);
       expect(out['error_type'], 'ERROR_X');
       expect(out['error_message'], 'nope');

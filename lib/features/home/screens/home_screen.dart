@@ -1,3 +1,6 @@
+import 'dart:async' show unawaited;
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -17,9 +20,11 @@ import '../widgets/download_overflow_menu.dart';
 import '../widgets/download_sparkline.dart';
 import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils.dart';
+import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
-
+import '../widgets/offline_queue_banner.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -43,8 +48,13 @@ class HomeScreen extends ConsumerWidget {
             children: [
               const SizedBox(height: 24),
               // Engine status
-              _EngineStatusBanner(colorScheme: colorScheme, textTheme: textTheme),
-              const SizedBox(height: 24),
+              _EngineStatusBanner(
+                colorScheme: colorScheme,
+                textTheme: textTheme,
+              ),
+              const SizedBox(height: 16),
+              const OfflineQueueBanner(),
+              const SizedBox(height: 8),
               // Hero section
               _HeroSection(colorScheme: colorScheme)
                   .animate()
@@ -87,7 +97,7 @@ class HomeScreen extends ConsumerWidget {
                   ];
                   return tiles;
                 }),
-              ]               else ...[
+              ] else ...[
                 const SizedBox(height: 60),
                 Semantics(
                   label: 'No downloads',
@@ -176,9 +186,9 @@ class _HeroSection extends StatelessWidget {
         Text(
           'Every source. Maximum quality.',
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-              ),
+            color: colorScheme.onSurfaceVariant,
+            fontStyle: FontStyle.italic,
+          ),
           textAlign: TextAlign.center,
         ),
       ],
@@ -216,29 +226,45 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     super.dispose();
   }
 
-  void _submitUrl() {
+  Future<void> _submitUrl() async {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
     _focusNode.unfocus();
 
     if (looksLikeUrl(input)) {
       AppLogger.info('User submitted URL: $input', tag: 'HomeScreen');
+      unawaited(LocalAnalytics.recordIntake(LocalAnalytics.kindPaste, input));
+      final offline = await isDeviceOffline();
+      if (!mounted) return;
+      if (offline) {
+        final added = await ref
+            .read(offlineQueueProvider.notifier)
+            .addLink(input, source: 'paste');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              added
+                  ? 'Offline: Link saved to queue'
+                  : 'Link is already in offline queue',
+            ),
+          ),
+        );
+        _controller.clear();
+        return;
+      }
       // Playlist URLs get entry selection (03-B) instead of the
       // single-video format picker — otherwise a playlist "downloads as
       // it wants" with no subset/reverse/shuffle control.
       final target = isPlaylistUrl(input)
           ? PlaylistSelectionScreen(url: input, title: input)
           : FormatPickerScreen(url: input, title: input);
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => target),
-      );
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => target));
     } else {
       AppLogger.info('User submitted search query: $input', tag: 'HomeScreen');
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => SearchResultsScreen(
-            initialQuery: input,
-          ),
+          builder: (_) => SearchResultsScreen(initialQuery: input),
         ),
       );
     }
@@ -296,7 +322,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
                   onTap: () {
-                    AppLogger.info('User clicked Batch import URLs button', tag: 'HomeScreen');
+                    AppLogger.info(
+                      'User clicked Batch import URLs button',
+                      tag: 'HomeScreen',
+                    );
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => const BatchImportScreen(),
@@ -391,18 +420,14 @@ class _DownloadCardWithError extends ConsumerWidget {
               },
               onOpenProxy: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 );
               },
               onPickFormat: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => FormatPickerScreen(
-                      url: item.url,
-                      title: item.title,
-                    ),
+                    builder: (_) =>
+                        FormatPickerScreen(url: item.url, title: item.title),
                   ),
                 );
               },
@@ -419,6 +444,105 @@ class _DownloadCard extends StatelessWidget {
 
   const _DownloadCard({required this.item, required this.colorScheme});
 
+  /// T07 artwork chain: app-private cache file → network URL → status icon.
+  /// File/network images are ImageCache-backed, so rebuilds never refetch.
+  Widget _artwork() {
+    final cached = item.thumbnailPath ?? '';
+    if (cached.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          File(cached),
+          width: 96,
+          height: 96,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _remoteOrPlaceholder(),
+        ),
+      );
+    }
+    return _remoteOrPlaceholder();
+  }
+
+  Widget _remoteOrPlaceholder() {
+    final remote = item.thumbnailUrl ?? '';
+    if (remote.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          remote,
+          width: 96,
+          height: 96,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _statusPlaceholder(),
+        ),
+      );
+    }
+    return _statusPlaceholder();
+  }
+
+  Widget _statusPlaceholder() {
+    final isDownloading = item.status == 'downloading';
+    final isCancelling = item.status == 'cancelling';
+    final isQueued = item.status == 'queued' || item.status == 'pending';
+    final isError = item.status == 'error';
+    final isInterrupted = item.status == 'interrupted';
+    if (isDownloading) {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          Semantics(
+            label: 'Downloading',
+            child: Icon(
+              Icons.downloading,
+              color: colorScheme.primary,
+              size: 32,
+            ),
+          ),
+        ],
+      );
+    }
+    if (isQueued) {
+      return Semantics(
+        label: 'Queued',
+        child: Icon(
+          Icons.hourglass_empty,
+          color: colorScheme.onSurfaceVariant,
+          size: 32,
+        ),
+      );
+    }
+    if (isInterrupted) {
+      return Semantics(
+        label: 'Interrupted',
+        child: Icon(
+          Icons.pause_circle_outline,
+          color: colorScheme.secondary,
+          size: 32,
+        ),
+      );
+    }
+    if (isCancelling) {
+      return Semantics(
+        label: 'Cancelling',
+        child: Icon(
+          Icons.cancel_outlined,
+          color: colorScheme.onSurfaceVariant,
+          size: 32,
+        ),
+      );
+    }
+    return Semantics(
+      label: isError ? 'Error' : 'Completed',
+      child: Icon(
+        isError ? Icons.error_outline : Icons.image_outlined,
+        color: isError
+            ? colorScheme.error
+            : colorScheme.outline.withValues(alpha: 0.5),
+        size: 32,
+      ),
+    );
+  }
+
   void _showVpnDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -429,8 +553,10 @@ class _DownloadCard extends StatelessWidget {
           children: [
             Icon(Icons.vpn_lock, color: colorScheme.error, size: 24),
             const SizedBox(width: 12),
-            Text('Restricted Content',
-                style: Theme.of(ctx).textTheme.titleMedium),
+            Text(
+              'Restricted Content',
+              style: Theme.of(ctx).textTheme.titleMedium,
+            ),
           ],
         ),
         content: Text(
@@ -459,7 +585,9 @@ class _DownloadCard extends StatelessWidget {
 
     return Semantics(
       button: isError && item.suggestsVpn,
-      label: isError && item.suggestsVpn ? '${item.title} - VPN suggested. Tap for details.' : item.title,
+      label: isError && item.suggestsVpn
+          ? '${item.title} - VPN suggested. Tap for details.'
+          : item.title,
       child: GestureDetector(
         onTap: isError && item.suggestsVpn
             ? () => _showVpnDialog(context)
@@ -486,60 +614,9 @@ class _DownloadCard extends StatelessWidget {
                     color: colorScheme.surfaceContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: isDownloading
-                      ? Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Semantics(
-                              label: 'Downloading',
-                              child: Icon(
-                                Icons.downloading,
-                                color: colorScheme.primary,
-                                size: 32,
-                              ),
-                            ),
-                          ],
-                        )
-                      : isQueued
-                          ? Semantics(
-                              label: 'Queued',
-                              child: Icon(
-                                Icons.hourglass_empty,
-                                color: colorScheme.onSurfaceVariant,
-                                size: 32,
-                              ),
-                            )
-                          : isInterrupted
-                              ? Semantics(
-                                  label: 'Interrupted',
-                                  child: Icon(
-                                    Icons.pause_circle_outline,
-                                    color: colorScheme.secondary,
-                                    size: 32,
-                                  ),
-                                )
-                              : isCancelling
-                                  ? Semantics(
-                                      label: 'Cancelling',
-                                      child: Icon(
-                                        Icons.cancel_outlined,
-                                        color: colorScheme.onSurfaceVariant,
-                                        size: 32,
-                                      ),
-                                    )
-                                  : Semantics(
-                              label: isError ? 'Error' : 'Completed',
-                              child: Icon(
-                                  isError
-                                      ? Icons.error_outline
-                                      : Icons.image_outlined,
-                                  color: isError
-                                      ? colorScheme.error
-                                      : colorScheme.outline
-                                          .withValues(alpha: 0.5),
-                                  size: 32,
-                                ),
-                            ),
+                  // T07: cached file → network → status-icon placeholder.
+                  // FileImage is ImageCache-backed (no per-rebuild fetch).
+                  child: _artwork(),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -565,227 +642,247 @@ class _DownloadCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                    if (isDownloading) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
-                        style: textTheme.mono.copyWith(
-                          color: colorScheme.outline,
+                      if (isDownloading) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.outline,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            '${(item.progress * 100).toInt()} % downloading',
-                            style: textTheme.mono.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.primary,
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Text(
+                              '${(item.progress * 100).toInt()} % downloading',
+                              style: textTheme.mono.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(
+                              '${_formatSpeed(item.speed)} · ETA ${_formatEta(item.eta)}',
+                              style: textTheme.mono.copyWith(
+                                color: colorScheme.outline,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (item.stageLabel != null) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer.withValues(
+                                alpha: 0.5,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.hourglass_top,
+                                  size: 12,
+                                  color: colorScheme.onPrimaryContainer,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    item.stageLabel!,
+                                    style: textTheme.labelSmall?.copyWith(
+                                      color: colorScheme.onPrimaryContainer,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
+                        const SizedBox(height: 4),
+                        if (item.speedHistory.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          DownloadSparkline(samples: item.speedHistory),
+                          const SizedBox(height: 4),
+                        ],
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            // Loop-4: indeterminate while post-processing
+                            // (merging/embedding has no progress callback;
+                            // a stuck 99% reads as frozen — ytdlnis v1.7.5
+                            // shipped the same fix for the same complaint).
+                            value: item.stage != null ? null : item.progress,
+                            backgroundColor:
+                                colorScheme.surfaceContainerHighest,
+                            valueColor: AlwaysStoppedAnimation(
+                              colorScheme.primaryContainer,
+                            ),
+                            minHeight: 4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        DownloadLogOverlay(
+                          downloadId: item.id,
+                          visible: isDownloading,
+                        ),
+                      ] else if (isCancelling) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.cancel_outlined,
+                              size: 14,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Cancelling — waiting for worker to stop',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else if (isQueued) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.hourglass_empty,
+                              size: 14,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Queued — starts when a slot frees up',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else if (isInterrupted) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.pause_circle_outline,
+                              size: 14,
+                              color: colorScheme.secondary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Interrupted — tap menu to resume',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colorScheme.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (item.downloadedBytes > 0 &&
+                            item.totalBytes > 0) ...[
+                          const SizedBox(height: 4),
                           Text(
-                            '${_formatSpeed(item.speed)} · ETA ${_formatEta(item.eta)}',
+                            '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)} (${(item.progress * 100).toInt()}%)',
                             style: textTheme.mono.copyWith(
                               color: colorScheme.outline,
-                              fontSize: 11,
+                              fontSize: 10,
                             ),
                           ),
                         ],
-                      ),
-                      if (item.stageLabel != null) ...[
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withValues(
-                                alpha: 0.5),
-                            borderRadius: BorderRadius.circular(4),
+                      ] else if (isError) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          item.errorMessage ?? 'Download failed',
+                          style: textTheme.mono.copyWith(
+                            color: colorScheme.error,
+                            fontSize: 11,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        DownloadLogOverlay(
+                          downloadId: item.id,
+                          visible: isError,
+                        ),
+                        if (item.suggestsVpn) ...[
+                          const SizedBox(height: 6),
+                          Row(
                             children: [
-                              Icon(Icons.hourglass_top,
-                                  size: 12,
-                                  color: colorScheme.onPrimaryContainer),
+                              Icon(
+                                Icons.vpn_lock,
+                                size: 14,
+                                color: colorScheme.error,
+                              ),
                               const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  item.stageLabel!,
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colorScheme.onPrimaryContainer,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                              Text(
+                                'Try VPN or proxy',
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.error,
+                                  decoration: TextDecoration.underline,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 4),
-                      if (item.speedHistory.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        DownloadSparkline(samples: item.speedHistory),
-                        const SizedBox(height: 4),
-                      ],
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          // Loop-4: indeterminate while post-processing
-                          // (merging/embedding has no progress callback;
-                          // a stuck 99% reads as frozen — ytdlnis v1.7.5
-                          // shipped the same fix for the same complaint).
-                          value: item.stage != null ? null : item.progress,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation(
-                              colorScheme.primaryContainer),
-                          minHeight: 4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      DownloadLogOverlay(
-                        downloadId: item.id,
-                        visible: isDownloading,
-                      ),
-                    ] else if (isCancelling) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.cancel_outlined,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Cancelling — waiting for worker to stop',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
                         ],
-                      ),
-                    ] else if (isQueued) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.hourglass_empty,
-                              size: 14,
-                              color: colorScheme.onSurfaceVariant),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Queued — starts when a slot frees up',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ] else if (isInterrupted) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.pause_circle_outline,
-                              size: 14, color: colorScheme.secondary),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Interrupted — tap menu to resume',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.secondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (item.downloadedBytes > 0 && item.totalBytes > 0) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)} (${(item.progress * 100).toInt()}%)',
-                          style: textTheme.mono.copyWith(
-                            color: colorScheme.outline,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ] else if (isError) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        item.errorMessage ?? 'Download failed',
-                        style: textTheme.mono.copyWith(
-                          color: colorScheme.error,
-                          fontSize: 11,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      DownloadLogOverlay(
-                        downloadId: item.id,
-                        visible: isError,
-                      ),
-                      if (item.suggestsVpn) ...[
-                        const SizedBox(height: 6),
+                      ] else ...[
+                        const SizedBox(height: 8),
                         Row(
                           children: [
-                            Icon(Icons.vpn_lock,
-                                size: 14, color: colorScheme.error),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Try VPN or proxy',
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colorScheme.error,
-                                decoration: TextDecoration.underline,
+                            if (item.fileSize != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  item.fileSize!,
+                                  style: textTheme.mono.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 10,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            const Spacer(),
+                            Semantics(
+                              label: 'Download complete',
+                              child: Icon(
+                                Icons.check_circle,
+                                color: colorScheme.primary,
+                                size: 20,
                               ),
                             ),
                           ],
                         ),
                       ],
-                    ] else ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (item.fileSize != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHigh,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                item.fileSize!,
-                                style: textTheme.mono.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 10,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ),
-                          const Spacer(),
-                          Semantics(
-                            label: 'Download complete',
-                            child: Icon(
-                              Icons.check_circle,
-                              color: colorScheme.primary,
-                              size: 20,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   String _formatBytes(int bytes) {
@@ -815,7 +912,10 @@ class _EngineStatusBanner extends ConsumerWidget {
   final ColorScheme colorScheme;
   final TextTheme textTheme;
 
-  const _EngineStatusBanner({required this.colorScheme, required this.textTheme});
+  const _EngineStatusBanner({
+    required this.colorScheme,
+    required this.textTheme,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -839,8 +939,7 @@ class _EngineStatusBanner extends ConsumerWidget {
         if (message == null) return const SizedBox.shrink();
         return Container(
           width: double.infinity,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: colorScheme.tertiaryContainer,
             borderRadius: BorderRadius.circular(8),
@@ -849,8 +948,11 @@ class _EngineStatusBanner extends ConsumerWidget {
             label: 'Engine status: $message',
             child: Row(
               children: [
-                Icon(Icons.system_update,
-                    size: 16, color: colorScheme.onTertiaryContainer),
+                Icon(
+                  Icons.system_update,
+                  size: 16,
+                  color: colorScheme.onTertiaryContainer,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -869,16 +971,17 @@ class _EngineStatusBanner extends ConsumerWidget {
   }
 
   Widget _buildErrorPlaceholder(
-      BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+    BuildContext context,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colorScheme.errorContainer.withAlpha(30),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.error.withAlpha(80),
-        ),
+        border: Border.all(color: colorScheme.error.withAlpha(80)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -908,11 +1011,12 @@ class _EngineStatusBanner extends ConsumerWidget {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () {
-              AppLogger.info('User clicked Open Log & Report button on error panel', tag: 'HomeScreen');
+              AppLogger.info(
+                'User clicked Open Log & Report button on error panel',
+                tag: 'HomeScreen',
+              );
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const LogViewerScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const LogViewerScreen()),
               );
             },
             icon: const Icon(Icons.bug_report_outlined, size: 16),
@@ -997,7 +1101,9 @@ class _ResumeScanSection extends ConsumerWidget {
                           label: candidate.expired ? 'Expired' : 'Interrupted',
                           child: Icon(
                             Icons.warning_amber_rounded,
-                            color: candidate.expired ? colorScheme.error : colorScheme.secondary,
+                            color: candidate.expired
+                                ? colorScheme.error
+                                : colorScheme.secondary,
                             size: 24,
                           ),
                         ),
@@ -1029,9 +1135,14 @@ class _ResumeScanSection extends ConsumerWidget {
                     if (candidate.expired) ...[
                       const SizedBox(height: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          color: colorScheme.errorContainer.withValues(alpha: 0.1),
+                          color: colorScheme.errorContainer.withValues(
+                            alpha: 0.1,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: colorScheme.error.withValues(alpha: 0.2),
@@ -1041,7 +1152,11 @@ class _ResumeScanSection extends ConsumerWidget {
                           children: [
                             Semantics(
                               label: 'Expired',
-                              child: Icon(Icons.timer_off_outlined, color: colorScheme.error, size: 16),
+                              child: Icon(
+                                Icons.timer_off_outlined,
+                                color: colorScheme.error,
+                                size: 16,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -1063,8 +1178,13 @@ class _ResumeScanSection extends ConsumerWidget {
                       children: [
                         TextButton(
                           onPressed: () {
-                            AppLogger.info('User dismissed resume candidate: ${candidate.filename}', tag: 'HomeScreen');
-                            ref.read(resumeProvider.notifier).dismiss(candidate);
+                            AppLogger.info(
+                              'User dismissed resume candidate: ${candidate.filename}',
+                              tag: 'HomeScreen',
+                            );
+                            ref
+                                .read(resumeProvider.notifier)
+                                .dismiss(candidate);
                           },
                           style: TextButton.styleFrom(
                             foregroundColor: colorScheme.outline,
@@ -1072,18 +1192,25 @@ class _ResumeScanSection extends ConsumerWidget {
                           child: const Text('Dismiss'),
                         ),
                         const SizedBox(width: 8),
-                        if (candidate.likelyUrl != null && !candidate.expired) ...[
+                        if (candidate.likelyUrl != null &&
+                            !candidate.expired) ...[
                           ElevatedButton(
                             onPressed: () async {
-                              AppLogger.info('User clicked resume candidate: ${candidate.filename}', tag: 'HomeScreen');
-                              final url = await ref.read(resumeProvider.notifier).resumeDownload(candidate);
+                              AppLogger.info(
+                                'User clicked resume candidate: ${candidate.filename}',
+                                tag: 'HomeScreen',
+                              );
+                              final url = await ref
+                                  .read(resumeProvider.notifier)
+                                  .resumeDownload(candidate);
                               if (url != null) {
-                                ref.read(sharedUrlProvider.notifier).state = url;
+                                ref.read(sharedUrlProvider.notifier).state =
+                                    url;
                               }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colorScheme.primary,
-                              foregroundColor: Colors.white,
+                              foregroundColor: colorScheme.onPrimary,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -1093,12 +1220,20 @@ class _ResumeScanSection extends ConsumerWidget {
                         ] else ...[
                           OutlinedButton(
                             onPressed: () {
-                              AppLogger.info('User clicked retry candidate: ${candidate.filename}', tag: 'HomeScreen');
+                              AppLogger.info(
+                                'User clicked retry candidate: ${candidate.filename}',
+                                tag: 'HomeScreen',
+                              );
                               if (candidate.likelyUrl != null) {
-                                ref.read(resumeProvider.notifier).deleteFileOnly(candidate);
-                                ref.read(sharedUrlProvider.notifier).state = candidate.likelyUrl;
+                                ref
+                                    .read(resumeProvider.notifier)
+                                    .deleteFileOnly(candidate);
+                                ref.read(sharedUrlProvider.notifier).state =
+                                    candidate.likelyUrl;
                               } else {
-                                ref.read(resumeProvider.notifier).deleteFileOnly(candidate);
+                                ref
+                                    .read(resumeProvider.notifier)
+                                    .deleteFileOnly(candidate);
                               }
                             },
                             style: OutlinedButton.styleFrom(

@@ -29,7 +29,7 @@ interface EngineEventListener {
     fun onEvent(eventJson: String)
 }
 
-class MainActivity : FlutterActivity() {
+open class MainActivity : FlutterActivity() {
     private val ENGINE_CHANNEL = "com.theonly.grablytic/engine"
     private val PROGRESS_CHANNEL = "com.theonly.grablytic/progress"
 
@@ -417,6 +417,17 @@ class MainActivity : FlutterActivity() {
         methodChannel = channel
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "activity/finish" -> {
+                    finish()
+                    result.success(mapOf("success" to true))
+                }
+                "notification/show_error" -> {
+                    val downloadId = call.argument<String>("download_id") ?: "err_${System.currentTimeMillis()}"
+                    val title = call.argument<String>("title") ?: "Download failed"
+                    val error = call.argument<String>("error") ?: "Extraction or download failed"
+                    DownloadService.failed(applicationContext, downloadId, "$title: $error")
+                    result.success(mapOf("success" to true))
+                }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
                     // drain loop collects every queued share, in order.
@@ -588,6 +599,43 @@ class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     val networkType = call.argument<String>("network_type")
 
+                    val showAlert = try {
+                        @Suppress("UNCHECKED_CAST")
+                        (config as? Map<*, *>)?.get("completion_alerts") as? Boolean
+                    } catch (_: Exception) {
+                        null
+                    } ?: true
+                    val title = try {
+                        android.net.Uri.parse(url).host ?: url
+                    } catch (_: Exception) {
+                        downloadId
+                    }
+
+                    // T09: Start FGS synchronously on Main thread during user gesture
+                    try {
+                        DownloadService.start(
+                            this@MainActivity,
+                            downloadId ?: "unknown",
+                            title ?: "Download",
+                            showAlert,
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("GrablyticEngine", "DownloadService.start failed: ${e.message}")
+                    }
+
+                    // Keep-alive: check POST_NOTIFICATIONS on Main thread while foreground
+                    if (!notifPromptShown && !notificationsGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notifPromptShown = true
+                        try {
+                            androidx.core.app.ActivityCompat.requestPermissions(
+                                this@MainActivity,
+                                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                                REQ_POST_NOTIFICATIONS,
+                            )
+                        } catch (_: Exception) {
+                        }
+                    }
+
                     scope.launch(Dispatchers.IO) {
                         try {
                             val python = py ?: return@launch
@@ -596,44 +644,6 @@ class MainActivity : FlutterActivity() {
                             val eventCallback = ProcessEngineEventListener(applicationContext, outputDir)
                             if (downloadId != null) {
                                 activeCallbacks[downloadId] = eventCallback
-                            }
-
-                            // Keep-alive: user gesture (foreground) → dataSync FGS.
-                            // Completion/failure alerts are NOT FGS-exempt, so
-                            // make sure POST_NOTIFICATIONS is granted while we
-                            // still have a foreground moment to ask in (once —
-                            // repeat prompts nag and the OS auto-denies them).
-                            if (!notifPromptShown && !notificationsGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                notifPromptShown = true
-                                try {
-                                    androidx.core.app.ActivityCompat.requestPermissions(
-                                        this@MainActivity,
-                                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                                        REQ_POST_NOTIFICATIONS,
-                                    )
-                                } catch (_: Exception) {
-                                }
-                            }
-                            val showAlert = try {
-                                @Suppress("UNCHECKED_CAST")
-                                (config as? Map<*, *>)?.get("completion_alerts") as? Boolean
-                            } catch (_: Exception) {
-                                null
-                            } ?: true
-                            try {
-                                val title = try {
-                                    android.net.Uri.parse(url).host ?: url
-                                } catch (_: Exception) {
-                                    downloadId
-                                }
-                                DownloadService.start(
-                                    this@MainActivity,
-                                    downloadId ?: "unknown",
-                                    title ?: "Download",
-                                    showAlert,
-                                )
-                            } catch (e: Exception) {
-                                android.util.Log.w("GrablyticEngine", "DownloadService.start failed: ${e.message}")
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
@@ -948,6 +958,16 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(mapOf("success" to true))
                 }
+                "queue_reminder/sync" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val intervalMinutes = (call.argument<Int>("interval_minutes") ?: 180).toLong().coerceAtLeast(15L)
+                    QueueReminderWorker.schedule(
+                        context = applicationContext,
+                        enabled = enabled,
+                        intervalMinutes = intervalMinutes,
+                    )
+                    result.success(mapOf("success" to true))
+                }
                 else -> result.notImplemented()
             }
         }
@@ -1026,13 +1046,12 @@ class MainActivity : FlutterActivity() {
      */
     private fun exportFileToDownloads(src: File, displayName: String): String {
         if (!src.isFile) throw IllegalArgumentException("log file missing")
-        val rawSafe = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-            .takeIf { it.isNotEmpty() } ?: "export.txt"
-        val stamp = try {
-            java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-                .format(java.util.Date())
-        } catch (_: Exception) { "export" }
-        val safeName = "grablytic-$stamp-$rawSafe"
+        // T10: Dart passes `grablytic logs - YYYY-MM-DD HH-mm-ss.log` (no
+        // colons). Preserve spaces/dots/dashes; strip path separators and
+        // colons; ensure .log. Falls back to a spec-shaped name, never blank.
+        var safeName = displayName.replace(Regex("[/\\\\:]"), "_").trim()
+            .takeIf { it.isNotEmpty() } ?: "grablytic logs - export.log"
+        if (!safeName.endsWith(".log", ignoreCase = true)) safeName += ".log"
         val maxBytes = 5 * 1024 * 1024L
         val srcLen = try { src.length() } catch (_: Exception) { 0L }
         // Tail-export large files (ytdlnis truncates match-filter noise for

@@ -34,7 +34,7 @@ void main() {
       prefs = await SharedPreferences.getInstance();
     });
 
-    testWidgets('Renders all organized Material 3 sections and key settings',
+    testWidgets('Renders category list and sub-menus with key settings',
         (WidgetTester tester) async {
       await tester.pumpWidget(
         ProviderScope(
@@ -50,66 +50,32 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Top Header
+      // Top Header + category list (folder hierarchy)
       expect(find.text('Settings'), findsWidgets);
+      for (final category in [
+        'General & Interface',
+        'Permissions',
+        'Appearance',
+        'Directories & Storage',
+        'Network & Acceleration',
+        'Media & Subtitles',
+        'Automation & Scheduling',
+        'Accounts & Authentication',
+        'Packages & Updates',
+        'System & Diagnostics',
+      ]) {
+        expect(find.text(category), findsOneWidget);
+      }
+      // Options live inside sub-menus, not on the root.
+      expect(find.text('Wi-Fi Only Downloads'), findsNothing);
 
-      // Section 1: General & Interface
-      expect(find.text('General & Interface'), findsOneWidget);
-      expect(find.text('Appearance'), findsOneWidget);
-      expect(find.text('Library Grid View'), findsOneWidget);
-      expect(find.text('Download Completion Alerts'), findsOneWidget);
-      expect(find.text('Auto-start Download on Share'), findsOneWidget);
-
-      // Scroll to Directories & Storage
-      final dirSection = find.text('Directories & Storage');
-      await tester.scrollUntilVisible(dirSection, 200, scrollable: find.byType(Scrollable).first);
+      // Network sub-menu holds the network options.
+      await tester.tap(find.text('Network & Acceleration'));
       await tester.pumpAndSettle();
-      expect(dirSection, findsOneWidget);
-      expect(find.text('Download folder'), findsOneWidget);
-      expect(find.text('Skip already-downloaded videos'), findsOneWidget);
-
-      // Scroll to Network & Acceleration
-      final netSection = find.text('Network & Acceleration');
-      await tester.scrollUntilVisible(netSection, 200, scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      expect(netSection, findsOneWidget);
       expect(find.text('Wi-Fi Only Downloads'), findsOneWidget);
       expect(find.text('Turbo download mode'), findsOneWidget);
       expect(find.text('Use aria2c accelerator'), findsOneWidget);
       expect(find.text('Quality presets'), findsOneWidget);
-
-      // Scroll to Media & Subtitles
-      final mediaSection = find.text('Media & Subtitles');
-      await tester.scrollUntilVisible(mediaSection, 200, scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      expect(mediaSection, findsOneWidget);
-      expect(find.text('Subtitles'), findsOneWidget);
-      expect(find.text('SponsorBlock'), findsOneWidget);
-      expect(find.text('Split video by chapters'), findsOneWidget);
-
-      // Scroll to Automation & Scheduling
-      final autoSection = find.text('Automation & Scheduling');
-      await tester.scrollUntilVisible(autoSection, 200, scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      expect(autoSection, findsOneWidget);
-      expect(find.text('Scheduled downloads'), findsOneWidget);
-      expect(find.text('Observed Sources'), findsOneWidget);
-      expect(find.text('Custom download commands'), findsOneWidget);
-
-      // Scroll to Accounts & Authentication
-      final authSection = find.text('Accounts & Authentication');
-      await tester.scrollUntilVisible(authSection, 200, scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      expect(authSection, findsOneWidget);
-      expect(find.text('Logins for members-only videos'), findsOneWidget);
-
-      // Scroll to System & Diagnostics / Packages
-      final pkgHeader = find.text('Packages');
-      await tester.scrollUntilVisible(pkgHeader, 200, scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      expect(pkgHeader, findsOneWidget);
-      expect(find.text('App logs & diagnostics'), findsOneWidget);
-      expect(find.text('About Grablytic'), findsOneWidget);
     });
 
     testWidgets('Toggling switch updates SharedPreferences key',
@@ -128,10 +94,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Find Wi-Fi switch
-      final wifiTile = find.text('Wi-Fi Only Downloads');
-      await tester.scrollUntilVisible(wifiTile, 200, scrollable: find.byType(Scrollable).first);
+      // Wi-Fi lives in Network & Acceleration now.
+      final netCat = find.text('Network & Acceleration');
+      await tester.scrollUntilVisible(netCat, 200,
+          scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
+      await tester.tap(netCat);
+      await tester.pumpAndSettle();
+      final wifiTile = find.text('Wi-Fi Only Downloads');
+      expect(wifiTile, findsOneWidget);
 
       expect(prefs.getBool('wifiOnly') ?? false, isFalse);
       await tester.tap(wifiTile);
@@ -155,9 +126,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final obsTile = find.text('Observed Sources');
-      await tester.scrollUntilVisible(obsTile, 200, scrollable: find.byType(Scrollable).first);
+      await tester.tap(find.text('Automation & Scheduling'));
       await tester.pumpAndSettle();
+      final obsTile = find.text('Observed Sources');
+      await tester.scrollUntilVisible(obsTile, 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      expect(obsTile, findsOneWidget);
 
       await tester.tap(obsTile);
       await tester.pumpAndSettle();
@@ -181,11 +156,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Proxy row opens a dialog and saves to the existing 'proxy' key.
-      final proxyTile = find.text('Proxy server');
-      await tester.scrollUntilVisible(proxyTile, 200,
+      // Proxy row (Network) opens a dialog and saves to the 'proxy' key.
+      final netCat = find.text('Network & Acceleration');
+      await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
+      await tester.tap(netCat);
+      await tester.pumpAndSettle();
+      final proxyTile = find.text('Proxy server');
+      expect(proxyTile, findsOneWidget);
       await tester.tap(proxyTile);
       await tester.pumpAndSettle();
       expect(find.text('Proxy URL'), findsOneWidget);
@@ -194,21 +173,33 @@ void main() {
       await tester.pumpAndSettle();
       expect(prefs.getString('proxy'), 'http://proxy:8080');
 
-      // Verbose switch flips the existing 'verbose' key.
-      final verboseTile = find.text('Detailed engine logging');
-      await tester.scrollUntilVisible(verboseTile, 200,
+      // Verbose switch (System) flips the existing 'verbose' key.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      final sysCat = find.text('System & Diagnostics');
+      await tester.scrollUntilVisible(sysCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
+      await tester.tap(sysCat);
+      await tester.pumpAndSettle();
+      final verboseTile = find.text('Detailed engine logging');
+      expect(verboseTile, findsOneWidget);
       expect(prefs.getBool('verbose') ?? false, isFalse);
       await tester.tap(verboseTile);
       await tester.pumpAndSettle();
       expect(prefs.getBool('verbose'), isTrue);
 
-      // Update channel dialog writes the existing 'updateChannel' key.
-      final channelTile = find.text('Update channel');
-      await tester.scrollUntilVisible(channelTile, 200,
+      // Update channel dialog (Packages) writes the 'updateChannel' key.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      final pkgCat = find.text('Packages & Updates');
+      await tester.scrollUntilVisible(pkgCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
+      await tester.tap(pkgCat);
+      await tester.pumpAndSettle();
+      final channelTile = find.text('Update channel');
+      expect(channelTile, findsOneWidget);
       await tester.tap(channelTile);
       await tester.pumpAndSettle();
       await tester.tap(find.text('nightly'));

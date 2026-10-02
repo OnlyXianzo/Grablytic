@@ -11,12 +11,14 @@ import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/shell/screens/app_shell.dart';
 import 'providers/settings_provider.dart';
 import 'providers/log_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
+import 'package:shared_preferences/shared_preferences.dart'
+    show SharedPreferences;
 import 'core/engine/engine_provider.dart' show setEngineDirs;
 import 'core/utils/app_logger.dart';
 import 'core/utils/log_buffer.dart';
 import 'core/utils/github_reporter.dart';
 import 'core/utils/logging_observers.dart';
+import 'features/home/screens/share_overlay_screen.dart';
 
 /// Route observer instance shared by [GrablyticApp].
 final loggingNavigatorObserver = LoggingNavigatorObserver();
@@ -35,7 +37,8 @@ void main() async {
   final logBuffer = LogBuffer(maxEntries: 5000);
   AppLogger.initBuffer(logBuffer);
   AppLogger.info(
-      'App opened/started (build ${const String.fromEnvironment('GRABLYTIC_GIT_SHA', defaultValue: 'dev')})');
+    'App opened/started (build ${const String.fromEnvironment('GRABLYTIC_GIT_SHA', defaultValue: 'dev')})',
+  );
 
   final cacheDir = await getTemporaryDirectory();
 
@@ -47,13 +50,15 @@ void main() async {
     cacheDir.path,
     ffmpegPath: '${appDir.path}/bin/ffmpeg$ext',
     aria2cPath: '${appDir.path}/bin/aria2c$ext',
-    denoPath: !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+    denoPath:
+        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
         ? '${appDir.path}/bin/deno$ext'
         : null,
   );
 
   // Set professional industrial-grade download path if unset or using the dummy path
-  if (!prefs.containsKey('downloadPath') || prefs.getString('downloadPath') == '/Internal/Videos') {
+  if (!prefs.containsKey('downloadPath') ||
+      prefs.getString('downloadPath') == '/Internal/Videos') {
     final defaultPath = await getDefaultDownloadPath();
     await prefs.setString('downloadPath', defaultPath);
   }
@@ -92,8 +97,12 @@ void main() async {
     },
     (error, stack) {
       try {
-        AppLogger.fatal('Uncaught zone error: $error',
-            tag: 'global', error: error, stackTrace: stack);
+        AppLogger.fatal(
+          'Uncaught zone error: $error',
+          tag: 'global',
+          error: error,
+          stackTrace: stack,
+        );
         unawaited(AppLogger.flushNow());
       } catch (_) {}
     },
@@ -131,4 +140,55 @@ class GrablyticApp extends ConsumerWidget {
           : const OnboardingScreen(),
     );
   }
+}
+
+/// Dedicated Dart entrypoint for [ShareActivity] (Seal/YTDLnis overlay pattern).
+@pragma('vm:entry-point')
+void shareMain([List<String>? args]) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+  final prefs = await SharedPreferences.getInstance();
+  final appDir = await getApplicationDocumentsDirectory();
+  await AppLogger.init(appDir.path, prefs);
+
+  final logBuffer = LogBuffer(maxEntries: 5000);
+  AppLogger.initBuffer(logBuffer);
+  AppLogger.info('Share entrypoint opened', tag: 'shareMain');
+
+  final cacheDir = await getTemporaryDirectory();
+  final isWindows = !kIsWeb && Platform.isWindows;
+  final ext = isWindows ? '.exe' : '';
+
+  setEngineDirs(
+    appDir.path,
+    cacheDir.path,
+    ffmpegPath: '${appDir.path}/bin/ffmpeg$ext',
+    aria2cPath: '${appDir.path}/bin/aria2c$ext',
+    denoPath:
+        !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+        ? '${appDir.path}/bin/deno$ext'
+        : null,
+  );
+
+  if (!prefs.containsKey('downloadPath') ||
+      prefs.getString('downloadPath') == '/Internal/Videos') {
+    final defaultPath = await getDefaultDownloadPath();
+    await prefs.setString('downloadPath', defaultPath);
+  }
+
+  runApp(
+    ProviderScope(
+      observers: [LoggingProviderObserver()],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        logBufferProvider.overrideWithValue(logBuffer),
+      ],
+      child: ShareOverlayApp(
+        initialUrl: (args != null && args.isNotEmpty) ? args.first : null,
+      ),
+    ),
+  );
 }

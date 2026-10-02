@@ -54,6 +54,14 @@ void main() {
       await tester.pumpWidget(createSubject(container));
       await tester.pumpAndSettle();
 
+      // aria2c controls live in Network & Acceleration now.
+      final netCat = find.text('Network & Acceleration');
+      await tester.scrollUntilVisible(netCat, 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      await tester.tap(netCat);
+      await tester.pumpAndSettle();
+
       final speedTile = find.text('aria2c speed limit');
       await tester.scrollUntilVisible(speedTile, 200,
           scrollable: find.byType(Scrollable).first);
@@ -92,6 +100,14 @@ void main() {
       await tester.pumpWidget(createSubject(container));
       await tester.pumpAndSettle();
 
+      // aria2c controls live in Network & Acceleration now.
+      final netCat = find.text('Network & Acceleration');
+      await tester.scrollUntilVisible(netCat, 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      await tester.tap(netCat);
+      await tester.pumpAndSettle();
+
       final speedTile = find.text('aria2c speed limit');
       await tester.scrollUntilVisible(speedTile, 200,
           scrollable: find.byType(Scrollable).first);
@@ -118,6 +134,14 @@ void main() {
       addTearDown(container.dispose);
 
       await tester.pumpWidget(createSubject(container));
+      await tester.pumpAndSettle();
+
+      // aria2c controls live in Network & Acceleration now.
+      final netCat = find.text('Network & Acceleration');
+      await tester.scrollUntilVisible(netCat, 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      await tester.tap(netCat);
       await tester.pumpAndSettle();
 
       expect(find.text('aria2c speed limit'), findsWidgets);

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/log_entry.dart';
+import '../../../core/theme/text_styles.dart';
 import '../../../providers/log_provider.dart';
 
 class LiveLogView extends ConsumerStatefulWidget {
@@ -69,7 +70,9 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
     final text = entries.map((e) => e.formattedLine).join('\n');
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Exported ${entries.length} log entries to clipboard.')),
+      SnackBar(
+        content: Text('Exported ${entries.length} log entries to clipboard.'),
+      ),
     );
   }
 
@@ -111,8 +114,13 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                     )
                   : null,
               isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
             ),
             onChanged: (v) {
               // Local-only filter: the old code also mutated the shared
@@ -137,13 +145,16 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                       _levelLabel(level),
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: _levelFilter == level ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: _levelFilter == level
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                     selected: _levelFilter == level,
                     selectedColor: _levelColor(level).withAlpha(50),
                     checkmarkColor: _levelColor(level),
-                    onSelected: (sel) => setState(() => _levelFilter = sel ? level : null),
+                    onSelected: (sel) =>
+                        setState(() => _levelFilter = sel ? level : null),
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                   ),
@@ -162,7 +173,11 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
               const SizedBox(width: 8),
               _buildFilterToggle('UI', 'ui', cs),
               const Spacer(),
-              Icon(Icons.vertical_align_bottom, size: 16, color: cs.onSurfaceVariant),
+              Icon(
+                Icons.vertical_align_bottom,
+                size: 16,
+                color: cs.onSurfaceVariant,
+              ),
               const SizedBox(width: 4),
               Switch(
                 value: _autoScroll,
@@ -177,7 +192,9 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
           child: entries.isEmpty
               ? Center(
                   child: Text(
-                    _searchQuery.isNotEmpty || _levelFilter != null || _sourceFilter != null
+                    _searchQuery.isNotEmpty ||
+                            _levelFilter != null ||
+                            _sourceFilter != null
                         ? 'No matching log entries.'
                         : 'No live logs yet.\nRun the app to see log entries here.',
                     textAlign: TextAlign.center,
@@ -203,7 +220,9 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
               label: Text('Export ${entries.length} entries'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -235,7 +254,13 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
     );
   }
 
-  Widget _buildLogItem(LogEntry entry, bool expanded, int index, ColorScheme cs, TextTheme tt) {
+  Widget _buildLogItem(
+    LogEntry entry,
+    bool expanded,
+    int index,
+    ColorScheme cs,
+    TextTheme tt,
+  ) {
     final lc = _levelColor(entry.level);
     return GestureDetector(
       onTap: () => setState(() => _expandedIndex = expanded ? null : index),
@@ -254,7 +279,9 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                 width: 4,
                 decoration: BoxDecoration(
                   color: lc,
-                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(8),
+                  ),
                 ),
               ),
               Expanded(
@@ -267,38 +294,60 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                         children: [
                           Text(
                             entry.formattedTimestamp,
-                            style: TextStyle(fontSize: 11, color: cs.outline, fontFamily: 'monospace'),
+                            style: tt.mono.copyWith(
+                              fontSize: 11,
+                              color: cs.outline,
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: lc.withAlpha(40),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               _levelLabel(entry.level),
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: lc),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: lc,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: cs.tertiaryContainer.withAlpha(60),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               entry.logger,
-                              style: TextStyle(fontSize: 10, color: cs.onTertiaryContainer),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: cs.onTertiaryContainer,
+                              ),
                             ),
                           ),
                           const Spacer(),
-                          Text(entry.source, style: TextStyle(fontSize: 10, color: cs.outline)),
+                          Text(
+                            entry.source,
+                            style: TextStyle(fontSize: 10, color: cs.outline),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(entry.message, style: tt.bodySmall?.copyWith(fontSize: 13)),
+                      Text(
+                        entry.message,
+                        style: tt.bodySmall?.copyWith(fontSize: 13),
+                      ),
                       if (expanded) ...[
                         const SizedBox(height: 6),
                         if (entry.exception != null)
@@ -312,7 +361,7 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                             ),
                             child: Text(
                               '⚠ ${entry.exception!}',
-                              style: TextStyle(fontSize: 11, color: lc, fontFamily: 'monospace'),
+                              style: tt.mono.copyWith(fontSize: 11, color: lc),
                             ),
                           ),
                         if (entry.context.isNotEmpty)
@@ -320,7 +369,10 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               'Context: ${entry.context}',
-                              style: TextStyle(fontSize: 11, color: cs.outline, fontFamily: 'monospace'),
+                              style: tt.mono.copyWith(
+                                fontSize: 11,
+                                color: cs.outline,
+                              ),
                             ),
                           ),
                         if (entry.extra.isNotEmpty)
@@ -328,7 +380,10 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                             padding: const EdgeInsets.only(top: 2),
                             child: Text(
                               'Extra: ${entry.extra}',
-                              style: TextStyle(fontSize: 11, color: cs.outline, fontFamily: 'monospace'),
+                              style: tt.mono.copyWith(
+                                fontSize: 11,
+                                color: cs.outline,
+                              ),
                             ),
                           ),
                         if (entry.traceId != null || entry.durationMs != null)
@@ -338,7 +393,10 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
                               '${entry.traceId != null ? "trace: ${entry.traceId}" : ""}'
                               '${entry.traceId != null && entry.durationMs != null ? " | " : ""}'
                               '${entry.durationMs != null ? "${entry.durationMs}ms" : ""}',
-                              style: TextStyle(fontSize: 10, color: cs.outline, fontFamily: 'monospace'),
+                              style: tt.mono.copyWith(
+                                fontSize: 10,
+                                color: cs.outline,
+                              ),
                             ),
                           ),
                       ],

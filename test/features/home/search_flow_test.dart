@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/extraction_cache.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/home/screens/home_screen.dart';
 import 'package:grablytic/features/home/screens/search_results_screen.dart';
@@ -22,6 +24,24 @@ class _NoopResumeNotifier extends ResumeNotifier {
 }
 
 void main() {
+  // T19's offline interception awaits the platform connectivity channel,
+  // which never answers in widget tests (pumpAndSettle exits with no
+  // frames scheduled). Answer 'wifi' so submit/share flows proceed online.
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (MethodCall call) async {
+        if (call.method == 'check') return ['wifi'];
+        return null;
+      },
+    );
+  });
+
+  // T01's process-global extraction cache is keyed by URL and shared
+  // across tests in one run — clear per test for isolation.
+  setUp(() => ExtractionCache.instance.clear());
+
   group('Search Flow Integration', () {
     late SharedPreferences prefs;
     late MockEngineService mockEngine;

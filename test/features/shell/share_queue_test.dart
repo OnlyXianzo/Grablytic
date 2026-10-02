@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/extraction_cache.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/shell/screens/app_shell.dart';
 import 'package:grablytic/providers/resume_provider.dart';
@@ -72,6 +74,23 @@ const _url1 = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 const _url2 = 'https://www.youtube.com/watch?v=9bZkp7q19f0';
 
 void main() {
+  // Same connectivity mock as search_flow_test: the offline interception
+  // awaits a platform channel that never answers in widget tests.
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (MethodCall call) async {
+        if (call.method == 'check') return ['wifi'];
+        return null;
+      },
+    );
+  });
+
+  // T01's process-global extraction cache is keyed by URL and shared
+  // across tests in one run — clear per test for isolation.
+  setUp(() => ExtractionCache.instance.clear());
+
   group('T2-6 share queue (Dart half)', () {
     testWidgets('two cold-start URLs each get a sheet in order',
         (tester) async {

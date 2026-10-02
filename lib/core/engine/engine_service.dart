@@ -108,6 +108,21 @@ abstract class EngineService {
     bool requiresCharging = false,
   });
 
+  /// Synchronizes offline queue reminder parameters with native WorkManager (T20).
+  /// Never throws.
+  Future<Map<String, dynamic>> syncQueueReminder({
+    required bool enabled,
+    int intervalMinutes = 180,
+  });
+
+  /// Displays a system notification for download/extraction failure
+  /// (posted to CHANNEL_ERROR). Never throws.
+  Future<void> showErrorNotification({
+    required String downloadId,
+    required String title,
+    required String error,
+  });
+
   /// Releases transport resources (broadcast controllers, native process
   /// handles, pending completers). Idempotent, never throws. The provider
   /// calls it for every implementation on dispose — previously only the

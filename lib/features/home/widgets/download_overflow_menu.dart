@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/download_provider.dart';
 import '../../../core/utils/app_logger.dart';
@@ -57,11 +58,26 @@ class DownloadOverflowButton extends ConsumerWidget {
             value: 'view_logs',
             child: Row(
               children: [
-                Icon(Icons.terminal,
-                    size: 18,
-                    color: colorScheme.primary),
+                Icon(Icons.terminal, size: 18, color: colorScheme.primary),
                 const SizedBox(width: 12),
                 const Text('View logs'),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'copy_link',
+            enabled: item.url.isNotEmpty,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.link,
+                  size: 18,
+                  color: item.url.isNotEmpty
+                      ? colorScheme.primary
+                      : colorScheme.outline,
+                ),
+                const SizedBox(width: 12),
+                const Text('Copy Link'),
               ],
             ),
           ),
@@ -71,17 +87,21 @@ class DownloadOverflowButton extends ConsumerWidget {
             enabled: _isTerminal,
             child: Row(
               children: [
-                Icon(Icons.refresh,
-                    size: 18,
-                    color: _isTerminal
-                        ? colorScheme.primary
-                        : colorScheme.outline),
+                Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: _isTerminal
+                      ? colorScheme.primary
+                      : colorScheme.outline,
+                ),
                 const SizedBox(width: 12),
-                Text(item.status == 'completed'
-                    ? 'Redownload'
-                    : (item.status == 'interrupted'
-                        ? 'Resume download'
-                        : 'Retry download')),
+                Text(
+                  item.status == 'completed'
+                      ? 'Redownload'
+                      : (item.status == 'interrupted'
+                            ? 'Resume download'
+                            : 'Retry download'),
+                ),
               ],
             ),
           ),
@@ -90,11 +110,11 @@ class DownloadOverflowButton extends ConsumerWidget {
             enabled: !_isActive,
             child: Row(
               children: [
-                Icon(Icons.audio_file_outlined,
-                    size: 18,
-                    color: !_isActive
-                        ? colorScheme.primary
-                        : colorScheme.outline),
+                Icon(
+                  Icons.audio_file_outlined,
+                  size: 18,
+                  color: !_isActive ? colorScheme.primary : colorScheme.outline,
+                ),
                 const SizedBox(width: 12),
                 const Text('Download audio from source'),
               ],
@@ -116,13 +136,18 @@ class DownloadOverflowButton extends ConsumerWidget {
             enabled: _isTerminal,
             child: Row(
               children: [
-                Icon(Icons.delete_outline,
-                    size: 18,
-                    color: _isTerminal ? colorScheme.error : colorScheme.outline),
+                Icon(
+                  Icons.delete_outline,
+                  size: 18,
+                  color: _isTerminal ? colorScheme.error : colorScheme.outline,
+                ),
                 const SizedBox(width: 12),
-                Text('Delete file',
-                    style: TextStyle(
-                        color: _isTerminal ? colorScheme.error : null)),
+                Text(
+                  'Delete file',
+                  style: TextStyle(
+                    color: _isTerminal ? colorScheme.error : null,
+                  ),
+                ),
               ],
             ),
           ),
@@ -132,9 +157,25 @@ class DownloadOverflowButton extends ConsumerWidget {
   }
 
   Future<void> _onSelected(
-      BuildContext context, WidgetRef ref, String value) async {
+    BuildContext context,
+    WidgetRef ref,
+    String value,
+  ) async {
     final notifier = ref.read(downloadProvider.notifier);
     switch (value) {
+      case 'copy_link':
+        if (item.url.isEmpty) {
+          _snack(context, 'No link to copy');
+          return;
+        }
+        AppLogger.info(
+          'User chose Copy Link for ${item.id}',
+          tag: 'DownloadOverflow',
+        );
+        await Clipboard.setData(ClipboardData(text: item.url));
+        if (!context.mounted) return;
+        _snack(context, 'Link copied');
+        return;
       case 'view_logs':
         DownloadLogSheet.show(
           context,
@@ -149,27 +190,36 @@ class DownloadOverflowButton extends ConsumerWidget {
           _snack(context, 'Cancel the active download first');
           return;
         }
-        AppLogger.info('User chose Redownload for ${item.id}',
-            tag: 'DownloadOverflow');
+        AppLogger.info(
+          'User chose Redownload for ${item.id}',
+          tag: 'DownloadOverflow',
+        );
         notifier.redownload(item.id, fresh: item.status == 'completed');
         _snack(
-            context,
-            item.status == 'completed'
-                ? 'Re-downloading (fresh fetch)'
-                : (item.status == 'interrupted'
+          context,
+          item.status == 'completed'
+              ? 'Re-downloading (fresh fetch)'
+              : (item.status == 'interrupted'
                     ? 'Resuming download'
-                    : 'Retrying download'));
+                    : 'Retrying download'),
+        );
       case 'audio':
         if (_isActive) {
           _snack(context, 'Cancel the active download first');
           return;
         }
-        AppLogger.info('User chose audio-from-source for ${item.id}',
-            tag: 'DownloadOverflow');
+        AppLogger.info(
+          'User chose audio-from-source for ${item.id}',
+          tag: 'DownloadOverflow',
+        );
         final newId = await notifier.downloadAudioFromSource(item.id);
         if (!context.mounted) return;
-        _snack(context,
-            newId == null ? 'Could not start audio download' : 'Audio download started');
+        _snack(
+          context,
+          newId == null
+              ? 'Could not start audio download'
+              : 'Audio download started',
+        );
       case 'remove_history':
         if (!context.mounted) return;
         final go = await _confirm(
@@ -189,9 +239,10 @@ class DownloadOverflowButton extends ConsumerWidget {
           return;
         }
         if (!context.mounted) return;
-        final name = item.filePath?.split('/').lastWhere(
-                (s) => s.isNotEmpty,
-                orElse: () => '') ??
+        final name =
+            item.filePath
+                ?.split('/')
+                .lastWhere((s) => s.isNotEmpty, orElse: () => '') ??
             '';
         final go = await _confirm(
           context,
@@ -205,8 +256,10 @@ class DownloadOverflowButton extends ConsumerWidget {
         if (go == true) {
           final ok = await notifier.deleteFileAndHistory(item.id);
           if (context.mounted) {
-            _snack(context,
-                ok ? 'File deleted' : 'Could not delete — try again');
+            _snack(
+              context,
+              ok ? 'File deleted' : 'Could not delete — try again',
+            );
           }
         }
     }
@@ -216,9 +269,9 @@ class DownloadOverflowButton extends ConsumerWidget {
       title.length > 60 ? '${title.substring(0, 60)}…' : title;
 
   void _snack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<bool?> _confirm(
