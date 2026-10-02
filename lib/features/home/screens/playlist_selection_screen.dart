@@ -30,11 +30,8 @@ class PlaylistSelectionScreen extends ConsumerStatefulWidget {
   final String url;
   final String title;
 
-  const PlaylistSelectionScreen({
-    super.key,
-    required this.url,
-    String? title,
-  }) : title = title ?? url;
+  const PlaylistSelectionScreen({super.key, required this.url, String? title})
+    : title = title ?? url;
 
   @override
   ConsumerState<PlaylistSelectionScreen> createState() =>
@@ -77,22 +74,18 @@ class _PlaylistSelectionScreenState
         'Fetch playlist info for ${widget.url}',
         () => engine.getPlaylistInfo(
           url: widget.url,
-          config: const {
-            'cookies_path': null,
-            'proxy': null,
-            'verbose': false,
-          },
+          config: const {'cookies_path': null, 'proxy': null, 'verbose': false},
         ),
         tag: 'PlaylistSelectionScreen',
       );
       if (!mounted) return;
       if (result['success'] == true) {
-        final entries =
-            ((result['entries'] as List?) ?? const []).whereType<Map>().map(
-                Map<String, dynamic>.from).toList();
+        final entries = ((result['entries'] as List?) ?? const [])
+            .whereType<Map>()
+            .map(Map<String, dynamic>.from)
+            .toList();
         setState(() {
-          _playlistTitle =
-              result['title'] as String? ?? widget.title;
+          _playlistTitle = result['title'] as String? ?? widget.title;
           _entries = entries;
           // Default: every downloadable entry (preserves the old
           // whole-playlist behavior; the user narrows it down).
@@ -104,8 +97,8 @@ class _PlaylistSelectionScreenState
         });
       } else {
         setState(() {
-          _error = result['error_message'] as String? ??
-              'Could not load playlist';
+          _error =
+              result['error_message'] as String? ?? 'Could not load playlist';
           _isLoading = false;
         });
       }
@@ -174,7 +167,8 @@ class _PlaylistSelectionScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Download already in progress for this link')),
+          content: Text('Download already in progress for this link'),
+        ),
       );
       return;
     }
@@ -187,15 +181,15 @@ class _PlaylistSelectionScreenState
 
     // Metered gate (Seal parity): explicit tap, but Wi-Fi Only is on —
     // confirm on metered links instead of silently spending data.
-    if (mounted &&
-        !await ensureUnmeteredDownload(context: context, ref: ref)) {
+    if (mounted && !await ensureUnmeteredDownload(context: context, ref: ref)) {
       return;
     }
 
     AppLogger.info(
-        'User initiated playlist download for url: ${widget.url} '
-        '(${_selected.length} entries)',
-        tag: 'PlaylistSelectionScreen');
+      'User initiated playlist download for url: ${widget.url} '
+      '(${_selected.length} entries)',
+      tag: 'PlaylistSelectionScreen',
+    );
 
     // One quality pick for the whole playlist (persisted as the next
     // batch's default). Cancel leaves the selection untouched.
@@ -260,9 +254,12 @@ class _PlaylistSelectionScreenState
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(wasQueued
+          content: Text(
+            wasQueued
                 ? 'Queued — starts when a slot frees up'
-                : 'Playlist download started')),
+                : 'Playlist download started',
+          ),
+        ),
       );
     } else {
       setState(() => _isStarting = false);
@@ -314,154 +311,150 @@ class _PlaylistSelectionScreenState
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline,
-                              size: 48, color: colorScheme.error),
-                          const SizedBox(height: 16),
-                          Text(_error!, textAlign: TextAlign.center),
-                          const SizedBox(height: 16),
-                          OutlinedButton(
-                            onPressed: _loadPlaylist,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : Column(
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 10),
-                        color: colorScheme.primaryContainer
-                            .withValues(alpha: 0.15),
-                        child: Text(
-                          '${_selected.length} of ${_available.length} downloadable '
-                          'selected (${_entries.length} total)',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                      Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: colorScheme.error,
                       ),
-                      SwitchListTile(
-                        key: const Key('playlist-reverse'),
-                        title: const Text('Reverse order'),
-                        subtitle: const Text(
-                            'Download selected entries last-to-first'),
-                        value: _reverse,
-                        onChanged: (v) => setState(() {
-                          _reverse = v;
-                          if (v) _shuffle = false;
-                        }),
-                      ),
-                      SwitchListTile(
-                        key: const Key('playlist-shuffle'),
-                        title: const Text('Shuffle order'),
-                        subtitle:
-                            const Text('Download selected entries shuffled'),
-                        value: _shuffle,
-                        onChanged: (v) => setState(() {
-                          _shuffle = v;
-                          if (v) _reverse = false;
-                        }),
-                      ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: ListView.builder(
-                          padding:
-                              const EdgeInsets.fromLTRB(20, 12, 20, 100),
-                          itemCount: _entries.length,
-                          itemBuilder: (context, i) {
-                            final entry = _entries[i];
-                            final index = _entryIndex(entry);
-                            final available =
-                                entry['is_available'] != false;
-                            final isSelected =
-                                _selected.contains(index);
-                            final dur = _formatDuration(
-                                entry['duration_seconds']);
-                            return Card(
-                              margin:
-                                  const EdgeInsets.only(bottom: 10),
-                              elevation: 0,
-                              color: isSelected
-                                  ? colorScheme.primaryContainer
-                                      .withValues(alpha: 0.08)
-                                  : colorScheme.surfaceContainerLow,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: isSelected
-                                      ? colorScheme.primary
-                                          .withValues(alpha: 0.4)
-                                      : colorScheme.outlineVariant
-                                          .withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: InkWell(
-                                key: Key('playlist-entry-$index'),
-                                onTap: () =>
-                                    _toggleSelection(index, available),
-                                borderRadius: BorderRadius.circular(12),
-                                child: Opacity(
-                                  opacity: available ? 1.0 : 0.55,
-                                  child: ListTile(
-                                    contentPadding:
-                                        const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6),
-                                    leading: Checkbox(
-                                      value: isSelected,
-                                      // Unavailable entries are visible but
-                                      // non-selectable (greyed, not hidden).
-                                      onChanged: available
-                                          ? (_) => _toggleSelection(
-                                              index, available)
-                                          : null,
-                                      activeColor:
-                                          colorScheme.primary,
-                                      checkColor:
-                                          colorScheme.onPrimary,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                    title: Text(
-                                      '${entry['title'] ?? 'Video $index'}',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      available
-                                          ? 'Video $index${dur.isNotEmpty ? ' · $dur' : ''}'
-                                          : 'Video $index · Unavailable '
-                                              '(deleted/private)',
-                                      style: textTheme.labelSmall?.copyWith(
-                                        color: available
-                                            ? colorScheme.outline
-                                            : colorScheme.error,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                      const SizedBox(height: 16),
+                      Text(_error!, textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        onPressed: _loadPlaylist,
+                        child: const Text('Retry'),
                       ),
                     ],
                   ),
+                ),
+              )
+            : Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.15),
+                    child: Text(
+                      '${_selected.length} of ${_available.length} downloadable '
+                      'selected (${_entries.length} total)',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  SwitchListTile(
+                    key: const Key('playlist-reverse'),
+                    title: const Text('Reverse order'),
+                    subtitle: const Text(
+                      'Download selected entries last-to-first',
+                    ),
+                    value: _reverse,
+                    onChanged: (v) => setState(() {
+                      _reverse = v;
+                      if (v) _shuffle = false;
+                    }),
+                  ),
+                  SwitchListTile(
+                    key: const Key('playlist-shuffle'),
+                    title: const Text('Shuffle order'),
+                    subtitle: const Text('Download selected entries shuffled'),
+                    value: _shuffle,
+                    onChanged: (v) => setState(() {
+                      _shuffle = v;
+                      if (v) _reverse = false;
+                    }),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+                      itemCount: _entries.length,
+                      itemBuilder: (context, i) {
+                        final entry = _entries[i];
+                        final index = _entryIndex(entry);
+                        final available = entry['is_available'] != false;
+                        final isSelected = _selected.contains(index);
+                        final dur = _formatDuration(entry['duration_seconds']);
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          color: isSelected
+                              ? colorScheme.primaryContainer.withValues(
+                                  alpha: 0.08,
+                                )
+                              : colorScheme.surfaceContainerLow,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? colorScheme.primary.withValues(alpha: 0.4)
+                                  : colorScheme.outlineVariant.withValues(
+                                      alpha: 0.3,
+                                    ),
+                            ),
+                          ),
+                          child: InkWell(
+                            key: Key('playlist-entry-$index'),
+                            onTap: () => _toggleSelection(index, available),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Opacity(
+                              opacity: available ? 1.0 : 0.55,
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                leading: Checkbox(
+                                  value: isSelected,
+                                  // Unavailable entries are visible but
+                                  // non-selectable (greyed, not hidden).
+                                  onChanged: available
+                                      ? (_) =>
+                                            _toggleSelection(index, available)
+                                      : null,
+                                  activeColor: colorScheme.primary,
+                                  checkColor: colorScheme.onPrimary,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                title: Text(
+                                  '${entry['title'] ?? 'Video $index'}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  available
+                                      ? 'Video $index${dur.isNotEmpty ? ' · $dur' : ''}'
+                                      : 'Video $index · Unavailable '
+                                            '(deleted/private)',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: available
+                                        ? colorScheme.outline
+                                        : colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
       ),
       bottomNavigationBar: _isLoading || _error != null
           ? null
@@ -477,15 +470,13 @@ class _PlaylistSelectionScreenState
                         : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 16),
+                      foregroundColor: colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(
-                        'Download ${_selected.length} selected'),
+                    child: Text('Download ${_selected.length} selected'),
                   ),
                 ),
               ),

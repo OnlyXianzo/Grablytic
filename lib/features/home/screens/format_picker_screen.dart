@@ -1421,7 +1421,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                             : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: colorScheme.primary,
-                          foregroundColor: Colors.white,
+                          foregroundColor: colorScheme.onPrimary,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -1626,7 +1626,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                 'Video: ${_selectedMuxedFormat ?? _selectedVideoFormat ?? '—'}\n'
                 'Audio: ${_selectedMuxedFormat != null ? '(in combined)' : (_selectedAudioFormat ?? '—')}\n'
                 'Container: $_selectedContainer',
-                style: textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                style: textTheme.mono,
               ),
             ],
           ),

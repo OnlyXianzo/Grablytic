@@ -1210,7 +1210,7 @@ class _ResumeScanSection extends ConsumerWidget {
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colorScheme.primary,
-                              foregroundColor: Colors.white,
+                              foregroundColor: colorScheme.onPrimary,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
