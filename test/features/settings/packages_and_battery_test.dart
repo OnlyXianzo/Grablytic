@@ -97,17 +97,10 @@ void main() {
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
           child: const MaterialApp(
-            home: SettingsScreen(),
+            home: PackagesSettingsScreen(),
           ),
         ),
       );
-      await tester.pumpAndSettle();
-
-      // Scroll to Packages card
-      final packagesHeader = find.text('Packages');
-      expect(packagesHeader, findsOneWidget);
-      await tester.scrollUntilVisible(packagesHeader, 200,
-          scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
 
       // Verify the 4 packages are visible
@@ -201,12 +194,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Scroll down to Unrestricted background
-      final batteryTile = find.text('Unrestricted background');
-      await tester.scrollUntilVisible(batteryTile, 300,
-          scrollable: find.byType(Scrollable).first);
+      // Unrestricted background lives in Permissions now.
+      await tester.tap(find.text('Permissions'));
       await tester.pumpAndSettle();
-
+      final batteryTile = find.text('Unrestricted background');
       expect(batteryTile, findsOneWidget);
     });
   });
