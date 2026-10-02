@@ -1,3 +1,4 @@
+import 'dart:async' show TimeoutException;
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -105,13 +106,20 @@ String? normalizeQueueUrl(String raw) {
 
 /// Helper to determine if the device is currently offline.
 ///
-/// Fail-open: returns false (assumes online) if connectivity check throws.
+/// Fail-open: returns false (assumes online) if connectivity check throws
+/// or wedges. A wedged platform connectivity service must never hang link
+/// submit/share flows (or widget tests, where the channel never answers).
 Future<bool> isDeviceOffline({Connectivity? connectivity}) async {
   try {
     final conn = connectivity ?? Connectivity();
-    final results = await conn.checkConnectivity();
+    final results = await conn.checkConnectivity().timeout(
+      const Duration(seconds: 3),
+      onTimeout: () => <ConnectivityResult>[ConnectivityResult.wifi],
+    );
     if (results.isEmpty) return true;
     return results.every((r) => r == ConnectivityResult.none);
+  } on TimeoutException {
+    return false;
   } catch (e) {
     AppLogger.warn(
       'Connectivity check error ($e); assuming online',

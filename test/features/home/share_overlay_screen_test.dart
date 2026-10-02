@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/extraction_cache.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/home/screens/format_picker_screen.dart';
 import 'package:grablytic/features/home/screens/playlist_selection_screen.dart';
@@ -21,6 +23,23 @@ Future<SharedPreferences> _prefs({
 }
 
 void main() {
+  // Same connectivity mock as search_flow_test: the offline interception
+  // awaits a platform channel that never answers in widget tests.
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (MethodCall call) async {
+        if (call.method == 'check') return ['wifi'];
+        return null;
+      },
+    );
+  });
+
+  // T01's process-global extraction cache is keyed by URL and shared
+  // across tests in one run — clear per test for isolation.
+  setUp(() => ExtractionCache.instance.clear());
+
   group('ShareOverlayScreen URL extraction', () {
     test('extractUrl parses plain URL', () {
       expect(
