@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:uuid/uuid.dart';
+import 'package:video_player/video_player.dart';
 import '../../../core/database/download_history_db.dart';
 import '../../../core/engine/extraction_cache.dart';
 import '../../../core/theme/text_styles.dart';
@@ -110,6 +111,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   late final TextEditingController _clipEndController;
   String? _clipValidationError;
 
+  // T08: In-app progressive preview
+  Map<String, dynamic>? _previewStream;
+  VideoPlayerController? _previewController;
+  bool _isPreviewInitializing = false;
+  bool _isPreviewPlaying = false;
+  bool _isPreviewUnavailable = false;
+
   static String normalizeCeiling(String? val) {
     if (val == null) return 'best';
     final v = val.toLowerCase().trim();
@@ -146,6 +154,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   void dispose() {
     _clipStartController.dispose();
     _clipEndController.dispose();
+    _previewController?.dispose();
+    _previewController = null;
     super.dispose();
   }
 
@@ -289,6 +299,17 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       _thumbnailUrl = result['thumbnail_url'] as String? ?? '';
       _durationSeconds = (result['duration_seconds'] as num?)?.toInt();
 
+      // T08: Preview stream from single extraction
+      if (result['preview_stream'] != null && result['preview_stream'] is Map) {
+        _previewStream = Map<String, dynamic>.from(
+          result['preview_stream'] as Map,
+        );
+        _isPreviewUnavailable = false;
+      } else {
+        _previewStream = null;
+        _isPreviewUnavailable = true;
+      }
+
       final activePreset = ref.read(presetsProvider).activePreset;
       _recommendedVideoFormatId =
           result['recommended_video_format_id'] as String?;
@@ -372,6 +393,104 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     }
 
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _togglePreviewPlay() async {
+    if (_previewStream == null ||
+        _previewStream!['url'] == null ||
+        (_previewStream!['url'] as String).isEmpty) {
+      if (mounted) {
+        setState(() => _isPreviewUnavailable = true);
+      }
+      return;
+    }
+
+    if (_previewController != null && _previewController!.value.isInitialized) {
+      if (_previewController!.value.isPlaying) {
+        await _previewController!.pause();
+        if (mounted) setState(() => _isPreviewPlaying = false);
+      } else {
+        await _previewController!.play();
+        if (mounted) setState(() => _isPreviewPlaying = true);
+      }
+      return;
+    }
+
+    if (_isPreviewInitializing) return;
+
+    setState(() {
+      _isPreviewInitializing = true;
+      _isPreviewUnavailable = false;
+    });
+
+    try {
+      final urlStr = _previewStream!['url'] as String;
+      final headersRaw = _previewStream!['headers'];
+      final headers = <String, String>{};
+      if (headersRaw is Map) {
+        for (final entry in headersRaw.entries) {
+          if (entry.key != null && entry.value != null) {
+            headers[entry.key.toString()] = entry.value.toString();
+          }
+        }
+      }
+
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(urlStr),
+        httpHeaders: headers,
+      );
+
+      await controller.initialize();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+
+      controller.addListener(() {
+        if (!mounted) return;
+        if (controller.value.hasError) {
+          setState(() {
+            _isPreviewUnavailable = true;
+            _isPreviewPlaying = false;
+          });
+          return;
+        }
+        final isPlaying = controller.value.isPlaying;
+        if (_isPreviewPlaying != isPlaying) {
+          setState(() => _isPreviewPlaying = isPlaying);
+        }
+      });
+
+      await controller.play();
+      if (mounted) {
+        setState(() {
+          _previewController = controller;
+          _isPreviewInitializing = false;
+          _isPreviewPlaying = true;
+        });
+      } else {
+        controller.dispose();
+      }
+    } catch (_) {
+      // 403 / SABR / unsupported format: silent fallback, never blocks the picker
+      if (mounted) {
+        setState(() {
+          _isPreviewInitializing = false;
+          _isPreviewUnavailable = true;
+        });
+      }
+    }
+  }
+
+  void _closePreview() {
+    _previewController?.pause();
+    _previewController?.dispose();
+    _previewController = null;
+    if (mounted) {
+      setState(() {
+        _isPreviewPlaying = false;
+      });
+    }
   }
 
   /// True when [fmt] matches every whitespace-separated token of the
@@ -748,19 +867,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                           children: [
                             Semantics(
                               label: 'Video thumbnail',
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: _thumbnailUrl.isNotEmpty
-                                    ? Image.network(
-                                        _thumbnailUrl,
-                                        width: 112,
-                                        height: 64,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, _, _) =>
-                                            _thumbFallback(colorScheme),
-                                      )
-                                    : _thumbFallback(colorScheme),
-                              ),
+                              child: _buildThumbnailWidget(colorScheme),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -787,12 +894,28 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                       color: colorScheme.outline,
                                     ),
                                   ),
+                                  if (_isPreviewUnavailable) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Preview unavailable',
+                                      style: textTheme.labelSmall?.copyWith(
+                                        color: colorScheme.outline,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
                           ],
                         ),
                       ),
+                    ],
+                    if (_previewController != null &&
+                        _previewController!.value.isInitialized &&
+                        !_isPreviewUnavailable) ...[
+                      const SizedBox(height: 12),
+                      _buildInlinePreviewPlayer(colorScheme, textTheme),
                     ],
                     if (_videoFormats.isNotEmpty ||
                         _muxedFormats.isNotEmpty) ...[
@@ -1327,9 +1450,144 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
   }
 
+  Widget _buildThumbnailWidget(ColorScheme colorScheme) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _isPreviewUnavailable ? null : _togglePreviewPlay,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 112,
+            height: 64,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _thumbnailUrl.isNotEmpty
+                    ? Image.network(
+                        _thumbnailUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _thumbFallback(colorScheme),
+                      )
+                    : _thumbFallback(colorScheme),
+                if (_isPreviewInitializing)
+                  Container(
+                    color: Colors.black45,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  )
+                else if (!_isPreviewUnavailable && _previewStream != null)
+                  Container(
+                    color: Colors.black26,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isPreviewPlaying ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlinePreviewPlayer(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final controller = _previewController;
+    if (controller == null || !controller.value.isInitialized) {
+      return const SizedBox.shrink();
+    }
+    final ar = controller.value.aspectRatio;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        color: Colors.black,
+        child: AspectRatio(
+          aspectRatio: (ar > 0) ? ar : (16 / 9),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              VideoPlayer(controller),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _togglePreviewPlay,
+                child: Center(
+                  child: AnimatedOpacity(
+                    opacity: _isPreviewPlaying ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  tooltip: 'Close preview',
+                  onPressed: _closePreview,
+                ),
+              ),
+              Positioned(
+                bottom: 8,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Preview · ${_previewStream?['height'] != null ? '${_previewStream!['height']}p' : '≤480p'}',
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Preview dialog: thumbnail + title + current selection summary with
-  /// a Download CTA. (Streaming playback needs a player dependency —
-  /// tracked as follow-up; this covers "see what I'm getting".)
+  /// a Download CTA. Tap Preview Stream to toggle in-app preview.
   void _showPreview(ColorScheme colorScheme, TextTheme textTheme) {
     final dur = _formatDuration(_durationSeconds);
     showDialog(
@@ -1378,6 +1636,17 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Close'),
           ),
+          if (!_isPreviewUnavailable && _previewStream != null)
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _togglePreviewPlay();
+              },
+              icon: Icon(_isPreviewPlaying ? Icons.pause : Icons.play_arrow),
+              label: Text(
+                _isPreviewPlaying ? 'Pause Stream' : 'Preview Stream',
+              ),
+            ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
