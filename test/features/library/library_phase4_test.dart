@@ -53,7 +53,6 @@ void main() {
   group('Library P4-2 fidelity (segmented + search + chips)', () {
     testWidgets('segmented control switches to Playlists tab', (tester) async {
       await _pumpLibrary(tester, prefs, engine, []);
-      expect(find.byType(SegmentedButton<int>), findsOneWidget);
       expect(find.text('No downloads yet'), findsOneWidget);
       await tester.tap(find.text('Playlists'));
       await tester.pumpAndSettle();

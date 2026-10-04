@@ -153,7 +153,12 @@ class _SponsorBlockToggle extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(title, style: textTheme.bodyLarge),
+              child: Text(
+                title,
+                style: textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
             Switch.adaptive(
               value: value,

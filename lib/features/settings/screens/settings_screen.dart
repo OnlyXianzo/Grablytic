@@ -1144,7 +1144,10 @@ class _SettingSwitch extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: textTheme.bodyLarge),
+                    Text(title,
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        )),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
@@ -1223,7 +1226,10 @@ class _SettingNavItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: textTheme.bodyLarge),
+                    Text(title,
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        )),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
@@ -1367,7 +1373,12 @@ class _SettingSelect<T> extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: textTheme.bodyLarge),
+                Text(
+                  title,
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
@@ -1384,6 +1395,10 @@ class _SettingSelect<T> extends StatelessWidget {
             underline: const SizedBox.shrink(),
             onChanged: onChanged,
             dropdownColor: colorScheme.surfaceContainerHigh,
+            style: TextStyle(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
             items: items,
           ),
         ],
@@ -1769,6 +1784,10 @@ class _SettingThemeSelector extends StatelessWidget {
                   if (val != null) onChanged(val);
                 },
                 dropdownColor: colorScheme.surfaceContainerHigh,
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
                 items: const [
                   DropdownMenuItem(
                     value: AppThemeMode.system,
@@ -1855,6 +1874,10 @@ class _SettingLogoSelector extends StatelessWidget {
                   if (val != null) onChanged(val);
                 },
                 dropdownColor: colorScheme.surfaceContainerHigh,
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
                 items: const [
                   DropdownMenuItem(
                     value: 'system',
