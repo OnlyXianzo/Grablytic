@@ -24,6 +24,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   late TabController _tabController;
   double _fabScale = 0.0;
 
+  /// Local Videos-tab filters (presentation only — no provider changes):
+  /// free-text query matched against row titles, plus status chip filter.
+  /// 'all' | 'completed' | 'failed' | 'progress'(=pending).
+  String _searchQuery = '';
+  String _statusFilter = 'all';
+  final _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +57,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   void dispose() {
     _tabController.animation?.removeListener(_syncFabScale);
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -143,29 +151,47 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
             ),
-            // Tabs
-            TabBar(
-              controller: _tabController,
-              dividerColor: Colors.transparent,
-              indicatorColor: colorScheme.primary,
-              labelColor: colorScheme.primary,
-              unselectedLabelColor: colorScheme.onSurfaceVariant,
-              labelStyle: textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.bold,
+            // Segmented tabs (mockup `.seg`): bound to the existing
+            // TabController so swipe + FAB behavior is preserved.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Semantics(
+                label: 'Library tabs',
+                child: SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('Videos')),
+                    ButtonSegment(value: 1, label: Text('Playlists')),
+                    ButtonSegment(value: 2, label: Text('History')),
+                  ],
+                  selected: {_tabController.index},
+                  onSelectionChanged: (selected) {
+                    _tabController.animateTo(selected.first);
+                  },
+                  style: SegmentedButton.styleFrom(
+                    selectedForegroundColor: colorScheme.primary,
+                    selectedBackgroundColor:
+                        colorScheme.surfaceContainerHigh,
+                  ),
+                ),
               ),
-              unselectedLabelStyle: textTheme.labelLarge,
-              tabs: const [
-                Tab(text: 'Videos'),
-                Tab(text: 'Playlists'),
-                Tab(text: 'History'),
-              ],
             ),
             // Content
+            // Videos-tab filter bar (search + status chips, mockup `.search`
+            // + `.chip`): local state only, filters the real section lists.
+            if (_tabController.index == 0)
+              _buildVideosFilter(colorScheme, textTheme),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildLibraryContent(sections, colorScheme, textTheme, settings.useGridView),
+                  _buildLibraryContent(
+                    sections,
+                    colorScheme,
+                    textTheme,
+                    settings.useGridView,
+                    _searchQuery,
+                    _statusFilter,
+                  ),
                   _buildPlaylistsTab(playlists, colorScheme, textTheme, settings.useGridView),
                   DownloadHistoryScreen(useGridView: settings.useGridView),
                 ],
@@ -177,15 +203,90 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
+  /// Videos-tab search + status chips. Both are local presentation state:
+  /// chips pick which real sections render, the query self-hides rows whose
+  /// title doesn't match (rows already watch their own item — no new subs).
+  Widget _buildVideosFilter(ColorScheme colorScheme, TextTheme textTheme) {
+    const chips = [
+      ('all', 'All'),
+      ('completed', 'Completed'),
+      ('failed', 'Failed'),
+      ('progress', 'In progress'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            label: 'Search videos',
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search title or link',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              onChanged: (v) =>
+                  setState(() => _searchQuery = v.trim().toLowerCase()),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final (value, label) in chips)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(label),
+                      selected: _statusFilter == value,
+                      onSelected: (_) =>
+                          setState(() => _statusFilter = value),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLibraryContent(
     DownloadSections sections,
     ColorScheme colorScheme,
     TextTheme textTheme,
     bool useGridView,
+    String query,
+    String statusFilter,
   ) {
-    final pending = sections.pendingIds;
-    final failed = sections.failedIds;
-    final completed = sections.completedIds;
+    // Chips pick real sections: progress=pending (mockup "In progress").
+    final showPending = statusFilter == 'all' || statusFilter == 'progress';
+    final showFailed = statusFilter == 'all' || statusFilter == 'failed';
+    final showCompleted =
+        statusFilter == 'all' || statusFilter == 'completed';
+    final pending = showPending ? sections.pendingIds : const <String>[];
+    final failed = showFailed ? sections.failedIds : const <String>[];
+    final completed =
+        showCompleted ? sections.completedIds : const <String>[];
 
     if (sections.allIds.isEmpty) {
       return Center(
@@ -232,8 +333,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: useGridView
-          ? _buildGridView(completed, pending, failed, colorScheme, textTheme)
-          : _buildListView(completed, pending, failed, colorScheme, textTheme),
+          ? _buildGridView(
+              completed, pending, failed, colorScheme, textTheme, query)
+          : _buildListView(
+              completed, pending, failed, colorScheme, textTheme, query),
     );
   }
 
@@ -243,6 +346,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     List<String> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
+    String query,
   ) {
     // Lazily-built slivers: the old eager ListView(children:) constructed
     // every row (thumbnails, progress painters) on each frame — visible
@@ -289,6 +393,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 id: pending[i],
                 colorScheme: colorScheme,
                 isDownloading: true,
+                query: query,
               ),
             ),
           ),
@@ -304,6 +409,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 id: failed[i],
                 colorScheme: colorScheme,
                 isError: true,
+                query: query,
               ),
             ),
           ),
@@ -319,6 +425,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 id: completed[i],
                 colorScheme: colorScheme,
                 isDownloading: false,
+                query: query,
               ),
             ),
           ),
@@ -334,6 +441,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     List<String> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
+    String query,
   ) {
     final all = [...pending, ...failed, ...completed];
     // Flags recovered from section ranges (same partition as _buildListView).
@@ -357,6 +465,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           textTheme: textTheme,
           isDownloading: rangeIsDownloading(index),
           isError: rangeIsError(index),
+          query: query,
         );
       },
     );
@@ -613,12 +722,16 @@ class _LibraryGridCard extends ConsumerWidget {
   final bool isDownloading;
   final bool isError;
 
+  /// Free-text filter (lowercased); rows whose title doesn't match hide.
+  final String query;
+
   const _LibraryGridCard({
     required this.id,
     required this.colorScheme,
     required this.textTheme,
     this.isDownloading = false,
     this.isError = false,
+    this.query = '',
   });
 
   @override
@@ -626,6 +739,10 @@ class _LibraryGridCard extends ConsumerWidget {
     // Own-item subscription (Loop-3): rebuilds only when this item changes.
     final item = ref.watch(downloadItemProvider(id));
     if (item == null) return const SizedBox.shrink();
+    if (query.isNotEmpty &&
+        !item.title.toLowerCase().contains(query)) {
+      return const SizedBox.shrink();
+    }
     final label = isError
         ? '${item.title}, failed'
         : '${item.title}, ${isDownloading ? 'downloading' : 'completed'}';
@@ -865,11 +982,15 @@ class _LibraryItem extends ConsumerWidget {
   final bool isDownloading;
   final bool isError;
 
+  /// Free-text filter (lowercased); rows whose title doesn't match hide.
+  final String query;
+
   const _LibraryItem({
     required this.id,
     required this.colorScheme,
     this.isDownloading = false,
     this.isError = false,
+    this.query = '',
   });
 
   @override
@@ -877,6 +998,10 @@ class _LibraryItem extends ConsumerWidget {
     // Own-item subscription (Loop-3): rebuilds only when this item changes.
     final item = ref.watch(downloadItemProvider(id));
     if (item == null) return const SizedBox.shrink();
+    if (query.isNotEmpty &&
+        !item.title.toLowerCase().contains(query)) {
+      return const SizedBox.shrink();
+    }
     final textTheme = Theme.of(context).textTheme;
 
     final label = isError
@@ -893,8 +1018,8 @@ class _LibraryItem extends ConsumerWidget {
               : CrossAxisAlignment.start,
           children: [
             Container(
-              width: 128,
-              height: 72,
+              width: 92,
+              height: 68,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: isError
@@ -1041,6 +1166,23 @@ class _LibraryItem extends ConsumerWidget {
                         item: item,
                         colorScheme: colorScheme,
                       ),
+                      // In-row delete (mockup `.acts`): terminal rows only,
+                      // mirroring the overflow menu's guarded confirm flow.
+                      if (!isDownloading)
+                        Semantics(
+                          label: 'Delete file',
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: colorScheme.error,
+                            ),
+                            onPressed: () => _confirmDelete(
+                                context, ref, item),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Delete',
+                          ),
+                        ),
                     ],
                   ),
                   if (isDownloading) ...[
@@ -1174,6 +1316,53 @@ class _LibraryItem extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Guarded delete mirroring `DownloadOverflowButton`'s delete_file flow:
+  /// terminal rows only (call site), user confirm, same snackbars.
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    DownloadItem item,
+  ) async {
+    final name =
+        item.filePath?.split('/').lastWhere((s) => s.isNotEmpty, orElse: () => '') ?? '';
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text('Delete file?'),
+        content: Text(
+          name.isNotEmpty
+              ? '“$name” will be permanently deleted from disk and removed from history.'
+              : 'The downloaded file will be permanently deleted from disk and removed from history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (go == true && context.mounted) {
+      final ok = await ref
+          .read(downloadProvider.notifier)
+          .deleteFileAndHistory(item.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok ? 'File deleted' : 'Could not delete — try again'),
+          ),
+        );
+      }
+    }
   }
 }
 

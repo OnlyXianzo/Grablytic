@@ -104,7 +104,14 @@ void main() {
 
       // Verify failed item is displayed in grid view
       expect(find.text('Test Grid Failed Video'), findsOneWidget);
-      expect(find.text('Failed'), findsOneWidget);
+      // Card badge only: the Videos filter chip is also labeled 'Failed'.
+      expect(
+        find.descendant(
+          of: find.byType(Card),
+          matching: find.text('Failed'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Connection timed out'), findsOneWidget);
       expect(find.byTooltip('Retry'), findsOneWidget);
     });
