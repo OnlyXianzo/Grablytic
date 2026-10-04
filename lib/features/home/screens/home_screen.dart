@@ -141,20 +141,34 @@ class HomeScreen extends ConsumerWidget {
                   return tiles;
                 }),
               ] else if (!hasAny) ...[
-                const SizedBox(height: 60),
+                const SizedBox(height: 36),
                 Semantics(
                   label: 'No downloads',
-                  child: Icon(
-                    Icons.cloud_download_outlined,
-                    size: 48,
-                    color: colorScheme.outline.withValues(alpha: 0.4),
+                  child: Container(
+                    width: 76,
+                    height: 76,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: colorScheme.outlineVariant
+                            .withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.cloud_download_outlined,
+                      size: 30,
+                      color: colorScheme.outline,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   'No downloads yet',
                   style: textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -188,9 +202,18 @@ class _HeroSection extends StatelessWidget {
         // Brand row (mockup `.brand`).
         Row(
           children: [
-            AdaptiveLogo(
-              size: 36,
-              borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color:
+                      colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              child: AdaptiveLogo(
+                size: 36,
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             const SizedBox(width: 10),
             Text(
@@ -202,7 +225,7 @@ class _HeroSection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 26),
+        const SizedBox(height: 22),
         Text(
           'What are we\ngrabbing today?',
           style: textTheme.headlineLarge?.copyWith(
@@ -255,12 +278,12 @@ class _OptsRow extends StatelessWidget {
           label: '$caption, $value',
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color:
                       colorScheme.outlineVariant.withValues(alpha: 0.3),
@@ -271,19 +294,34 @@ class _OptsRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    caption,
+                    caption.toUpperCase(),
                     style: textTheme.labelSmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.08,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          value,
+                          style: textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.expand_more,
+                        size: 16,
+                        color: colorScheme.outline,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -408,11 +446,11 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: widget.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          color: widget.colorScheme.outlineVariant.withValues(alpha: 0.85),
         ),
         color: widget.colorScheme.surfaceContainerLowest,
       ),
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(6),
       child: Row(
         children: [
           Expanded(
@@ -422,9 +460,9 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                 controller: _controller,
                 focusNode: _focusNode,
                 decoration: InputDecoration(
-                  hintText: 'Search or enter link...',
+                  hintText: 'Search or enter link…',
                   hintStyle: TextStyle(
-                    color: widget.colorScheme.outline.withValues(alpha: 0.5),
+                    color: widget.colorScheme.outline,
                   ),
                   border: InputBorder.none,
                   isDense: true,
@@ -458,9 +496,9 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
               padding: const EdgeInsets.all(8),
               child: Material(
                 color: widget.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   onTap: () {
                     AppLogger.info(
                       'User clicked Batch import URLs button',
@@ -502,7 +540,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                   child: Container(
                     height: 48,
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 18),
+                        const EdgeInsets.symmetric(horizontal: 14),
                     alignment: Alignment.center,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
