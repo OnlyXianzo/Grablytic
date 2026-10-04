@@ -261,13 +261,18 @@ class SegTabs extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Semantics(
       label: 'Options',
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerLow,
-          borderRadius:
-              BorderRadius.circular(GrablyticRadii.lg),
-        ),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLow,
+            borderRadius:
+                BorderRadius.circular(GrablyticRadii.lg),
+            // Hairline edge so the bar reads on-device even where
+            // surface-vs-screen deltas crush (same treatment as cards).
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            ),
+          ),
         child: Row(
           children: [
             for (var i = 0; i < labels.length; i++)

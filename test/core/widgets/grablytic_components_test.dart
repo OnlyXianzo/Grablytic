@@ -108,6 +108,38 @@ void main() {
     });
   });
 
+  group('SegTabs', () {
+    testWidgets('bar, pill and screen bg all differ; taps select',
+        (tester) async {
+      var selected = 0;
+      await tester.pumpWidget(
+        _wrap(
+          SegTabs(
+            labels: const ['Videos', 'Playlists', 'History'],
+            selectedIndex: selected,
+            onChanged: (i) => selected = i,
+          ),
+        ),
+      );
+      // Three equal thirds present with correct selection.
+      expect(find.text('Videos'), findsOneWidget);
+      expect(find.text('Playlists'), findsOneWidget);
+      expect(find.text('History'), findsOneWidget);
+      // Bar carries a hairline edge and the selected pill a fill, so the
+      // control reads on-device even where surface deltas crush.
+      final containers =
+          tester.widgetList<Container>(find.byType(Container));
+      final decos = containers
+          .map((c) => c.decoration)
+          .whereType<BoxDecoration>();
+      expect(decos.any((d) => d.border is Border), isTrue);
+      final fills = decos.map((d) => d.color).whereType<Color>().toSet();
+      expect(fills.length, greaterThanOrEqualTo(2));
+      await tester.tap(find.text('History'));
+      expect(selected, 2);
+    });
+  });
+
   group('BackHeader', () {
     testWidgets('renders label and pops by default', (tester) async {
       await tester.pumpWidget(

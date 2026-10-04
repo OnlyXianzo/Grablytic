@@ -827,7 +827,58 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                 ),
               )
             : _isLoading
-            ? _buildPlaceholderView(colorScheme, textTheme)
+            ? SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Opaque loading header: the shimmer skeleton below can
+                    // read as pure black on dark (frozen mid-sweep), so this
+                    // guarantees visible pixels + a way out (Cancel pops;
+                    // _fetchFormats is mounted-guarded).
+                    Semantics(
+                      label: 'Fetching formats',
+                      child: Center(
+                        key: const Key('picker_loading'),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 24),
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Fetching formats…',
+                              style: textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              widget.url,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.of(context).maybePop(),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _buildPlaceholderView(colorScheme, textTheme),
+                  ],
+                ),
+              )
             : SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
