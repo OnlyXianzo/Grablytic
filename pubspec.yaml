@@ -74,6 +74,9 @@ flutter:
 
   assets:
     - assets/brand/grablytic_logo.png
+    - assets/brand/grablytic_logo_light.png
+    - assets/brand/grablytic_logo_dark.png
+    - assets/brand/grablytic_logo_mark.png
     - assets/branding/Grablytic-logo.png
 
   fonts:
