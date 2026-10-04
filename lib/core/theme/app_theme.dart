@@ -255,3 +255,30 @@ class AppTheme {
     );
   }
 }
+
+/// Spacing scale (dp) shared by all redesign components and screens.
+/// No magic padding numbers in screens — reference these.
+class GrablyticSpacing {
+  GrablyticSpacing._();
+
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double xxxl = 32;
+}
+
+/// Corner-radius scale (dp) shared by all redesign components and screens.
+/// `xl` (20) matches the mockup card radius.
+class GrablyticRadii {
+  GrablyticRadii._();
+
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double sheet = 28;
+}
