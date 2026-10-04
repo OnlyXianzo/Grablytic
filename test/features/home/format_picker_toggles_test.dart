@@ -253,8 +253,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Switch to Audio Only
-        await tester.tap(find.text('Audio Only'));
+        // Switch to Audio only
+        await tester.tap(find.text('Audio only'));
         await tester.pumpAndSettle();
 
         // Quality Ceiling should be hidden

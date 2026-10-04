@@ -5,14 +5,14 @@ import '../../../providers/download_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import 'download_log_sheet.dart';
 
-/// Per-item overflow actions (delete / redownload / audio-from-source).
+/// Per-item overflow actions (view logs, cancel, copy, redownload, audio,
+/// remove, delete).
 ///
 /// State-gated so destructive or duplicative work is impossible while the
 /// engine holds the id:
-/// - Active (downloading/pending/queued): only Cancel is legal (handled by
-///   the card's existing progress UI) — Redownload/Delete are disabled with
-///   an explanatory message instead of silently colliding (engine rejects
-///   with ERROR_ALREADY_ACTIVE as backstop).
+/// - Active (downloading/pending/queued): Cancel is the primary action;
+///   Redownload/Delete stay disabled with an explanatory message instead of
+///   silently colliding (engine rejects with ERROR_ALREADY_ACTIVE backstop).
 /// - Terminal (completed/error/cancelled): Redownload (same id, original
 ///   config; `fresh` for completed merges force_overwrite + ignore_archive
 ///   so the fetch actually happens), Download-audio-from-source (new id),
@@ -70,7 +70,40 @@ class DownloadOverflowButton extends ConsumerWidget {
               children: [
                 Icon(Icons.terminal, size: 18, color: colorScheme.primary),
                 const SizedBox(width: 12),
-                const Text('View logs'),
+                const Flexible(
+                  child: Text(
+                    'View logs',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'cancel_download',
+            enabled: _isActive,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.cancel_outlined,
+                  size: 18,
+                  color: _isActive
+                      ? colorScheme.error
+                      : disabledColor,
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    'Cancel download',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color:
+                          _isActive ? colorScheme.error : disabledColor,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -87,10 +120,14 @@ class DownloadOverflowButton extends ConsumerWidget {
                       : disabledColor,
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Copy Link',
-                  style: TextStyle(
-                    color: item.url.isNotEmpty ? null : disabledColor,
+                Flexible(
+                  child: Text(
+                    'Copy Link',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: item.url.isNotEmpty ? null : disabledColor,
+                    ),
                   ),
                 ),
               ],
@@ -110,14 +147,18 @@ class DownloadOverflowButton extends ConsumerWidget {
                       : disabledColor,
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  item.status == 'completed'
-                      ? 'Redownload'
-                      : (item.status == 'interrupted'
-                            ? 'Resume download'
-                            : 'Retry download'),
-                  style: TextStyle(
-                    color: _isTerminal ? null : disabledColor,
+                Flexible(
+                  child: Text(
+                    item.status == 'completed'
+                        ? 'Redownload'
+                        : (item.status == 'interrupted'
+                              ? 'Resume download'
+                              : 'Retry download'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _isTerminal ? null : disabledColor,
+                    ),
                   ),
                 ),
               ],
@@ -134,23 +175,33 @@ class DownloadOverflowButton extends ConsumerWidget {
                   color: !_isActive ? colorScheme.primary : disabledColor,
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Download audio from source',
-                  style: TextStyle(
-                    color: !_isActive ? null : disabledColor,
+                Flexible(
+                  child: Text(
+                    'Download audio from source',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: !_isActive ? null : disabledColor,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
           const PopupMenuDivider(),
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'remove_history',
             child: Row(
               children: [
                 Icon(Icons.history, size: 18),
                 SizedBox(width: 12),
-                Text('Remove from history'),
+                Flexible(
+                  child: Text(
+                    'Remove from history',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
@@ -165,10 +216,14 @@ class DownloadOverflowButton extends ConsumerWidget {
                   color: _isTerminal ? colorScheme.error : disabledColor,
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Delete file',
-                  style: TextStyle(
-                    color: _isTerminal ? colorScheme.error : disabledColor,
+                Flexible(
+                  child: Text(
+                    'Delete file',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _isTerminal ? colorScheme.error : disabledColor,
+                    ),
                   ),
                 ),
               ],
@@ -186,6 +241,18 @@ class DownloadOverflowButton extends ConsumerWidget {
   ) async {
     final notifier = ref.read(downloadProvider.notifier);
     switch (value) {
+      case 'cancel_download':
+        if (!_isActive) {
+          _snack(context, 'Nothing to cancel');
+          return;
+        }
+        AppLogger.info(
+          'User chose Cancel for ${item.id}',
+          tag: 'DownloadOverflow',
+        );
+        notifier.cancelDownload(item.id);
+        _snack(context, 'Cancelling download');
+        return;
       case 'copy_link':
         if (item.url.isEmpty) {
           _snack(context, 'No link to copy');

@@ -240,6 +240,104 @@ class GrablyticBottomSheet {
   }
 }
 
+/// Segmented tab control (mockup `.seg`): filled bar, equal thirds, selected
+/// pill distinct from the bar. Drives any index-based content (tabs, modes).
+/// 48dp targets, selected semantics.
+class SegTabs extends StatelessWidget {
+  const SegTabs({
+    super.key,
+    required this.labels,
+    required this.selectedIndex,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Semantics(
+      label: 'Options',
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius:
+              BorderRadius.circular(GrablyticRadii.lg),
+        ),
+        child: Row(
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              Expanded(
+                child: _SegTab(
+                  label: labels[i],
+                  selected: selectedIndex == i,
+                  colorScheme: colorScheme,
+                  textTheme: textTheme,
+                  onTap: () => onChanged(i),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One tab of [SegTabs]: equal-third pill, accent text + distinct fill when
+/// selected, muted otherwise. 48dp target.
+class _SegTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+  final VoidCallback onTap;
+
+  const _SegTab({
+    required this.label,
+    required this.selected,
+    required this.colorScheme,
+    required this.textTheme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected
+                ? colorScheme.surfaceContainerHighest
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: textTheme.bodyLarge?.copyWith(
+              color: selected
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+              fontWeight:
+                  selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Back navigation header (mockup `.back`): chevron + label, 48dp target,
 /// muted color. Label defaults to "Back".
 class BackHeader extends StatelessWidget {

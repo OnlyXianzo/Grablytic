@@ -181,13 +181,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // Initially Video + Audio is selected and VIDEO STREAMS is visible
-      expect(find.text('Video + Audio'), findsOneWidget);
-      expect(find.text('Audio Only'), findsOneWidget);
+      expect(find.text('Video + audio'), findsOneWidget);
+      expect(find.text('Audio only'), findsOneWidget);
       expect(find.textContaining('VIDEO STREAMS'), findsOneWidget);
       expect(find.text('MKV (Recommended)'), findsOneWidget);
 
       // Tap 'Audio Only' segment
-      await tester.tap(find.text('Audio Only'));
+      await tester.tap(find.text('Audio only'));
       await tester.pumpAndSettle();
 
       // VIDEO STREAMS is now hidden in Audio Only mode

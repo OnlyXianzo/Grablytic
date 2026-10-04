@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/widgets/grablytic_components.dart';
 import '../../../core/utils/trust_boundary.dart';
 import '../../../features/home/screens/media_preview_screen.dart';
 import '../../../features/home/widgets/download_overflow_menu.dart';
@@ -151,40 +152,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
             ),
-            // Segmented tabs (mockup `.seg`): filled bar, equal thirds,
-            // selected pill distinct from bar, bound to the existing
+            // Segmented tabs (mockup `.seg`) bound to the existing
             // TabController so swipe + FAB behavior is preserved.
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Semantics(
-                label: 'Library tabs',
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      for (final entry in const [
-                        (0, 'Videos'),
-                        (1, 'Playlists'),
-                        (2, 'History'),
-                      ])
-                        Expanded(
-                          child: _SegTab(
-                            label: entry.$2,
-                            selected:
-                                _tabController.index == entry.$1,
-                            colorScheme: colorScheme,
-                            textTheme: textTheme,
-                            onTap: () => _tabController
-                                .animateTo(entry.$1),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+              child: SegTabs(
+                labels: const ['Videos', 'Playlists', 'History'],
+                selectedIndex: _tabController.index,
+                onChanged: (index) =>
+                    _tabController.animateTo(index),
               ),
             ),
             // Content
@@ -671,57 +647,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           ),
         );
       },
-    );
-  }
-}
-
-/// One tab of the mockup `.seg` control: equal-third pill, accent text +
-/// distinct fill when selected, muted otherwise. 48dp target.
-class _SegTab extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final ColorScheme colorScheme;
-  final TextTheme textTheme;
-  final VoidCallback onTap;
-
-  const _SegTab({
-    required this.label,
-    required this.selected,
-    required this.colorScheme,
-    required this.textTheme,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 48,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected
-                ? colorScheme.surfaceContainerHighest
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            label,
-            style: textTheme.bodyLarge?.copyWith(
-              color: selected
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant,
-              fontWeight:
-                  selected ? FontWeight.w600 : FontWeight.w400,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

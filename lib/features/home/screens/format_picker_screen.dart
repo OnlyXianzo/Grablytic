@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../../../core/database/download_history_db.dart';
 import '../../../core/engine/extraction_cache.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/widgets/grablytic_components.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/command_template.dart';
@@ -838,78 +839,10 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                     _buildHeaderCard(colorScheme, textTheme),
                     if (_videoFormats.isNotEmpty ||
                         _muxedFormats.isNotEmpty) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: SegmentedButton<bool>(
-                          segments: const [
-                            ButtonSegment<bool>(
-                              value: false,
-                              label: Text('Video + Audio'),
-                              icon: Icon(Icons.video_library_outlined),
-                            ),
-                            ButtonSegment<bool>(
-                              value: true,
-                              label: Text('Audio Only'),
-                              icon: Icon(Icons.audiotrack_outlined),
-                            ),
-                          ],
-                          selected: {_isAudioOnlyMode},
-                          onSelectionChanged: (val) {
-                            final activePreset = ref
-                                .read(presetsProvider)
-                                .activePreset;
-                            setState(() {
-                              _isAudioOnlyMode = val.first;
-                              PickerSessionState.instance.audioOnly =
-                                  _isAudioOnlyMode;
-                              if (_isAudioOnlyMode) {
-                                _selectedVideoFormat = null;
-                                _selectedMuxedFormat = null;
-                                _selectedAudioFormat ??= selectBestAudioFormat(
-                                  _audioFormats,
-                                );
-                                if (![
-                                  'm4a',
-                                  'mp3',
-                                  'opus',
-                                  'flac',
-                                ].contains(_selectedContainer)) {
-                                  _selectedContainer = activePreset.audioOnly
-                                      ? activePreset.preferredContainer
-                                      : 'm4a';
-                                }
-                              } else {
-                                _selectedVideoFormat = selectBestVideoFormat(
-                                  _videoFormats,
-                                  targetHeight: targetHeightForCeiling(
-                                    _qualityCeiling,
-                                    activePreset.id,
-                                  ),
-                                  preferredCodec: activePreset.preferredCodec,
-                                  fallbackRecommendedId:
-                                      _recommendedVideoFormatId,
-                                );
-                                if (_videoFormats.isEmpty &&
-                                    _muxedFormats.isNotEmpty) {
-                                  _selectedMuxedFormat =
-                                      _muxedFormats.first['format_id']
-                                          as String?;
-                                  _selectedVideoFormat = null;
-                                }
-                                _selectedAudioFormat ??= selectBestAudioFormat(
-                                  _audioFormats,
-                                );
-                                if (![
-                                  'mkv',
-                                  'mp4',
-                                  'webm',
-                                ].contains(_selectedContainer)) {
-                                  _selectedContainer = 'mkv';
-                                }
-                              }
-                            });
-                          },
-                        ),
+                      SegTabs(
+                        labels: const ['Video + audio', 'Audio only'],
+                        selectedIndex: _isAudioOnlyMode ? 1 : 0,
+                        onChanged: (i) => _setAudioOnly(i == 1),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -1051,6 +984,46 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
   }
 
+  /// Mode switch backing the mockup `#fp-mode` seg. Moved verbatim from the
+  /// old SegmentedButton handler: Audio-only clears video/muxed selection
+  /// (hard rule — audio streams only) and picks audio-safe containers.
+  void _setAudioOnly(bool audioOnly) {
+    final activePreset = ref.read(presetsProvider).activePreset;
+    setState(() {
+      _isAudioOnlyMode = audioOnly;
+      PickerSessionState.instance.audioOnly = _isAudioOnlyMode;
+      if (_isAudioOnlyMode) {
+        _selectedVideoFormat = null;
+        _selectedMuxedFormat = null;
+        _selectedAudioFormat ??= selectBestAudioFormat(_audioFormats);
+        if (!['m4a', 'mp3', 'opus', 'flac'].contains(_selectedContainer)) {
+          _selectedContainer = activePreset.audioOnly
+              ? activePreset.preferredContainer
+              : 'm4a';
+        }
+      } else {
+        _selectedVideoFormat = selectBestVideoFormat(
+          _videoFormats,
+          targetHeight: targetHeightForCeiling(
+            _qualityCeiling,
+            activePreset.id,
+          ),
+          preferredCodec: activePreset.preferredCodec,
+          fallbackRecommendedId: _recommendedVideoFormatId,
+        );
+        if (_videoFormats.isEmpty && _muxedFormats.isNotEmpty) {
+          _selectedMuxedFormat =
+              _muxedFormats.first['format_id'] as String?;
+          _selectedVideoFormat = null;
+        }
+        _selectedAudioFormat ??= selectBestAudioFormat(_audioFormats);
+        if (!['mkv', 'mp4', 'webm'].contains(_selectedContainer)) {
+          _selectedContainer = 'mkv';
+        }
+      }
+    });
+  }
+
   Widget _buildHeaderCard(ColorScheme colorScheme, TextTheme textTheme) {
     final title = _fetchedTitle.isNotEmpty ? _fetchedTitle : widget.title;
     final dur = _formatDuration(_durationSeconds);
@@ -1060,7 +1033,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: colorScheme.outlineVariant.withValues(alpha: 0.25),
         ),
@@ -1198,7 +1171,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       color: colorScheme.surfaceContainerLowest,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: colorScheme.outlineVariant.withValues(alpha: 0.25),
         ),
@@ -1839,13 +1812,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
         collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
