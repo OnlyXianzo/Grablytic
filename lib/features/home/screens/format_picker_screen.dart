@@ -1005,7 +1005,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                     setState(() => _filterQuery = ''),
                               ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -1203,15 +1203,17 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         alpha: 0.5,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         side: BorderSide(
                           color: _clipValidationError != null
                               ? colorScheme.error
-                              : colorScheme.outlineVariant,
+                              : colorScheme.outlineVariant.withValues(
+                                  alpha: 0.35,
+                                ),
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(14),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1256,13 +1258,18 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                     child: TextField(
                                       key: const Key('clip_start_field'),
                                       controller: _clipStartController,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
                                       decoration: InputDecoration(
                                         labelText: 'Start Time',
                                         hintText: '00:00',
                                         isDense: true,
                                         border: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(
-                                            8,
+                                            10,
                                           ),
                                         ),
                                         prefixIcon: const Icon(
@@ -1279,13 +1286,18 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                     child: TextField(
                                       key: const Key('clip_end_field'),
                                       controller: _clipEndController,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
                                       decoration: InputDecoration(
                                         labelText: 'End Time',
                                         hintText: '01:30',
                                         isDense: true,
                                         border: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(
-                                            8,
+                                            10,
                                           ),
                                         ),
                                         prefixIcon: const Icon(
@@ -1305,6 +1317,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                   'Total duration: ${_formatDuration(_durationSeconds)}',
                                   style: textTheme.bodySmall?.copyWith(
                                     color: colorScheme.outline,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -1424,7 +1439,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                           foregroundColor: colorScheme.onPrimary,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         child: const Text('Download Now'),
@@ -1452,12 +1467,12 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
   Widget _buildThumbnailWidget(ColorScheme colorScheme) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: _isPreviewUnavailable ? null : _togglePreviewPlay,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           child: SizedBox(
             width: 112,
             height: 64,
@@ -1521,7 +1536,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     }
     final ar = controller.value.aspectRatio;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         color: Colors.black,
         child: AspectRatio(
@@ -1673,24 +1688,37 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
         collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
-        title: Text(
-          '$title ($count)',
-          style: textTheme.labelSmall?.copyWith(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
-          ),
+        title: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 12,
+              decoration: BoxDecoration(
+                color: colorScheme.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$title ($count)',
+              style: textTheme.labelSmall?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ],
         ),
         subtitle: selectedLabel == null
             ? null
@@ -1738,7 +1766,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
               ? colorScheme.primary
               : colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Semantics(
         button: true,
@@ -1761,7 +1789,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
               }
             }
           }),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -1780,6 +1808,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 : '$formatId · ${fmt['acodec'] ?? 'Audio'} · ${fmt['abr'] != null ? '${(fmt['abr'] as num).toInt()} kbps' : (fmt['tbr'] != null ? '${(fmt['tbr'] as num).toInt()} kbps' : 'unknown')}',
                             style: textTheme.mono.copyWith(
                               fontWeight: FontWeight.bold,
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                           if (isHdr) ...[
@@ -1811,6 +1840,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                             : '${fmt['ext']} · ${_formatSize(fmt['filesize'])}',
                         style: textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -1845,7 +1875,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
               ? colorScheme.primary
               : colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Semantics(
         button: true,
@@ -1856,7 +1886,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
             _selectedVideoFormat = null;
             _selectedAudioFormat = null;
           }),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -1873,12 +1903,14 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                             : '$formatId${note.isNotEmpty ? ' · $note' : ''}',
                         style: textTheme.mono.copyWith(
                           fontWeight: FontWeight.bold,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                       Text(
                         '${fmt['vcodec']} + ${fmt['acodec']} · ${fmt['ext']} · ${_formatSize(fmt['filesize'] as int?)}',
                         style: textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -1968,7 +2000,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                   height: 64,
                   decoration: BoxDecoration(
                     color: shimmerBase,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2015,7 +2047,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
               width: double.infinity,
               decoration: BoxDecoration(
                 color: shimmerBase,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
               ),
             ),
             const SizedBox(height: 24),
@@ -2039,7 +2071,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                 ),
                 decoration: BoxDecoration(
                   color: shimmerBase,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
                   children: [
@@ -2089,7 +2121,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 child: const Text('Download Now'),

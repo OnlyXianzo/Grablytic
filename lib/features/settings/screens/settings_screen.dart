@@ -47,6 +47,11 @@ class SettingsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
               // T14: root is a category list; options live in sub-menus.
+              // Grouped per redesign mockup: Downloads vs App.
+              _SettingsSection(
+                title: 'Downloads',
+                icon: Icons.download_outlined,
+                children: [
               _SettingNavItem(
                 icon: Icons.tune,
                 title: 'General & Interface',
@@ -56,32 +61,6 @@ class SettingsScreen extends ConsumerWidget {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const GeneralSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.security,
-                title: 'Permissions',
-                subtitle: 'Notifications, background',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PermissionsSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.palette_outlined,
-                title: 'Appearance',
-                subtitle: 'Theme, grid view',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AppearanceSettingsScreen(),
                     ),
                   );
                 },
@@ -138,6 +117,38 @@ class SettingsScreen extends ConsumerWidget {
                   );
                 },
               ),
+                ],
+              ),
+              _SettingsSection(
+                title: 'App',
+                icon: Icons.apps_outlined,
+                children: [
+              _SettingNavItem(
+                icon: Icons.palette_outlined,
+                title: 'Appearance',
+                subtitle: 'Theme, logo, grid view',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AppearanceSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingNavItem(
+                icon: Icons.security,
+                title: 'Permissions',
+                subtitle: 'Notifications, background',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PermissionsSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
               _SettingNavItem(
                 icon: Icons.security,
                 title: 'Accounts & Authentication',
@@ -176,6 +187,8 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   );
                 },
+              ),
+                ],
               ),
 
               // (T14: moved to StorageSettingsScreen)
@@ -1044,9 +1057,10 @@ class _SettingsSection extends StatelessWidget {
                 ],
                 Text(
                   title,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
                   ),
                 ),
               ],
@@ -1055,7 +1069,7 @@ class _SettingsSection extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: colorScheme.outlineVariant.withValues(alpha: 0.25),
               ),
@@ -1119,9 +1133,9 @@ class _SettingSwitch extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                  child: Icon(icon, color: colorScheme.primary, size: 20),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1198,9 +1212,9 @@ class _SettingNavItem extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                  child: Icon(icon, color: colorScheme.primary, size: 20),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1213,9 +1227,10 @@ class _SettingNavItem extends StatelessWidget {
                     Text(
                       subtitle,
                       style: textTheme.labelSmall?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurfaceVariant,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -1274,9 +1289,9 @@ class _SettingAction extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHigh,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                  child: Icon(icon, color: colorScheme.primary, size: 20),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1342,9 +1357,9 @@ class _SettingSelect<T> extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainer,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: colorScheme.outline, size: 20),
+            child: Icon(icon, color: colorScheme.primary, size: 20),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -1413,11 +1428,11 @@ class _ConcurrencySlider extends StatelessWidget {
                     height: 40,
                     decoration: BoxDecoration(
                       color: colorScheme.surfaceContainer,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: Icon(
                       Icons.download_outlined,
-                      color: colorScheme.outline,
+                      color: colorScheme.primary,
                       size: 20,
                     ),
                   ),
@@ -1531,9 +1546,9 @@ class _Aria2cChunkSlider extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainer,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(13),
               ),
-              child: Icon(Icons.link, color: colorScheme.outline, size: 20),
+              child: Icon(Icons.link, color: colorScheme.primary, size: 20),
             ),
           ),
           const SizedBox(width: 16),
@@ -1627,11 +1642,11 @@ class _Aria2cSpeedFieldState extends State<_Aria2cSpeedField> {
               height: 40,
               decoration: BoxDecoration(
                 color: widget.colorScheme.surfaceContainer,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(13),
               ),
               child: Icon(
                 Icons.speed,
-                color: widget.colorScheme.outline,
+                color: widget.colorScheme.primary,
                 size: 20,
               ),
             ),
@@ -1720,11 +1735,11 @@ class _SettingThemeSelector extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   Icons.palette_outlined,
-                  color: colorScheme.outline,
+                  color: colorScheme.primary,
                   size: 20,
                 ),
               ),
@@ -1806,11 +1821,11 @@ class _SettingLogoSelector extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   Icons.image_outlined,
-                  color: colorScheme.outline,
+                  color: colorScheme.primary,
                   size: 20,
                 ),
               ),
