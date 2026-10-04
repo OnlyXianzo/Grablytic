@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/engine/engine_provider.dart';
 
 /// Contact + repository surface. Tapping opens the page in whatever handles
@@ -54,14 +55,9 @@ class AboutScreen extends ConsumerWidget {
             Center(
               child: Column(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      'assets/brand/grablytic_logo.png',
-                      width: 96,
-                      height: 96,
-                      fit: BoxFit.contain,
-                    ),
+                  const AdaptiveLogo(
+                    size: 96,
+                    borderRadius: BorderRadius.all(Radius.circular(24)),
                   ),
                   const SizedBox(height: 16),
                   Text(

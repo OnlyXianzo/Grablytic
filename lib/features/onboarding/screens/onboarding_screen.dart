@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../core/theme/adaptive_logo.dart';
 import '../widgets/onboarding_permissions_step.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -118,14 +119,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           key: const ValueKey(1),
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
-                  child: Image.asset(
-                    'assets/brand/grablytic_logo.png',
-                    width: 96,
-                    height: 96,
-                    fit: BoxFit.contain,
-                  ),
+            const AdaptiveLogo(
+                  size: 96,
+                  borderRadius: BorderRadius.all(Radius.circular(28)),
                 )
                 .animate()
                 .scale(
