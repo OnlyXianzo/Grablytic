@@ -295,8 +295,8 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: cs.surfaceContainerLow,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: const [
           BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -2)),
         ],
@@ -306,8 +306,8 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
           // Drag handle
           Center(
             child: Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 6),
-              width: 36,
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 40,
               height: 4,
               decoration: BoxDecoration(
                 color: cs.outlineVariant,
@@ -389,9 +389,15 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 18),
-                  tooltip: 'Copy all logs',
-                  onPressed: () => _copyAllLogs(entries),
+                  icon: Icon(
+                    Icons.copy,
+                    size: 18,
+                    color: entries.isNotEmpty
+                        ? null
+                        : cs.onSurface.withValues(alpha: 0.38),
+                  ),
+                  tooltip: entries.isNotEmpty ? 'Copy all logs' : 'No logs to copy',
+                  onPressed: entries.isNotEmpty ? () => _copyAllLogs(entries) : null,
                 ),
                 IconButton(
                   icon: Icon(
@@ -443,6 +449,14 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                 const SizedBox(width: 8),
                 PopupMenuButton<_LogFilter>(
                   tooltip: 'Filter by level',
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: cs.outlineVariant.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  color: cs.surfaceContainerHigh,
+                  elevation: 3,
                   icon: Icon(
                     Icons.filter_list,
                     size: 20,
@@ -450,19 +464,45 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                   ),
                   onSelected: (filter) => setState(() => _selectedFilter = filter),
                   itemBuilder: (ctx) => [
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: _LogFilter.all,
-                      child: Text('ALL LEVELS'),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.done_all,
+                            size: 16,
+                            color: _selectedFilter == _LogFilter.all
+                                ? cs.primary
+                                : cs.outline.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text('ALL LEVELS'),
+                        ],
+                      ),
                     ),
+                    const PopupMenuDivider(),
                     for (final filter in _LogFilter.values.where((f) => f != _LogFilter.all))
                       PopupMenuItem(
                         value: filter,
-                        child: Text(
-                          filter.name.toUpperCase(),
-                          style: TextStyle(
-                            color: _levelFilterColor(filter, cs),
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _levelFilterColor(filter, cs),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              filter.name.toUpperCase(),
+                              style: TextStyle(
+                                color: _levelFilterColor(filter, cs),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
@@ -513,23 +553,71 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: Colors.black.withAlpha(220),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: cs.outlineVariant.withAlpha(60)),
                         ),
                         child: Column(
                           children: [
-                            if (entries.length > _maxRenderedRows)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  'Showing last $_maxRenderedRows of ${entries.length} lines — copy all for the full log',
-                                  style: tt.mono.copyWith(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade500,
-                                    fontFeatures: const [FontFeature.tabularFigures()],
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFFFF5F56),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFFFFBD2E),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFF27C93F),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'CONSOLE',
+                                    style: tt.mono.copyWith(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.1,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    entries.length > _maxRenderedRows
+                                        ? 'Last $_maxRenderedRows of ${entries.length} lines'
+                                        : '${entries.length} lines',
+                                    style: tt.mono.copyWith(
+                                      fontSize: 9.5,
+                                      color: Colors.grey.shade500,
+                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                            const Divider(height: 1, color: Colors.white12),
+                            const SizedBox(height: 6),
                             Expanded(
                               child: ListView.builder(
                                 controller: _scrollController,

@@ -42,16 +42,20 @@ class DownloadOverflowButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final disabledColor = colorScheme.onSurface.withValues(alpha: 0.38);
+
     return Semantics(
       label: 'More options for ${item.title}',
       button: true,
       child: PopupMenuButton<String>(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
+        color: colorScheme.surfaceContainerHigh,
+        elevation: 3,
         icon: Icon(
           Icons.more_vert,
           size: 18,
@@ -80,10 +84,15 @@ class DownloadOverflowButton extends ConsumerWidget {
                   size: 18,
                   color: item.url.isNotEmpty
                       ? colorScheme.primary
-                      : colorScheme.outline,
+                      : disabledColor,
                 ),
                 const SizedBox(width: 12),
-                const Text('Copy Link'),
+                Text(
+                  'Copy Link',
+                  style: TextStyle(
+                    color: item.url.isNotEmpty ? null : disabledColor,
+                  ),
+                ),
               ],
             ),
           ),
@@ -98,7 +107,7 @@ class DownloadOverflowButton extends ConsumerWidget {
                   size: 18,
                   color: _isTerminal
                       ? colorScheme.primary
-                      : colorScheme.outline,
+                      : disabledColor,
                 ),
                 const SizedBox(width: 12),
                 Text(
@@ -107,6 +116,9 @@ class DownloadOverflowButton extends ConsumerWidget {
                       : (item.status == 'interrupted'
                             ? 'Resume download'
                             : 'Retry download'),
+                  style: TextStyle(
+                    color: _isTerminal ? null : disabledColor,
+                  ),
                 ),
               ],
             ),
@@ -119,10 +131,15 @@ class DownloadOverflowButton extends ConsumerWidget {
                 Icon(
                   Icons.audio_file_outlined,
                   size: 18,
-                  color: !_isActive ? colorScheme.primary : colorScheme.outline,
+                  color: !_isActive ? colorScheme.primary : disabledColor,
                 ),
                 const SizedBox(width: 12),
-                const Text('Download audio from source'),
+                Text(
+                  'Download audio from source',
+                  style: TextStyle(
+                    color: !_isActive ? null : disabledColor,
+                  ),
+                ),
               ],
             ),
           ),
@@ -145,13 +162,13 @@ class DownloadOverflowButton extends ConsumerWidget {
                 Icon(
                   Icons.delete_outline,
                   size: 18,
-                  color: _isTerminal ? colorScheme.error : colorScheme.outline,
+                  color: _isTerminal ? colorScheme.error : disabledColor,
                 ),
                 const SizedBox(width: 12),
                 Text(
                   'Delete file',
                   style: TextStyle(
-                    color: _isTerminal ? colorScheme.error : null,
+                    color: _isTerminal ? colorScheme.error : disabledColor,
                   ),
                 ),
               ],
