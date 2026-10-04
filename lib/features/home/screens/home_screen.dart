@@ -6,13 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/widgets/grablytic_components.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
 import '../../../providers/resume_provider.dart';
+import '../../../providers/settings_provider.dart';
 import '../screens/format_picker_screen.dart';
 import 'playlist_selection_screen.dart';
 import 'search_results_screen.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
+import '../../../features/settings/screens/presets_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_screen.dart';
 import '../widgets/error_recovery_card.dart';
@@ -28,7 +31,10 @@ import '../../../core/utils/playlist_selection.dart';
 import '../widgets/offline_queue_banner.dart';
 
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+  /// Optional hook for the "See all" affordance (AppShell wires tab switch).
+  final VoidCallback? onSeeAll;
+
+  const HomeScreen({super.key, this.onSeeAll});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,7 +42,10 @@ class HomeScreen extends ConsumerWidget {
     // Progress ticks no longer rebuild this screen; each card watches its
     // own item via [downloadItemProvider] and rebuilds alone.
     final sections = ref.watch(downloadSectionsProvider);
-    final recentIds = sections.allIds.take(3).toList();
+    final settings = ref.watch(settingsProvider);
+    final downloadingIds = sections.pendingIds.take(3).toList();
+    final recentIds = sections.completedIds.take(3).toList();
+    final hasAny = sections.allIds.isNotEmpty;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -67,18 +76,51 @@ class HomeScreen extends ConsumerWidget {
                   .animate()
                   .fadeIn(delay: 200.ms, duration: 400.ms)
                   .slideY(begin: 0.15, curve: Curves.easeOutCubic),
+              const SizedBox(height: 14),
+              // Quick option tiles bound to real defaults.
+              _OptsRow(
+                colorScheme: colorScheme,
+                audioOnly: settings.audioOnly,
+                qualityCeiling: settings.qualityCeiling,
+                downloadPath: settings.downloadPath,
+              ),
+              const SizedBox(height: 8),
+              if (downloadingIds.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: SectionLabel('Downloading'),
+                ),
+                const SizedBox(height: 12),
+                ...downloadingIds.expand((id) {
+                  return [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: RepaintBoundary(
+                        child: _DownloadCardWithError(
+                          id: id,
+                          colorScheme: colorScheme,
+                        ),
+                      ),
+                    ),
+                  ];
+                }),
+              ],
               const _ResumeScanSection(),
               const SizedBox(height: 40),
-              // Your Library header
+              // Recent downloads
               if (recentIds.isNotEmpty) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Your Library',
-                    style: textTheme.titleMedium?.copyWith(
-                      color: colorScheme.primary,
+                Row(
+                  children: [
+                    const Expanded(
+                      child: SectionLabel('Recent'),
                     ),
-                  ),
+                    if (onSeeAll != null)
+                      TextButton(
+                        onPressed: onSeeAll,
+                        child: const Text('See all'),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 // Download cards (id-driven: each card subscribes to its own
@@ -98,7 +140,7 @@ class HomeScreen extends ConsumerWidget {
                   ];
                   return tiles;
                 }),
-              ] else ...[
+              ] else if (!hasAny) ...[
                 const SizedBox(height: 60),
                 Semantics(
                   label: 'No downloads',
@@ -141,28 +183,136 @@ class _HeroSection extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AdaptiveLogo(
-          size: 72,
-          borderRadius: BorderRadius.circular(18),
+        // Brand row (mockup `.brand`).
+        Row(
+          children: [
+            AdaptiveLogo(
+              size: 36,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Grablytic',
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.01,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 26),
         Text(
-          'Grablytic',
-          style: textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: colorScheme.primary,
-            letterSpacing: -0.5,
+          'What are we\ngrabbing today?',
+          style: textTheme.headlineLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.02,
+            height: 1.05,
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          'Every source. Maximum fidelity.',
+          'Paste a link from any site, or search by name.',
           style: textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
-          textAlign: TextAlign.center,
         ),
+      ],
+    );
+  }
+}
+
+/// Quick option tiles (mockup `.opts`) bound to real current defaults.
+/// Tiles are navigation shortcuts — values come from settings, targets are
+/// the real screens that own each option. No new behavior.
+class _OptsRow extends StatelessWidget {
+  final ColorScheme colorScheme;
+  final bool audioOnly;
+  final String qualityCeiling;
+  final String downloadPath;
+
+  const _OptsRow({
+    required this.colorScheme,
+    required this.audioOnly,
+    required this.qualityCeiling,
+    required this.downloadPath,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    String basename(String path) {
+      final parts =
+          path.split('/').where((s) => s.isNotEmpty).toList();
+      return parts.isEmpty ? path : parts.last;
+    }
+
+    Widget tile(String caption, String value, VoidCallback onTap) {
+      return Expanded(
+        child: Semantics(
+          button: true,
+          label: '$caption, $value',
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color:
+                      colorScheme.outlineVariant.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    caption,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        tile('Format', audioOnly ? 'Audio' : 'Video', () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PresetsScreen()),
+          );
+        }),
+        const SizedBox(width: 8),
+        tile('Quality', qualityCeiling, () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PresetsScreen()),
+          );
+        }),
+        const SizedBox(width: 8),
+        tile('Save to', basename(downloadPath), () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+                builder: (_) => const StorageSettingsScreen()),
+          );
+        }),
       ],
     );
   }
@@ -256,12 +406,13 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     });
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: widget.colorScheme.outlineVariant.withValues(alpha: 0.4),
         ),
         color: widget.colorScheme.surfaceContainerLowest,
       ),
+      padding: const EdgeInsets.all(8),
       child: Row(
         children: [
           Expanded(
@@ -339,22 +490,47 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
           Semantics(
             button: true,
             label: isUrl ? 'Submit URL' : 'Search videos',
+            excludeSemantics: true,
             child: Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.only(left: 8),
               child: Material(
-                color: widget.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                color: widget.colorScheme.primary,
+                borderRadius: BorderRadius.circular(16),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(16),
                   onTap: _submitUrl,
                   child: Container(
-                    width: 48,
                     height: 48,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18),
                     alignment: Alignment.center,
-                    child: Icon(
-                      isUrl ? Icons.link : Icons.search,
-                      color: widget.colorScheme.onPrimaryContainer,
-                      size: 20,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.download_outlined,
+                          color: widget.colorScheme.onPrimary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        // Decorative duplicate of the button's
+                        // accessible name ('Submit URL' / 'Search
+                        // videos') — excluded so the merged semantics
+                        // label stays exact for tests + readers.
+                        ExcludeSemantics(
+                          child: Text(
+                            'Grab',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(
+                                  color:
+                                      widget.colorScheme.onPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

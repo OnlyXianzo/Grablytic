@@ -420,8 +420,9 @@ class _AppShellState extends ConsumerState<AppShell>
     });
   }
 
-  final _screens = [
-    const HomeScreen(),
+  // Non-const: HomeScreen takes the See-all tab-switch hook.
+  List<Widget> get _screens => [
+    HomeScreen(onSeeAll: () => _onDestinationSelected(1)),
     const LibraryScreen(),
     const SettingsScreen(),
   ];
