@@ -250,6 +250,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           setState(() => _statusFilter = value),
                     ),
                   ),
+                // Trailing breathing room so the last chip ("In progress")
+                // never sits half-clipped at the scroll edge on-device.
+                const SizedBox(width: 12),
               ],
             ),
           ),
