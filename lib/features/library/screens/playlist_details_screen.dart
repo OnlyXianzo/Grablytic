@@ -259,30 +259,39 @@ class _PlaylistDetailsScreenState extends ConsumerState<PlaylistDetailsScreen> {
         child: _memberIds.isEmpty
             ? Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(32.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 32.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Semantics(
-                        label: 'No files in playlist',
-                        child: Icon(
-                          Icons.playlist_play,
-                          size: 64,
-                          color: colorScheme.outline.withValues(alpha: 0.5),
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: colorScheme.primary.withValues(alpha: 0.08),
+                        ),
+                        child: Semantics(
+                          label: 'No files in playlist',
+                          child: Icon(
+                            Icons.playlist_play,
+                            size: 36,
+                            color: colorScheme.primary.withValues(alpha: 0.7),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
                       Text(
                         'No files in this playlist yet',
-                        style: textTheme.bodyLarge?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(
                         'Tap "Add Files" to insert completed downloads.',
                         style: textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.outline,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -359,16 +368,16 @@ class _PlaylistRow extends ConsumerWidget {
           ? colorScheme.primaryContainer.withValues(alpha: 0.08)
           : colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: isSelected
               ? colorScheme.primary.withValues(alpha: 0.4)
-              : colorScheme.outlineVariant.withValues(alpha: 0.3),
+              : colorScheme.outlineVariant.withValues(alpha: 0.25),
         ),
       ),
       child: InkWell(
         onTap: () => onToggleSelection(item.id),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: ListTile(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -393,7 +402,10 @@ class _PlaylistRow extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 6.0),
             child: Text(
               item.fileSize ?? 'Completed',
-              style: textTheme.mono.copyWith(fontSize: 11),
+              style: textTheme.mono.copyWith(
+                fontSize: 11,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
           ),
           trailing: IconButton(

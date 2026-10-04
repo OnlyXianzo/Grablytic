@@ -146,6 +146,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             // Tabs
             TabBar(
               controller: _tabController,
+              dividerColor: Colors.transparent,
               indicatorColor: colorScheme.primary,
               labelColor: colorScheme.primary,
               unselectedLabelColor: colorScheme.onSurfaceVariant,
@@ -189,12 +190,40 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     if (sections.allIds.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.only(top: 60),
-          child: Text(
-            'No downloads yet',
-            style: textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.primary.withValues(alpha: 0.08),
+                ),
+                child: Icon(
+                  Icons.video_library_outlined,
+                  size: 36,
+                  color: colorScheme.primary.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No downloads yet',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Your completed and ongoing downloads will appear here.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -221,13 +250,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     Widget sectionHeader(String label, Color color) => SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Text(
-              label,
-              style: textTheme.labelSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -328,34 +370,58 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   ]) {
     if (playlists.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Semantics(
-              label: 'No playlists',
-              child: Icon(
-                Icons.playlist_add,
-                size: 64,
-                color: colorScheme.outline.withValues(alpha: 0.5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.primary.withValues(alpha: 0.08),
+                ),
+                child: Semantics(
+                  label: 'No playlists',
+                  child: Icon(
+                    Icons.playlist_add,
+                    size: 36,
+                    color: colorScheme.primary.withValues(alpha: 0.7),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No playlists yet',
-              style: textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+              const SizedBox(height: 16),
+              Text(
+                'No playlists yet',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _showCreatePlaylistDialog(context, ref, colorScheme, textTheme),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
+              const SizedBox(height: 6),
+              Text(
+                'Group your favorite downloads into custom playlists for easy playback.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
-              child: const Text('Create Playlist'),
-            ),
-          ],
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => _showCreatePlaylistDialog(context, ref, colorScheme, textTheme),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Create Playlist'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -378,13 +444,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             elevation: 0,
             color: colorScheme.surfaceContainerLow,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               side: BorderSide(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                color: colorScheme.outlineVariant.withValues(alpha: 0.25),
               ),
             ),
             child: InkWell(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -417,7 +483,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     Text(
                       '${playlist.downloadIds.length} items',
                       style: textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant),
+                        color: colorScheme.onSurfaceVariant,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Semantics(
@@ -443,9 +511,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           elevation: 0,
           color: colorScheme.surfaceContainerLow,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             side: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              color: colorScheme.outlineVariant.withValues(alpha: 0.25),
             ),
           ),
           child: ListTile(
@@ -462,7 +530,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
                 '${playlist.downloadIds.length} items',
-                style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                style: textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ),
             trailing: Semantics(
@@ -565,7 +636,7 @@ class _LibraryGridCard extends ConsumerWidget {
         elevation: 0,
         color: colorScheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(
             color: isError
                 ? colorScheme.error.withValues(alpha: 0.4)
@@ -642,6 +713,7 @@ class _LibraryGridCard extends ConsumerWidget {
                                     color: colorScheme.primary,
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
                                   ),
                                 ),
                               ],
@@ -747,6 +819,7 @@ class _LibraryGridCard extends ConsumerWidget {
                               style: textTheme.mono.copyWith(
                                 fontSize: 10,
                                 color: colorScheme.onPrimaryContainer,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -769,6 +842,7 @@ class _LibraryGridCard extends ConsumerWidget {
                             style: textTheme.mono.copyWith(
                               fontSize: 10,
                               color: colorScheme.onPrimaryContainer,
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                         ),
@@ -826,7 +900,7 @@ class _LibraryItem extends ConsumerWidget {
                 color: isError
                     ? colorScheme.errorContainer.withValues(alpha: 0.2)
                     : colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 border: isError
                     ? Border.all(
                         color: colorScheme.error.withValues(alpha: 0.3),
@@ -1020,6 +1094,7 @@ class _LibraryItem extends ConsumerWidget {
                           '${(item.progress * 100).toInt()} % downloading',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.primary,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                         Text(
@@ -1028,6 +1103,7 @@ class _LibraryItem extends ConsumerWidget {
                               : '${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
@@ -1068,6 +1144,7 @@ class _LibraryItem extends ConsumerWidget {
                           item.completedDate ?? 'Unknown',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1084,6 +1161,7 @@ class _LibraryItem extends ConsumerWidget {
                           item.fileSize ?? '',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],

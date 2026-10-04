@@ -261,16 +261,36 @@ class _DownloadHistoryScreenState
               if (records.isEmpty) {
                 return Center(
                   child: Padding(
-                    padding: const EdgeInsets.only(top: 60),
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.history,
-                            size: 64,
-                            color: colorScheme.outline.withValues(alpha: 0.5)),
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: colorScheme.primary.withValues(alpha: 0.08),
+                          ),
+                          child: Icon(
+                            Icons.history,
+                            size: 36,
+                            color: colorScheme.primary.withValues(alpha: 0.7),
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           'No download history yet',
-                          style: textTheme.bodyLarge?.copyWith(
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Items you download will be logged here for quick access.',
+                          textAlign: TextAlign.center,
+                          style: textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
@@ -622,6 +642,7 @@ class _HistoryItem extends ConsumerWidget {
                             style: textTheme.mono.copyWith(
                               fontSize: 11,
                               color: colorScheme.onSurfaceVariant,
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                       ],
@@ -632,6 +653,7 @@ class _HistoryItem extends ConsumerWidget {
                       style: textTheme.mono.copyWith(
                         fontSize: 11,
                         color: colorScheme.outline,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                   ],
@@ -720,9 +742,9 @@ class _HistoryGridCard extends ConsumerWidget {
         elevation: 0,
         color: colorScheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
         child: Padding(
@@ -795,6 +817,7 @@ class _HistoryGridCard extends ConsumerWidget {
                   style: textTheme.mono.copyWith(
                     fontSize: 11,
                     color: colorScheme.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               Text(
@@ -802,6 +825,7 @@ class _HistoryGridCard extends ConsumerWidget {
                 style: textTheme.mono.copyWith(
                   fontSize: 11,
                   color: colorScheme.outline,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
               const Spacer(),
