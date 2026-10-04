@@ -1,0 +1,251 @@
+# =============================================================================
+# DeepSource configuration — Grablytic
+# Repo: https://github.com/OnlyXianzo/Grablytic
+# File: .deepsource.toml (note the leading dot — DeepSource only reads this
+#       exact filename at the repo root; `deepsource.toml` without dot is
+#       ignored). Format version: 1.
+#
+# What Grablytic is (so the config below makes sense):
+#   - Flutter (Dart) UI        : lib/**, test/**          (`flutter analyze`,
+#                              `flutter test --coverage` in CI)
+#   - Python yt-dlp engine     : engine/grablytic_engine/**, engine/tests/**
+#                              (requires-python >=3.11, pytest + coverage,
+#                              ruff correctness gate in CI)
+#   - Android native (Kotlin/Java, Chaquopy, AGP 8.11.1, Gradle 8.14,
+#     Kotlin 2.2.20, jvmTarget/Java 17, Chaquopy Python 3.11):
+#                              : android/** (*.kt, *.java, *.kts)
+#   - Shell tooling            : install.sh, tool/*.sh (bash)
+#   - CI verification matrix   : .github/workflows/verify.yml
+#                              (flutter_verify / python_verify / docs_links /
+#                               secrets_scan via gitleaks)
+#
+# DeepSource docs used (Oct 2026):
+#   - Core analyzers reference : docs.deepsource.com/docs/platform/reference/core-analyzers
+#     + deepsource.com/docs/platform/reference/core-analyzers
+#     Top-level keys: `version` (mandatory, only `1`), `exclude_patterns`,
+#     `test_patterns`, `[[analyzers]]` (name/enabled/dependency_file_paths/
+#     meta), `[[code_formatters]]` (replaces legacy `transformers`).
+#   - Code coverage            : docs.deepsource.com/docs/platform/reference/code-coverage
+#     Python -> Cobertura XML via `pytest --cov --cov-report xml`;
+#     report with `deepsource report --analyzer test-coverage --key python
+#     --value-file ./coverage.xml` (DSN or --use-oidc on GH Actions).
+#   - Code formatters          : docs.deepsource.com/docs/platform/reference/code-formatters
+#     Shortcodes used below: `ruff` (0.3.2), `ktlint` (0.50.0),
+#     `google-java-format` (1.17.0). Python also has black/autopep8/isort/
+#     yapf — ruff is chosen because CI already pins ruff (0.16.7) for the
+#     engine lint gate.
+#   - Secrets / test-coverage sample configs:
+#     github.com/deepsourcelabs/test-coverage-orb + test-coverage-action
+#     (`[[analyzers]] name = "secrets"`, `name = "test-coverage"`).
+#
+# Important DeepSource facts baked into this file:
+#   1. No `dart` core analyzer exists (GA list: go, rust, java, scala, c#,
+#      javascript, php, python, ruby, c/c++, swift, kotlin, docker, shell,
+#      sql, terraform + secrets/test-coverage). Dart/Flutter quality stays
+#      in CI (`flutter analyze`, flutter_lints 6.0.0) — hence Dart paths are
+#      NOT listed as analyzers here, but ARE covered for test-vs-src
+#      classification and coverage reporting.
+#   2. Dashboard vs TOML: DeepSource auto-detects languages and Settings >
+#      Code Review works without this file. Because this file exists, it
+#      TAKES PRECEDENCE (can be disabled under Settings > Preferences).
+#   3. Java analyzer REQUIRES `runtime_version` (OpenJDK 8-21) or results
+#      are wrong. Kotlin `language_version` max documented is 2.1 while this
+#      repo uses Kotlin 2.2.20 — we pin 2.1 (closest supported) explicitly.
+# =============================================================================
+
+version = 1
+
+# -----------------------------------------------------------------------------
+# exclude_patterns — never analyze generated / vendored / build output.
+# Glob semantics per DeepSource docs (e.g. "vendor/**", "migrations/**").
+# -----------------------------------------------------------------------------
+exclude_patterns = [
+  # --- Flutter / Dart generated ---
+  "build/**",                    # flutter build output (also gitignored /build/)
+  ".dart_tool/**",                # pub resolve + generated plugin registrants
+  ".flutter-plugins*",
+  ".flutter-plugins-dependencies",
+  "**/doc/api/**",               # dartdoc output (gitignored)
+
+  # --- Android / Gradle generated ---
+  "android/build/**",
+  "android/app/build/**",
+  "android/.gradle/**",
+  "**/generated/**",             # AGP + Chaquopy generated sources
+
+  # --- Python engine generated ---
+  "engine/__pycache__/**",
+  "engine/**/__pycache__/**",
+  "engine/*.egg-info/**",
+  "engine/**/*.egg-info/**",
+  ".venv/**",
+  ".env/**",
+  "dist/**",
+
+  # --- Coverage / test output (analyzing these is noise) ---
+  "coverage/**",
+  ".coverage*",
+  "coverage.xml",
+  "**/lcov.info",
+
+  # --- Signing / local-only (also secrets-relevant, never analyze) ---
+  "android/key.properties",
+  "android/app/*.jks",
+  "android/app/*.keystore",
+
+  # --- Vendored / third-party ---
+  "vendor/**",
+]
+
+# -----------------------------------------------------------------------------
+# test_patterns — tell DeepSource "this is test code" so it suppresses
+# production-only false positives and computes doc-coverage correctly.
+# Covers: Flutter widget/unit tests, Python engine pytest suite.
+# -----------------------------------------------------------------------------
+test_patterns = [
+  "test/**",                     # flutter_test: test/**/*_test.dart
+  "**/*_test.dart",              # belt-and-braces for nested Dart tests
+  "engine/tests/**",             # pytest engine suite (test_*.py)
+  "engine/**/test_*.py",
+  "tests/**",
+  "test_*.py",
+  "**/conftest.py",              # pytest fixtures (engine/tests/conftest.py)
+]
+
+# =============================================================================
+# ANALYZERS
+# Each `[[analyzers]]` supports: name (mandatory), enabled (default true),
+# dependency_file_paths (optional), [analyzers.meta] (analyzer-specific).
+# =============================================================================
+
+# --- Python engine (engine/grablytic_engine/**) ---
+# Docs: runtime_version "2.x.x"|"3.x.x", max_line_length (min 79, default 88),
+# skip_doc_coverage [module, magic, init, class, nonpublic], type_checker
+# ("mypy"), additional_builtins, cyclomatic_complexity_threshold
+# (low|medium|high|very-high|critical, default "medium").
+# Repo mapping: requires-python >=3.11 (engine/pyproject.toml), Chaquopy
+# version = "3.11", CI matrix 3.11/3.12 -> runtime pinned to 3.11 (lowest
+# supported = narrowest, avoids 3.12-only syntax false-negatives).
+[[analyzers]]
+name = "python"
+enabled = true
+dependency_file_paths = [
+  "engine/requirements.txt",
+  "engine/pyproject.toml",
+]
+
+  [analyzers.meta]
+  runtime_version = "3.11"
+  max_line_length = 88
+  skip_doc_coverage = ["module", "magic", "init"]
+  # type_checker intentionally unset: engine has no mypy gate in
+  # verify.yml (pytest + ruff-F only); enabling it here would flag the
+  # whole engine on day one. Revisit when `mypy engine/` is green in CI.
+  cyclomatic_complexity_threshold = "medium"
+
+# --- Java (android/app/src/**/*.java, gradle-adjacent Java) ---
+# Docs: runtime_version REQUIRED (OpenJDK 8-21, alias java_version),
+# skip_doc_coverage default ["test"], cyclomatic default "medium".
+# Repo mapping: compileOptions source/targetCompatibility JavaVersion 17.
+[[analyzers]]
+name = "java"
+enabled = true
+
+  [analyzers.meta]
+  runtime_version = "17"
+  skip_doc_coverage = ["test"]
+  cyclomatic_complexity_threshold = "medium"
+
+# --- Kotlin (android/app/src/main/kotlin/**/*.kt, *.kts) ---
+# Docs: language_version 1.0-2.1 (default "1.7"), runtime_version 1.8|9-21
+# (default "1.8"), cyclomatic default "medium".
+# Repo mapping: org.jetbrains.kotlin.android 2.2.20, jvmTarget 17.
+# NOTE: repo (2.2.20) is newer than DeepSource's documented ceiling (2.1),
+# so we pin "2.1" = closest supported grammar; bump when docs list 2.2+.
+[[analyzers]]
+name = "kotlin"
+enabled = true
+
+  [analyzers.meta]
+  language_version = "2.1"
+  runtime_version = "17"
+  cyclomatic_complexity_threshold = "medium"
+
+# --- Shell (install.sh, tool/*.sh) ---
+# Docs: dialect sh|bash|dash|ksh, default auto-detected.
+# Repo mapping: install.sh + tool/check_doc_links.py-adjacent *.sh are bash
+# (shebang `#!/usr/bin/env bash`), so pin bash for consistent parsing.
+[[analyzers]]
+name = "shell"
+enabled = true
+
+  [analyzers.meta]
+  dialect = "bash"
+
+# --- Secrets (whole repo) ---
+# No meta options. Mirrors the existing gitleaks gate
+# (.github/workflows/verify.yml -> secrets_scan job): DeepSource flags
+# committed credentials inline on PRs, gitleaks remains the blocking CI gate.
+[[analyzers]]
+name = "secrets"
+enabled = true
+
+# --- Test coverage (whole repo) ---
+# No meta options. Enable here; actual percentages are PUSHED from CI via
+# the DeepSource CLI (see commands below). Metrics page tracks the default
+# branch (main) only, max report size 20 MB, always run `deepsource report`
+# from the repo root so paths resolve.
+#
+# Wire-up (add to .github/workflows/verify.yml when ready):
+#   Python engine:
+#     pytest engine/tests/ -q --cov=engine/grablytic_engine --cov-report xml
+#     ./bin/deepsource report --analyzer test-coverage --key python \
+#       --value-file ./coverage.xml --use-oidc        # GH Actions OIDC (preferred)
+#     # or: export DEEPSOURCE_DSN=<repo DSN secret>; ... --value-file ./coverage.xml
+#   Flutter (Dart has no coverage `key`; upload lcov for visibility — the
+#   analyzer records what it can parse, `flutter analyze` stays the gate):
+#     flutter test --coverage   # -> coverage/lcov.info (already uploaded as
+#                               # artifact `flutter-coverage` in verify.yml)
+# Current CI floors for reference: engine --cov-fail-under=75, Flutter no
+# floor (24% today, artifact-only by design — see verify.yml header).
+[[analyzers]]
+name = "test-coverage"
+enabled = true
+
+# =============================================================================
+# CODE FORMATTERS (formerly `transformers` — both keys accepted)
+# Auto-format PRs. Kept deliberately narrow: only formatters matching tools
+# the repo ALREADY uses, so DeepSource never fights CI.
+# Available shortcodes (full table in code-formatters reference): black,
+# autopep8, isort, yapf, ruff | gofmt, gofumpt | rustfmt | prettier,
+# standardjs | rubocop, standardrb | google-java-format | scalafmt |
+# dotnet-format | clang-format | php-cs-fixer | ktlint | swift-format.
+# =============================================================================
+
+# Python engine -> ruff formatter (CI already pins ruff 0.16.7 for the
+# correctness gate; DeepSource runs ruff 0.3.2 server-side — formatting
+# rules are stable across that gap; `black` deliberately NOT enabled to
+# avoid double-formatter churn).
+[[code_formatters]]
+name = "ruff"
+enabled = true
+
+# Kotlin -> ktlint (matches android/ Kotlin style; 0.50.0 server-side).
+[[code_formatters]]
+name = "ktlint"
+enabled = true
+
+# Java -> google-java-format (1.17.0 server-side; matches AOSP-ish style
+# used in android/app/src/main).
+[[code_formatters]]
+name = "google-java-format"
+enabled = true
+
+# NOTE — formatters intentionally NOT enabled (documented, revisit quarterly,
+# same policy as verify.yml header):
+#   - dart format: 55 files predate `dart format`; enabling a server-side
+#     Dart formatter would churn every concurrent branch. Enforce after the
+#     one-time cleanup PR, via `dart format` in CI — not here (DeepSource
+#     ships no Dart formatter shortcode anyway).
+#   - prettier / standardjs: no JS/TS in this repo (grablytic-web lives
+#     outside it).
