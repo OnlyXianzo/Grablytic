@@ -116,6 +116,7 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
             color: color,
             fontSize: 10.5,
             height: 1.35,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
           maxLines: 4,
           overflow: TextOverflow.ellipsis,
@@ -136,7 +137,8 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,6 +154,7 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   const Spacer(),

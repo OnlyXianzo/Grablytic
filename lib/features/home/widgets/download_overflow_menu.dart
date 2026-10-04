@@ -46,6 +46,12 @@ class DownloadOverflowButton extends ConsumerWidget {
       label: 'More options for ${item.title}',
       button: true,
       child: PopupMenuButton<String>(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+          ),
+        ),
         icon: Icon(
           Icons.more_vert,
           size: 18,

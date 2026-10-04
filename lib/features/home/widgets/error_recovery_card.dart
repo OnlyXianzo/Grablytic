@@ -36,9 +36,9 @@ class ErrorRecoveryCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: colorScheme.errorContainer.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: colorScheme.error.withValues(alpha: 0.2),
+          color: colorScheme.error.withValues(alpha: 0.25),
         ),
       ),
       child: Row(
@@ -52,10 +52,9 @@ class ErrorRecoveryCard extends StatelessWidget {
               children: [
                 Text(
                   errorMessage ?? 'Download failed',
-                  style: TextStyle(fontFamily: 'InstrumentSans',
-                    fontSize: 12,
+                  style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onErrorContainer,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -69,7 +68,7 @@ class ErrorRecoveryCard extends StatelessWidget {
                       color: Colors.transparent,
                       child: InkWell(
                         onTap: action,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(8),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -77,7 +76,7 @@ class ErrorRecoveryCard extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: colorScheme.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: colorScheme.error.withValues(alpha: 0.3),
                             ),
@@ -89,8 +88,7 @@ class ErrorRecoveryCard extends StatelessWidget {
                               const SizedBox(width: 6),
                               Text(
                                 label,
-                                style: TextStyle(fontFamily: 'InstrumentSans',
-                                  fontSize: 12,
+                                style: textTheme.labelSmall?.copyWith(
                                   color: colorScheme.error,
                                   fontWeight: FontWeight.w600,
                                 ),
