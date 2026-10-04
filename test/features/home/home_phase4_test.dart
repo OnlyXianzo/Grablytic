@@ -71,7 +71,7 @@ void main() {
       SharedPreferences.setMockInitialValues({'onboardingCompleted': true});
       final prefs = await SharedPreferences.getInstance();
       await _pumpHome(tester, prefs, MockEngineService());
-      expect(find.text('What are we\ngrabbing today?'), findsOneWidget);
+      expect(find.text('Grab anything.'), findsOneWidget);
       expect(find.text('Grab'), findsOneWidget);
       await tester.enterText(find.byType(TextField),
           'https://www.youtube.com/watch?v=dQw4w9WgXcQ');

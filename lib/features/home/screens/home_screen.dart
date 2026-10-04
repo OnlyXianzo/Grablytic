@@ -227,7 +227,7 @@ class _HeroSection extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         Text(
-          'What are we\ngrabbing today?',
+          'Grab anything.',
           style: textTheme.headlineLarge?.copyWith(
             fontWeight: FontWeight.w800,
             letterSpacing: -0.02,
