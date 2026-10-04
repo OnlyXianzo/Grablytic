@@ -220,7 +220,7 @@ class _TemplateCard extends StatelessWidget {
       elevation: 0,
       color: colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           width: 1.0,
@@ -228,7 +228,7 @@ class _TemplateCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -240,7 +240,7 @@ class _TemplateCard extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(Icons.terminal, color: colorScheme.primary, size: 20),
                 ),

@@ -94,7 +94,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     final spec = await showDialog<Map<String, String>>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('New cookie login'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -173,7 +173,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     final spec = await showDialog<Map<String, String>>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Paste cookies'),
         content: SingleChildScrollView(
           child: Column(

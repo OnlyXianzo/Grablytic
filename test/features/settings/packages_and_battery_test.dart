@@ -194,7 +194,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Unrestricted background lives in Permissions now.
+      // Unrestricted background lives in Permissions now (C7-B1 groups
+      // root into Downloads/App sections, so Permissions may be below
+      // the fold — scroll it into view before tapping).
+      await tester.ensureVisible(find.text('Permissions'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Permissions'));
       await tester.pumpAndSettle();
       final batteryTile = find.text('Unrestricted background');
