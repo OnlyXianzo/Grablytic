@@ -760,7 +760,7 @@ class _DownloadCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isError
                   ? colorScheme.error.withValues(alpha: 0.4)
@@ -768,16 +768,16 @@ class _DownloadCard extends StatelessWidget {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 96,
-                  height: 96,
+                  width: 104,
+                  height: 78,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   // T07: cached file → network → status-icon placeholder.
                   // FileImage is ImageCache-backed (no per-rebuild fetch).
@@ -794,7 +794,7 @@ class _DownloadCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               item.title,
-                              style: textTheme.bodyMedium?.copyWith(
+                              style: textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.w600,
                               ),
                               maxLines: 2,
@@ -810,34 +810,81 @@ class _DownloadCard extends StatelessWidget {
                       if (isDownloading) ...[
                         const SizedBox(height: 4),
                         Text(
-                          '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
-                          style: textTheme.mono.copyWith(
-                            color: colorScheme.outline,
+                          '${_formatBytes(item.downloadedBytes)} of ${_formatBytes(item.totalBytes)}',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Text(
-                              '${(item.progress * 100).toInt()}% downloading',
-                              style: textTheme.mono.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.primary,
-                                fontFeatures: const [FontFeature.tabularFigures()],
+                        const SizedBox(height: 14),
+                        // Gradient progress (mockup `.pbar`): accent fill on
+                        // track; indeterminate LinearProgress while
+                        // post-processing (no progress callback when merging).
+                        if (item.stage != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              backgroundColor:
+                                  colorScheme.surfaceContainerHighest,
+                              valueColor: AlwaysStoppedAnimation(
+                                colorScheme.primary,
+                              ),
+                              minHeight: 8,
+                            ),
+                          )
+                        else
+                          Semantics(
+                            label:
+                                'Progress ${(item.progress * 100).toInt()} percent',
+                            value: '${(item.progress * 100).toInt()}%',
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Container(
+                                height: 8,
+                                color:
+                                    colorScheme.surfaceContainerHighest,
+                                alignment: Alignment.centerLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor:
+                                      item.progress.clamp(0.0, 1.0),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          colorScheme.primaryContainer,
+                                          colorScheme.primary,
+                                        ],
+                                      ),
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
+                          ),
+                        const SizedBox(height: 8),
                         Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              '${_formatSpeed(item.speed)} · ETA ${_formatEta(item.eta)}',
-                              style: textTheme.mono.copyWith(
-                                color: colorScheme.outline,
-                                fontSize: 11,
-                                fontFeatures: const [FontFeature.tabularFigures()],
+                              '${(item.progress * 100).toInt()}% · ${_formatSpeed(item.speed)}',
+                              style: textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                            Text(
+                              'ETA ${_formatEta(item.eta)}',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
                               ),
                             ),
                           ],
@@ -884,22 +931,9 @@ class _DownloadCard extends StatelessWidget {
                           DownloadSparkline(samples: item.speedHistory),
                           const SizedBox(height: 4),
                         ],
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            // Loop-4: indeterminate while post-processing
-                            // (merging/embedding has no progress callback;
-                            // a stuck 99% reads as frozen — ytdlnis v1.7.5
-                            // shipped the same fix for the same complaint).
-                            value: item.stage != null ? null : item.progress,
-                            backgroundColor:
-                                colorScheme.surfaceContainerHighest,
-                            valueColor: AlwaysStoppedAnimation(
-                              colorScheme.primaryContainer,
-                            ),
-                            minHeight: 4,
-                          ),
-                        ),
+                        // Gradient determinate bar lives above (mockup
+                        // `.pbar`); Loop-4 indeterminate case is handled
+                        // there too — this old flat bar is removed.
                         const SizedBox(height: 8),
                         DownloadLogOverlay(
                           downloadId: item.id,

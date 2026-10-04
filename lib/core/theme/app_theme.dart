@@ -282,3 +282,19 @@ class GrablyticRadii {
   static const double xxl = 24;
   static const double sheet = 28;
 }
+
+/// Log-level hues shared by the live overlay, log sheet and log viewer.
+/// Dark values come from the mockup logbox (.i blue, .w amber); light values
+/// are darkened for contrast on light surfaces.
+class GrablyticLogColors {
+  GrablyticLogColors._();
+
+  static Color info(Brightness brightness) => brightness == Brightness.dark
+      ? const Color(0xFF8AB4F8)
+      : const Color(0xFF0B57D0);
+
+  static Color warning(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? const Color(0xFFF2C879)
+      : const Color(0xFF8A4D00);
+}

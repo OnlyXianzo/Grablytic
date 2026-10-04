@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../providers/log_provider.dart';
@@ -103,20 +104,49 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
     final totalCount = allForDownload.length;
     final lines = _linesForDownload(allForDownload);
     final textTheme = Theme.of(context).textTheme;
+    final brightness = Theme.of(context).brightness;
+    final infoColor = GrablyticLogColors.info(brightness);
+    final warnColor = GrablyticLogColors.warning(brightness);
 
     Widget line(LogEntry e) {
-      final color = e.level == LogLevel.error || e.level == LogLevel.fatal
-          ? Colors.red.shade200
-          : Colors.white;
+      final Color color;
+      switch (e.level) {
+        case LogLevel.error:
+        case LogLevel.fatal:
+          color = Theme.of(context).colorScheme.error;
+          break;
+        case LogLevel.warn:
+          color = warnColor;
+          break;
+        case LogLevel.info:
+          color = infoColor;
+          break;
+        case LogLevel.debug:
+          color = Theme.of(context).colorScheme.outline;
+          break;
+      }
       return Padding(
         padding: const EdgeInsets.only(bottom: 2),
-        child: Text(
-          '${_clock(e)} ${e.message}',
-          style: textTheme.mono.copyWith(
-            color: color,
-            fontSize: 10.5,
-            height: 1.35,
-            fontFeatures: const [FontFeature.tabularFigures()],
+        child: Text.rich(
+          TextSpan(
+            style: textTheme.mono.copyWith(
+              fontSize: 12,
+              height: 1.55,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+            children: [
+              TextSpan(
+                text: '${_clock(e)} ',
+                style: TextStyle(
+                  color:
+                      Theme.of(context).colorScheme.outline,
+                ),
+              ),
+              TextSpan(
+                text: e.message,
+                style: TextStyle(color: color),
+              ),
+            ],
           ),
           maxLines: 4,
           overflow: TextOverflow.ellipsis,
@@ -134,26 +164,30 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
         behavior: HitTestBehavior.opaque,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.3)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.terminal, size: 12, color: Colors.white70),
-                  const SizedBox(width: 6),
+                  Icon(Icons.terminal,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 10),
                   Text(
                     _expanded ? 'LIVE LOG' : 'View logs ($totalCount)',
-                    style: textTheme.mono.copyWith(
-                      color: Colors.white70,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -167,19 +201,19 @@ class _DownloadLogOverlayState extends ConsumerState<DownloadLogOverlay> {
                           title: 'Download Log',
                         );
                       },
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Icon(
                           Icons.open_in_new,
-                          size: 13,
-                          color: Colors.white70,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 14,
-                    color: Colors.white70,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ],
               ),
