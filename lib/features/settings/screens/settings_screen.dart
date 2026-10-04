@@ -897,9 +897,10 @@ class PackagesSettingsScreen extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 8, bottom: 8),
             child: Text(
               'Packages',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
+              style: textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
               ),
             ),
           ),
@@ -2153,7 +2154,7 @@ class _PackagesSection extends ConsumerWidget {
         return Container(
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: colorScheme.outlineVariant.withAlpha(40)),
           ),
           padding: const EdgeInsets.all(16),
@@ -2166,7 +2167,7 @@ class _PackagesSection extends ConsumerWidget {
                   Text(
                     'INSTALLED PACKAGES',
                     style: textTheme.labelSmall?.copyWith(
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
@@ -2231,6 +2232,9 @@ class _PackagesSection extends ConsumerWidget {
                                     style: textTheme.mono.copyWith(
                                       color: colorScheme.outline,
                                       fontSize: 11,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
                                     ),
                                   )
                                 else
@@ -2245,6 +2249,9 @@ class _PackagesSection extends ConsumerWidget {
                                           ? colorScheme.tertiary
                                           : colorScheme.outline,
                                       fontSize: 11,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
                                     ),
                                   ),
                               ],
@@ -2393,7 +2400,7 @@ class _PackagesSection extends ConsumerWidget {
                     style: textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -2411,7 +2418,7 @@ class _PackagesSection extends ConsumerWidget {
                   style: textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.2,
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),
