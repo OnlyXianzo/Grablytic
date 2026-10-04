@@ -2152,15 +2152,15 @@ class _PackagesSection extends ConsumerWidget {
           ),
           _SettingsBinaryInfo(
             name: 'aria2c',
-            ok: aria2c.ok || Platform.isAndroid,
-            version:
-                aria2c.version ??
-                (Platform.isAndroid ? 'Compiled v1.37.0' : null),
-            source: Platform.isAndroid ? 'bundled' : aria2c.source,
-            detail: Platform.isAndroid
-                ? 'Compiled static native downloader (bundled execution)'
-                : (aria2c.detail ?? 'Multi-connection accelerated downloader'),
-            actionable: !Platform.isAndroid && aria2c.isActionable,
+            // No masking: on Android no binary is bundled (see engine
+            // bootstrap verdict); the entry shows unsupported/pending and
+            // the download log explains why when the toggle is on.
+            ok: aria2c.ok,
+            version: aria2c.version,
+            source: aria2c.source,
+            detail: aria2c.detail ??
+                'Multi-connection accelerated downloader',
+            actionable: aria2c.isActionable,
           ),
           _SettingsBinaryInfo(
             name: 'Deno',
