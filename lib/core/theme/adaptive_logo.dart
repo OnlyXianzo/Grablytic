@@ -53,21 +53,6 @@ class AdaptiveLogo extends StatelessWidget {
   /// The logo variant to display. Defaults to [LogoVariant.auto].
   final LogoVariant variant;
 
-  /// Maps a stored `logoVariant` pref value ('system' | 'dark' | 'light' |
-  /// 'legacy', anything else falls back to [LogoVariant.auto]) to a variant.
-  static LogoVariant fromStored(String? stored) {
-    switch (stored) {
-      case 'dark':
-        return LogoVariant.dark;
-      case 'light':
-        return LogoVariant.light;
-      case 'legacy':
-        return LogoVariant.legacy;
-      default:
-        return LogoVariant.auto;
-    }
-  }
-
   /// How to inscribe the logo into the space allocated during layout.
   final BoxFit fit;
 
