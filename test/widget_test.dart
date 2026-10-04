@@ -56,7 +56,7 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      final settingsIcon = find.byIcon(Icons.settings);
+      final settingsIcon = find.byIcon(Icons.settings_outlined);
       expect(settingsIcon, findsOneWidget);
 
       await tester.tap(settingsIcon);
@@ -99,7 +99,7 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 2));
       expect(find.text('Library'), findsWidgets);
 
-      final settingsIcon = find.byIcon(Icons.settings);
+      final settingsIcon = find.byIcon(Icons.settings_outlined);
       expect(settingsIcon, findsOneWidget);
       await tester.tap(settingsIcon);
       await tester.pumpAndSettle(const Duration(seconds: 2));

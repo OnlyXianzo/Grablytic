@@ -18,6 +18,13 @@ class _NoopResumeNotifier extends ResumeNotifier {
 }
 
 void main() {
+  /// Tab icons also appear inside screens (e.g. Library rows reuse
+  /// download_outlined), so tab taps must scope to the rail.
+  Finder railTab(IconData icon) => find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.byIcon(icon),
+      );
+
   group('Fluid Bottom Navigation Tests', () {
     testWidgets('AppShell renders 3 bottom navigation destinations with 48x48 targets',
         (WidgetTester tester) async {
@@ -46,9 +53,9 @@ void main() {
       expect(find.text('Settings'), findsWidgets);
 
       // Verify all 3 icons exist
-      expect(find.byIcon(Icons.download), findsOneWidget);
+      expect(find.byIcon(Icons.download_outlined), findsOneWidget);
       expect(find.byIcon(Icons.folder_open), findsOneWidget);
-      expect(find.byIcon(Icons.settings), findsOneWidget);
+      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
     });
 
     testWidgets('Tapping between tabs triggers smooth animated transition',
@@ -74,7 +81,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap Library
-      final libraryTab = find.byIcon(Icons.folder_open);
+      final libraryTab = railTab(Icons.folder_open);
       await tester.tap(libraryTab);
       // Mid-animation frame
       await tester.pump(const Duration(milliseconds: 100));
@@ -82,13 +89,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap Settings
-      final settingsTab = find.byIcon(Icons.settings);
+      final settingsTab = railTab(Icons.settings_outlined);
       await tester.tap(settingsTab);
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pumpAndSettle();
 
       // Tap back to Download
-      final downloadTab = find.byIcon(Icons.download);
+      final downloadTab = railTab(Icons.download_outlined);
       await tester.tap(downloadTab);
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pumpAndSettle();
@@ -117,7 +124,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Drag horizontally across the bottom navigation bar
-      final downloadFinder = find.byIcon(Icons.download);
+      // (index 0 selected -> rail shows the filled selected icon).
+      final downloadFinder = railTab(Icons.download);
       expect(downloadFinder, findsOneWidget);
 
       await tester.drag(downloadFinder, const Offset(200, 0));

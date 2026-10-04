@@ -531,7 +531,7 @@ class _AppShellState extends ConsumerState<AppShell>
                 NavigationRailDestination(
                   icon: Semantics(
                     label: 'Download',
-                    child: Icon(Icons.download),
+                    child: Icon(Icons.download_outlined),
                   ),
                   selectedIcon: Semantics(
                     label: 'Download',
@@ -553,11 +553,11 @@ class _AppShellState extends ConsumerState<AppShell>
                 NavigationRailDestination(
                   icon: Semantics(
                     label: 'Settings',
-                    child: Icon(Icons.settings),
+                    child: Icon(Icons.settings_outlined),
                   ),
                   selectedIcon: Semantics(
                     label: 'Settings',
-                    child: Icon(Icons.settings),
+                    child: Icon(Icons.settings_outlined),
                   ),
                   label: Text('Settings'),
                 ),
@@ -631,9 +631,9 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
   final ValueNotifier<double> _pos = ValueNotifier(0.0);
 
   static const List<_NavItemData> _items = [
-    _NavItemData(icon: Icons.download, label: 'Download'),
+    _NavItemData(icon: Icons.download_outlined, label: 'Download'),
     _NavItemData(icon: Icons.folder_open, label: 'Library'),
-    _NavItemData(icon: Icons.settings, label: 'Settings'),
+    _NavItemData(icon: Icons.settings_outlined, label: 'Settings'),
   ];
 
   double _readPos() {
@@ -843,18 +843,6 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                                 color: widget.colorScheme.primaryContainer,
                                 borderRadius: BorderRadius.circular(
                                   pillHeight / 2,
-                                ),
-                              ),
-                              child: Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 3),
-                                  width: 16 * (1.0 + stretchFactor),
-                                  height: 2.5,
-                                  decoration: BoxDecoration(
-                                    color: widget.colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(1.25),
-                                  ),
                                 ),
                               ),
                             ),

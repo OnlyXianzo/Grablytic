@@ -81,7 +81,7 @@ void main() {
       await tester.pumpWidget(_buildApp(prefs: prefs, onboardingCompleted: true));
       await tester.pump(const Duration(seconds: 2));
 
-      final settingsIcon = find.byIcon(Icons.settings);
+      final settingsIcon = find.byIcon(Icons.settings_outlined);
       expect(settingsIcon, findsOneWidget);
       await tester.tap(settingsIcon);
       await tester.pump(const Duration(seconds: 1));
