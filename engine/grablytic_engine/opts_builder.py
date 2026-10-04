@@ -274,6 +274,24 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     aria_path = get_paths().get("aria2c_path")
     # use_aria2 is the legacy alias — honor either flag.
     aria_on = config.get("aria2c_enabled") or config.get("use_aria2")
+    if aria_on and not (
+        aria_path
+        and os.path.isfile(aria_path)
+        and os.access(aria_path, os.X_OK)
+    ):
+        # Silent fallback is undebuggable (user sees aria2c=no with the
+        # toggle on and no reason). Name the cause so the Download config
+        # line is explainable from logs alone.
+        reason = (
+            "no aria2c_path configured"
+            if not aria_path
+            else f"binary missing or not executable at {aria_path}"
+        )
+        log.warn(
+            f"aria2c enabled but unusable ({reason}) — "
+            "falling back to native downloader"
+        )
+        return opts
     # T0-2: re-validate at the exec site (admission in set_paths is not the
     # last word — _paths can hold placeholders or legacy values). isfile +
     # X_OK, same bar as yt-dlp's own _find_exe (F_OK|X_OK).
