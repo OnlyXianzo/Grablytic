@@ -4,6 +4,7 @@ import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
@@ -137,57 +138,28 @@ class _HeroSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Column(
       children: [
-        Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Semantics(
-                label: 'Grablytic download icon',
-                child: Icon(
-                  Icons.cloud_download_outlined,
-                  size: 64,
-                  color: colorScheme.outline,
-                ),
-              ),
-              Positioned(
-                bottom: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Semantics(
-                    label: 'Search sources',
-                    child: Icon(
-                      Icons.search,
-                      size: 18,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        AdaptiveLogo(
+          size: 72,
+          borderRadius: BorderRadius.circular(18),
         ),
         const SizedBox(height: 16),
         Text(
-          'Every source. Maximum quality.',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          'Grablytic',
+          style: textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: colorScheme.primary,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Every source. Maximum fidelity.',
+          style: textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
-            fontStyle: FontStyle.italic,
           ),
           textAlign: TextAlign.center,
         ),
@@ -294,14 +266,14 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
         children: [
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.only(left: 16, right: 8),
               child: TextField(
                 controller: _controller,
                 focusNode: _focusNode,
                 decoration: InputDecoration(
                   hintText: 'Search or enter link...',
                   hintStyle: TextStyle(
-                    color: widget.colorScheme.outline.withValues(alpha: 0.4),
+                    color: widget.colorScheme.outline.withValues(alpha: 0.5),
                   ),
                   border: InputBorder.none,
                   isDense: true,
@@ -311,6 +283,23 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
               ),
             ),
           ),
+          if (_controller.text.isNotEmpty)
+            Semantics(
+              button: true,
+              label: 'Clear text',
+              child: IconButton(
+                icon: Icon(
+                  Icons.close,
+                  size: 18,
+                  color: widget.colorScheme.onSurfaceVariant,
+                ),
+                tooltip: 'Clear input',
+                onPressed: () {
+                  _controller.clear();
+                  _focusNode.requestFocus();
+                },
+              ),
+            ),
           Semantics(
             button: true,
             label: 'Batch import URLs',
@@ -648,16 +637,18 @@ class _DownloadCard extends StatelessWidget {
                           '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.outline,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                         const SizedBox(height: 8),
                         Row(
                           children: [
                             Text(
-                              '${(item.progress * 100).toInt()} % downloading',
+                              '${(item.progress * 100).toInt()}% downloading',
                               style: textTheme.mono.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.primary,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
@@ -670,6 +661,7 @@ class _DownloadCard extends StatelessWidget {
                               style: textTheme.mono.copyWith(
                                 color: colorScheme.outline,
                                 fontSize: 11,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
@@ -1072,11 +1064,10 @@ class _ResumeScanSection extends ConsumerWidget {
           children: [
             const SizedBox(height: 24),
             Text(
-              'INTERRUPTED DOWNLOADS',
-              style: textTheme.labelSmall?.copyWith(
+              'Interrupted downloads',
+              style: textTheme.titleSmall?.copyWith(
                 color: colorScheme.primary,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),

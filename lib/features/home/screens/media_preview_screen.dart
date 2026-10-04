@@ -43,8 +43,8 @@ class MediaPreviewScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Media Preview',
-          style: TextStyle(fontFamily: 'InstrumentSans',
+          'Media preview',
+          style: textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
             color: colorScheme.primary,
           ),
@@ -143,7 +143,7 @@ class MediaPreviewScreen extends ConsumerWidget {
                   icon: const Icon(Icons.play_arrow_rounded, size: 28),
                   label: Text(
                     fileExists ? 'Open in system player' : 'No file available',
-                    style: TextStyle(fontFamily: 'InstrumentSans',
+                    style: textTheme.labelLarge?.copyWith(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
