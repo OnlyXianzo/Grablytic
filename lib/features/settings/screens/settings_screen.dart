@@ -569,7 +569,7 @@ class NetworkSettingsScreen extends ConsumerWidget {
                     context: context,
                     builder: (ctx) => AlertDialog(
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       title: const Text('Proxy server'),
                       content: TextField(
@@ -914,7 +914,7 @@ class PackagesSettingsScreen extends ConsumerWidget {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   title: const Text('Update channel'),
                   content: RadioGroup<String>(
@@ -1935,7 +1935,7 @@ class _BackgroundPermissionsSectionState
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Download notifications?'),
         content: const Text(
           'Grablytic shows download progress while downloading and an alert '
