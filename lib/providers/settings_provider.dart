@@ -74,12 +74,18 @@ Future<String> getDefaultDownloadPath() async {
 
 enum AppThemeMode { system, light, dark }
 
+/// Allowed `logoVariant` pref values. Anything else stored falls back to
+/// 'system'. Mirrors [LogoVariant] in `lib/core/theme/adaptive_logo.dart`
+/// without importing Flutter into the provider layer.
+const _kLogoVariants = {'system', 'dark', 'light', 'legacy'};
+
 class AppSettings {
   final bool wifiOnly;
   final bool turboMode;
   final bool completionAlerts;
   final String downloadPath;
   final AppThemeMode themeMode;
+  final String logoVariant;
   final bool onboardingCompleted;
   final String qualityCeiling;
   final bool audioOnly;
@@ -134,6 +140,7 @@ class AppSettings {
     this.completionAlerts = true,
     this.downloadPath = '/Internal/Videos',
     this.themeMode = AppThemeMode.light,
+    this.logoVariant = 'system',
     this.onboardingCompleted = false,
     this.hasSeenBatteryPrompt = false,
     this.qualityCeiling = '4k',
@@ -187,6 +194,7 @@ class AppSettings {
     bool? completionAlerts,
     String? downloadPath,
     AppThemeMode? themeMode,
+    String? logoVariant,
     bool? onboardingCompleted,
     bool? hasSeenBatteryPrompt,
     String? qualityCeiling,
@@ -237,6 +245,7 @@ class AppSettings {
       completionAlerts: completionAlerts ?? this.completionAlerts,
       downloadPath: downloadPath ?? this.downloadPath,
       themeMode: themeMode ?? this.themeMode,
+      logoVariant: logoVariant ?? this.logoVariant,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       hasSeenBatteryPrompt: hasSeenBatteryPrompt ?? this.hasSeenBatteryPrompt,
       qualityCeiling: qualityCeiling ?? this.qualityCeiling,
@@ -311,6 +320,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final completionAlerts = _prefs.getBool('completionAlerts') ?? true;
     final downloadPath = _prefs.getString('downloadPath') ?? '/Internal/Videos';
     final themeIndex = _prefs.getInt('themeMode') ?? AppThemeMode.light.index;
+    final storedLogo = _prefs.getString('logoVariant');
+    final logoVariant = _kLogoVariants.contains(storedLogo)
+        ? storedLogo!
+        : 'system';
     final onboardingCompleted = _prefs.getBool('onboardingCompleted') ?? false;
     final hasSeenBatteryPrompt =
         _prefs.getBool('hasSeenBatteryPrompt') ?? false;
@@ -395,6 +408,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       completionAlerts: completionAlerts,
       downloadPath: downloadPath,
       themeMode: AppThemeMode.values[themeIndex],
+      logoVariant: logoVariant,
       onboardingCompleted: onboardingCompleted,
       hasSeenBatteryPrompt: hasSeenBatteryPrompt,
       qualityCeiling: qualityCeiling,
@@ -467,6 +481,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setThemeMode(AppThemeMode mode) {
     _prefs.setInt('themeMode', mode.index);
     state = state.copyWith(themeMode: mode);
+  }
+
+  void setLogoVariant(String variant) {
+    final safe = _kLogoVariants.contains(variant) ? variant : 'system';
+    _prefs.setString('logoVariant', safe);
+    state = state.copyWith(logoVariant: safe);
   }
 
   void completeOnboarding() {

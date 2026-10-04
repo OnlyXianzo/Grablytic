@@ -113,6 +113,7 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
   field('completionAlerts', previous.completionAlerts, next.completionAlerts);
   field('downloadPath', previous.downloadPath, next.downloadPath);
   field('themeMode', previous.themeMode, next.themeMode);
+  field('logoVariant', previous.logoVariant, next.logoVariant);
   field(
     'onboardingCompleted',
     previous.onboardingCompleted,

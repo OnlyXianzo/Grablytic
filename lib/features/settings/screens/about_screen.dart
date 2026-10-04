@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
+import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 
 /// Contact + repository surface. Tapping opens the page in whatever handles
@@ -55,9 +56,12 @@ class AboutScreen extends ConsumerWidget {
             Center(
               child: Column(
                 children: [
-                  const AdaptiveLogo(
+                  AdaptiveLogo(
                     size: 96,
                     borderRadius: BorderRadius.all(Radius.circular(24)),
+                    variant: LogoVariant.fromStored(
+                      ref.watch(settingsProvider).logoVariant,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(

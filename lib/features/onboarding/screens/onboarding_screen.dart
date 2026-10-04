@@ -57,7 +57,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     duration: 600.ms,
                     switchInCurve: Curves.easeInOutCubic,
                     switchOutCurve: Curves.easeInOutCubic,
-                    child: _buildBeatContent(context, colorScheme, textTheme),
+                    child: _buildBeatContent(
+                      context,
+                      colorScheme,
+                      textTheme,
+                      LogoVariant.fromStored(
+                        ref.watch(settingsProvider).logoVariant,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -112,6 +119,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     BuildContext context,
     ColorScheme colorScheme,
     TextTheme textTheme,
+    LogoVariant logoVariant,
   ) {
     switch (_beat) {
       case 1:
@@ -119,9 +127,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           key: const ValueKey(1),
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const AdaptiveLogo(
+            AdaptiveLogo(
                   size: 96,
                   borderRadius: BorderRadius.all(Radius.circular(28)),
+                  variant: logoVariant,
                 )
                 .animate()
                 .scale(

@@ -314,6 +314,13 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                     ref.read(settingsProvider.notifier).setThemeMode(mode),
                 colorScheme: colorScheme,
               ),
+              _SettingLogoSelector(
+                currentLogo: settings.logoVariant,
+                onChanged: (variant) => ref
+                    .read(settingsProvider.notifier)
+                    .setLogoVariant(variant),
+                colorScheme: colorScheme,
+              ),
               _SettingSwitch(
                 icon: Icons.grid_view_outlined,
                 title: 'Library Grid View',
@@ -1758,6 +1765,96 @@ class _SettingThemeSelector extends StatelessWidget {
                   DropdownMenuItem(
                     value: AppThemeMode.dark,
                     child: Text('Dark'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// App-logo picker: follow the theme (System) or pin Dark / Light / Legacy.
+/// Mirrors [_SettingThemeSelector] so the two rows behave identically.
+class _SettingLogoSelector extends StatelessWidget {
+  final String currentLogo;
+  final ValueChanged<String> onChanged;
+  final ColorScheme colorScheme;
+
+  const _SettingLogoSelector({
+    required this.currentLogo,
+    required this.onChanged,
+    required this.colorScheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Semantics(
+      label: 'App logo, Choose System, Dark, Light, or Legacy',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Semantics(
+              label: 'App logo',
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.image_outlined,
+                  color: colorScheme.outline,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('App logo', style: textTheme.bodyLarge),
+                  Text(
+                    'Follow theme, or pin Dark, Light, Legacy',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Semantics(
+              label: 'Logo selection, currently $currentLogo',
+              child: DropdownButton<String>(
+                value: currentLogo,
+                underline: const SizedBox.shrink(),
+                onChanged: (val) {
+                  if (val != null) onChanged(val);
+                },
+                dropdownColor: colorScheme.surfaceContainerHigh,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'system',
+                    child: Text('System'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'dark',
+                    child: Text('Dark'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'light',
+                    child: Text('Light'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'legacy',
+                    child: Text('Legacy'),
                   ),
                 ],
               ),
