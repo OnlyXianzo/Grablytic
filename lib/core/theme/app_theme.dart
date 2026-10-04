@@ -180,35 +180,78 @@ class AppTheme {
   }
 
   static TextTheme _buildTextTheme(ColorScheme colorScheme) {
-    final base = TextTheme(
+    const headingFont = 'BricolageGrotesque';
+    const bodyFont = 'Figtree';
+
+    // Bundled product typography (OFL):
+    // - Bricolage Grotesque: Intentional, editorial character for display & headings
+    // - Figtree: Clean, high-legibility geometry for body, labels, and metadata
+    // Pure-Dart static apply: zero runtime font fetches, zero network beacons,
+    // preserving user privacy and offline execution.
+    return TextTheme(
       displayLarge: TextStyle(
+        fontFamily: headingFont,
         fontSize: 48,
-        fontWeight: FontWeight.w300,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.02,
       ),
-      headlineLarge: TextStyle(fontSize: 32, fontWeight: FontWeight.w400),
-      headlineMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.w400),
-      titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
-      titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+      headlineLarge: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 32,
+        fontWeight: FontWeight.w500,
+      ),
+      headlineMedium: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 28,
+        fontWeight: FontWeight.w500,
+      ),
+      titleLarge: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+      ),
+      titleMedium: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 18,
+        fontWeight: FontWeight.w500,
+      ),
+      titleSmall: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
       bodyLarge: TextStyle(
+        fontFamily: bodyFont,
         fontSize: 16,
         fontWeight: FontWeight.w400,
         height: 1.5,
       ),
       bodyMedium: TextStyle(
+        fontFamily: bodyFont,
         fontSize: 14,
         fontWeight: FontWeight.w400,
         height: 1.5,
       ),
-      labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-      labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
-      bodySmall: TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
+      bodySmall: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+      ),
+      labelLarge: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
+      labelMedium: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      labelSmall: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 11,
+        fontWeight: FontWeight.w400,
+      ),
     );
-
-    // Bundled product face (assets/fonts/InstrumentSans-*.ttf, OFL).
-    // Pure-Dart apply: no runtime font fetch, no network beacon, and the
-    // theme constructs in plain unit tests. Previously GoogleFonts, which
-    // fetched from fonts.gstatic.com on first build.
-    return base.apply(fontFamily: 'InstrumentSans');
   }
 }
