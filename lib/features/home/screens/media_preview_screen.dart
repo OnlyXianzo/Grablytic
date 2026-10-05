@@ -40,6 +40,9 @@ class MediaPreviewScreen extends ConsumerWidget {
       fileSizeBytes = fileStat.size;
     }
 
+    final loudValue = quality ??
+        (fileExists ? _formatBytes(fileSizeBytes ?? 0) : null);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -58,7 +61,7 @@ class MediaPreviewScreen extends ConsumerWidget {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
               if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty)
@@ -84,10 +87,26 @@ class MediaPreviewScreen extends ConsumerWidget {
                 style: textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
-                textAlign: TextAlign.center,
+                textAlign: TextAlign.left,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (loudValue != null && loudValue.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Semantics(
+                  label: 'Quality $loudValue',
+                  child: Text(
+                    loudValue,
+                    style: textTheme.titleLarge?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.left,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               _MetadataRow(
                 label: duration != null ? 'Duration' : null,
@@ -158,7 +177,7 @@ class MediaPreviewScreen extends ConsumerWidget {
                     color: colorScheme.error,
                     fontSize: 11,
                   ),
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.left,
                 ),
               ],
             ],

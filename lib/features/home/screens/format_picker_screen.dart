@@ -517,6 +517,64 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     return q.split(RegExp(r'\s+')).every(hay.contains);
   }
 
+  /// Presentation-only ordering: the selected row first, then the engine
+  /// recommendation, then everything else in extraction order. Never mutates
+  /// state — purely display so the recommended stream is found in seconds.
+  List<Map<String, dynamic>> _orderedForDisplay(
+    Iterable<Map<String, dynamic>> formats, {
+    required String? selectedId,
+    String? recommendedId,
+  }) {
+    final list = formats.toList();
+    int rank(Map<String, dynamic> fmt) {
+      final id = fmt['format_id'] as String?;
+      if (id != null && id == selectedId) return 0;
+      if (recommendedId != null && id == recommendedId) return 1;
+      return 2;
+    }
+
+    final indexed = list.asMap().entries.toList();
+    indexed.sort((a, b) {
+      final r = rank(a.value).compareTo(rank(b.value));
+      return r != 0 ? r : a.key.compareTo(b.key);
+    });
+    return indexed.map((e) => e.value).toList();
+  }
+
+  /// The single loud terracotta value for the header: current selection
+  /// summarized in one line (quality + container). Null when nothing is
+  /// selected yet — the header then stays quiet instead of guessing.
+  String? _selectionValueLabel() {
+    Map<String, dynamic>? byId(List<Map<String, dynamic>> list, String? id) {
+      if (id == null) return null;
+      for (final fmt in list) {
+        if (fmt['format_id'] == id) return fmt;
+      }
+      return null;
+    }
+
+    final container = _selectedContainer.toUpperCase();
+    final muxed = byId(_muxedFormats, _selectedMuxedFormat);
+    if (muxed != null) {
+      final height = muxed['height'];
+      return height != null
+          ? '$height\u2009p · $container'
+          : 'Combined · $container';
+    }
+    final video = byId(_videoFormats, _selectedVideoFormat);
+    if (video != null) {
+      final height = video['height'];
+      return height != null ? '$height\u2009p · $container' : 'Video · $container';
+    }
+    final audio = byId(_audioFormats, _selectedAudioFormat);
+    if (audio != null) {
+      final abr = audio['abr'];
+      if (abr is num) return '${abr.toInt()}\u2009kbps audio · $container';
+      return 'Audio · $container';
+    }
+    return null;
+  }
+
   String _formatDuration(int? seconds) {
     if (seconds == null || seconds < 0) return '';
     final m = seconds ~/ 60;
@@ -943,7 +1001,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                     const SizedBox(height: 12),
                     if (!_isAudioOnlyMode && _videoFormats.isNotEmpty)
                       _buildSectionTile(
-                        title: 'VIDEO STREAMS',
+                        title: 'Video streams',
                         count: _videoFormats.length,
                         selectedLabel: _selectedVideoFormat == null
                             ? null
@@ -952,15 +1010,19 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         colorScheme: colorScheme,
                         textTheme: textTheme,
                         children: [
-                          for (final fmt in _videoFormats.where(
-                            (f) => _matchesFilter(f, true),
+                          for (final fmt in _orderedForDisplay(
+                            _videoFormats.where(
+                              (f) => _matchesFilter(f, true),
+                            ),
+                            selectedId: _selectedVideoFormat,
+                            recommendedId: _recommendedVideoFormatId,
                           ))
                             _buildFormatRow(fmt, true, colorScheme, textTheme),
                         ],
                       ),
                     if (!_isAudioOnlyMode && _muxedFormats.isNotEmpty)
                       _buildSectionTile(
-                        title: 'COMBINED STREAMS',
+                        title: 'Combined streams',
                         count: _muxedFormats.length,
                         selectedLabel: _selectedMuxedFormat == null
                             ? null
@@ -969,15 +1031,18 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         colorScheme: colorScheme,
                         textTheme: textTheme,
                         children: [
-                          for (final fmt in _muxedFormats.where(
-                            (f) => _matchesFilter(f, false),
+                          for (final fmt in _orderedForDisplay(
+                            _muxedFormats.where(
+                              (f) => _matchesFilter(f, false),
+                            ),
+                            selectedId: _selectedMuxedFormat,
                           ))
                             _buildMuxedFormatRow(fmt, colorScheme, textTheme),
                         ],
                       ),
                     if (_audioFormats.isNotEmpty)
                       _buildSectionTile(
-                        title: 'AUDIO STREAMS',
+                        title: 'Audio streams',
                         count: _audioFormats.length,
                         selectedLabel: _selectedAudioFormat == null
                             ? null
@@ -986,8 +1051,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         colorScheme: colorScheme,
                         textTheme: textTheme,
                         children: [
-                          for (final fmt in _audioFormats.where(
-                            (f) => _matchesFilter(f, false),
+                          for (final fmt in _orderedForDisplay(
+                            _audioFormats.where(
+                              (f) => _matchesFilter(f, false),
+                            ),
+                            selectedId: _selectedAudioFormat,
                           ))
                             _buildFormatRow(fmt, false, colorScheme, textTheme),
                         ],
@@ -1078,6 +1146,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   Widget _buildHeaderCard(ColorScheme colorScheme, TextTheme textTheme) {
     final title = _fetchedTitle.isNotEmpty ? _fetchedTitle : widget.title;
     final dur = _formatDuration(_durationSeconds);
+    final loudValue = _selectionValueLabel();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1114,6 +1183,21 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (loudValue != null) ...[
+                        const SizedBox(height: 2),
+                        Semantics(
+                          label: 'Selected quality $loudValue',
+                          child: Text(
+                            loudValue,
+                            style: textTheme.titleLarge?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -1232,26 +1316,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          Row(
-            children: [
-              Container(
-                width: 3,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'OUTPUT OPTIONS',
-                style: textTheme.labelSmall?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ],
+          Text(
+            'Output options',
+            style: textTheme.titleSmall?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -1874,26 +1945,13 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
             color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
-        title: Row(
-          children: [
-            Container(
-              width: 3,
-              height: 14,
-              decoration: BoxDecoration(
-                color: colorScheme.primary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '$title ($count)',
-              style: textTheme.labelSmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ],
+        title: Text(
+          '$title ($count)',
+          style: textTheme.titleSmall?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
         ),
         subtitle: selectedLabel == null
             ? null
@@ -1941,6 +1999,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         fmt['dynamic_range'] != null &&
         fmt['dynamic_range'] != 'SDR' &&
         fmt['dynamic_range'].toString().isNotEmpty;
+    final isRecommended =
+        isVideo && _recommendedVideoFormatId == formatId && !isSelected;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1990,16 +2050,41 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                     children: [
                       Row(
                         children: [
-                          Text(
-                            isVideo
-                                ? '$formatId · ${fmt['height'] != null ? '${fmt['height']}p' : ''}${fmt['fps'] != null ? '${fmt['fps']}' : ''}'
-                                : '$formatId · ${fmt['acodec'] ?? 'Audio'} · ${fmt['abr'] != null ? '${(fmt['abr'] as num).toInt()} kbps' : (fmt['tbr'] != null ? '${(fmt['tbr'] as num).toInt()} kbps' : 'unknown')}',
-                            style: textTheme.mono.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              fontFeatures: const [FontFeature.tabularFigures()],
+                          Flexible(
+                            child: Text(
+                              isVideo
+                                  ? '$formatId · ${fmt['height'] != null ? '${fmt['height']}p' : ''}${fmt['fps'] != null ? '${fmt['fps']}' : ''}'
+                                  : '$formatId · ${fmt['acodec'] ?? 'Audio'} · ${fmt['abr'] != null ? '${(fmt['abr'] as num).toInt()} kbps' : (fmt['tbr'] != null ? '${(fmt['tbr'] as num).toInt()} kbps' : 'unknown')}',
+                              style: textTheme.mono.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (isRecommended) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Recommended',
+                                style: textTheme.mono.copyWith(
+                                  color: colorScheme.primary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
                           if (isHdr) ...[
                             const SizedBox(width: 8),
                             Container(
