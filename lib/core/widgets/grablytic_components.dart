@@ -10,8 +10,10 @@ import '../theme/app_theme.dart';
 ///
 /// New screens must reuse these instead of inventing one-off equivalents.
 
-/// Uppercase section label, e.g. PENDING / DOWNLOADED. Matches the mockup
-/// `.grplabel` / `.lbl` treatment and the existing library section headers.
+/// Sentence-case section title for the download ledger, e.g. Pending /
+/// Downloaded. Left-aligned, ink-colored, no tracking — the status bar
+/// beside it (where present) carries the state signal, not the type.
+/// Replaces the old tracked-out uppercase eyebrow treatment.
 class SectionLabel extends StatelessWidget {
   const SectionLabel(this.text, {super.key, this.color});
 
@@ -24,10 +26,10 @@ class SectionLabel extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Text(
       text,
-      style: textTheme.labelSmall?.copyWith(
-        color: color ?? colorScheme.primary,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
+      style: textTheme.titleSmall?.copyWith(
+        color: color ?? colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0,
       ),
     );
   }

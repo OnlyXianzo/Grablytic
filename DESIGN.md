@@ -16,14 +16,16 @@ from drop shadows.
 ## 1. Principles
 
 1. **Warm before technical.** The app handles binaries, threads and logs,
-   but it speaks like a human shelf of hand-picked items — not a console.
+   but it speaks like a shelf of kept media — not a console.
 2. **One loud thing per card.** Every card has a single oversized terracotta
    value (size, quality, progress, count). Everything else stays quiet.
-3. **Provenance on everything.** Every item carries a tracked-out uppercase
-   eyebrow that says where it is from and what it is
-   (`1080P · YOUTUBE`, `PLAYLIST · 24 ITEMS`, `PRESET · PODCAST`).
+3. **Provenance without shouting.** Every item says where it is from and
+   what it is in plain sentence case (`YouTube · 1080p` is the outer limit;
+   the `·` joiner lives only in mono machine lines, never in titles).
+   No tracked-out uppercase eyebrows.
 4. **Tonal, never shadowed.** Surfaces are borderless tonal tiles separated
-   by paper gutters. Elevation is a lighter cream, not a shadow.
+   by paper gutters. Elevation is a lighter cream, not a shadow. No
+   gradient washes.
 5. **Touch-first, TalkBack-complete.** 48×48 targets, semantic labels on
    every icon-button, full screen-reader flow.
 
@@ -100,9 +102,13 @@ as hex literals. New code with a hex literal fails review.
 
 ## 4. Typography
 
-- **Product face:** Instrument Sans (bundled `assets/fonts/InstrumentSans-*.ttf`, OFL — never a runtime webfont fetch).
+- **Product faces (bundled, OFL — never a runtime webfont fetch):**
+  Bricolage Grotesque for display and headlines, Figtree for body, labels
+  and metadata. The two are clearly distinct: expressive grotesk up top,
+  quiet humanist for everything the user must read quickly.
 - **Technical face:** Iosevka Charon Mono (`textTheme.mono`) — bytes,
-  speed, ETA, URLs, log lines, template strings. Never for prose.
+  speed, ETA, format codes, URLs, log lines, template strings. Only for
+  machine facts, never for prose.
 - **Brand face:** the logo wordmark serif is reserved for the logo lockup
   and the splash hero. Product UI never sets headlines in that serif.
 
@@ -116,12 +122,16 @@ as hex literals. New code with a hex literal fails review.
 | Body small | 13 / Regular | Helper text under inputs |
 | Label large | 14 / Medium | Buttons |
 | Label small | 12 / Regular | Metadata, timestamps |
-| **Eyebrow** | 11 / 600 / uppercase / +1.5 tracking / terracotta or muted ink | Provenance line on every card and section (`INTERRUPTED DOWNLOADS`, `FORMAT · YOUTUBE`) |
+| **Eyebrow** | 11 / 600 / uppercase / +1.5 tracking / terracotta or muted ink | DEPRECATED — do not use. Section titles are sentence case (`Pending`, `Downloaded`) in ink; see `SectionLabel` |
 | **Primary value** | 20–28 / 700 / terracotta | The loudest thing on the card: size, quality, `%`, count |
 | Mono | 13 / Regular (11 for dense rows) | `128 MB / 1.2 GB`, `4.1 MB/s · ETA 02:14`, `99 % downloading` |
 
-Eyebrows are always one line, truncated with ellipsis. Titles are max
+Section titles are always sentence case, left-aligned, letter-spacing 0.
+The `·` joiner appears only inside mono machine lines — never as a
+`A · B · C` meta string on titles or cards. Titles are max
 two lines. Never center-align card text except the empty state and hero.
+Buttons say what happens (`Download`, `Search`, `Retry`) — never `Grab`
+or `Submit`.
 
 ---
 
@@ -163,10 +173,10 @@ muted-ink label. Selected chip: espresso fill (light) / terracotta fill
 ### 6.3 Featured banner
 
 Full-width 16-dp image tile with a paper scrim. Content, top to bottom:
-eyebrow (`FEATURED COLLECTION`, paper, 60% opacity), 24 Medium headline
-(paper white, two lines), terracotta pill action (`EXPLORE`, `VIEW`). Used
-on Home for the current highlight (e.g. new engine capability, featured
-preset pack). One per screen, never stacked.
+quiet provenance line (sentence case, paper at 60% opacity), 24 Medium
+headline (paper white, two lines), terracotta pill action (`Explore`,
+`View`). Used on Home for the current highlight (e.g. new engine
+capability, featured preset pack). One per screen, never stacked.
 
 ### 6.4 Masonry grid cards
 
@@ -175,7 +185,9 @@ Two-column staggered grid, 8-dp paper gutters, borderless tonal tiles:
 - Thumbnail well (tile base, 8-dp radius) with optional top-right circular
   save heart (paper fill, sage icon when saved).
 - Overlapping circular source avatar at the well's bottom-left edge.
-- Eyebrow (`VINTAGE · BERLIN` pattern → `4K · YOUTUBE`, `MP3 · PODCAST`).
+- Quiet provenance line in sentence case (`YouTube · 1080p` at most —
+  the `·` joiner is allowed here only because it is a mono-adjacent
+  machine fact, never a shouting label).
 - Title, 14 / 600, two-line max.
 - Primary value, 20 / 700 terracotta, one line (`$185` pattern → `1.2 GB`,
   `2160P`, `99%`).
@@ -185,39 +197,38 @@ Two-column staggered grid, 8-dp paper gutters, borderless tonal tiles:
 ### 6.5 Detail header (carousel)
 
 Edge-to-edge media with floating circular back / share / save actions
-(paper fill). Below: dot indicator, eyebrow, 28 headline title, terracotta
+(paper fill). Below: dot indicator, quiet provenance line in sentence
+case, 28 headline title, terracotta
 primary value row with a muted qualifier (`Local Pickup Only` pattern →
 `Wi-Fi only`, `Subs embedded`, `SponsorBlock on`). Never put the primary
 value in ink — it must be the loudest element.
 
 ### 6.6 Info tiles
 
-Paired tonal tiles (`CONDITION` / `DIMENSIONS` pattern → `QUALITY` /
-`SIZE`, `CODEC` / `CONTAINER`, `AUDIO` / `SUBTITLES`). Each tile: 11-sp
-eyebrow + 14 Medium value, tile fill, 12-dp radius, no border emphasis.
+Paired tonal tiles (`Quality` / `Size`, `Codec` / `Container`, `Audio` /
+`Subtitles`). Each tile: sentence-case caption + 14 Medium value, tile
+fill, 12-dp radius, no border emphasis.
 
 ### 6.7 Source strip
 
 Brightest-tile row: circular avatar, name (600), subline
-(`4.9 · 212 sales` pattern → `YOUTUBE · 1080P CAP`, `CHANNEL · 24 ITEMS`)
+(`YouTube · 1080p cap`, `Channel · 24 items`)
 with a sage verified tick when the source is allowlisted/healthy, and a
 trailing chevron opening the source profile.
 
 ### 6.8 Buttons
 
 - **Primary:** terracotta fill, paper label, 12-dp radius, 48+ height
-  (`Make Offer` pattern → `Download`, `Resume`, `Start anyway`).
-- **Secondary:** paper-wash fill, ink label (`Contact` pattern → `Preview`,
-  `Formats`, `Wait`).
+  (`Download`, `Retry`, `Start anyway`).
+- **Secondary:** paper-wash fill, ink label (`Preview`, `Formats`, `Wait`).
 - **Destructive / retry:** outlined danger or terracotta-outline.
 - Dialogs keep actions right-aligned: quiet `Dismiss`/`Wait` text button +
   one primary.
 
 ### 6.9 Filter row + result count
 
-Horizontally scrolling outlined pills (`Price · Distance · Condition`
-pattern → `Quality · Source · Status · Type`) over an 11-sp tracked count
-line (`128 RESULTS FOUND` pattern → `24 ITEMS · 1.2 GB`). Active filter
+Horizontally scrolling outlined pills (`Quality`, `Source`, `Status`, `Type`)
+over a quiet count line (`24 items · 1.2 GB`). Active filter
 pill is terracotta-wash with terracotta label.
 
 ### 6.10 Status pills and badges
@@ -260,7 +271,8 @@ implementation screens bind to them as noted:
 1. **Home feed** — search, chips, featured banner, recent-items masonry.
    → `HomeScreen` (URL input, resume scan, `Your Library` cards,
    bootstrap/error states), `OnboardingScreen`.
-2. **Detail** — carousel, eyebrow + title + terracotta value, info tiles,
+2. **Detail** — carousel, provenance line + title + terracotta value,
+   info tiles,
    source strip, primary/secondary actions.
    → `MediaPreviewScreen`, `FormatPickerScreen` (stream list, codec /
    container choice, muxed badges).
@@ -292,13 +304,15 @@ archive, auth, updates), `SubtitleSettingsScreen`,
 
 ## 8. Motion
 
-- `flutter_animate`: hero `fadeIn` 400 ms + `slideY` 0.2 easeOutCubic;
-  inputs trail at +200 ms. Never animate the terracotta value itself.
+- One quiet reveal per surface: a single `fadeIn` (≤800 ms) on onboarding
+  beats; no `slideX`/`slideY`/`scale` entrances, no looping hints, no
+  staggered fade-and-rise on Home sections. Home renders still.
 - Tab changes: 300 ms easeInOut pager animation; swipe and tap land on the
   same destination exactly once (fly-through pages ignored).
 - Progress and log streams update in place — no list jumps, no shimmer on
   determinate rows. Shimmer/Lottie/Rive are reserved for indeterminate
-  bootstrap and empty-state illustration.
+  bootstrap and empty-state illustration. Progress fills are solid
+  terracotta — never gradients.
 
 ---
 
@@ -320,13 +334,14 @@ archive, auth, updates), `SubtitleSettingsScreen`,
 
 - Tokens: `GrablyticColors` in `lib/core/theme/app_theme.dart`;
   schemes: `AppTheme.light()` / `AppTheme.dark()` (`useMaterial3: true`,
-  scaffold = surface, `instrumentSansTextTheme`).
+  scaffold = surface, Bricolage Grotesque display + Figtree body).
 - Mono: `GrablyticTextStyles.mono` (`lib/core/theme/text_styles.dart`).
 - Shell: `AppShell` — `PageView` + bottom pill nav (<600 dp) /
   `NavigationRail` (wide). Providers stay Riverpod; shared UI state never
   in `setState`.
 - Rules for new code: no hex literals, no `BoxShadow`, no primary-colored
-  body text, no new radius outside §5, every image card gets eyebrow +
-  title + terracotta value, every icon-button gets `Semantics(label:)`.
+  body text, no new radius outside §5, every image card gets provenance
+  line + title + terracotta value, every icon-button gets `Semantics(label:)`.
+  No uppercase eyebrows, no tracked-out labels, no gradient fills.
 - Verify: `flutter analyze` zero-error, `flutter test`, relevant `pytest`
   for engine-touched flows.

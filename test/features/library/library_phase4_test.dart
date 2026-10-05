@@ -73,17 +73,17 @@ void main() {
       expect(find.text('Beta Clip'), findsNothing);
     });
 
-    testWidgets('failed chip isolates the FAILED section', (tester) async {
+    testWidgets('failed chip isolates the Failed section', (tester) async {
       await _pumpLibrary(tester, prefs, engine, [
         _item('c1', 'Done One', 'completed'),
         _item('e1', 'Bad One', 'error'),
       ]);
-      await tester.tap(find.text('Failed'));
+      await tester.tap(find.widgetWithText(FilterChip, 'Failed'));
       await tester.pumpAndSettle();
-      expect(find.text('FAILED'), findsOneWidget);
+      expect(find.text('Failed downloads'), findsOneWidget);
       expect(find.text('Bad One'), findsOneWidget);
       expect(find.text('Done One'), findsNothing);
-      expect(find.text('DOWNLOADED'), findsNothing);
+      expect(find.text('Downloaded'), findsNothing);
     });
 
     testWidgets('in-row delete asks for confirm on terminal rows',

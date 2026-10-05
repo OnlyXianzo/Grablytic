@@ -139,7 +139,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   Text(
                     'Library',
                     style: textTheme.headlineSmall?.copyWith(
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -358,10 +358,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 const SizedBox(width: 8),
                 Text(
                   label,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
@@ -375,7 +375,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       slivers: [
         const SliverToBoxAdapter(child: SizedBox(height: 16)),
         if (pending.isNotEmpty) ...[
-          sectionHeader('PENDING', colorScheme.primary),
+          sectionHeader('Pending downloads', colorScheme.primary),
           SliverList.builder(
             itemCount: pending.length,
             itemBuilder: (context, i) => Padding(
@@ -391,7 +391,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],
         if (failed.isNotEmpty) ...[
-          sectionHeader('FAILED', colorScheme.error),
+          sectionHeader('Failed downloads', colorScheme.error),
           SliverList.builder(
             itemCount: failed.length,
             itemBuilder: (context, i) => Padding(
@@ -407,7 +407,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],
         if (completed.isNotEmpty) ...[
-          sectionHeader('DOWNLOADED', colorScheme.primary),
+          sectionHeader('Downloaded', colorScheme.primary),
           SliverList.builder(
             itemCount: completed.length,
             itemBuilder: (context, i) => Padding(
@@ -758,25 +758,9 @@ class _LibraryGridCard extends ConsumerWidget {
             Expanded(
               child: Container(
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: isError
-                      ? LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            colorScheme.errorContainer.withValues(alpha: 0.4),
-                            colorScheme.error.withValues(alpha: 0.15),
-                          ],
-                        )
-                      : LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            colorScheme.primary.withValues(alpha: 0.3),
-                            colorScheme.tertiary.withValues(alpha: 0.3),
-                          ],
-                        ),
-                ),
+                color: isError
+                    ? colorScheme.errorContainer.withValues(alpha: 0.2)
+                    : colorScheme.surfaceContainerHigh,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [

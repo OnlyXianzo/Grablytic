@@ -89,26 +89,23 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
             ),
 
-          // Tap anywhere hint for beats 1, 2 & 3
+          // Static hint for beats 1-3 (no looping motion; reduced-motion
+          // safe and quiet — the beat content itself carries the moment).
           if (_beat < 4)
-            Positioned(
+            const Positioned(
               bottom: 48,
               left: 0,
               right: 0,
-              child:
-                  Center(
-                        child: Text(
-                          'Tap anywhere to continue',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: Colors.white38,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      )
-                      .animate(onComplete: (c) => c.repeat(reverse: true))
-                      .fadeIn(duration: 600.ms)
-                      .then(delay: 1200.ms)
-                      .fadeOut(duration: 600.ms),
+              child: Center(
+                child: Text(
+                  'Tap anywhere to continue',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
             ),
         ],
       ),
@@ -131,14 +128,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   size: 96,
                   borderRadius: BorderRadius.all(Radius.circular(28)),
                   variant: logoVariant,
-                )
-                .animate()
-                .scale(
-                  begin: const Offset(0.8, 0.8),
-                  curve: Curves.easeOutBack,
-                  duration: 800.ms,
-                )
-                .fadeIn(duration: 800.ms),
+                ).animate().fadeIn(duration: 800.ms),
             const SizedBox(height: 24),
             Text(
                   'Grablytic',
@@ -146,14 +136,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     color: Colors.white,
                     fontWeight: FontWeight.w300,
                   ),
-                )
-                .animate()
-                .slideY(
-                  begin: 0.3,
-                  curve: Curves.easeOutCubic,
-                  duration: 800.ms,
-                )
-                .fadeIn(duration: 800.ms),
+                ).animate().fadeIn(duration: 800.ms),
             const SizedBox(height: 16),
             Text(
               'Every source. Maximum quality.',
@@ -175,14 +158,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     color: Colors.white,
                     fontWeight: FontWeight.w300,
                   ),
-                )
-                .animate()
-                .scale(
-                  begin: const Offset(0.8, 0.8),
-                  curve: Curves.easeOutBack,
-                  duration: 800.ms,
-                )
-                .fadeIn(duration: 800.ms),
+                ).animate().fadeIn(duration: 800.ms),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -193,7 +169,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 const SizedBox(width: 8),
                 _buildSourceBadge('Instagram'),
               ],
-            ).animate(delay: 300.ms).fadeIn().slideY(begin: 0.2),
+            ).animate(delay: 300.ms).fadeIn(),
           ],
         );
       case 3:
@@ -205,7 +181,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Self-Contained Power',
+                'Self-contained power',
                 style: textTheme.headlineMedium?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -229,14 +205,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     icon: Icons.code,
                     colorScheme: colorScheme,
                     textTheme: textTheme,
-                  )
-                  .animate(delay: 400.ms)
-                  .slideY(
-                    begin: 0.2,
-                    curve: Curves.easeOutCubic,
-                    duration: 400.ms,
-                  )
-                  .fadeIn(),
+                  ).animate(delay: 400.ms).fadeIn(),
               const SizedBox(height: 16),
               _buildFeatureCard(
                     title: 'Bundled Static FFmpeg',
@@ -245,14 +214,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     icon: Icons.settings_input_component,
                     colorScheme: colorScheme,
                     textTheme: textTheme,
-                  )
-                  .animate(delay: 800.ms)
-                  .slideY(
-                    begin: 0.2,
-                    curve: Curves.easeOutCubic,
-                    duration: 400.ms,
-                  )
-                  .fadeIn(),
+                  ).animate(delay: 800.ms).fadeIn(),
               const SizedBox(height: 20),
               Text(
                 'No external apps required. Absolute maximum quality, processed locally.',
@@ -280,14 +242,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     icon: Icons.high_quality,
                     colorScheme: colorScheme,
                     textTheme: textTheme,
-                  )
-                  .animate()
-                  .slideX(
-                    begin: 0.5,
-                    curve: Curves.easeOutCubic,
-                    duration: 400.ms,
-                  )
-                  .fadeIn(),
+                  ).animate().fadeIn(),
               const SizedBox(height: 16),
               _buildFeatureCard(
                     title: 'Zero throttle. Full speed.',
@@ -296,14 +251,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     icon: Icons.speed,
                     colorScheme: colorScheme,
                     textTheme: textTheme,
-                  )
-                  .animate(delay: 400.ms)
-                  .slideX(
-                    begin: 0.5,
-                    curve: Curves.easeOutCubic,
-                    duration: 400.ms,
-                  )
-                  .fadeIn(),
+                  ).animate(delay: 400.ms).fadeIn(),
               const SizedBox(height: 16),
               _buildFeatureCard(
                     title: 'No ads. No account.',
@@ -311,14 +259,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     icon: Icons.lock_outline,
                     colorScheme: colorScheme,
                     textTheme: textTheme,
-                  )
-                  .animate(delay: 800.ms)
-                  .slideX(
-                    begin: 0.5,
-                    curve: Curves.easeOutCubic,
-                    duration: 400.ms,
-                  )
-                  .fadeIn(),
+                  ).animate(delay: 800.ms).fadeIn(),
               const SizedBox(height: 40),
               ElevatedButton(
                 onPressed: _nextBeat,

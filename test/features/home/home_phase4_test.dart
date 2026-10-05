@@ -66,17 +66,17 @@ void main() {
   setUp(() => ExtractionCache.instance.clear());
 
   group('Home P4-3 fidelity (hero + pill + opts + sections)', () {
-    testWidgets('hero shows brand row and headline, Grab submits URL',
+    testWidgets('hero shows brand row and headline, Download submits URL',
         (tester) async {
       SharedPreferences.setMockInitialValues({'onboardingCompleted': true});
       final prefs = await SharedPreferences.getInstance();
       await _pumpHome(tester, prefs, MockEngineService());
-      expect(find.text('Grab anything.'), findsOneWidget);
-      expect(find.text('Grab'), findsOneWidget);
+      expect(find.text('Save video and audio for offline.'), findsOneWidget);
+      expect(find.text('Download'), findsOneWidget);
       await tester.enterText(find.byType(TextField),
           'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
       await tester.pump();
-      await tester.tap(find.text('Grab'));
+      await tester.tap(find.text('Download'));
       await tester.pumpAndSettle();
       expect(find.byType(FormatPickerScreen), findsOneWidget);
     });

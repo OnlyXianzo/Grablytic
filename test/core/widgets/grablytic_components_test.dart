@@ -27,12 +27,12 @@ void main() {
   });
 
   group('SectionLabel', () {
-    testWidgets('renders uppercase-styled text', (tester) async {
+    testWidgets('renders sentence-case ledger style', (tester) async {
       await tester.pumpWidget(_wrap(const SectionLabel('Pending')));
       expect(find.text('Pending'), findsOneWidget);
       final text = tester.widget<Text>(find.text('Pending'));
-      expect(text.style?.letterSpacing, 1.5);
-      expect(text.style?.fontWeight, FontWeight.bold);
+      expect(text.style?.letterSpacing, 0);
+      expect(text.style?.fontWeight, FontWeight.w600);
     });
   });
 

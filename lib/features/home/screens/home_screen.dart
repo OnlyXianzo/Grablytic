@@ -3,7 +3,6 @@ import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/widgets/grablytic_components.dart';
@@ -54,7 +53,7 @@ class HomeScreen extends ConsumerWidget {
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
               // Engine status
@@ -65,17 +64,13 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               const OfflineQueueBanner(),
               const SizedBox(height: 8),
-              // Hero section
-              _HeroSection(colorScheme: colorScheme)
-                  .animate()
-                  .fadeIn(duration: 400.ms)
-                  .slideY(begin: 0.2, curve: Curves.easeOutCubic),
+              // Hero section: the bench itself is the hero — brand row plus
+              // one plain-spoken line about what the tool does. No entrance
+              // choreography: motion answers taps, not page loads.
+              _HeroSection(colorScheme: colorScheme),
               const SizedBox(height: 32),
               // URL input
-              _UrlInput(colorScheme: colorScheme)
-                  .animate()
-                  .fadeIn(delay: 200.ms, duration: 400.ms)
-                  .slideY(begin: 0.15, curve: Curves.easeOutCubic),
+              _UrlInput(colorScheme: colorScheme),
               const SizedBox(height: 14),
               // Quick option tiles bound to real defaults.
               _OptsRow(
@@ -227,7 +222,7 @@ class _HeroSection extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         Text(
-          'Grab anything.',
+          'Save video and audio for offline.',
           style: textTheme.headlineLarge?.copyWith(
             fontWeight: FontWeight.w800,
             letterSpacing: -0.02,
@@ -236,7 +231,7 @@ class _HeroSection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Paste a link from any site, or search by name.',
+          'Paste a link or type a name. Files stay on this device.',
           style: textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -278,12 +273,12 @@ class _OptsRow extends StatelessWidget {
           label: '$caption, $value',
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color:
                       colorScheme.outlineVariant.withValues(alpha: 0.3),
@@ -294,10 +289,11 @@ class _OptsRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    caption.toUpperCase(),
+                    caption,
                     style: textTheme.labelSmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.08,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -557,7 +553,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                         // label stays exact for tests + readers.
                         ExcludeSemantics(
                           child: Text(
-                            'Grab',
+                            isUrl ? 'Download' : 'Search',
                             style: Theme.of(context)
                                 .textTheme
                                 .bodyLarge
@@ -855,8 +851,8 @@ class _DownloadCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        // Gradient progress (mockup `.pbar`): accent fill on
-                        // track; indeterminate LinearProgress while
+                        // Solid terracotta fill on track (mockup `.pbar`);
+                        // indeterminate LinearProgress while
                         // post-processing (no progress callback when merging).
                         if (item.stage != null)
                           ClipRRect(
@@ -882,22 +878,17 @@ class _DownloadCard extends StatelessWidget {
                                 color:
                                     colorScheme.surfaceContainerHighest,
                                 alignment: Alignment.centerLeft,
-                                child: FractionallySizedBox(
-                                  widthFactor:
-                                      item.progress.clamp(0.0, 1.0),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          colorScheme.primaryContainer,
-                                          colorScheme.primary,
-                                        ],
-                                      ),
-                                      borderRadius:
-                                          BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                ),
+                                 child: FractionallySizedBox(
+                                   widthFactor:
+                                       item.progress.clamp(0.0, 1.0),
+                                   child: Container(
+                                     decoration: BoxDecoration(
+                                       color: colorScheme.primary,
+                                       borderRadius:
+                                           BorderRadius.circular(4),
+                                     ),
+                                   ),
+                                 ),
                               ),
                             ),
                           ),
@@ -969,9 +960,9 @@ class _DownloadCard extends StatelessWidget {
                           DownloadSparkline(samples: item.speedHistory),
                           const SizedBox(height: 4),
                         ],
-                        // Gradient determinate bar lives above (mockup
-                        // `.pbar`); Loop-4 indeterminate case is handled
-                        // there too — this old flat bar is removed.
+                        // Solid determinate bar lives above (mockup `.pbar`);
+// the indeterminate post-processing case is handled
+                        // there too.
                         const SizedBox(height: 8),
                         DownloadLogOverlay(
                           downloadId: item.id,
@@ -1314,7 +1305,7 @@ class _ResumeScanSection extends ConsumerWidget {
             Text(
               'Interrupted downloads',
               style: textTheme.titleSmall?.copyWith(
-                color: colorScheme.primary,
+                color: colorScheme.onSurface,
                 fontWeight: FontWeight.w600,
               ),
             ),
