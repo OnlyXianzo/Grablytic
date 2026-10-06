@@ -745,7 +745,6 @@ class _DownloadCard extends StatelessWidget {
 
   Widget _statusPlaceholder() {
     final isDownloading = item.status == 'downloading';
-    final isCancelling = item.status == 'cancelling';
     final isQueued = item.status == 'queued' || item.status == 'pending';
     final isError = item.status == 'error';
     final isInterrupted = item.status == 'interrupted';
@@ -757,13 +756,6 @@ class _DownloadCard extends StatelessWidget {
         titleLower.contains('ost') ||
         titleLower.contains('radio') ||
         titleLower.contains('beats');
-    final is4k = titleLower.contains('4k') ||
-        titleLower.contains('hdr') ||
-        titleLower.contains('2160');
-
-    final badgeText = _isAudio
-        ? (titleLower.contains('flac') ? 'FLAC' : 'HI-FI')
-        : (is4k ? '4K HDR' : '1080p');
 
     final durationText = _isAudio
         ? '04:18'

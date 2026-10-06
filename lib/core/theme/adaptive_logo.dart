@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 
 /// Available variants for the Grablytic brand logo.
@@ -82,22 +81,17 @@ class AdaptiveLogo extends StatelessWidget {
         break;
     }
 
-    final file = File(assetPath);
-    Widget image = file.existsSync()
-        ? Image.file(
-            file,
-            width: size,
-            height: size,
-            fit: fit,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          )
-        : Image.asset(
-            assetPath,
-            width: size,
-            height: size,
-            fit: fit,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          );
+    // Bundled assets must always load via Image.asset. A File.existsSync
+    // check against the asset path is CWD-dependent: it is true in a repo
+    // checkout / CI (source files on disk) but false on device (assets are
+    // bundled, not files), which diverged test vs production behavior.
+    final Widget image = Image.asset(
+      assetPath,
+      width: size,
+      height: size,
+      fit: fit,
+      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+    );
 
     final effectiveRadius = borderRadius ?? BorderRadius.circular(size * 0.28);
 
