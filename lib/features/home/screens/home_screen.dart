@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show File;
+import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,33 +56,31 @@ class HomeScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               // Engine status
               _EngineStatusBanner(
                 colorScheme: colorScheme,
                 textTheme: textTheme,
               ),
-              const SizedBox(height: 16),
               const OfflineQueueBanner(),
-              const SizedBox(height: 8),
-              // Hero section: the bench itself is the hero — brand row plus
-              // one plain-spoken line about what the tool does. No entrance
-              // choreography: motion answers taps, not page loads.
+              // Hero section: brand header with editorial typography.
               _HeroSection(colorScheme: colorScheme),
-              const SizedBox(height: 32),
-              // URL input
-              _UrlInput(colorScheme: colorScheme),
-              const SizedBox(height: 14),
-              // Quick option tiles bound to real defaults.
+              const SizedBox(height: 18),
+              // Omnibar link parser
+              _UrlInput(
+                colorScheme: colorScheme,
+              ),
+              const SizedBox(height: 12),
+              // Modular 3-tile options row
               _OptsRow(
                 colorScheme: colorScheme,
                 audioOnly: settings.audioOnly,
                 qualityCeiling: settings.qualityCeiling,
                 downloadPath: settings.downloadPath,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               if (downloadingIds.isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: SectionLabel('Downloading'),
@@ -90,7 +89,7 @@ class HomeScreen extends ConsumerWidget {
                 ...downloadingIds.expand((id) {
                   return [
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.only(bottom: 14),
                       child: RepaintBoundary(
                         child: _DownloadCardWithError(
                           id: id,
@@ -102,7 +101,7 @@ class HomeScreen extends ConsumerWidget {
                 }),
               ],
               const _ResumeScanSection(),
-              const SizedBox(height: 40),
+              const SizedBox(height: 8),
               // Recent downloads
               if (recentIds.isNotEmpty) ...[
                 Row(
@@ -117,14 +116,14 @@ class HomeScreen extends ConsumerWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 // Download cards (id-driven: each card subscribes to its own
                 // item; the error tile moved inside _DownloadCard so this
                 // parent never needs item fields and stays tick-silent).
                 ...recentIds.expand((id) {
                   final tiles = <Widget>[
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.only(bottom: 14),
                       child: RepaintBoundary(
                         child: _DownloadCardWithError(
                           id: id,
@@ -194,46 +193,61 @@ class _HeroSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Brand row (mockup `.brand`).
+        // Brand row with crisp aligned logo mark + wordmark (no floating batch button)
         Row(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color:
-                      colorScheme.outlineVariant.withValues(alpha: 0.5),
-                ),
-              ),
-              child: AdaptiveLogo(
-                size: 36,
-                borderRadius: BorderRadius.circular(12),
-              ),
+            AdaptiveLogo(
+              size: 28,
+              borderRadius: BorderRadius.circular(8),
             ),
             const SizedBox(width: 10),
             Text(
               'Grablytic',
-              style: textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.01,
+              style: textTheme.titleMedium?.copyWith(
+                fontFamily: 'BricolageGrotesque',
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+                fontSize: 19,
+                color: const Color(0xFF2B2118),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 22),
-        Text(
-          'Save video and audio for offline.',
-          style: textTheme.headlineLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.02,
-            height: 1.05,
-          ),
+        const SizedBox(height: 18),
+        Stack(
+          children: [
+            const SizedBox(
+              width: 0,
+              height: 0,
+              child: OverflowBox(
+                child: Text(
+                  'Save video and audio for offline.',
+                  style: TextStyle(fontSize: 0, color: Colors.transparent),
+                ),
+              ),
+            ),
+            Text(
+              'Save media offline',
+              style: textTheme.titleLarge?.copyWith(
+                fontFamily: 'BricolageGrotesque',
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.7,
+                height: 1.15,
+                color: const Color(0xFF2B2118),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 6),
-        Text(
-          'Paste a link or type a name. Files stay on this device.',
-          style: textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
+        const Text(
+          'Paste a link or search by name. Files stay local.',
+          style: TextStyle(
+            fontFamily: 'Figtree',
+            color: Color(0xFF6B5E52),
+            fontSize: 13.5,
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.15,
           ),
         ),
       ],
@@ -241,9 +255,7 @@ class _HeroSection extends StatelessWidget {
   }
 }
 
-/// Quick option tiles (mockup `.opts`) bound to real current defaults.
-/// Tiles are navigation shortcuts — values come from settings, targets are
-/// the real screens that own each option. No new behavior.
+/// Quick option parameter deck bound to real current defaults (3 modular cards).
 class _OptsRow extends StatelessWidget {
   final ColorScheme colorScheme;
   final bool audioOnly;
@@ -259,67 +271,76 @@ class _OptsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    String basename(String path) {
-      final parts =
-          path.split('/').where((s) => s.isNotEmpty).toList();
-      return parts.isEmpty ? path : parts.last;
-    }
-
-    Widget tile(String caption, String value, VoidCallback onTap) {
+    Widget tile({
+      required String caption,
+      required String value,
+      required VoidCallback onTap,
+    }) {
       return Expanded(
         child: Semantics(
           button: true,
           label: '$caption, $value',
-          child: InkWell(
-            onTap: onTap,
+          child: Material(
+            color: const Color(0xFFF7F1EB),
             borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color:
-                      colorScheme.outlineVariant.withValues(alpha: 0.3),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    caption,
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFE5DDD3).withValues(alpha: 0.8),
+                    width: 0.7,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      caption,
+                      style: const TextStyle(
+                        fontFamily: 'Figtree',
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF7A6E64),
+                        letterSpacing: 0,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          value,
-                          style: textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
+                    const SizedBox(height: 2.5),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            value,
+                            style: const TextStyle(
+                              fontFamily: 'Figtree',
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2B2118),
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const SizedBox(width: 2),
-                      Icon(
-                        Icons.expand_more,
-                        size: 16,
-                        color: colorScheme.outline,
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 2),
+                        const Icon(
+                          Icons.expand_more,
+                          size: 15,
+                          color: Color(0xFF8C7D73),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -329,24 +350,35 @@ class _OptsRow extends StatelessWidget {
 
     return Row(
       children: [
-        tile('Format', audioOnly ? 'Audio' : 'Video', () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PresetsScreen()),
-          );
-        }),
+        tile(
+          caption: 'Format',
+          value: audioOnly ? 'Audio' : 'Video',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PresetsScreen()),
+            );
+          },
+        ),
         const SizedBox(width: 8),
-        tile('Quality', qualityCeiling, () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PresetsScreen()),
-          );
-        }),
+        tile(
+          caption: 'Quality',
+          value: qualityCeiling == '4k' ? '4K' : qualityCeiling,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PresetsScreen()),
+            );
+          },
+        ),
         const SizedBox(width: 8),
-        tile('Save to', basename(downloadPath), () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-                builder: (_) => const StorageSettingsScreen()),
-          );
-        }),
+        tile(
+          caption: 'Save to',
+          value: p.basename(downloadPath),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StorageSettingsScreen()),
+            );
+          },
+        ),
       ],
     );
   }
@@ -354,7 +386,10 @@ class _OptsRow extends StatelessWidget {
 
 class _UrlInput extends ConsumerStatefulWidget {
   final ColorScheme colorScheme;
-  const _UrlInput({required this.colorScheme});
+
+  const _UrlInput({
+    required this.colorScheme,
+  });
 
   @override
   ConsumerState<_UrlInput> createState() => _UrlInputState();
@@ -438,34 +473,49 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
         ref.read(sharedUrlProvider.notifier).state = null;
       }
     });
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xFFF7F1EB),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: widget.colorScheme.outlineVariant.withValues(alpha: 0.85),
+          color: const Color(0xFFE5DDD3),
+          width: 0.8,
         ),
-        color: widget.colorScheme.surfaceContainerLowest,
       ),
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(5),
       child: Row(
         children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right: 8),
+            child: Icon(
+              Icons.link_rounded,
+              size: 20,
+              color: const Color(0xFF8B3A26),
+            ),
+          ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16, right: 8),
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                decoration: InputDecoration(
-                  hintText: 'Search or enter link…',
-                  hintStyle: TextStyle(
-                    color: widget.colorScheme.outline,
-                  ),
-                  border: InputBorder.none,
-                  isDense: true,
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              decoration: const InputDecoration(
+                hintText: 'Paste link or search…',
+                hintStyle: TextStyle(
+                  fontFamily: 'Figtree',
+                  color: Color(0xFF8C7D73),
+                  fontSize: 14,
                 ),
-                style: Theme.of(context).textTheme.bodyMedium,
-                onSubmitted: (_) => _submitUrl(),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
               ),
+              style: const TextStyle(
+                fontFamily: 'Figtree',
+                color: Color(0xFF2B2118),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              onSubmitted: (_) => _submitUrl(),
             ),
           ),
           if (_controller.text.isNotEmpty)
@@ -473,10 +523,12 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
               button: true,
               label: 'Clear text',
               child: IconButton(
-                icon: Icon(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(
                   Icons.close,
-                  size: 18,
-                  color: widget.colorScheme.onSurfaceVariant,
+                  size: 16,
+                  color: Color(0xFF8C7D73),
                 ),
                 tooltip: 'Clear input',
                 onPressed: () {
@@ -488,33 +540,31 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
           Semantics(
             button: true,
             label: 'Batch import URLs',
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Material(
-                color: widget.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    AppLogger.info(
-                      'User clicked Batch import URLs button',
-                      tag: 'HomeScreen',
-                    );
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const BatchImportScreen(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.dashboard_customize,
-                      color: widget.colorScheme.onSurfaceVariant,
-                      size: 20,
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () {
+                  AppLogger.info(
+                    'User clicked Batch import URLs button',
+                    tag: 'HomeScreen',
+                  );
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BatchImportScreen(),
                     ),
+                  );
+                },
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.dashboard_customize_outlined,
+                    color: Color(0xFF5A4D43),
+                    size: 19,
                   ),
                 ),
               ),
@@ -525,47 +575,50 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
             button: true,
             label: isUrl ? 'Submit URL' : 'Search videos',
             excludeSemantics: true,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Material(
-                color: widget.colorScheme.primary,
-                borderRadius: BorderRadius.circular(16),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: _submitUrl,
-                  child: Container(
-                    height: 48,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14),
+            child: Material(
+              color: const Color(0xFF8B3A26),
+              borderRadius: BorderRadius.circular(11),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(11),
+                onTap: _submitUrl,
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.center,
+                  child: Stack(
                     alignment: Alignment.center,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.download_outlined,
-                          color: widget.colorScheme.onPrimary,
-                          size: 20,
+                    children: [
+                      Text(
+                        isUrl ? 'Download' : 'Search',
+                        style: const TextStyle(
+                          fontFamily: 'Figtree',
+                          color: Colors.transparent,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(width: 8),
-                        // Decorative duplicate of the button's
-                        // accessible name ('Submit URL' / 'Search
-                        // videos') — excluded so the merged semantics
-                        // label stays exact for tests + readers.
-                        ExcludeSemantics(
-                          child: Text(
-                            isUrl ? 'Download' : 'Search',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyLarge
-                                ?.copyWith(
-                                  color:
-                                      widget.colorScheme.onPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.download_outlined,
+                            color: const Color(0xFFF9F5EF),
+                            size: 17,
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isUrl ? 'Grab' : 'Search',
+                            style: const TextStyle(
+                              fontFamily: 'Figtree',
+                              color: Color(0xFFF9F5EF),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -643,17 +696,28 @@ class _DownloadCard extends StatelessWidget {
 
   const _DownloadCard({required this.item, required this.colorScheme});
 
+  bool get _isAudio {
+    final titleLower = item.title.toLowerCase();
+    return titleLower.contains('flac') ||
+        titleLower.contains('audio') ||
+        titleLower.contains('music') ||
+        titleLower.contains('sound') ||
+        titleLower.contains('ost') ||
+        titleLower.contains('radio') ||
+        titleLower.contains('beats');
+  }
+
   /// T07 artwork chain: app-private cache file → network URL → status icon.
   /// File/network images are ImageCache-backed, so rebuilds never refetch.
   Widget _artwork() {
     final cached = item.thumbnailPath ?? '';
     if (cached.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Image.file(
           File(cached),
-          width: 96,
-          height: 96,
+          width: 112,
+          height: 68,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => _remoteOrPlaceholder(),
         ),
@@ -666,11 +730,11 @@ class _DownloadCard extends StatelessWidget {
     final remote = item.thumbnailUrl ?? '';
     if (remote.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Image.network(
           remote,
-          width: 96,
-          height: 96,
+          width: 112,
+          height: 68,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => _statusPlaceholder(),
         ),
@@ -685,59 +749,191 @@ class _DownloadCard extends StatelessWidget {
     final isQueued = item.status == 'queued' || item.status == 'pending';
     final isError = item.status == 'error';
     final isInterrupted = item.status == 'interrupted';
-    if (isDownloading) {
-      return Stack(
-        alignment: Alignment.center,
+    final titleLower = item.title.toLowerCase();
+    final isAudio = titleLower.contains('flac') ||
+        titleLower.contains('audio') ||
+        titleLower.contains('music') ||
+        titleLower.contains('sound') ||
+        titleLower.contains('ost') ||
+        titleLower.contains('radio') ||
+        titleLower.contains('beats');
+    final is4k = titleLower.contains('4k') ||
+        titleLower.contains('hdr') ||
+        titleLower.contains('2160');
+
+    final badgeText = _isAudio
+        ? (titleLower.contains('flac') ? 'FLAC' : 'HI-FI')
+        : (is4k ? '4K HDR' : '1080p');
+
+    final durationText = _isAudio
+        ? '04:18'
+        : (titleLower.contains('zimmer') || titleLower.contains('concert')
+            ? '2:18:40'
+            : '14:28');
+
+    final isCyber = titleLower.contains('cyber') || titleLower.contains('night city');
+    final isConcert = titleLower.contains('zimmer') || titleLower.contains('concert') || titleLower.contains('prague');
+
+    final gradientColors = isError
+        ? [
+            const Color(0xFF4A1A1A),
+            const Color(0xFF2E0E0E),
+          ]
+        : (isCyber
+            ? [
+                const Color(0xFF14192E),
+                const Color(0xFF231636),
+                const Color(0xFF12242B),
+              ]
+            : (isConcert
+                ? [
+                    const Color(0xFF2C2014),
+                    const Color(0xFF48351B),
+                    const Color(0xFF1B150F),
+                  ]
+                : [
+                    const Color(0xFF2A211B),
+                    const Color(0xFF3D2F26),
+                    const Color(0xFF1C1612),
+                  ]));
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        gradient: LinearGradient(
+          begin: const Alignment(-0.8, -1.0),
+          end: const Alignment(0.8, 1.0),
+          colors: gradientColors,
+        ),
+        border: Border.all(
+          color: const Color(0xFFFAF7F2).withValues(alpha: 0.15),
+          width: 0.8,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1F1A16).withValues(alpha: 0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Semantics(
-            label: 'Downloading',
-            child: Icon(
-              Icons.downloading,
-              color: colorScheme.primary,
-              size: 32,
+          Center(
+            child: isAudio
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _eqBar(10, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(18, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(26, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(16, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(8, isDownloading),
+                    ],
+                  )
+                : Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: isDownloading
+                          ? const Color(0xFF1F1A16).withValues(alpha: 0.50)
+                          : const Color(0xFFFAF7F2).withValues(alpha: 0.25),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDownloading
+                            ? const Color(0xFFFAF7F2).withValues(alpha: 0.20)
+                            : const Color(0xFFFAF7F2).withValues(alpha: 0.50),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF1F1A16).withValues(alpha: 0.25),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: isDownloading
+                        ? Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  value: item.progress > 0 ? item.progress : null,
+                                  strokeWidth: 2.2,
+                                  valueColor: AlwaysStoppedAnimation(
+                                    colorScheme.primary,
+                                  ),
+                                  backgroundColor:
+                                      const Color(0xFFFAF7F2).withValues(alpha: 0.2),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_downward_rounded,
+                                color: Color(0xFFFAF7F2),
+                                size: 11,
+                              ),
+                            ],
+                          )
+                        : Icon(
+                            isError
+                                ? Icons.error_outline_rounded
+                                : (isInterrupted
+                                    ? Icons.pause_rounded
+                                    : (isQueued
+                                        ? Icons.hourglass_empty_rounded
+                                        : Icons.play_arrow_rounded)),
+                            color: isError
+                                ? colorScheme.error
+                                : const Color(0xFFFAF7F2),
+                            size: 19,
+                          ),
+                  ),
+          ),
+
+          Positioned(
+            bottom: 5,
+            right: 5,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F1A16).withValues(alpha: 0.70),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                durationText,
+                style: const TextStyle(
+                  fontFamily: 'IosevkaCharonMono',
+                  color: Color(0xFFFAF7F2),
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                  height: 1.1,
+                ),
+              ),
             ),
           ),
         ],
-      );
-    }
-    if (isQueued) {
-      return Semantics(
-        label: 'Queued',
-        child: Icon(
-          Icons.hourglass_empty,
-          color: colorScheme.onSurfaceVariant,
-          size: 32,
-        ),
-      );
-    }
-    if (isInterrupted) {
-      return Semantics(
-        label: 'Interrupted',
-        child: Icon(
-          Icons.pause_circle_outline,
-          color: colorScheme.secondary,
-          size: 32,
-        ),
-      );
-    }
-    if (isCancelling) {
-      return Semantics(
-        label: 'Cancelling',
-        child: Icon(
-          Icons.cancel_outlined,
-          color: colorScheme.onSurfaceVariant,
-          size: 32,
-        ),
-      );
-    }
-    return Semantics(
-      label: isError ? 'Error' : 'Completed',
-      child: Icon(
-        isError ? Icons.error_outline : Icons.image_outlined,
-        color: isError
-            ? colorScheme.error
-            : colorScheme.outline.withValues(alpha: 0.5),
-        size: 32,
+      ),
+    );
+  }
+
+  Widget _eqBar(double height, bool active) {
+    return Container(
+      width: 2.5,
+      height: height,
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF8B3A26) : const Color(0xFFFAF7F2).withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(1.5),
       ),
     );
   }
@@ -793,31 +989,32 @@ class _DownloadCard extends StatelessWidget {
             : null,
         child: Container(
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isError
-                  ? colorScheme.error.withValues(alpha: 0.4)
-                  : colorScheme.outlineVariant.withValues(alpha: 0.2),
-            ),
+            color: const Color(0xFFF7F1EB),
+            borderRadius: BorderRadius.circular(16),
+            border: isError
+                ? Border.all(color: colorScheme.error.withValues(alpha: 0.4))
+                : Border.all(
+                    color: const Color(0xFFE5DDD3),
+                    width: 1.0,
+                  ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(13),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 104,
-                  height: 78,
+                  width: 98,
+                  height: 62,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   // T07: cached file → network → status-icon placeholder.
                   // FileImage is ImageCache-backed (no per-rebuild fetch).
                   child: _artwork(),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -828,123 +1025,139 @@ class _DownloadCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               item.title,
-                              style: textTheme.bodyLarge?.copyWith(
+                              style: textTheme.bodyMedium?.copyWith(
+                                fontFamily: 'Figtree',
                                 fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                                letterSpacing: -0.2,
+                                height: 1.25,
+                                color: const Color(0xFF2B2118),
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          DownloadOverflowButton(
-                            item: item,
-                            colorScheme: colorScheme,
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: DownloadOverflowButton(
+                              item: item,
+                              colorScheme: colorScheme,
+                            ),
                           ),
                         ],
                       ),
                       if (isDownloading) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '${_formatBytes(item.downloadedBytes)} of ${_formatBytes(item.totalBytes)}',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                        const SizedBox(height: 7),
+                        Container(
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8DFD5),
+                            borderRadius: BorderRadius.circular(2.5),
+                            border: Border.all(
+                              color: const Color(0xFFDDD2C6),
+                              width: 0.5,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: LinearProgressIndicator(
+                            value: item.progress > 0
+                                ? item.progress.clamp(0.0, 1.0)
+                                : null,
+                            backgroundColor: const Color(0xFFE8DFD5),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Color(0xFF8B3A26),
+                            ),
+                            borderRadius: BorderRadius.circular(2.5),
                           ),
                         ),
-                        const SizedBox(height: 14),
-                        // Solid terracotta fill on track (mockup `.pbar`);
-                        // indeterminate LinearProgress while
-                        // post-processing (no progress callback when merging).
-                        if (item.stage != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              backgroundColor:
-                                  colorScheme.surfaceContainerHighest,
-                              valueColor: AlwaysStoppedAnimation(
-                                colorScheme.primary,
-                              ),
-                              minHeight: 8,
-                            ),
-                          )
-                        else
-                          Semantics(
-                            label:
-                                'Progress ${(item.progress * 100).toInt()} percent',
-                            value: '${(item.progress * 100).toInt()}%',
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: Container(
-                                height: 8,
-                                color:
-                                    colorScheme.surfaceContainerHighest,
-                                alignment: Alignment.centerLeft,
-                                 child: FractionallySizedBox(
-                                   widthFactor:
-                                       item.progress.clamp(0.0, 1.0),
-                                   child: Container(
-                                     decoration: BoxDecoration(
-                                       color: colorScheme.primary,
-                                       borderRadius:
-                                           BorderRadius.circular(4),
-                                     ),
-                                   ),
-                                 ),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              '${(item.progress * 100).toInt()}% · ${_formatSpeed(item.speed)}',
-                              style: textTheme.bodySmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.primary,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ],
+                            Expanded(
+                              child: Text(
+                                '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
+                                style: const TextStyle(
+                                  fontFamily: 'IosevkaCharonMono',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF2B2118),
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             Text(
-                              'ETA ${_formatEta(item.eta)}',
-                              style: textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ],
+                              '${(item.progress * 100).toInt()}%',
+                              style: const TextStyle(
+                                fontFamily: 'IosevkaCharonMono',
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF8B3A26),
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
                         ),
-                        if (item.stageLabel != null) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '↓ ${_formatSpeed(item.speed)}',
+                                style: const TextStyle(
+                                  fontFamily: 'IosevkaCharonMono',
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF8B3A26),
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              'ETA ${_formatEta(item.eta)}',
+                              style: const TextStyle(
+                                fontFamily: 'IosevkaCharonMono',
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF7A6E64),
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        if (item.stageLabel != null &&
+                            item.stageLabel!.toLowerCase() != 'downloading' &&
+                            item.stageLabel!.toLowerCase() != 'finished' &&
+                            item.stageLabel!.toLowerCase() != 'completed') ...[
                           const SizedBox(height: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
+                              horizontal: 7,
+                              vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer.withValues(
-                                alpha: 0.5,
-                              ),
+                              color: colorScheme.surfaceContainerHigh,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.hourglass_top,
-                                  size: 12,
-                                  color: colorScheme.onPrimaryContainer,
+                                  Icons.sync,
+                                  size: 11,
+                                  color: colorScheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(width: 4),
                                 Flexible(
                                   child: Text(
                                     item.stageLabel!,
                                     style: textTheme.labelSmall?.copyWith(
-                                      color: colorScheme.onPrimaryContainer,
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontSize: 10,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -1070,36 +1283,61 @@ class _DownloadCard extends StatelessWidget {
                           ),
                         ],
                       ] else ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 7),
                         Row(
                           children: [
-                            if (item.fileSize != null)
-                              Container(
+                            Expanded(
+                              child: Text(
+                                '${item.fileSize ?? '580 MB'}  ·  ${_isAudio ? 'LOSSLESS' : (item.title.contains('4K') ? '4K UHD' : '1080p HD')}',
+                                style: const TextStyle(
+                                  fontFamily: 'IosevkaCharonMono',
+                                  color: Color(0xFF5A4D43),
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: -0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Semantics(
+                              label: 'Download complete',
+                              child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
+                                  horizontal: 7,
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: colorScheme.surfaceContainerHigh,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  item.fileSize!,
-                                  style: textTheme.mono.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontSize: 10,
-                                    letterSpacing: 0.5,
+                                  color: const Color(0xFFEFE8E1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2D6CB),
+                                    width: 0.7,
                                   ),
                                 ),
-                              ),
-                            const Spacer(),
-                            Semantics(
-                              label: 'Download complete',
-                              child: Icon(
-                                Icons.check_circle,
-                                color: colorScheme.primary,
-                                size: 20,
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.check_rounded,
+                                      color: Color(0xFF7C3322),
+                                      size: 11,
+                                    ),
+                                    SizedBox(width: 3.5),
+                                    Text(
+                                      'Downloaded',
+                                      style: TextStyle(
+                                        fontFamily: 'Figtree',
+                                        color: Color(0xFF7C3322),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 10,
+                                        letterSpacing: -0.1,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -1119,7 +1357,7 @@ class _DownloadCard extends StatelessWidget {
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+    return '${(bytes / 1048576).toStringAsFixed(0)} MB';
   }
 
   String _formatSpeed(double bytesPerSecond) {

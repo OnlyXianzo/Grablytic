@@ -56,10 +56,12 @@ class DownloadOverflowButton extends ConsumerWidget {
         ),
         color: colorScheme.surfaceContainerHigh,
         elevation: 3,
-        icon: Icon(
-          Icons.more_vert,
-          size: 18,
-          color: colorScheme.outline.withValues(alpha: 0.6),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+        icon: const Icon(
+          Icons.more_horiz_rounded,
+          size: 19,
+          color: Color(0xFF8C7D73),
         ),
         tooltip: 'More options',
         onSelected: (value) => _onSelected(context, ref, value),

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 /// Available variants for the Grablytic brand logo.
@@ -81,20 +82,115 @@ class AdaptiveLogo extends StatelessWidget {
         break;
     }
 
-    Widget image = Image.asset(
-      assetPath,
+    final file = File(assetPath);
+    Widget image = file.existsSync()
+        ? Image.file(
+            file,
+            width: size,
+            height: size,
+            fit: fit,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          )
+        : Image.asset(
+            assetPath,
+            width: size,
+            height: size,
+            fit: fit,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          );
+
+    final effectiveRadius = borderRadius ?? BorderRadius.circular(size * 0.28);
+
+    Widget result = Container(
       width: size,
       height: size,
-      fit: fit,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF26201B) : const Color(0xFFFAF7F2),
+        borderRadius: effectiveRadius,
+        border: Border.all(
+          color: isDark ? const Color(0xFF3D332B) : const Color(0xFFE5DDD3),
+          width: 0.8,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1F1A16).withValues(alpha: isDark ? 0.3 : 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 1.5),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      alignment: Alignment.center,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: Size(size * 0.68, size * 0.68),
+            painter: _GrablyticEmblemPainter(isDark: isDark),
+          ),
+          image,
+        ],
+      ),
     );
 
     if (borderRadius != null) {
-      image = ClipRRect(
+      result = ClipRRect(
         borderRadius: borderRadius!,
-        child: image,
+        child: result,
       );
     }
 
-    return image;
+    return result;
   }
+}
+
+class _GrablyticEmblemPainter extends CustomPainter {
+  final bool isDark;
+
+  const _GrablyticEmblemPainter({this.isDark = false});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final darkPaint = Paint()
+      ..color = isDark ? const Color(0xFFFAF7F2) : const Color(0xFF232323)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    final redPaint = Paint()
+      ..color = const Color(0xFFE52E20)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    // Piece 1: Top-Left Dark Triangle/Polygon
+    final path1 = Path()
+      ..moveTo(w * 0.12, h * 0.16)
+      ..lineTo(w * 0.44, h * 0.36)
+      ..lineTo(w * 0.33, h * 0.47)
+      ..lineTo(w * 0.12, h * 0.44)
+      ..close();
+    canvas.drawPath(path1, darkPaint);
+
+    // Piece 2: Bottom-Left Dark Quadrilateral
+    final path2 = Path()
+      ..moveTo(w * 0.12, h * 0.54)
+      ..lineTo(w * 0.38, h * 0.51)
+      ..lineTo(w * 0.38, h * 0.84)
+      ..lineTo(w * 0.12, h * 0.84)
+      ..close();
+    canvas.drawPath(path2, darkPaint);
+
+    // Piece 3: Right Red Play Triangle
+    final path3 = Path()
+      ..moveTo(w * 0.48, h * 0.38)
+      ..lineTo(w * 0.86, h * 0.50)
+      ..lineTo(w * 0.48, h * 0.68)
+      ..close();
+    canvas.drawPath(path3, redPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

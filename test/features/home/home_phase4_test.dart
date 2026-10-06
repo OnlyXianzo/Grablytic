@@ -134,5 +134,90 @@ void main() {
       await tester.pumpAndSettle();
       expect(seenAll, isTrue);
     });
+
+    testWidgets('tactile progress groove and calibrated telemetry rows render properly',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({'onboardingCompleted': true});
+      final prefs = await SharedPreferences.getInstance();
+      await _pumpHome(
+        tester,
+        prefs,
+        MockEngineService(),
+        items: [
+          DownloadItem(
+            id: 'dl-test',
+            title: 'Live Stream',
+            url: 'https://example.com/test',
+            status: 'downloading',
+            progress: 0.45,
+            downloadedBytes: 45000000,
+            totalBytes: 100000000,
+            speed: 5242880,
+            eta: 125,
+          ),
+        ],
+      );
+
+      // Verify tactile progress groove container
+      final progressFinder = find.byType(LinearProgressIndicator);
+      expect(progressFinder, findsOneWidget);
+      final lpi = tester.widget<LinearProgressIndicator>(progressFinder);
+      expect(
+        (lpi.valueColor as AlwaysStoppedAnimation<Color>).value,
+        const Color(0xFF8B3A26),
+      );
+      expect(lpi.backgroundColor, const Color(0xFFE8DFD5));
+      expect(lpi.borderRadius, BorderRadius.circular(2.5));
+
+      final containerFinder = find.ancestor(
+        of: progressFinder,
+        matching: find.byType(Container),
+      ).first;
+      final container = tester.widget<Container>(containerFinder);
+      expect(container.constraints?.maxHeight, 5.0);
+      final decoration = container.decoration as BoxDecoration;
+      expect(decoration.color, const Color(0xFFE8DFD5));
+      expect(decoration.borderRadius, BorderRadius.circular(2.5));
+      expect(decoration.border?.top.color, const Color(0xFFDDD2C6));
+      expect(decoration.border?.top.width, 0.5);
+
+      // Verify telemetry row 1
+      expect(find.text('43 MB / 95 MB'), findsOneWidget);
+      final pctFinder = find.text('45%');
+      expect(pctFinder, findsOneWidget);
+      final pctText = tester.widget<Text>(pctFinder);
+      expect(pctText.style?.color, const Color(0xFF8B3A26));
+      expect(pctText.style?.fontFamily, 'IosevkaCharonMono');
+      expect(pctText.style?.fontWeight, FontWeight.bold);
+      expect(pctText.style?.fontFeatures?.any((f) => f.feature == 'tnum'), isTrue);
+
+      // Verify telemetry row 2
+      final speedFinder = find.text('↓ 5.0 MB/s');
+      expect(speedFinder, findsOneWidget);
+      final speedText = tester.widget<Text>(speedFinder);
+      expect(speedText.style?.color, const Color(0xFF8B3A26));
+      expect(speedText.style?.fontFamily, 'IosevkaCharonMono');
+      expect(speedText.style?.fontWeight, FontWeight.bold);
+      expect(speedText.style?.fontFeatures?.any((f) => f.feature == 'tnum'), isTrue);
+
+      final etaFinder = find.text('ETA 02:05');
+      expect(etaFinder, findsOneWidget);
+      final etaText = tester.widget<Text>(etaFinder);
+      expect(etaText.style?.color, const Color(0xFF7A6E64));
+      expect(etaText.style?.fontFamily, 'IosevkaCharonMono');
+      expect(etaText.style?.fontFeatures?.any((f) => f.feature == 'tnum'), isTrue);
+    });
+
+    testWidgets('Grab button uses primary signal color 0xFF8B3A26',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({'onboardingCompleted': true});
+      final prefs = await SharedPreferences.getInstance();
+      await _pumpHome(tester, prefs, MockEngineService());
+
+      final buttonFinder = find.byWidgetPredicate(
+        (w) => w is Material && w.color == const Color(0xFF8B3A26),
+      );
+      expect(buttonFinder, findsWidgets);
+    });
   });
 }

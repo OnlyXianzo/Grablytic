@@ -776,6 +776,20 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
       animation: _pos,
       builder: (context, _) {
         final currentPos = _pos.value;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final pillColor = isDark
+            ? widget.colorScheme.surfaceContainerHigh
+            : const Color(0xFFEFE8E1);
+        final pillBorderColor = isDark
+            ? widget.colorScheme.outlineVariant.withValues(alpha: 0.3)
+            : const Color(0xFFDECFC2);
+        final activeColor = isDark
+            ? widget.colorScheme.primary
+            : const Color(0xFF7C3322);
+        final inactiveColor = isDark
+            ? widget.colorScheme.onSurfaceVariant
+            : const Color(0xFF7A6E64);
+
         return Container(
           decoration: BoxDecoration(
             color: widget.colorScheme.surfaceContainerLowest,
@@ -840,9 +854,13 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                             height: pillHeight,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: widget.colorScheme.primaryContainer,
+                                color: pillColor,
                                 borderRadius: BorderRadius.circular(
                                   pillHeight / 2,
+                                ),
+                                border: Border.all(
+                                  color: pillBorderColor,
+                                  width: 0.7,
                                 ),
                               ),
                             ),
@@ -858,13 +876,13 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                               final activeWeight = 1.0 - dist;
 
                               final iconColor = Color.lerp(
-                                widget.colorScheme.onSurfaceVariant,
-                                widget.colorScheme.onPrimaryContainer,
+                                inactiveColor,
+                                activeColor,
                                 activeWeight,
                               )!;
                               final textColor = Color.lerp(
-                                widget.colorScheme.onSurfaceVariant,
-                                widget.colorScheme.onPrimaryContainer,
+                                inactiveColor,
+                                activeColor,
                                 activeWeight,
                               )!;
 
@@ -881,34 +899,44 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                                     containedInkWell: true,
                                     highlightShape: BoxShape.rectangle,
                                     borderRadius: BorderRadius.circular(24),
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        minWidth: 48,
-                                        minHeight: 48,
-                                      ),
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            item.icon,
-                                            size: 22,
-                                            color: iconColor,
+                                    child: SizedBox(
+                                      height: containerHeight,
+                                      child: Center(
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            minWidth: 48,
+                                            minHeight: 48,
                                           ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            item.label,
-                                            style: textTheme.labelSmall
-                                                ?.copyWith(
-                                                  fontWeight: activeWeight > 0.5
-                                                      ? FontWeight.bold
-                                                      : FontWeight.w600,
-                                                  color: textColor,
-                                                  fontSize: 11,
-                                                ),
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                item.icon,
+                                                size: 22,
+                                                color: iconColor,
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                item.label,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: textTheme.labelSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          activeWeight > 0.5
+                                                              ? FontWeight.w700
+                                                              : FontWeight.w500,
+                                                      color: textColor,
+                                                      fontSize: 11,
+                                                      letterSpacing: -0.1,
+                                                      height: 1.1,
+                                                    ),
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ),
