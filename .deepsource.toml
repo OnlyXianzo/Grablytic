@@ -34,21 +34,34 @@
 #     `google-java-format` (1.17.0). Python also has black/autopep8/isort/
 #     yapf — ruff is chosen because CI already pins ruff (0.16.7) for the
 #     engine lint gate.
-#   - Secrets / test-coverage sample configs:
-#     github.com/deepsourcelabs/test-coverage-orb + test-coverage-action
-#     (`[[analyzers]] name = "secrets"`, `name = "test-coverage"`).
+#   - Test coverage: enabled per-repository under Settings, NOT via TOML.
+#     The coverage reference documents `test-coverage` as a dashboard
+#     setting ("Enable the `test-coverage` Analyzer in your repository
+#     settings"); the `key` values in its table (python/java/kotlin/...)
+#     are arguments to the CLI `--key` flag, not TOML analyzer names.
+#     See docs/platform/reference/code-coverage#ci-integration.
 #
 # Important DeepSource facts baked into this file:
-#   1. No `dart` core analyzer exists (GA list: go, rust, java, scala, c#,
-#      javascript, php, python, ruby, c/c++, swift, kotlin, docker, shell,
-#      sql, terraform + secrets/test-coverage). Dart/Flutter quality stays
-#      in CI (`flutter analyze`, flutter_lints 6.0.0) — hence Dart paths are
-#      NOT listed as analyzers here, but ARE covered for test-vs-src
+#   1. There is no `dart` CORE analyzer — the core list is go, rust, java,
+#      scala, c#, javascript, php, python, ruby, c/c++, swift, kotlin,
+#      docker, shell, sql, terraform, ansible. So Dart/Flutter quality is
+#      NOT expressible in this file. Note DeepSource DOES offer Dart
+#      Analyze 3.2.0 as a COMMUNITY analyzer (shortcode `dart-analyze`,
+#      SARIF over `deepsource report --analyzer-type community`), which is
+#      enabled on the dashboard + CI rather than here. Until that SARIF
+#      job lands, `flutter analyze` + flutter_lints 6.0.0 in CI stays the
+#      gating Dart signal. Dart paths remain covered here for test-vs-src
 #      classification and coverage reporting.
-#   2. Dashboard vs TOML: DeepSource auto-detects languages and Settings >
+#   2. There is NO `secrets` analyzer — not core, not community. Secrets
+#      detection for this repo stays with the blocking gitleaks gate in
+#      .github/workflows/verify.yml (secrets_scan job). The earlier
+#      `[[analyzers]] name = "secrets"` entry was removed as invalid.
+#      (Vulnerability scanning is a separate feature keyed off dependency
+#      manifests, not an analyzer.)
+#   3. Dashboard vs TOML: DeepSource auto-detects languages and Settings >
 #      Code Review works without this file. Because this file exists, it
 #      TAKES PRECEDENCE (can be disabled under Settings > Preferences).
-#   3. Java analyzer REQUIRES `runtime_version` (OpenJDK 8-21) or results
+#   4. Java analyzer REQUIRES `runtime_version` (OpenJDK 8-21) or results
 #      are wrong. Kotlin `language_version` max documented is 2.1 while this
 #      repo uses Kotlin 2.2.20 — we pin 2.1 (closest supported) explicitly.
 # =============================================================================
@@ -135,7 +148,11 @@ dependency_file_paths = [
 ]
 
   [analyzers.meta]
-  runtime_version = "3.11"
+  # Docs accept only "2.x.x" or "3.x.x" here (default "3.x.x"); a concrete
+  # pin like "3.11" is not a documented value. Engine requires >=3.11 and CI
+  # runs 3.11/3.12, so "3.x.x" covers both without asserting an unsupported
+  # grammar version.
+  runtime_version = "3.x.x"
   max_line_length = 88
   skip_doc_coverage = ["module", "magic", "init"]
   # type_checker intentionally unset: engine has no mypy gate in
@@ -182,35 +199,38 @@ enabled = true
   [analyzers.meta]
   dialect = "bash"
 
-# --- Secrets (whole repo) ---
-# No meta options. Mirrors the existing gitleaks gate
-# (.github/workflows/verify.yml -> secrets_scan job): DeepSource flags
-# committed credentials inline on PRs, gitleaks remains the blocking CI gate.
-[[analyzers]]
-name = "secrets"
-enabled = true
+# --- Secrets ---
+# REMOVED: `[[analyzers]] name = "secrets"` was invalid. The core analyzer
+# list has no `secrets` entry and neither does the community analyzer list
+# (cfn-lint, dart-analyze, kube-linter, slither, solhint). Secrets detection
+# is therefore NOT configured here at all.
+# Blocking gate remains gitleaks (.github/workflows/verify.yml ->
+# secrets_scan job). DeepSource vulnerability scanning is a separate
+# feature driven by dependency manifests (requirements.txt, pom.xml, ...),
+# not by an analyzer entry in this file.
 
-# --- Test coverage (whole repo) ---
-# No meta options. Enable here; actual percentages are PUSHED from CI via
-# the DeepSource CLI (see commands below). Metrics page tracks the default
-# branch (main) only, max report size 20 MB, always run `deepsource report`
-# from the repo root so paths resolve.
-#
-# Wire-up (add to .github/workflows/verify.yml when ready):
+# --- Test coverage ---
+# REMOVED: `[[analyzers]] name = "test-coverage"`. Per the code-coverage
+# reference, `test-coverage` is enabled as a REPOSITORY SETTING ("Enable
+# the `test-coverage` Analyzer in your repository settings"), and the
+# `key` column in that reference's table (python/java/kotlin/...) is the
+# value passed to the CLI `--key` flag. Neither is expressed as a
+# `[[analyzers]]` entry, so it must not appear in this file.
+# Enable it once under Settings > Code Review, then wire up CI:
 #   Python engine:
 #     pytest engine/tests/ -q --cov=engine/grablytic_engine --cov-report xml
 #     ./bin/deepsource report --analyzer test-coverage --key python \
 #       --value-file ./coverage.xml --use-oidc        # GH Actions OIDC (preferred)
 #     # or: export DEEPSOURCE_DSN=<repo DSN secret>; ... --value-file ./coverage.xml
-#   Flutter (Dart has no coverage `key`; upload lcov for visibility — the
-#   analyzer records what it can parse, `flutter analyze` stays the gate):
+#   Flutter: the coverage reference lists no Dart key, so lcov is uploaded
+#   as a CI artifact for visibility only and `flutter analyze` stays the
+#   gate:
 #     flutter test --coverage   # -> coverage/lcov.info (already uploaded as
 #                               # artifact `flutter-coverage` in verify.yml)
 # Current CI floors for reference: engine --cov-fail-under=75, Flutter no
-# floor (24% today, artifact-only by design — see verify.yml header).
-[[analyzers]]
-name = "test-coverage"
-enabled = true
+# floor (artifact-only by design — see verify.yml header).
+# NOTE: metrics are tracked on the default branch (main) only, and CI must
+# check out the PR head sha (not a merge commit) for reports to associate.
 
 # =============================================================================
 # CODE FORMATTERS (formerly `transformers` — both keys accepted)
