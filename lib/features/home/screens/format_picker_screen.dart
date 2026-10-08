@@ -6,7 +6,6 @@ import 'package:video_player/video_player.dart';
 import '../../../core/database/download_history_db.dart';
 import '../../../core/engine/extraction_cache.dart';
 import '../../../core/theme/text_styles.dart';
-import '../../../core/widgets/grablytic_components.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/command_template.dart';
@@ -517,9 +516,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     return q.split(RegExp(r'\s+')).every(hay.contains);
   }
 
-  /// Presentation-only ordering: the selected row first, then the engine
-  /// recommendation, then everything else in extraction order. Never mutates
-  /// state — purely display so the recommended stream is found in seconds.
+  /// Presentation-only ordering: selected first, then recommendation,
+  /// then highest quality first (height desc, then bitrate). Never mutates
+  /// state — purely display so the best stream is found in seconds.
   List<Map<String, dynamic>> _orderedForDisplay(
     Iterable<Map<String, dynamic>> formats, {
     required String? selectedId,
@@ -533,10 +532,29 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       return 2;
     }
 
+    int qualityRank(Map<String, dynamic> fmt) {
+      final h = fmt['height'];
+      if (h is num) return -h.toInt();
+      return 0;
+    }
+
+    num bitrate(Map<String, dynamic> fmt) {
+      for (final k in ['tbr', 'abr', 'vbr']) {
+        final v = fmt[k];
+        if (v is num) return v;
+      }
+      return 0;
+    }
+
     final indexed = list.asMap().entries.toList();
     indexed.sort((a, b) {
       final r = rank(a.value).compareTo(rank(b.value));
-      return r != 0 ? r : a.key.compareTo(b.key);
+      if (r != 0) return r;
+      final q = qualityRank(a.value).compareTo(qualityRank(b.value));
+      if (q != 0) return q;
+      final br = bitrate(b.value).compareTo(bitrate(a.value));
+      if (br != 0) return br;
+      return a.key.compareTo(b.key);
     });
     return indexed.map((e) => e.value).toList();
   }
@@ -948,10 +966,26 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                     _buildHeaderCard(colorScheme, textTheme),
                     if (_videoFormats.isNotEmpty ||
                         _muxedFormats.isNotEmpty) ...[
-                      SegTabs(
-                        labels: const ['Video + audio', 'Audio only'],
-                        selectedIndex: _isAudioOnlyMode ? 1 : 0,
-                        onChanged: (i) => _setAudioOnly(i == 1),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<bool>(
+                          segments: const [
+                            ButtonSegment<bool>(
+                              value: false,
+                              label: Text('Video + audio'),
+                              icon: Icon(Icons.videocam_outlined),
+                            ),
+                            ButtonSegment<bool>(
+                              value: true,
+                              label: Text('Audio only'),
+                              icon: Icon(Icons.audiotrack_outlined),
+                            ),
+                          ],
+                          selected: {_isAudioOnlyMode},
+                          onSelectionChanged: (v) =>
+                              _setAudioOnly(v.first),
+                          showSelectedIcon: false,
+                        ),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -1329,14 +1363,14 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Preferred Container:',
+                'Format:',
                 style: textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
               ),
               Semantics(
                 label:
-                    'Preferred Container, currently $_selectedContainer',
+                    'Format, currently $_selectedContainer',
                 child: DropdownButton<String>(
                   value: _selectedContainer,
                   dropdownColor: colorScheme.surfaceContainerHigh,
@@ -1389,14 +1423,14 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Quality Ceiling:',
+                  'Quality:',
                   style: textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 Semantics(
                   label:
-                      'Quality Ceiling, currently $_qualityCeiling',
+                      'Quality, currently $_qualityCeiling',
                   child: DropdownButton<String>(
                     value: _qualityCeiling,
                     dropdownColor: colorScheme.surfaceContainerHigh,

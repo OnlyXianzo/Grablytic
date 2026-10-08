@@ -136,40 +136,50 @@ class HomeScreen extends ConsumerWidget {
                 }),
               ] else if (!hasAny) ...[
                 const SizedBox(height: 36),
-                Semantics(
-                  label: 'No downloads',
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: colorScheme.outlineVariant
-                            .withValues(alpha: 0.5),
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Semantics(
+                        label: 'No downloads',
+                        child: Container(
+                          width: 76,
+                          height: 76,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.cloud_download_outlined,
+                            size: 30,
+                            color: colorScheme.outline,
+                          ),
+                        ),
                       ),
-                    ),
-                    child: Icon(
-                      Icons.cloud_download_outlined,
-                      size: 30,
-                      color: colorScheme.outline,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No downloads yet',
-                  style: textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Paste a link above to get started',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.outline,
+                      const SizedBox(height: 16),
+                      Text(
+                        'No downloads yet',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodyLarge?.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Paste a link above to get started',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -208,7 +218,7 @@ class _HeroSection extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.4,
                 fontSize: 19,
-                color: const Color(0xFF2B2118),
+                color: colorScheme.onSurface,
               ),
             ),
           ],
@@ -234,17 +244,17 @@ class _HeroSection extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.7,
                 height: 1.15,
-                color: const Color(0xFF2B2118),
+                color: colorScheme.onSurface,
               ),
             ),
           ],
         ),
         const SizedBox(height: 6),
-        const Text(
+        Text(
           'Paste a link or search by name. Files stay local.',
           style: TextStyle(
             fontFamily: 'Figtree',
-            color: Color(0xFF6B5E52),
+            color: colorScheme.onSurfaceVariant,
             fontSize: 13.5,
             fontWeight: FontWeight.w500,
             letterSpacing: -0.15,
@@ -281,7 +291,7 @@ class _OptsRow extends StatelessWidget {
           button: true,
           label: '$caption, $value',
           child: Material(
-            color: const Color(0xFFF7F1EB),
+            color: colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               onTap: onTap,
@@ -294,7 +304,7 @@ class _OptsRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: const Color(0xFFE5DDD3).withValues(alpha: 0.8),
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.8),
                     width: 0.7,
                   ),
                 ),
@@ -304,11 +314,11 @@ class _OptsRow extends StatelessWidget {
                   children: [
                     Text(
                       caption,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Figtree',
                         fontSize: 10.5,
                         fontWeight: FontWeight.w500,
-                        color: Color(0xFF7A6E64),
+                        color: colorScheme.onSurfaceVariant,
                         letterSpacing: 0,
                       ),
                       maxLines: 1,
@@ -320,11 +330,11 @@ class _OptsRow extends StatelessWidget {
                         Expanded(
                           child: Text(
                             value,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'Figtree',
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF2B2118),
+                              color: colorScheme.onSurface,
                               letterSpacing: -0.2,
                             ),
                             maxLines: 1,
@@ -332,10 +342,10 @@ class _OptsRow extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 2),
-                        const Icon(
+                        Icon(
                           Icons.expand_more,
                           size: 15,
-                          color: Color(0xFF8C7D73),
+                          color: colorScheme.outline,
                         ),
                       ],
                     ),
@@ -463,6 +473,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = widget.colorScheme;
     final text = _controller.text.trim();
     final isUrl = text.isEmpty || looksLikeUrl(text);
 
@@ -476,10 +487,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F1EB),
+        color: colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFE5DDD3),
+          color: colorScheme.outlineVariant,
           width: 0.8,
         ),
       ),
@@ -491,27 +502,27 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
             child: Icon(
               Icons.link_rounded,
               size: 20,
-              color: const Color(0xFF8B3A26),
+              color: colorScheme.primary,
             ),
           ),
           Expanded(
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Paste link or search…',
                 hintStyle: TextStyle(
                   fontFamily: 'Figtree',
-                  color: Color(0xFF8C7D73),
+                  color: colorScheme.outline,
                   fontSize: 14,
                 ),
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
               ),
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Figtree',
-                color: Color(0xFF2B2118),
+                color: colorScheme.onSurface,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -525,10 +536,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
               child: IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                icon: const Icon(
+                icon: Icon(
                   Icons.close,
                   size: 16,
-                  color: Color(0xFF8C7D73),
+                  color: colorScheme.onSurfaceVariant,
                 ),
                 tooltip: 'Clear input',
                 onPressed: () {
@@ -561,9 +572,9 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                   height: 36,
                   margin: const EdgeInsets.symmetric(horizontal: 2),
                   alignment: Alignment.center,
-                  child: const Icon(
+                  child: Icon(
                     Icons.dashboard_customize_outlined,
-                    color: Color(0xFF5A4D43),
+                    color: colorScheme.onSurfaceVariant,
                     size: 19,
                   ),
                 ),
@@ -576,7 +587,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
             label: isUrl ? 'Submit URL' : 'Search videos',
             excludeSemantics: true,
             child: Material(
-              color: const Color(0xFF8B3A26),
+              color: colorScheme.primary,
               borderRadius: BorderRadius.circular(11),
               child: InkWell(
                 borderRadius: BorderRadius.circular(11),
@@ -602,15 +613,15 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
                         children: [
                           Icon(
                             Icons.download_outlined,
-                            color: const Color(0xFFF9F5EF),
+                            color: colorScheme.onPrimary,
                             size: 17,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             isUrl ? 'Grab' : 'Search',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'Figtree',
-                              color: Color(0xFFF9F5EF),
+                              color: colorScheme.onPrimary,
                               fontWeight: FontWeight.w700,
                               fontSize: 13.5,
                               letterSpacing: -0.2,
@@ -924,7 +935,9 @@ class _DownloadCard extends StatelessWidget {
       width: 2.5,
       height: height,
       decoration: BoxDecoration(
-        color: active ? const Color(0xFF8B3A26) : const Color(0xFFFAF7F2).withValues(alpha: 0.65),
+        color: active
+            ? colorScheme.primary
+            : colorScheme.onSurface.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(1.5),
       ),
     );
@@ -981,12 +994,12 @@ class _DownloadCard extends StatelessWidget {
             : null,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFFF7F1EB),
+            color: colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(16),
             border: isError
                 ? Border.all(color: colorScheme.error.withValues(alpha: 0.4))
                 : Border.all(
-                    color: const Color(0xFFE5DDD3),
+                    color: colorScheme.outlineVariant,
                     width: 1.0,
                   ),
           ),
@@ -1023,7 +1036,7 @@ class _DownloadCard extends StatelessWidget {
                                 fontSize: 12,
                                 letterSpacing: -0.2,
                                 height: 1.25,
-                                color: const Color(0xFF2B2118),
+                                color: colorScheme.onSurface,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -1043,10 +1056,10 @@ class _DownloadCard extends StatelessWidget {
                         Container(
                           height: 5,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE8DFD5),
+                            color: colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(2.5),
                             border: Border.all(
-                              color: const Color(0xFFDDD2C6),
+                              color: colorScheme.outlineVariant,
                               width: 0.5,
                             ),
                           ),
@@ -1055,9 +1068,10 @@ class _DownloadCard extends StatelessWidget {
                             value: item.progress > 0
                                 ? item.progress.clamp(0.0, 1.0)
                                 : null,
-                            backgroundColor: const Color(0xFFE8DFD5),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Color(0xFF8B3A26),
+                            backgroundColor:
+                                colorScheme.surfaceContainerHighest,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              colorScheme.primary,
                             ),
                             borderRadius: BorderRadius.circular(2.5),
                           ),
@@ -1068,11 +1082,11 @@ class _DownloadCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'IosevkaCharonMono',
                                   fontSize: 10,
                                   fontWeight: FontWeight.w500,
-                                  color: Color(0xFF2B2118),
+                                  color: colorScheme.onSurface,
                                   fontFeatures: [FontFeature.tabularFigures()],
                                 ),
                                 maxLines: 1,
@@ -1081,11 +1095,11 @@ class _DownloadCard extends StatelessWidget {
                             ),
                             Text(
                               '${(item.progress * 100).toInt()}%',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'IosevkaCharonMono',
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF8B3A26),
+                                color: colorScheme.primary,
                                 fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
@@ -1097,11 +1111,11 @@ class _DownloadCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 '↓ ${_formatSpeed(item.speed)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'IosevkaCharonMono',
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF8B3A26),
+                                  color: colorScheme.primary,
                                   fontFeatures: [FontFeature.tabularFigures()],
                                 ),
                                 maxLines: 1,
@@ -1110,11 +1124,11 @@ class _DownloadCard extends StatelessWidget {
                             ),
                             Text(
                               'ETA ${_formatEta(item.eta)}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'IosevkaCharonMono',
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w500,
-                                color: Color(0xFF7A6E64),
+                                color: colorScheme.onSurfaceVariant,
                                 fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
@@ -1281,9 +1295,9 @@ class _DownloadCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 '${item.fileSize ?? '580 MB'}  ·  ${_isAudio ? 'LOSSLESS' : (item.title.contains('4K') ? '4K UHD' : '1080p HD')}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'IosevkaCharonMono',
-                                  color: Color(0xFF5A4D43),
+                                  color: colorScheme.onSurfaceVariant,
                                   fontFeatures: [FontFeature.tabularFigures()],
                                   fontSize: 10,
                                   fontWeight: FontWeight.w500,
@@ -1302,19 +1316,19 @@ class _DownloadCard extends StatelessWidget {
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEFE8E1),
+                                  color: colorScheme.surfaceContainerHigh,
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
-                                    color: const Color(0xFFE2D6CB),
+                                    color: colorScheme.outlineVariant,
                                     width: 0.7,
                                   ),
                                 ),
-                                child: const Row(
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
                                       Icons.check_rounded,
-                                      color: Color(0xFF7C3322),
+                                      color: colorScheme.primary,
                                       size: 11,
                                     ),
                                     SizedBox(width: 3.5),
@@ -1322,7 +1336,7 @@ class _DownloadCard extends StatelessWidget {
                                       'Downloaded',
                                       style: TextStyle(
                                         fontFamily: 'Figtree',
-                                        color: Color(0xFF7C3322),
+                                        color: colorScheme.primary,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 10,
                                         letterSpacing: -0.1,

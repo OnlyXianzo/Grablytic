@@ -53,14 +53,14 @@ void main() {
       // Top Header + category list (folder hierarchy)
       expect(find.text('Settings'), findsWidgets);
       for (final category in [
-        'General & Interface',
+        'General',
         'Permissions',
         'Appearance',
-        'Directories & Storage',
-        'Network & Acceleration',
-        'Media & Subtitles',
-        'Automation & Scheduling',
-        'Accounts & Authentication',
+        'Storage',
+        'Network and speed',
+        'Media and subtitles',
+        'Automation',
+        'Cookies',
         'Packages & Updates',
         'System & Diagnostics',
       ]) {
@@ -70,7 +70,7 @@ void main() {
       expect(find.text('Wi-Fi Only Downloads'), findsNothing);
 
       // Network sub-menu holds the network options.
-      await tester.tap(find.text('Network & Acceleration'));
+      await tester.tap(find.text('Network and speed'));
       await tester.pumpAndSettle();
       expect(find.text('Wi-Fi Only Downloads'), findsOneWidget);
       expect(find.text('Turbo download mode'), findsOneWidget);
@@ -94,8 +94,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Wi-Fi lives in Network & Acceleration now.
-      final netCat = find.text('Network & Acceleration');
+      // Wi-Fi lives in Network and speed now.
+      final netCat = find.text('Network and speed');
       await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
@@ -126,7 +126,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Automation & Scheduling'));
+      await tester.tap(find.text('Automation'));
       await tester.pumpAndSettle();
       final obsTile = find.text('Observed Sources');
       await tester.scrollUntilVisible(obsTile, 200,
@@ -157,7 +157,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Proxy row (Network) opens a dialog and saves to the 'proxy' key.
-      final netCat = find.text('Network & Acceleration');
+      final netCat = find.text('Network and speed');
       await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();

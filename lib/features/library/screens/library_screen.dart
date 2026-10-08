@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
-import '../../../core/widgets/grablytic_components.dart';
 import '../../../core/utils/trust_boundary.dart';
 import '../../../features/home/screens/media_preview_screen.dart';
 import '../../../features/home/widgets/download_overflow_menu.dart';
@@ -152,15 +151,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
             ),
-            // Segmented tabs (mockup `.seg`) bound to the existing
-            // TabController so swipe + FAB behavior is preserved.
+            // Old-style underline tabs (user feedback: revert pill SegTabs).
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: SegTabs(
-                labels: const ['Videos', 'Playlists', 'History'],
-                selectedIndex: _tabController.index,
-                onChanged: (index) =>
-                    _tabController.animateTo(index),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: colorScheme.primary,
+                unselectedLabelColor: colorScheme.onSurfaceVariant,
+                indicatorColor: colorScheme.primary,
+                indicatorWeight: 3,
+                dividerColor: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                labelStyle: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                unselectedLabelStyle: textTheme.titleMedium,
+                tabs: const [
+                  Tab(text: 'Videos'),
+                  Tab(text: 'Playlists'),
+                  Tab(text: 'History'),
+                ],
+                onTap: (index) => _tabController.animateTo(index),
               ),
             ),
             // Content
@@ -191,15 +201,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
-  /// Videos-tab search + status chips. Both are local presentation state:
-  /// chips pick which real sections render, the query self-hides rows whose
-  /// title doesn't match (rows already watch their own item — no new subs).
+  /// Videos-tab search + status chips (unified with History style).
   Widget _buildVideosFilter(ColorScheme colorScheme, TextTheme textTheme) {
     const chips = [
       ('all', 'All'),
       ('completed', 'Completed'),
       ('failed', 'Failed'),
-      ('progress', 'In progress'),
+      ('progress', 'In Progress'),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -210,21 +218,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             label: 'Search videos',
             child: TextField(
               controller: _searchController,
+              style: textTheme.bodyMedium,
               decoration: InputDecoration(
-                hintText: 'Search title or link',
-                prefixIcon: const Icon(Icons.search),
+                hintText: 'Search by title or URL...',
+                prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _searchQuery.isEmpty
                     ? null
                     : IconButton(
                         tooltip: 'Clear search',
-                        icon: const Icon(Icons.clear),
+                        icon: const Icon(Icons.clear, size: 18),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _searchQuery = '');
                         },
                       ),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerLow,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -243,14 +255,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 for (final (value, label) in chips)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(label),
+                    child: _VideosFilterChip(
+                      label: label,
                       selected: _statusFilter == value,
-                      onSelected: (_) =>
+                      colorScheme: colorScheme,
+                      textTheme: textTheme,
+                      onSelected: () =>
                           setState(() => _statusFilter = value),
                     ),
                   ),
-                // Trailing breathing room so the last chip ("In progress")
+                // Trailing breathing room so the last chip ("In Progress")
                 // never sits half-clipped at the scroll edge on-device.
                 const SizedBox(width: 12),
               ],
@@ -1338,6 +1352,59 @@ class _LibraryItem extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+/// History-style filter chip (brown primary when selected).
+class _VideosFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+  final VoidCallback onSelected;
+
+  const _VideosFilterChip({
+    required this.label,
+    required this.selected,
+    required this.colorScheme,
+    required this.textTheme,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: onSelected,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? colorScheme.primary
+                : colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? colorScheme.primary
+                  : colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Text(
+            label,
+            style: textTheme.labelMedium?.copyWith(
+              color: selected
+                  ? colorScheme.onPrimary
+                  : colorScheme.onSurfaceVariant,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

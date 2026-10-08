@@ -67,7 +67,7 @@ void main() {
       expect(find.text('Alpha Video'), findsOneWidget);
       expect(find.text('Beta Clip'), findsOneWidget);
       await tester.enterText(
-          find.widgetWithText(TextField, 'Search title or link'), 'alpha');
+          find.widgetWithText(TextField, 'Search by title or URL...'), 'alpha');
       await tester.pumpAndSettle();
       expect(find.text('Alpha Video'), findsOneWidget);
       expect(find.text('Beta Clip'), findsNothing);
@@ -78,7 +78,7 @@ void main() {
         _item('c1', 'Done One', 'completed'),
         _item('e1', 'Bad One', 'error'),
       ]);
-      await tester.tap(find.widgetWithText(FilterChip, 'Failed'));
+      await tester.tap(find.text('Failed'));
       await tester.pumpAndSettle();
       expect(find.text('Failed downloads'), findsOneWidget);
       expect(find.text('Bad One'), findsOneWidget);

@@ -206,8 +206,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Verify Quality Ceiling and Subtitles are visible
-      expect(find.text('Quality Ceiling:'), findsOneWidget);
+      // Verify Quality and Subtitles are visible
+      expect(find.text('Quality:'), findsOneWidget);
       expect(find.text('720p (HD)'), findsOneWidget);
       expect(find.byKey(const Key('embed_subtitles_toggle')), findsOneWidget);
       expect(find.text('Clip / Trim Range'), findsOneWidget);
@@ -257,8 +257,8 @@ void main() {
         await tester.tap(find.text('Audio only'));
         await tester.pumpAndSettle();
 
-        // Quality Ceiling should be hidden
-        expect(find.text('Quality Ceiling:'), findsNothing);
+        // Quality should be hidden
+        expect(find.text('Quality:'), findsNothing);
 
         // Embed Subtitles should be disabled with explanation
         expect(find.text('Requires video stream'), findsOneWidget);

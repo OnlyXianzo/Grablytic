@@ -64,8 +64,8 @@ void main() {
 
       expect(find.text('Settings'), findsWidgets);
       // Folder hierarchy: options live in sub-menus.
-      expect(find.text('Network & Acceleration'), findsOneWidget);
-      expect(find.text('Directories & Storage'), findsOneWidget);
+      expect(find.text('Network and speed'), findsOneWidget);
+      expect(find.text('Storage'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('System & Diagnostics'), findsOneWidget);
       expect(find.text('Wi-Fi Only Downloads'), findsNothing);

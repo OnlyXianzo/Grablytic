@@ -54,8 +54,8 @@ class SettingsScreen extends ConsumerWidget {
                 children: [
               _SettingNavItem(
                 icon: Icons.tune,
-                title: 'General & Interface',
-                subtitle: 'Auto-start, defaults',
+                title: 'General',
+                subtitle: 'Auto-start and defaults',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(
@@ -67,7 +67,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               _SettingNavItem(
                 icon: Icons.folder_outlined,
-                title: 'Directories & Storage',
+                title: 'Storage',
                 subtitle: settings.downloadPath,
                 colorScheme: colorScheme,
                 onTap: () {
@@ -80,8 +80,8 @@ class SettingsScreen extends ConsumerWidget {
               ),
               _SettingNavItem(
                 icon: Icons.speed,
-                title: 'Network & Acceleration',
-                subtitle: 'Wi-Fi, turbo, proxy, presets',
+                title: 'Network and speed',
+                subtitle: 'Wi-Fi only, turbo, proxy',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(
@@ -93,7 +93,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               _SettingNavItem(
                 icon: Icons.movie_filter_outlined,
-                title: 'Media & Subtitles',
+                title: 'Media and subtitles',
                 subtitle: 'Subtitles, SponsorBlock, thumbnails',
                 colorScheme: colorScheme,
                 onTap: () {
@@ -106,7 +106,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               _SettingNavItem(
                 icon: Icons.auto_mode,
-                title: 'Automation & Scheduling',
+                title: 'Automation',
                 subtitle: 'Schedules, sources, command templates',
                 colorScheme: colorScheme,
                 onTap: () {
@@ -126,7 +126,7 @@ class SettingsScreen extends ConsumerWidget {
               _SettingNavItem(
                 icon: Icons.palette_outlined,
                 title: 'Appearance',
-                subtitle: 'Theme, logo, grid view',
+                subtitle: 'Theme and grid view',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(
@@ -137,9 +137,9 @@ class SettingsScreen extends ConsumerWidget {
                 },
               ),
               _SettingNavItem(
-                icon: Icons.security,
+                icon: Icons.shield_outlined,
                 title: 'Permissions',
-                subtitle: 'Notifications, background',
+                subtitle: 'Notifications and background',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(
@@ -150,14 +150,14 @@ class SettingsScreen extends ConsumerWidget {
                 },
               ),
               _SettingNavItem(
-                icon: Icons.security,
-                title: 'Accounts & Authentication',
+                icon: Icons.cookie_outlined,
+                title: 'Cookies',
                 subtitle: 'Site logins for members-only content',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const AccountsSettingsScreen(),
+                      builder: (_) => const CookiesScreen(),
                     ),
                   );
                 },
@@ -838,40 +838,6 @@ class AutomationSettingsScreen extends ConsumerWidget {
                   },
                   colorScheme: colorScheme,
                 ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class AccountsSettingsScreen extends ConsumerWidget {
-  const AccountsSettingsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Accounts & Authentication')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-        children: [
-          _SettingsSection(
-            title: 'Accounts & Authentication',
-            icon: Icons.security,
-            children: [
-              _SettingNavItem(
-                icon: Icons.cookie_outlined,
-                title: 'Logins for members-only videos',
-                subtitle: 'Site logins for members-only content',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const CookiesScreen()),
-                  );
-                },
-              ),
             ],
           ),
         ],

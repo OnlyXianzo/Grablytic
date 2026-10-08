@@ -274,39 +274,44 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildSettingsCard(cs, tt),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 0,
-                      label: Text('File Logs'),
-                      icon: Icon(Icons.description),
-                    ),
-                    ButtonSegment(
-                      value: 1,
-                      label: Text('Live Stream'),
-                      icon: Icon(Icons.stream),
-                    ),
-                  ],
-                  selected: {_selectedTab},
-                  onSelectionChanged: (v) =>
-                      setState(() => _selectedTab = v.first),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildSettingsCard(cs, tt),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(
+                        value: 0,
+                        label: Text('File Logs'),
+                        icon: Icon(Icons.description),
+                      ),
+                      ButtonSegment(
+                        value: 1,
+                        label: Text('Live Stream'),
+                        icon: Icon(Icons.stream),
+                      ),
+                    ],
+                    selected: {_selectedTab},
+                    onSelectionChanged: (v) =>
+                        setState(() => _selectedTab = v.first),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: _selectedTab == 0
+              const SizedBox(height: 12),
+              _selectedTab == 0
                   ? _buildFileLogsTab(cs, tt)
-                  : const LiveLogView(),
-            ),
-          ],
+                  : SizedBox(
+                      height: 520,
+                      child: const LiveLogView(),
+                    ),
+            ],
+          ),
         ),
       ),
     );
@@ -323,10 +328,10 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           side: BorderSide(color: cs.outlineVariant.withAlpha(80)),
         ),
         // T13: collapsible so the log takes the full viewport when collapsed.
-        // Single-level scroll is preserved: outer Column is fixed + Expanded
-        // tab, with exactly one inner scrollable (no nested unbounded views).
+        // Outer SingleChildScrollView scrolls all options (fixes hidden
+        // footer / not-able-to-scroll reports) — log viewport is fixed height.
         child: ExpansionTile(
-          initiallyExpanded: true,
+          initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           leading: Icon(Icons.bug_report, color: cs.primary, size: 20),
@@ -389,6 +394,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
 
   Widget _buildFileLogsTab(ColorScheme cs, TextTheme tt) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -492,32 +498,32 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
               ),
             ),
           ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: cs.outlineVariant),
-              ),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(12),
-                      child: SelectableText(
-                        _logContent,
-                        style: tt.mono.copyWith(
-                          color: Colors.lightGreenAccent,
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            width: double.infinity,
+            height: 320,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(12),
+                    child: SelectableText(
+                      _logContent,
+                      style: tt.mono.copyWith(
+                        color: Colors.lightGreenAccent,
+                        fontSize: 12,
+                        height: 1.4,
                       ),
                     ),
-            ),
+                  ),
           ),
         ),
+        const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(

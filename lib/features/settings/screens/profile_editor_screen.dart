@@ -127,9 +127,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Quality Ceiling', style: textTheme.bodyLarge),
+                    Text('Quality', style: textTheme.bodyLarge),
                     Semantics(
-                      label: 'Quality Ceiling, currently $_selectedQuality',
+                      label: 'Quality, currently $_selectedQuality',
                       child: DropdownButton<String>(
                         value: _selectedQuality,
                         dropdownColor: colorScheme.surfaceContainerHigh,
@@ -200,9 +200,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Preferred Container', style: textTheme.bodyLarge),
+                  Text('Format', style: textTheme.bodyLarge),
                   Semantics(
-                    label: 'Preferred Container, currently $_selectedContainer',
+                    label: 'Format, currently $_selectedContainer',
                     child: DropdownButton<String>(
                       value: _selectedContainer,
                       dropdownColor: colorScheme.surfaceContainerHigh,

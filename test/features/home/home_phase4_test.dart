@@ -158,15 +158,20 @@ void main() {
         ],
       );
 
+      // Colors are asserted against theme roles, not literal hexes, so the
+      // dark-mode palette stays covered by the same fidelity checks.
+      final scheme =
+          Theme.of(tester.element(find.byType(HomeScreen))).colorScheme;
+
       // Verify tactile progress groove container
       final progressFinder = find.byType(LinearProgressIndicator);
       expect(progressFinder, findsOneWidget);
       final lpi = tester.widget<LinearProgressIndicator>(progressFinder);
       expect(
         (lpi.valueColor as AlwaysStoppedAnimation<Color>).value,
-        const Color(0xFF8B3A26),
+        scheme.primary,
       );
-      expect(lpi.backgroundColor, const Color(0xFFE8DFD5));
+      expect(lpi.backgroundColor, scheme.surfaceContainerHighest);
       expect(lpi.borderRadius, BorderRadius.circular(2.5));
 
       final containerFinder = find.ancestor(
@@ -176,9 +181,9 @@ void main() {
       final container = tester.widget<Container>(containerFinder);
       expect(container.constraints?.maxHeight, 5.0);
       final decoration = container.decoration as BoxDecoration;
-      expect(decoration.color, const Color(0xFFE8DFD5));
+      expect(decoration.color, scheme.surfaceContainerHighest);
       expect(decoration.borderRadius, BorderRadius.circular(2.5));
-      expect(decoration.border?.top.color, const Color(0xFFDDD2C6));
+      expect(decoration.border?.top.color, scheme.outlineVariant);
       expect(decoration.border?.top.width, 0.5);
 
       // Verify telemetry row 1
@@ -186,7 +191,7 @@ void main() {
       final pctFinder = find.text('45%');
       expect(pctFinder, findsOneWidget);
       final pctText = tester.widget<Text>(pctFinder);
-      expect(pctText.style?.color, const Color(0xFF8B3A26));
+      expect(pctText.style?.color, scheme.primary);
       expect(pctText.style?.fontFamily, 'IosevkaCharonMono');
       expect(pctText.style?.fontWeight, FontWeight.bold);
       expect(pctText.style?.fontFeatures?.any((f) => f.feature == 'tnum'), isTrue);
@@ -195,7 +200,7 @@ void main() {
       final speedFinder = find.text('↓ 5.0 MB/s');
       expect(speedFinder, findsOneWidget);
       final speedText = tester.widget<Text>(speedFinder);
-      expect(speedText.style?.color, const Color(0xFF8B3A26));
+      expect(speedText.style?.color, scheme.primary);
       expect(speedText.style?.fontFamily, 'IosevkaCharonMono');
       expect(speedText.style?.fontWeight, FontWeight.bold);
       expect(speedText.style?.fontFeatures?.any((f) => f.feature == 'tnum'), isTrue);
@@ -203,19 +208,20 @@ void main() {
       final etaFinder = find.text('ETA 02:05');
       expect(etaFinder, findsOneWidget);
       final etaText = tester.widget<Text>(etaFinder);
-      expect(etaText.style?.color, const Color(0xFF7A6E64));
+      expect(etaText.style?.color, scheme.onSurfaceVariant);
       expect(etaText.style?.fontFamily, 'IosevkaCharonMono');
       expect(etaText.style?.fontFeatures?.any((f) => f.feature == 'tnum'), isTrue);
     });
 
-    testWidgets('Grab button uses primary signal color 0xFF8B3A26',
-        (tester) async {
+    testWidgets('Grab button uses primary signal color', (tester) async {
       SharedPreferences.setMockInitialValues({'onboardingCompleted': true});
       final prefs = await SharedPreferences.getInstance();
       await _pumpHome(tester, prefs, MockEngineService());
 
+      final scheme =
+          Theme.of(tester.element(find.byType(HomeScreen))).colorScheme;
       final buttonFinder = find.byWidgetPredicate(
-        (w) => w is Material && w.color == const Color(0xFF8B3A26),
+        (w) => w is Material && w.color == scheme.primary,
       );
       expect(buttonFinder, findsWidgets);
     });
