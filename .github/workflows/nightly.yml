@@ -51,6 +51,8 @@ jobs:
           fetch-tags: true
 
       - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           THRESHOLD="${MIN_COMMITS:-10}"
           echo "Threshold: $THRESHOLD commits"
@@ -64,18 +66,48 @@ jobs:
             exit 0
           fi
 
-          # Base = rolling nightly tag; fall back to latest stable v* tag.
-          if git rev-parse --verify --quiet refs/tags/nightly >/dev/null; then
-            BASE="nightly"
+          # Base = the commit the last successful nightly actually built,
+          # recovered from the rolling `nightly` release's asset names,
+          # which embed it as …-nightly-<YYYYMMDD>-<sha>-….
+          #
+          # The `nightly` git TAG must NOT be used as the base: it is a
+          # rolling release tag that is created once and never moved (the
+          # publish job only swaps assets + retitles the release). Counting
+          # from it therefore grows without bound, the >=THRESHOLD test is
+          # satisfied forever, and the gate silently stops throttling —
+          # it was measuring 147 commits from a 2026-09-15 base.
+          BASE=""
+          ASSETS=$(gh release view nightly --json assets -q '.assets[].name' 2>/dev/null || true)
+          if [ -n "$ASSETS" ]; then
+            # sort -r on the nightly-<date>-<sha> token puts the newest
+            # nightly first when several datestamps are present.
+            LAST_SHA=$(printf '%s\n' "$ASSETS" \
+              | grep -oE 'nightly-[0-9]{8}-[0-9a-f]{7,40}' \
+              | sort -r | head -n 1 \
+              | sed -E 's/^nightly-[0-9]{8}-//')
+            # Only trust it if that object is actually in our history.
+            if [ -n "$LAST_SHA" ] && git cat-file -e "${LAST_SHA}^{commit}" 2>/dev/null; then
+              BASE="$LAST_SHA"
+              echo "Last nightly built commit: $BASE"
+            else
+              echo "Nightly asset SHA unusable (got '${LAST_SHA:-none}') — falling back."
+            fi
           else
+            echo "Could not read nightly release assets — falling back."
+          fi
+
+          # Fallback: latest stable v* tag. Bounded by real releases, so it
+          # still throttles even if asset lookup is unavailable.
+          if [ -z "$BASE" ]; then
             BASE=$(git tag --sort=-v:refname --list 'v*.*.*' | head -n 1)
             if [ -z "$BASE" ]; then
-              echo "No nightly or version tag found — running (first nightly)."
+              echo "No previous nightly and no v* tag — running (first nightly)."
               echo "should_run=true" >> $GITHUB_OUTPUT
               echo "commit_count=unknown" >> $GITHUB_OUTPUT
               echo "base=none" >> $GITHUB_OUTPUT
               exit 0
             fi
+            echo "Falling back to latest release tag: $BASE"
           fi
 
           COUNT=$(git rev-list --count "$BASE"..HEAD)
