@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -453,6 +455,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       queueReminderEnabled: queueReminderEnabled,
       queueReminderIntervalMinutes: queueReminderIntervalMinutes,
     );
+    // Best-effort sync launcher icon to stored pref on cold start (persists across reboots).
+    _updateLauncherIcon(logoVariant);
   }
 
   void toggleWifiOnly() {
@@ -487,6 +491,20 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final safe = _kLogoVariants.contains(variant) ? variant : 'system';
     _prefs.setString('logoVariant', safe);
     state = state.copyWith(logoVariant: safe);
+    // Try to update Android launcher icon (activity-alias) — no-op on other platforms / failures are silent.
+    _updateLauncherIcon(safe);
+  }
+
+  static const _launcherChannel = MethodChannel('com.theonly.grablytic/engine');
+
+  Future<void> _updateLauncherIcon(String variant) async {
+    if (kIsWeb) return;
+    if (!(Platform.isAndroid)) return;
+    try {
+      await _launcherChannel.invokeMethod('launcher/set_icon', {'variant': variant});
+    } catch (_) {
+      // Launcher icon switch is best-effort; ignore on unsupported launchers / desktop.
+    }
   }
 
   void completeOnboarding() {

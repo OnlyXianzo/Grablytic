@@ -85,8 +85,10 @@ class AdaptiveLogo extends StatelessWidget {
     // check against the asset path is CWD-dependent: it is true in a repo
     // checkout / CI (source files on disk) but false on device (assets are
     // bundled, not files), which diverged test vs production behavior.
+    // ValueKey forces image reload when theme/variant flips (fixes stuck logo on theme change).
     final Widget image = Image.asset(
       assetPath,
+      key: ValueKey(assetPath),
       width: size,
       height: size,
       fit: fit,

@@ -192,12 +192,15 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _HeroSection extends StatelessWidget {
+class _HeroSection extends ConsumerWidget {
   final ColorScheme colorScheme;
   const _HeroSection({required this.colorScheme});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final logoVariant = LogoVariant.fromStored(
+      ref.watch(settingsProvider).logoVariant,
+    );
     final textTheme = Theme.of(context).textTheme;
 
     return Column(
@@ -209,6 +212,7 @@ class _HeroSection extends StatelessWidget {
             AdaptiveLogo(
               size: 28,
               borderRadius: BorderRadius.circular(8),
+              variant: logoVariant,
             ),
             const SizedBox(width: 10),
             Text(

@@ -968,6 +968,51 @@ open class MainActivity : FlutterActivity() {
                     )
                     result.success(mapOf("success" to true))
                 }
+                "launcher/set_icon" -> {
+                    val variant = call.argument<String>("variant") ?: "system"
+                    try {
+                        val pm = packageManager
+                        val pkg = packageName
+                        val main = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")
+                        val light = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")
+                        val dark = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")
+                        val legacy = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")
+                        val all = mapOf(
+                            "system" to main,
+                            "light" to light,
+                            "dark" to dark,
+                            "legacy" to legacy
+                        )
+                        val target = all[variant] ?: main
+                        // Enable target first, then disable others (DONT_KILL_APP to avoid process kill)
+                        pm.setComponentEnabledSetting(target, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                        for ((k, comp) in all) {
+                            if (comp != target) {
+                                pm.setComponentEnabledSetting(comp, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                            }
+                        }
+                        result.success(mapOf("success" to true, "variant" to variant))
+                    } catch (e: Exception) {
+                        result.success(mapOf("success" to false, "error" to (e.message ?: "set_icon failed")))
+                    }
+                }
+                "launcher/get_icon" -> {
+                    try {
+                        val pm = packageManager
+                        val pkg = packageName
+                        val states = mapOf(
+                            "system" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
+                            "light" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")),
+                            "dark" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")),
+                            "legacy" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy"))
+                        )
+                        val enabled = states.entries.firstOrNull { it.value == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }?.key
+                            ?: if (states["system"] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) "system" else "system"
+                        result.success(mapOf("success" to true, "variant" to enabled, "states" to states))
+                    } catch (e: Exception) {
+                        result.success(mapOf("success" to false, "error" to (e.message ?: "get_icon failed")))
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
