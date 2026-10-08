@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="assets/brand/grablytic_logo_circle.png" alt="Grablytic Logo" width="160" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/grablytic_logo_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/brand/grablytic_logo_light.png">
+  <img src="assets/brand/grablytic_logo_light.png" alt="Grablytic Logo" width="160" />
+</picture>
 
 # 🎬 Grablytic
 
