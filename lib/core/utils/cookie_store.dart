@@ -260,7 +260,7 @@ List<String> _parseJsonCookiesToLines(String text, String siteUrl) {
       if (domain == null) return [];
       final expiry = (DateTime.now().millisecondsSinceEpoch ~/ 1000) + 10 * 365 * 24 * 60 * 60;
       final out = <String>[];
-      for (final entry in (decoded as Map).entries) {
+      for (final entry in decoded.entries) {
         final name = entry.key.toString().trim();
         final value = entry.value.toString().trim();
         if (name.isEmpty || value.isEmpty) continue;
@@ -284,7 +284,7 @@ List<String> _parseJsonCookiesToLines(String text, String siteUrl) {
     final out = <String>[];
     for (final item in list) {
       if (item is! Map) continue;
-      final map = Map<String, dynamic>.from(item as Map);
+      final map = Map<String, dynamic>.from(item);
       final name = (map['name'] ?? map['key'] ?? '').toString().trim();
       final value = (map['value'] ?? '').toString().trim();
       if (name.isEmpty) continue;

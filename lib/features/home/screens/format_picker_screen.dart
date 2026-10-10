@@ -1424,6 +1424,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildOptionsCard(ColorScheme colorScheme, TextTheme textTheme) {
     return Card(
       elevation: 0,

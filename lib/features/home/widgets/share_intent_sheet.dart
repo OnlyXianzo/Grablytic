@@ -1,3 +1,4 @@
+// ignore_for_file: unused_element, curly_braces_in_flow_control_structures, unnecessary_underscores
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';

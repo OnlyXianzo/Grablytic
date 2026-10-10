@@ -516,9 +516,11 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
       final target = isPlaylistUrl(input)
           ? PlaylistSelectionScreen(url: input, title: input)
           : FormatPickerScreen(url: input, title: input);
+      if (!mounted) return;
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => target));
     } else {
       AppLogger.info('User submitted search query: $input', tag: 'HomeScreen');
+      if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SearchResultsScreen(initialQuery: input),
