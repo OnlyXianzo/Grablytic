@@ -204,13 +204,9 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                startRes['queued'] == true
-                    ? 'Queued — starts when a slot frees up'
-                    : 'Auto-starting download from shared link',
-              ),
-              duration: const Duration(seconds: 2),
+            styledSnackBar(
+              context,
+              startRes['queued'] == true ? 'Queued — starts when a slot frees up' : 'Auto-starting download from shared link',
             ),
           );
         }
@@ -224,10 +220,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Auto-download failed: $errorMsg'),
-              duration: const Duration(seconds: 3),
-            ),
+            styledSnackBar(context, 'Auto-download failed: $errorMsg'),
           );
         }
       }
@@ -240,10 +233,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Auto-download failed: $e'),
-            duration: const Duration(seconds: 3),
-          ),
+          styledSnackBar(context, 'Auto-download failed: $e'),
         );
       }
     }
