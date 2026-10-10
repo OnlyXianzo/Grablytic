@@ -111,6 +111,21 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   late final TextEditingController _clipEndController;
   String? _clipValidationError;
 
+  // Description / thumbnail opts (visible in picker, session-persisted)
+  bool _saveDescription = false;
+  bool _saveThumbnails = true;
+  String? _fileNameTemplate;
+  late final TextEditingController _customFileNameController;
+  String? _fileNameError;
+
+  static const List<String> _predefinedFileNames = [
+    '%(title)s.%(ext)s',
+    '%(uploader)s - %(title)s.%(ext)s',
+    '%(upload_date)s - %(title)s.%(ext)s',
+    '%(playlist)s/%(title)s.%(ext)s',
+    '%(extractor)s/%(title)s.%(ext)s',
+  ];
+
   // T08: In-app progressive preview
   Map<String, dynamic>? _previewStream;
   VideoPlayerController? _previewController;
@@ -140,6 +155,12 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     _clipStartController = TextEditingController(text: session.clipStart);
     _clipEndController = TextEditingController(text: session.clipEnd);
     _validateClip();
+    _saveDescription = session.saveDescription ?? settings.saveDescription;
+    _saveThumbnails = session.saveThumbnails ?? settings.saveThumbnails;
+    _fileNameTemplate = session.fileNameTemplate;
+    _customFileNameController =
+        TextEditingController(text: session.customFileName ?? '');
+    _validateFileName();
 
     final cached = ExtractionCache.instance.get(widget.url);
     if (cached != null && cached['success'] == true) {
@@ -154,6 +175,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   void dispose() {
     _clipStartController.dispose();
     _clipEndController.dispose();
+    _customFileNameController.dispose();
     _previewController?.dispose();
     _previewController = null;
     super.dispose();
@@ -245,6 +267,61 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       session.clipEnabled = _clipEnabled;
       session.clipStart = _clipStartController.text;
       session.clipEnd = _clipEndController.text;
+    });
+  }
+
+  bool _isSafeFileName(String tmpl) {
+    if (tmpl.isEmpty) return true;
+    if (tmpl.length > 256) return false;
+    if (tmpl.contains('\x00')) return false;
+    final text = tmpl.replaceAll('\\', '/');
+    if (text.startsWith('/') || text.startsWith('~')) return false;
+    if (text.length >= 2 && text[1] == ':') return false;
+    if (text.startsWith('//')) return false;
+    if (text.split('/').contains('..')) return false;
+    return true;
+  }
+
+  void _validateFileName() {
+    final v = _customFileNameController.text.trim();
+    if (v.isEmpty) {
+      _fileNameError = null;
+      return;
+    }
+    if (!_isSafeFileName(v)) {
+      _fileNameError =
+          'Unsafe template: no absolute paths or .. segments (max 256 chars).';
+      return;
+    }
+    _fileNameError = null;
+  }
+
+  void _onCustomFileNameChanged() {
+    setState(() {
+      _validateFileName();
+      PickerSessionState.instance.customFileName =
+          _customFileNameController.text;
+    });
+  }
+
+  void _onFileNameTemplateChanged(String? value) {
+    setState(() {
+      _fileNameTemplate = value;
+      PickerSessionState.instance.fileNameTemplate = value;
+    });
+  }
+
+  void _onSaveDescriptionChanged(bool v) {
+    setState(() {
+      _saveDescription = v;
+      PickerSessionState.instance.saveDescription = v;
+    });
+  }
+
+  void _onSaveThumbnailsChanged(bool v) {
+    setState(() {
+      _saveThumbnails = v;
+      PickerSessionState.instance.saveThumbnails = v;
     });
   }
 
@@ -737,6 +814,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       return;
     }
 
+    final customTmpl = _customFileNameController.text.trim();
+    final effectiveTmpl = customTmpl.isNotEmpty
+        ? customTmpl
+        : (_fileNameTemplate ?? '');
+
     final config = <String, dynamic>{
       'container': _selectedContainer,
       // P1: forward user settings under exact engine contract keys
@@ -744,6 +826,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
       ...settingsDownloadConfig(settings),
       'quality_ceiling': _qualityCeiling,
+      // Picker overrides for description/thumbnail per Phase 1.
+      'write_description': _saveDescription,
+      'embedthumbnail': _saveThumbnails,
+      if (effectiveTmpl.isNotEmpty && _isSafeFileName(effectiveTmpl))
+        'output_tmpl': effectiveTmpl,
       if (_embedSubtitles && !isAudioOnly) ...{
         'embed_subtitles': true,
         'download_subtitles': true,
@@ -1094,9 +1181,15 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                             _buildFormatRow(fmt, false, colorScheme, textTheme),
                         ],
                       ),
-                    const SizedBox(height: 8),
-                    _buildOptionsCard(colorScheme, textTheme),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
+                    _buildOutputCard(colorScheme, textTheme),
+                    const SizedBox(height: 12),
+                    _buildMetadataCard(colorScheme, textTheme),
+                    const SizedBox(height: 12),
+                    _buildNamingCard(colorScheme, textTheme),
+                    const SizedBox(height: 12),
+                    _buildPlaylistAndTemplateCard(colorScheme, textTheme),
+                    const SizedBox(height: 12),
                     _buildClipCard(colorScheme, textTheme),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -1107,7 +1200,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                                 (_selectedVideoFormat != null ||
                                     _selectedAudioFormat != null ||
                                     _selectedMuxedFormat != null) &&
-                                (!_clipEnabled || _clipValidationError == null))
+                                (!_clipEnabled ||
+                                    _clipValidationError == null) &&
+                                _fileNameError == null)
                             ? _startDownload
                             : null,
                         icon: const Icon(Icons.download_rounded, size: 20),
@@ -1574,6 +1669,310 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     ),
   );
 }
+
+  Widget _buildOutputCard(ColorScheme colorScheme, TextTheme textTheme) {
+    return Card(
+      elevation: 0,
+      color: colorScheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.video_settings_outlined,
+                    size: 20, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Output',
+                    style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Format:', style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Semantics(
+                  label: 'Format, currently $_selectedContainer',
+                  child: DropdownButton<String>(
+                    value: _selectedContainer,
+                    dropdownColor: colorScheme.surfaceContainerHigh,
+                    underline: const SizedBox.shrink(),
+                    items: _isAudioOnlyMode
+                        ? const [
+                            DropdownMenuItem(value: 'm4a', child: Text('M4A (Recommended)')),
+                            DropdownMenuItem(value: 'mp3', child: Text('MP3')),
+                            DropdownMenuItem(value: 'opus', child: Text('Opus')),
+                            DropdownMenuItem(value: 'flac', child: Text('FLAC (Lossless)')),
+                          ]
+                        : const [
+                            DropdownMenuItem(value: 'mkv', child: Text('MKV (Recommended)')),
+                            DropdownMenuItem(value: 'mp4', child: Text('MP4')),
+                            DropdownMenuItem(value: 'webm', child: Text('WebM')),
+                          ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedContainer = val);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            if (!_isAudioOnlyMode) ...[
+              const Divider(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Quality:', style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                  Semantics(
+                    label: 'Quality, currently $_qualityCeiling',
+                    child: DropdownButton<String>(
+                      value: _qualityCeiling,
+                      dropdownColor: colorScheme.surfaceContainerHigh,
+                      underline: const SizedBox.shrink(),
+                      items: const [
+                        DropdownMenuItem(value: 'best', child: Text('Best Available')),
+                        DropdownMenuItem(value: '4k', child: Text('4K (2160p)')),
+                        DropdownMenuItem(value: '1440p', child: Text('1440p (2K)')),
+                        DropdownMenuItem(value: '1080p', child: Text('1080p (FHD)')),
+                        DropdownMenuItem(value: '720p', child: Text('720p (HD)')),
+                        DropdownMenuItem(value: '480p', child: Text('480p (SD)')),
+                        DropdownMenuItem(value: '360p', child: Text('360p')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) _onQualityCeilingChanged(val);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const Divider(height: 16),
+            SwitchListTile(
+              key: const Key('embed_subtitles_toggle'),
+              title: const Text('Embed Subtitles'),
+              subtitle: Text(
+                _isAudioOnlyMode ? 'Requires video stream' : 'Embed subtitles directly into media file',
+                style: textTheme.bodySmall?.copyWith(color: _isAudioOnlyMode ? colorScheme.outline : null),
+              ),
+              value: _isAudioOnlyMode ? false : _embedSubtitles,
+              onChanged: _isAudioOnlyMode ? null : _onEmbedSubtitlesChanged,
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.subtitles_outlined,
+                  color: _isAudioOnlyMode ? colorScheme.outline : colorScheme.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetadataCard(ColorScheme colorScheme, TextTheme textTheme) {
+    return Card(
+      elevation: 0,
+      color: colorScheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.perm_media_outlined, size: 20, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Metadata',
+                    style:
+                        textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              key: const Key('save_description_toggle'),
+              title: const Text('Save Description'),
+              subtitle: Text('Save video description as .txt',
+                  style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+              value: _saveDescription,
+              onChanged: _onSaveDescriptionChanged,
+              contentPadding: EdgeInsets.zero,
+              secondary:
+                  Icon(Icons.description_outlined, color: colorScheme.primary, size: 20),
+            ),
+            const Divider(height: 8),
+            SwitchListTile(
+              key: const Key('save_thumbnail_toggle'),
+              title: const Text('Save Thumbnail'),
+              subtitle: Text('Embed or keep thumbnail next to file',
+                  style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+              value: _saveThumbnails,
+              onChanged: _onSaveThumbnailsChanged,
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.image_outlined, color: colorScheme.primary, size: 20),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNamingCard(ColorScheme colorScheme, TextTheme textTheme) {
+    return Card(
+      elevation: 0,
+      color: colorScheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.drive_file_rename_outline, size: 20, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('File name',
+                    style:
+                        textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String?>(
+              key: const Key('filename_template_dropdown'),
+              initialValue: _fileNameTemplate,
+              dropdownColor: colorScheme.surfaceContainerHigh,
+              decoration: InputDecoration(
+                labelText: 'Template',
+                isDense: true,
+                filled: true,
+                fillColor: colorScheme.surfaceContainerHigh.withValues(alpha: 0.3),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              hint: const Text('Default'),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('Default — %(uploader)s - %(title)s')),
+                ..._predefinedFileNames.map((t) => DropdownMenuItem<String?>(
+                      value: t,
+                      child: Text(t, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                    )),
+              ],
+              onChanged: _onFileNameTemplateChanged,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('custom_filename_field'),
+              controller: _customFileNameController,
+              decoration: InputDecoration(
+                labelText: 'Custom file name',
+                hintText: 'e.g. %(title)s.%(ext)s',
+                isDense: true,
+                filled: true,
+                fillColor: colorScheme.surfaceContainerHigh.withValues(alpha: 0.3),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.edit_outlined, size: 18),
+                errorText: _fileNameError,
+              ),
+              style: textTheme.bodyMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+              onChanged: (_) => _onCustomFileNameChanged(),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Use yt-dlp placeholders like %(title)s, %(uploader)s, %(ext)s. Leave empty to use the template above.',
+              style: textTheme.labelSmall?.copyWith(color: colorScheme.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaylistAndTemplateCard(
+      ColorScheme colorScheme, TextTheme textTheme) {
+    return Card(
+      elevation: 0,
+      color: colorScheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.playlist_add_outlined, size: 20, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Playlist & Advanced',
+                    style:
+                        textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Add to Playlist:', style: textTheme.bodyMedium),
+                Semantics(
+                  label: 'Add to Playlist, ${_selectedPlaylist != null ? _selectedPlaylist!.name : "none"} selected',
+                  child: DropdownButton<Playlist?>(
+                    value: _selectedPlaylist,
+                    dropdownColor: colorScheme.surfaceContainerHigh,
+                    underline: const SizedBox.shrink(),
+                    hint: const Text('None'),
+                    items: [
+                      const DropdownMenuItem<Playlist?>(value: null, child: Text('None')),
+                      ...ref.watch(playlistProvider).map((p) => DropdownMenuItem<Playlist?>(
+                            value: p,
+                            child: Text(p.name),
+                          )),
+                    ],
+                    onChanged: (val) => setState(() => _selectedPlaylist = val),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Command Template:', style: textTheme.bodyMedium),
+                Semantics(
+                  label: 'Command Template, ${_selectedTemplate ?? "none"} selected',
+                  child: DropdownButton<String?>(
+                    value: _selectedTemplate,
+                    dropdownColor: colorScheme.surfaceContainerHigh,
+                    underline: const SizedBox.shrink(),
+                    hint: const Text('None'),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('None')),
+                      ...ref.watch(settingsProvider).customTemplates.map((t) => DropdownMenuItem<String?>(
+                            value: t,
+                            child: Text(t.length > 24 ? '${t.substring(0, 24)}…' : t, overflow: TextOverflow.ellipsis),
+                          )),
+                    ],
+                    onChanged: (val) => setState(() => _selectedTemplate = val),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildClipCard(ColorScheme colorScheme, TextTheme textTheme) {
     return Card(

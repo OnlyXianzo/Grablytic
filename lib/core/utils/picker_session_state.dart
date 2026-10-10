@@ -12,6 +12,10 @@ class PickerSessionState {
   bool clipEnabled = false;
   String clipStart = '';
   String clipEnd = '';
+  bool? saveDescription;
+  bool? saveThumbnails;
+  String? customFileName;
+  String? fileNameTemplate;
 
   void reset() {
     embedSubtitles = null;
@@ -20,5 +24,9 @@ class PickerSessionState {
     clipEnabled = false;
     clipStart = '';
     clipEnd = '';
+    saveDescription = null;
+    saveThumbnails = null;
+    customFileName = null;
+    fileNameTemplate = null;
   }
 }
