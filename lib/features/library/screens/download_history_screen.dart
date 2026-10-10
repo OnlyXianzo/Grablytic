@@ -574,6 +574,7 @@ class _HistoryItem extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               GestureDetector(
+                key: playable ? Key('history-play-${record.id}') : null,
                 onTap: playable
                     ? () => playHistoryRecord(context, ref, record)
                     : null,
@@ -787,6 +788,7 @@ class _HistoryGridCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               GestureDetector(
+                key: playable ? Key('history-play-${record.id}') : null,
                 onTap: playable
                     ? () => playHistoryRecord(context, ref, record)
                     : null,

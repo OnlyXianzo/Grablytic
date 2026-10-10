@@ -56,6 +56,7 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _needsRedrain = false;
 
   String? _lastInspectedClipboardText;
+  Timer? _startupClipboardTimer;
 
   @override
   void initState() {
@@ -69,6 +70,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _intentSubscription?.cancel();
+    _startupClipboardTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -189,8 +191,9 @@ class _AppShellState extends ConsumerState<AppShell>
       await _drainNativeQueue();
       _checkBatteryPrompt();
       // Auto-check clipboard after first frame (Phase 2).
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) await _checkClipboardOnStartup();
+      _startupClipboardTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) _checkClipboardOnStartup();
+      });
     });
   }
 
