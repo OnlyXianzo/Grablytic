@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/engine/engine_provider.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/offline_link_queue.dart';
+import '../../../providers/batch_provider.dart';
+import '../../../providers/preset_provider.dart';
 import '../../../providers/settings_provider.dart';
+import '../screens/batch_download_screen.dart';
 
 /// Banner displayed on [HomeScreen] when links are saved in the offline queue (T19).
 ///
@@ -150,12 +154,54 @@ class _OfflineQueueBannerState extends ConsumerState<OfflineQueueBanner> {
                           color: colorScheme.outline,
                         ),
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close, size: 16),
-                        tooltip: 'Remove',
-                        onPressed: () => ref
-                            .read(offlineQueueProvider.notifier)
-                            .removeLink(item.url),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 16),
+                            tooltip: 'Delete',
+                            onPressed: () => ref
+                                .read(offlineQueueProvider.notifier)
+                                .removeLink(item.url),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.download_rounded,
+                                size: 16, color: colorScheme.primary),
+                            tooltip: 'Download',
+                            onPressed: () async {
+                              await ref
+                                  .read(offlineQueueProvider.notifier)
+                                  .removeLink(item.url);
+                              final preset =
+                                  ref.read(presetsProvider).activePreset;
+                              final batchItem = BatchItem(
+                                  url: item.url, title: item.title ?? item.url);
+                              ref.read(batchProvider.notifier).startBatch(
+                                    [batchItem],
+                                    qualityCeiling: preset.qualityCeiling,
+                                  );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  styledSnackBar(
+                                    context,
+                                    'Downloading ${item.url}',
+                                    action: SnackBarAction(
+                                      label: 'View Batch',
+                                      onPressed: () => Navigator.of(context,
+                                              rootNavigator: true)
+                                          .push(MaterialPageRoute(
+                                        builder: (_) => BatchDownloadScreen(
+                                          items: [batchItem],
+                                          skipQualityDialog: true,
+                                        ),
+                                      )),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -187,10 +233,9 @@ class _OfflineQueueBannerState extends ConsumerState<OfflineQueueBanner> {
                       if (!context.mounted) return;
                       if (!granted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Notification permission is required for queue reminders',
-                            ),
+                          styledSnackBar(
+                            context,
+                            'Notification permission is required for queue reminders',
                           ),
                         );
                         return;
@@ -199,18 +244,14 @@ class _OfflineQueueBannerState extends ConsumerState<OfflineQueueBanner> {
                           .read(settingsProvider.notifier)
                           .setQueueReminderEnabled(true);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Queue reminders enabled'),
-                        ),
+                        styledSnackBar(context, 'Queue reminders enabled'),
                       );
                     } else {
                       ref
                           .read(settingsProvider.notifier)
                           .setQueueReminderEnabled(false);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Queue reminders turned off'),
-                        ),
+                        styledSnackBar(context, 'Queue reminders turned off'),
                       );
                     }
                   },

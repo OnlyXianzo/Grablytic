@@ -445,6 +445,7 @@ class MockEngineService implements EngineService {
   }
 
   final List<Map<String, String>> errorNotifications = [];
+  final List<Map<String, String>> successNotifications = [];
 
   @override
   Future<void> showErrorNotification({
@@ -456,6 +457,20 @@ class MockEngineService implements EngineService {
       'download_id': downloadId,
       'title': title,
       'error': error,
+    });
+  }
+
+  /// Records the request in [successNotifications] without posting it.
+  @override
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  }) async {
+    successNotifications.add({
+      'download_id': downloadId,
+      'title': title,
+      'message': message,
     });
   }
 

@@ -74,9 +74,18 @@ flutter:
 
   assets:
     - assets/brand/grablytic_logo.png
+    - assets/brand/grablytic_logo_light.png
+    - assets/brand/grablytic_logo_dark.png
+    - assets/brand/grablytic_logo_mark.png
     - assets/branding/Grablytic-logo.png
 
   fonts:
+    - family: BricolageGrotesque
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque.ttf
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/Figtree.ttf
     - family: InstrumentSans
       fonts:
         - asset: assets/fonts/InstrumentSans-400.ttf

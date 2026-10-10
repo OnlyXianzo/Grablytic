@@ -67,6 +67,64 @@ void main() {
     } catch (_) {}
   });
 
+  for (final grid in [false, true]) {
+    testWidgets(
+      '${grid ? 'grid' : 'list'} overflow offers accessible actions and plays the selected record',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final engine = _RecordingEngine();
+        addTearDown(engine.dispose);
+        final video = File('${tmp.path}/menu.mkv')..writeAsBytesSync([0, 1]);
+        await _pump(tester, engine, [
+          _record('menu', filePath: video.path),
+        ], grid: grid);
+        final menu = find.byKey(
+          Key(grid ? 'history-grid-menu-menu' : 'history-menu-menu'),
+        );
+        await tester.ensureVisible(menu);
+        expect(tester.getSize(menu).width, greaterThanOrEqualTo(48));
+        expect(tester.getSize(menu).height, greaterThanOrEqualTo(48));
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        expect(find.text('Play'), findsOneWidget);
+        expect(find.text('View logs'), findsOneWidget);
+        expect(find.text('Delete'), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('Play reel menu')), findsOneWidget);
+        await tester.tap(find.text('Play'));
+        await tester.pumpAndSettle();
+        expect(engine.openedPaths, [video.path]);
+      },
+    );
+
+    testWidgets(
+      '${grid ? 'grid' : 'list'} overflow omits Play for an unfinished record',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final engine = _RecordingEngine();
+        addTearDown(engine.dispose);
+        await _pump(tester, engine, [
+          _record('pending', status: 'failed'),
+        ], grid: grid);
+        final menu = find.byKey(
+          Key(grid ? 'history-grid-menu-pending' : 'history-menu-pending'),
+        );
+        await tester.ensureVisible(menu);
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        expect(find.text('Play'), findsNothing);
+        expect(find.text('View logs'), findsOneWidget);
+        expect(find.text('Delete'), findsOneWidget);
+        expect(engine.openedPaths, isEmpty);
+      },
+    );
+  }
+
   group('DownloadHistoryScreen thumbnails + play', () {
     testWidgets('local thumbnail renders and play opens the file',
         (tester) async {

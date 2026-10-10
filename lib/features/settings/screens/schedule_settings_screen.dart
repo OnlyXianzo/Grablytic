@@ -212,9 +212,9 @@ class _SettingSwitch extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(icon, color: colorScheme.outline, size: 20),
+                child: Icon(icon, color: colorScheme.primary, size: 20),
               ),
             ),
             const SizedBox(width: 16),
@@ -222,7 +222,12 @@ class _SettingSwitch extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: textTheme.bodyLarge),
+                  Text(
+                    title,
+                    style: textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   Text(
                     subtitle,
                     style: textTheme.labelSmall?.copyWith(
@@ -283,9 +288,9 @@ class _SettingTile extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(icon, color: colorScheme.outline, size: 20),
+                child: Icon(icon, color: colorScheme.primary, size: 20),
               ),
             ),
             const SizedBox(width: 16),

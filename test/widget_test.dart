@@ -56,7 +56,7 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      final settingsIcon = find.byIcon(Icons.settings);
+      final settingsIcon = find.byIcon(Icons.settings_outlined);
       expect(settingsIcon, findsOneWidget);
 
       await tester.tap(settingsIcon);
@@ -64,8 +64,8 @@ void main() {
 
       expect(find.text('Settings'), findsWidgets);
       // Folder hierarchy: options live in sub-menus.
-      expect(find.text('Network & Acceleration'), findsOneWidget);
-      expect(find.text('Directories & Storage'), findsOneWidget);
+      expect(find.text('Network and speed'), findsOneWidget);
+      expect(find.text('Storage'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('System & Diagnostics'), findsOneWidget);
       expect(find.text('Wi-Fi Only Downloads'), findsNothing);
@@ -99,7 +99,7 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 2));
       expect(find.text('Library'), findsWidgets);
 
-      final settingsIcon = find.byIcon(Icons.settings);
+      final settingsIcon = find.byIcon(Icons.settings_outlined);
       expect(settingsIcon, findsOneWidget);
       await tester.tap(settingsIcon);
       await tester.pumpAndSettle(const Duration(seconds: 2));

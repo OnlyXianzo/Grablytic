@@ -91,7 +91,7 @@ class ObservedSourcesScreen extends ConsumerWidget {
                           ? colorScheme.surfaceContainerLow
                           : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(20),
                         side: BorderSide(
                           color: colorScheme.outlineVariant.withValues(alpha: 0.3),
                         ),
@@ -177,7 +177,7 @@ class ObservedSourcesScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: colorScheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Add Source'),
         content: SingleChildScrollView(
           child: Column(

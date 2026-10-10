@@ -180,35 +180,126 @@ class AppTheme {
   }
 
   static TextTheme _buildTextTheme(ColorScheme colorScheme) {
-    final base = TextTheme(
+    const headingFont = 'BricolageGrotesque';
+    const bodyFont = 'Figtree';
+
+    // Bundled product typography (OFL):
+    // - Bricolage Grotesque: Intentional, editorial character for display & headings
+    // - Figtree: Clean, high-legibility geometry for body, labels, and metadata
+    // Pure-Dart static apply: zero runtime font fetches, zero network beacons,
+    // preserving user privacy and offline execution.
+    return TextTheme(
       displayLarge: TextStyle(
+        fontFamily: headingFont,
         fontSize: 48,
-        fontWeight: FontWeight.w300,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.02,
       ),
-      headlineLarge: TextStyle(fontSize: 32, fontWeight: FontWeight.w400),
-      headlineMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.w400),
-      titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
-      titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+      headlineLarge: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 32,
+        fontWeight: FontWeight.w500,
+      ),
+      headlineMedium: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 28,
+        fontWeight: FontWeight.w500,
+      ),
+      headlineSmall: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+      ),
+      titleLarge: TextStyle(
+        fontFamily: headingFont,
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+      ),
+      titleMedium: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 18,
+        fontWeight: FontWeight.w500,
+      ),
+      titleSmall: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
       bodyLarge: TextStyle(
+        fontFamily: bodyFont,
         fontSize: 16,
         fontWeight: FontWeight.w400,
         height: 1.5,
       ),
       bodyMedium: TextStyle(
+        fontFamily: bodyFont,
         fontSize: 14,
         fontWeight: FontWeight.w400,
         height: 1.5,
       ),
-      labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-      labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
-      bodySmall: TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
+      bodySmall: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+      ),
+      labelLarge: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
+      labelMedium: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      labelSmall: TextStyle(
+        fontFamily: bodyFont,
+        fontSize: 11,
+        fontWeight: FontWeight.w400,
+      ),
     );
-
-    // Bundled product face (assets/fonts/InstrumentSans-*.ttf, OFL).
-    // Pure-Dart apply: no runtime font fetch, no network beacon, and the
-    // theme constructs in plain unit tests. Previously GoogleFonts, which
-    // fetched from fonts.gstatic.com on first build.
-    return base.apply(fontFamily: 'InstrumentSans');
   }
+}
+
+/// Spacing scale (dp) shared by all redesign components and screens.
+/// No magic padding numbers in screens — reference these.
+class GrablyticSpacing {
+  GrablyticSpacing._();
+
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double xxxl = 32;
+}
+
+/// Corner-radius scale (dp) shared by all redesign components and screens.
+/// `xl` (20) matches the mockup card radius.
+class GrablyticRadii {
+  GrablyticRadii._();
+
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double sheet = 28;
+}
+
+/// Log-level hues shared by the live overlay, log sheet and log viewer.
+/// Dark values come from the mockup logbox (.i blue, .w amber); light values
+/// are darkened for contrast on light surfaces.
+class GrablyticLogColors {
+  GrablyticLogColors._();
+
+  static Color info(Brightness brightness) => brightness == Brightness.dark
+      ? const Color(0xFF8AB4F8)
+      : const Color(0xFF0B57D0);
+
+  static Color warning(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? const Color(0xFFF2C879)
+      : const Color(0xFF8A4D00);
 }

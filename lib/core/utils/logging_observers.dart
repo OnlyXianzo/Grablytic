@@ -113,6 +113,7 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
   field('completionAlerts', previous.completionAlerts, next.completionAlerts);
   field('downloadPath', previous.downloadPath, next.downloadPath);
   field('themeMode', previous.themeMode, next.themeMode);
+  field('logoVariant', previous.logoVariant, next.logoVariant);
   field(
     'onboardingCompleted',
     previous.onboardingCompleted,
@@ -450,6 +451,21 @@ class TracedEngineService implements EngineService {
       downloadId: downloadId,
       title: title,
       error: error,
+    ),
+  );
+
+  /// Forwards the notification request, propagating errors from the delegate.
+  @override
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  }) => _traced(
+    'notification/show_success',
+    () => _inner.showSuccessNotification(
+      downloadId: downloadId,
+      title: title,
+      message: message,
     ),
   );
 

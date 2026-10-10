@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/home/screens/batch_download_screen.dart';
+import 'notification_helper.dart';
 import '../../providers/batch_provider.dart';
 import '../../providers/preset_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -248,7 +249,10 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
 
   /// Dispatches all queued links in one tap when connectivity is restored.
   ///
-  /// Returns the number of links dispatched, or -1 if the device is still offline.
+  /// Starts a batch using the active preset's quality ceiling, then clears the
+  /// saved queue. Returns 0 for an empty queue, -1 while offline, or the number
+  /// handed to the batch; this does not wait for downloads to complete.
+  /// Queue persistence errors propagate after the batch has been started.
   Future<int> sendAll(BuildContext context, WidgetRef ref) async {
     if (state.isEmpty) return 0;
 
@@ -256,9 +260,7 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
     if (offline) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot start downloads: device is still offline.'),
-          ),
+          styledSnackBar(context, 'Cannot start downloads: device is still offline.'),
         );
       }
       return -1;
@@ -281,19 +283,25 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
     await clear();
 
     if (context.mounted) {
+      // View Batch now uses rootNavigator and longer duration so the
+      // action survives the queue-banner rebuild that follows clear().
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            count == 1
-                ? 'Queued link sent to downloads'
-                : 'All $count queued links sent to downloads',
-          ),
+        styledSnackBar(
+          context,
+          count == 1 ? 'Queued link sent to downloads' : 'All $count queued links sent to downloads',
+          duration: const Duration(seconds: 5),
           action: SnackBarAction(
             label: 'View Batch',
             onPressed: () {
-              Navigator.of(context).push(
+              // Use root navigator — the banner lives inside a nested
+              // Scaffold/PageView where a plain Navigator.of may resolve
+              // to the wrong scope and silently no-op.
+              Navigator.of(context, rootNavigator: true).push(
                 MaterialPageRoute(
-                  builder: (_) => BatchDownloadScreen(items: items),
+                  builder: (_) => BatchDownloadScreen(
+                    items: items,
+                    skipQualityDialog: true,
+                  ),
                 ),
               );
             },

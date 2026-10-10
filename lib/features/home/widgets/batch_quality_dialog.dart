@@ -9,8 +9,8 @@ import 'package:flutter/material.dart';
 /// persisted under [lastBatchQualityKey] so the next batch starts from the
 /// previous pick (per-batch override stays possible every time).
 
-/// Quality options offered for a batch, in order.
-const List<String> batchQualityOptions = ['480p', '720p', '1080p', 'best'];
+/// Quality options offered for a batch, in order (highest first).
+const List<String> batchQualityOptions = ['best', '1080p', '720p', '480p'];
 
 /// SharedPreferences key for the last batch quality pick.
 const String lastBatchQualityKey = 'lastBatchQualityCeiling';

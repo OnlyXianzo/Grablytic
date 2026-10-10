@@ -102,7 +102,7 @@ class _PresetCard extends ConsumerWidget {
           ? colorScheme.primaryContainer.withValues(alpha: 0.15)
           : colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: isActive
               ? colorScheme.primary.withValues(alpha: 0.5)
@@ -114,7 +114,7 @@ class _PresetCard extends ConsumerWidget {
         onTap: () {
           ref.read(presetsProvider.notifier).setActivePreset(preset.id);
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/log_entry.dart';
@@ -70,8 +71,9 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
     final text = entries.map((e) => e.formattedLine).join('\n');
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Exported ${entries.length} log entries to clipboard.'),
+      styledSnackBar(
+        context,
+        'Exported ${entries.length} log entries to clipboard.',
       ),
     );
   }

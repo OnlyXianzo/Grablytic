@@ -277,7 +277,7 @@ void main() {
       await tester.tap(find.text('1,000+ sources'));
       await tester.pump(const Duration(milliseconds: 900));
       // Beat 3 → tap the headline to reach beat 4.
-      await tester.tap(find.text('Self-Contained Power'));
+      await tester.tap(find.text('Self-contained power'));
       await tester.pump(const Duration(milliseconds: 1300));
 
       // Beat 4 now advances to the permissions beat (was Get Started).

@@ -20,7 +20,7 @@ void main() {
       mockEngine = MockEngineService();
     });
 
-    testWidgets('renders FAILED section with error message and retry button in list view',
+    testWidgets('renders Failed section with error message and retry button in list view',
         (WidgetTester tester) async {
       final failedItem = DownloadItem(
         id: 'dl-err-1',
@@ -52,8 +52,8 @@ void main() {
       // Verify the screen does NOT show "No downloads yet"
       expect(find.text('No downloads yet'), findsNothing);
 
-      // Verify the FAILED section header is displayed
-      expect(find.text('FAILED'), findsOneWidget);
+      // Verify the Failed downloads section header is displayed
+      expect(find.text('Failed downloads'), findsOneWidget);
 
       // Verify the failed item title and error message are visible
       expect(find.text('Test Failed Video'), findsOneWidget);
@@ -104,7 +104,14 @@ void main() {
 
       // Verify failed item is displayed in grid view
       expect(find.text('Test Grid Failed Video'), findsOneWidget);
-      expect(find.text('Failed'), findsOneWidget);
+      // Card badge only: the Videos filter chip is also labeled 'Failed'.
+      expect(
+        find.descendant(
+          of: find.byType(Card),
+          matching: find.text('Failed'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Connection timed out'), findsOneWidget);
       expect(find.byTooltip('Retry'), findsOneWidget);
     });

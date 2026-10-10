@@ -16,6 +16,8 @@ import '../../../providers/metered_guard.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/notification_helper.dart';
+import '../../../core/utils/link_importer.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/offline_link_queue.dart';
@@ -54,6 +56,7 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _needsRedrain = false;
 
   String? _lastInspectedClipboardText;
+  Timer? _startupClipboardTimer;
 
   @override
   void initState() {
@@ -67,6 +70,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _intentSubscription?.cancel();
+    _startupClipboardTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -113,6 +117,65 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Startup auto-check: inspects clipboard once after cold start and offers
+  /// to use the link (online → SnackBar with Paste action, offline → auto-queue).
+  /// Deduplicated via [_lastInspectedClipboardText] so foreground resume does not
+  /// re-prompt for the same text.
+  Future<void> _checkClipboardOnStartup() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text == null || text.isEmpty || text == _lastInspectedClipboardText) return;
+      // Extract first URL via importer (handles shortcodes, csv quirks) or fallback to raw URL.
+      String? candidate;
+      final links = extractLinks(text);
+      if (links.isNotEmpty) {
+        candidate = normalizeQueueUrl(links.first) ?? links.first;
+      } else {
+        final trimmed = text.trim();
+        if (trimmed.contains(' ') == false && trimmed.contains('.')) {
+          candidate = normalizeQueueUrl(trimmed) ?? (trimmed.startsWith('http') ? trimmed : null);
+        }
+      }
+      if (candidate == null || candidate.isEmpty) return;
+      // Already queued → silent.
+      final queued = ref.read(offlineQueueProvider);
+      if (queued.any((q) => q.url == candidate)) return;
+      _lastInspectedClipboardText = text;
+      final offline = await isDeviceOffline();
+      if (!mounted) return;
+      if (offline) {
+        final added = await ref.read(offlineQueueProvider.notifier).addLink(candidate, source: 'clipboard');
+        if (added && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            styledSnackBar(context, 'Offline: Clipboard link queued ($candidate)'),
+          );
+        }
+        return;
+      }
+      // Online: offer to paste via sharedUrl (HomeScreen omnibox listens).
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Clipboard link found: $candidate'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Paste',
+            onPressed: () {
+              ref.read(sharedUrlProvider.notifier).state = candidate;
+              // Switch to Home tab if not already there.
+              if (_currentIndex != 0) {
+                setState(() => _currentIndex = 0);
+                _pageController.animateToPage(0, duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+              }
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      AppLogger.warn('Startup clipboard check failed: $e', tag: 'AppShell');
+    }
+  }
+
   void _initSharedUrlListening() {
     final engine = ref.read(engineProvider);
     // The native intent/shared_url push is a WAKE-UP HINT only (the queue
@@ -127,6 +190,10 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _drainNativeQueue();
       _checkBatteryPrompt();
+      // Auto-check clipboard after first frame (Phase 2).
+      _startupClipboardTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) _checkClipboardOnStartup();
+      });
     });
   }
 
@@ -264,11 +331,7 @@ class _AppShellState extends ConsumerState<AppShell>
         _currentIndex = 0;
         _pageController.jumpToPage(0);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Engine still setting up — review the link, then retry.',
-            ),
-          ),
+          styledSnackBar(context, 'Engine still setting up — review the link, then retry.'),
         );
         return;
       }
@@ -314,9 +377,7 @@ class _AppShellState extends ConsumerState<AppShell>
       final notifier = ref.read(downloadProvider.notifier);
       if (notifier.isDownloading(url)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Download already in progress for this link'),
-          ),
+          styledSnackBar(context, 'Download already in progress for this link'),
         );
         _currentIndex = 0;
         _pageController.jumpToPage(0);
@@ -376,7 +437,7 @@ class _AppShellState extends ConsumerState<AppShell>
               );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Auto-download failed: $errorMsg')),
+            styledSnackBar(context, 'Auto-download failed: $errorMsg'),
           );
         }
       } catch (e) {
@@ -391,7 +452,7 @@ class _AppShellState extends ConsumerState<AppShell>
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Auto-download failed: $e')));
+        ).showSnackBar(styledSnackBar(context, 'Auto-download failed: $e'));
       }
 
       _currentIndex = 0;
@@ -420,8 +481,9 @@ class _AppShellState extends ConsumerState<AppShell>
     });
   }
 
-  final _screens = [
-    const HomeScreen(),
+  // Non-const: HomeScreen takes the See-all tab-switch hook.
+  List<Widget> get _screens => [
+    HomeScreen(onSeeAll: () => _onDestinationSelected(1)),
     const LibraryScreen(),
     const SettingsScreen(),
   ];
@@ -530,7 +592,7 @@ class _AppShellState extends ConsumerState<AppShell>
                 NavigationRailDestination(
                   icon: Semantics(
                     label: 'Download',
-                    child: Icon(Icons.download),
+                    child: Icon(Icons.download_outlined),
                   ),
                   selectedIcon: Semantics(
                     label: 'Download',
@@ -552,11 +614,11 @@ class _AppShellState extends ConsumerState<AppShell>
                 NavigationRailDestination(
                   icon: Semantics(
                     label: 'Settings',
-                    child: Icon(Icons.settings),
+                    child: Icon(Icons.settings_outlined),
                   ),
                   selectedIcon: Semantics(
                     label: 'Settings',
-                    child: Icon(Icons.settings),
+                    child: Icon(Icons.settings_outlined),
                   ),
                   label: Text('Settings'),
                 ),
@@ -630,9 +692,9 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
   final ValueNotifier<double> _pos = ValueNotifier(0.0);
 
   static const List<_NavItemData> _items = [
-    _NavItemData(icon: Icons.download, label: 'Download'),
+    _NavItemData(icon: Icons.download_outlined, label: 'Download'),
     _NavItemData(icon: Icons.folder_open, label: 'Library'),
-    _NavItemData(icon: Icons.settings, label: 'Settings'),
+    _NavItemData(icon: Icons.settings_outlined, label: 'Settings'),
   ];
 
   double _readPos() {
@@ -775,6 +837,20 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
       animation: _pos,
       builder: (context, _) {
         final currentPos = _pos.value;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final pillColor = isDark
+            ? widget.colorScheme.surfaceContainerHigh
+            : const Color(0xFFEFE8E1);
+        final pillBorderColor = isDark
+            ? widget.colorScheme.outlineVariant.withValues(alpha: 0.3)
+            : const Color(0xFFDECFC2);
+        final activeColor = isDark
+            ? widget.colorScheme.primary
+            : const Color(0xFF7C3322);
+        final inactiveColor = isDark
+            ? widget.colorScheme.onSurfaceVariant
+            : const Color(0xFF7A6E64);
+
         return Container(
           decoration: BoxDecoration(
             color: widget.colorScheme.surfaceContainerLowest,
@@ -839,21 +915,13 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                             height: pillHeight,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: widget.colorScheme.primaryContainer,
+                                color: pillColor,
                                 borderRadius: BorderRadius.circular(
                                   pillHeight / 2,
                                 ),
-                              ),
-                              child: Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 3),
-                                  width: 16 * (1.0 + stretchFactor),
-                                  height: 2.5,
-                                  decoration: BoxDecoration(
-                                    color: widget.colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(1.25),
-                                  ),
+                                border: Border.all(
+                                  color: pillBorderColor,
+                                  width: 0.7,
                                 ),
                               ),
                             ),
@@ -869,13 +937,13 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                               final activeWeight = 1.0 - dist;
 
                               final iconColor = Color.lerp(
-                                widget.colorScheme.onSurfaceVariant,
-                                widget.colorScheme.onPrimaryContainer,
+                                inactiveColor,
+                                activeColor,
                                 activeWeight,
                               )!;
                               final textColor = Color.lerp(
-                                widget.colorScheme.onSurfaceVariant,
-                                widget.colorScheme.onPrimaryContainer,
+                                inactiveColor,
+                                activeColor,
                                 activeWeight,
                               )!;
 
@@ -892,34 +960,44 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
                                     containedInkWell: true,
                                     highlightShape: BoxShape.rectangle,
                                     borderRadius: BorderRadius.circular(24),
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        minWidth: 48,
-                                        minHeight: 48,
-                                      ),
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            item.icon,
-                                            size: 22,
-                                            color: iconColor,
+                                    child: SizedBox(
+                                      height: containerHeight,
+                                      child: Center(
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            minWidth: 48,
+                                            minHeight: 48,
                                           ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            item.label,
-                                            style: textTheme.labelSmall
-                                                ?.copyWith(
-                                                  fontWeight: activeWeight > 0.5
-                                                      ? FontWeight.bold
-                                                      : FontWeight.w600,
-                                                  color: textColor,
-                                                  fontSize: 11,
-                                                ),
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                item.icon,
+                                                size: 22,
+                                                color: iconColor,
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                item.label,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: textTheme.labelSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          activeWeight > 0.5
+                                                              ? FontWeight.w700
+                                                              : FontWeight.w500,
+                                                      color: textColor,
+                                                      fontSize: 11,
+                                                      letterSpacing: -0.1,
+                                                      height: 1.1,
+                                                    ),
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ),

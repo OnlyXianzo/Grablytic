@@ -132,11 +132,11 @@ void main() {
       await tester.pumpAndSettle();
 
       // Video streams section should NOT be present
-      expect(find.textContaining('VIDEO STREAMS'), findsNothing);
-      expect(find.textContaining('COMBINED STREAMS'), findsNothing);
+      expect(find.textContaining('Video streams'), findsNothing);
+      expect(find.textContaining('Combined streams'), findsNothing);
 
       // Audio streams section SHOULD be present
-      expect(find.textContaining('AUDIO STREAMS'), findsOneWidget);
+      expect(find.textContaining('Audio streams'), findsOneWidget);
 
       // Preferred container should default to an audio container (m4a)
       expect(find.text('M4A (Recommended)'), findsOneWidget);
@@ -180,19 +180,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Initially Video + Audio is selected and VIDEO STREAMS is visible
-      expect(find.text('Video + Audio'), findsOneWidget);
-      expect(find.text('Audio Only'), findsOneWidget);
-      expect(find.textContaining('VIDEO STREAMS'), findsOneWidget);
+      // Initially Video + Audio is selected and Video streams is visible
+      expect(find.text('Video + audio'), findsOneWidget);
+      expect(find.text('Audio only'), findsOneWidget);
+      expect(find.textContaining('Video streams'), findsOneWidget);
       expect(find.text('MKV (Recommended)'), findsOneWidget);
 
       // Tap 'Audio Only' segment
-      await tester.tap(find.text('Audio Only'));
+      await tester.tap(find.text('Audio only'));
       await tester.pumpAndSettle();
 
-      // VIDEO STREAMS is now hidden in Audio Only mode
-      expect(find.textContaining('VIDEO STREAMS'), findsNothing);
-      expect(find.textContaining('AUDIO STREAMS'), findsOneWidget);
+      // Video streams is now hidden in Audio Only mode
+      expect(find.textContaining('Video streams'), findsNothing);
+      expect(find.textContaining('Audio streams'), findsOneWidget);
 
       // Preferred container switched to audio container
       expect(find.text('M4A (Recommended)'), findsOneWidget);

@@ -48,7 +48,7 @@ class SponsorBlockSettingsScreen extends ConsumerWidget {
               Text(
                 'CATEGORIES TO SKIP',
                 style: textTheme.labelSmall?.copyWith(
-                  color: colorScheme.primary,
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.5,
                 ),
@@ -82,6 +82,7 @@ class SponsorBlockSettingsScreen extends ConsumerWidget {
                 style: textTheme.mono.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   fontSize: 12,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -145,14 +146,19 @@ class _SponsorBlockToggle extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(icon, color: colorScheme.outline, size: 20),
+                child: Icon(icon, color: colorScheme.primary, size: 20),
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(title, style: textTheme.bodyLarge),
+              child: Text(
+                title,
+                style: textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
             Switch.adaptive(
               value: value,

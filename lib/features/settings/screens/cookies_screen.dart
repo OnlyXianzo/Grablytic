@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/cookie_store.dart';
 import 'cookie_webview_screen.dart';
 
@@ -94,7 +95,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     final spec = await showDialog<Map<String, String>>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('New cookie login'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -125,7 +126,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
               final url = urlCtrl.text.trim();
               if (url.isEmpty || (!url.startsWith('http://') && !url.startsWith('https://'))) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Enter a full URL starting with https://')),
+                  styledSnackBar(context, 'Enter a full URL starting with https://'),
                 );
                 return;
               }
@@ -167,49 +168,71 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Prompts for cookie text with a live format hint, then saves an imported
+  /// profile, regenerates cookies.txt, and enables cookies. Cancellation or
+  /// unparseable input saves nothing; import/write errors are shown in-app.
   Future<void> _addViaPaste() async {
     final urlCtrl = TextEditingController();
     final pasteCtrl = TextEditingController();
+    // Live format hint state for the dialog.
+    String formatHint = cookieFormatHint(CookieParseFormat.unknown);
+    void updateHint() {
+      final fmt = detectCookieFormat(pasteCtrl.text);
+      formatHint = cookieFormatHint(fmt);
+    }
+
     final spec = await showDialog<Map<String, String>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Paste cookies'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: urlCtrl,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'Site URL',
-                  hintText: 'youtube.com',
-                ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setState2) {
+          pasteCtrl.removeListener(() {});
+          pasteCtrl.addListener(() {
+            setState2(() => updateHint());
+          });
+          // Initialize hint.
+          updateHint();
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Paste cookies'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: urlCtrl,
+                    keyboardType: TextInputType.url,
+                    decoration: const InputDecoration(
+                      labelText: 'Site URL',
+                      hintText: 'youtube.com',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: pasteCtrl,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      labelText: 'Cookie text',
+                      hintText: 'Netscape file or name=value; … (JSON/header/base64 auto-detected)',
+                      border: const OutlineInputBorder(),
+                      helperText: formatHint,
+                      helperMaxLines: 3,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: pasteCtrl,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: 'Cookie text',
-                  hintText: 'Netscape file or name=value; …',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx2, {
+                  'url': urlCtrl.text.trim(),
+                  'text': pasteCtrl.text,
+                }),
+                child: const Text('Import'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, {
-              'url': urlCtrl.text.trim(),
-              'text': pasteCtrl.text,
-            }),
-            child: const Text('Import'),
-          ),
-        ],
+          );
+        },
       ),
     );
     if (spec == null) return;
@@ -217,7 +240,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     if (lines.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No cookies found in that text.')),
+          styledSnackBar(context, 'No cookies found in that text.'),
         );
       }
       return;
@@ -239,14 +262,14 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     if (!await file.exists()) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('No cookies file yet.')));
+            .showSnackBar(styledSnackBar(context, 'No cookies file yet.'));
       }
       return;
     }
     await Clipboard.setData(ClipboardData(text: await file.readAsString()));
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Cookies copied to clipboard.')));
+          .showSnackBar(styledSnackBar(context, 'Cookies copied to clipboard.'));
     }
   }
 
@@ -288,12 +311,26 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _working ? null : _addViaWebView,
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-        icon: const Icon(Icons.add),
-        label: const Text('New login'),
+      floatingActionButton: null,
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const Key('cookies-new-login'),
+            onPressed: _working ? null : _addViaWebView,
+            icon: const Icon(Icons.add),
+            label: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Text('New login'),
+            ),
+            style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
       ),
       body: SafeArea(
         child: ListView(
@@ -308,6 +345,28 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
               ),
               onChanged: (v) =>
                   ref.read(settingsProvider.notifier).setUseCookies(v),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      cookieFormatHint(CookieParseFormat.unknown),
+                      style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             Text(

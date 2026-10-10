@@ -123,6 +123,17 @@ abstract class EngineService {
     required String error,
   });
 
+  /// Requests a success/completion notification where supported.
+  ///
+  /// On Android, [downloadId] identifies the notification to post or replace
+  /// in the completion channel. Completion does not confirm that a notification
+  /// was displayed; permission denial and unsupported platforms may be silent.
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  });
+
   /// Releases transport resources (broadcast controllers, native process
   /// handles, pending completers). Idempotent, never throws. The provider
   /// calls it for every implementation on dispose — previously only the

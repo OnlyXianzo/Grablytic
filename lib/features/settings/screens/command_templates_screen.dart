@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 
 class CommandTemplatesScreen extends ConsumerWidget {
@@ -128,7 +129,7 @@ class CommandTemplatesScreen extends ConsumerWidget {
               final problem = validateTemplateArgs(args);
               if (problem != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(problem)),
+                  styledSnackBar(context, problem),
                 );
                 return;
               }
@@ -143,9 +144,7 @@ class CommandTemplatesScreen extends ConsumerWidget {
               ref.read(settingsProvider.notifier).setCustomTemplates(updated);
               if (templateWantsExec(args)) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.'),
+                  styledSnackBar(context, 'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.',
                     duration: Duration(seconds: 5),
                   ),
                 );
@@ -220,7 +219,7 @@ class _TemplateCard extends StatelessWidget {
       elevation: 0,
       color: colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           width: 1.0,
@@ -228,7 +227,7 @@ class _TemplateCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -240,7 +239,7 @@ class _TemplateCard extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(Icons.terminal, color: colorScheme.primary, size: 20),
                 ),

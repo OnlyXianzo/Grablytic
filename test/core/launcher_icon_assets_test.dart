@@ -22,11 +22,13 @@ void main() {
       return (width, height);
     }
 
-    test('colors.xml defines ic_launcher_background matching brand terracotta', () {
+    test('colors.xml defines ic_launcher_background matching redesign mockup bg', () {
       final file = File('$resBase/values/colors.xml');
       expect(file.existsSync(), isTrue, reason: 'colors.xml must exist');
       final content = file.readAsStringSync();
-      expect(content, contains('<color name="ic_launcher_background">#A33419</color>'));
+      // C9 redesign: near-black adaptive background so the dark/red
+      // play-mark foreground reads (was brand terracotta #A33419).
+      expect(content, contains('<color name="ic_launcher_background">#121212</color>'));
     });
 
     test('mipmap-anydpi-v26 defines adaptive ic_launcher and ic_launcher_round', () {

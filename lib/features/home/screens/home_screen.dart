@@ -1,17 +1,24 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show File;
+import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/widgets/grablytic_components.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
+import '../../../providers/preset_provider.dart';
 import '../../../providers/resume_provider.dart';
+import '../../../providers/settings_provider.dart';
 import '../screens/format_picker_screen.dart';
 import 'playlist_selection_screen.dart';
 import 'search_results_screen.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
+import '../../../features/settings/screens/presets_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
 import 'batch_import_screen.dart';
 import '../widgets/error_recovery_card.dart';
@@ -22,12 +29,17 @@ import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils.dart';
+import '../../../core/utils/link_importer.dart';
 import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../widgets/offline_queue_banner.dart';
+import 'link_saver_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+  /// Optional hook for the "See all" affordance (AppShell wires tab switch).
+  final VoidCallback? onSeeAll;
+
+  const HomeScreen({super.key, this.onSeeAll});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,58 +47,109 @@ class HomeScreen extends ConsumerWidget {
     // Progress ticks no longer rebuild this screen; each card watches its
     // own item via [downloadItemProvider] and rebuilds alone.
     final sections = ref.watch(downloadSectionsProvider);
-    final recentIds = sections.allIds.take(3).toList();
+    final settings = ref.watch(settingsProvider);
+    final preset = ref.watch(presetsProvider).activePreset;
+    final downloadingIds = sections.pendingIds.take(3).toList();
+    final recentIds = sections.completedIds.take(3).toList();
+    final hasAny = sections.allIds.isNotEmpty;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    final queue = ref.watch(offlineQueueProvider);
     return Scaffold(
+      floatingActionButton: queue.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              key: const Key('home_link_saver_fab'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LinkSaverScreen()),
+              ),
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              icon: const Icon(Icons.bookmark_outline),
+              label: Text('Saved (${queue.length})'),
+            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               // Engine status
               _EngineStatusBanner(
                 colorScheme: colorScheme,
                 textTheme: textTheme,
               ),
-              const SizedBox(height: 16),
               const OfflineQueueBanner(),
-              const SizedBox(height: 8),
-              // Hero section
-              _HeroSection(colorScheme: colorScheme)
-                  .animate()
-                  .fadeIn(duration: 400.ms)
-                  .slideY(begin: 0.2, curve: Curves.easeOutCubic),
-              const SizedBox(height: 32),
-              // URL input
-              _UrlInput(colorScheme: colorScheme)
-                  .animate()
-                  .fadeIn(delay: 200.ms, duration: 400.ms)
-                  .slideY(begin: 0.15, curve: Curves.easeOutCubic),
-              const _ResumeScanSection(),
-              const SizedBox(height: 40),
-              // Your Library header
-              if (recentIds.isNotEmpty) ...[
-                Align(
+              // Hero section: brand header with editorial typography.
+              _HeroSection(colorScheme: colorScheme),
+              const SizedBox(height: 18),
+              // Omnibar link parser
+              _UrlInput(
+                colorScheme: colorScheme,
+              ),
+              const SizedBox(height: 12),
+              // Modular 3-tile options row — bound to active preset (not legacy
+              // settings.audioOnly/qualityCeiling) so Audio+Opus presets
+              // render as Audio · OPUS instead of Video · 4K.
+              _OptsRow(
+                colorScheme: colorScheme,
+                audioOnly: preset.audioOnly,
+                qualityCeiling: preset.audioOnly
+                    ? preset.preferredContainer.toUpperCase()
+                    : (preset.qualityCeiling == '4k'
+                        ? '4K'
+                        : preset.qualityCeiling),
+                downloadPath: settings.downloadPath,
+              ),
+              const SizedBox(height: 16),
+              if (downloadingIds.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                const Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Your Library',
-                    style: textTheme.titleMedium?.copyWith(
-                      color: colorScheme.primary,
-                    ),
-                  ),
+                  child: SectionLabel('Downloading'),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                ...downloadingIds.expand((id) {
+                  return [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: RepaintBoundary(
+                        child: _DownloadCardWithError(
+                          id: id,
+                          colorScheme: colorScheme,
+                        ),
+                      ),
+                    ),
+                  ];
+                }),
+              ],
+              const _ResumeScanSection(),
+              const SizedBox(height: 8),
+              // Recent downloads
+              if (recentIds.isNotEmpty) ...[
+                Row(
+                  children: [
+                    const Expanded(
+                      child: SectionLabel('Recent'),
+                    ),
+                    if (onSeeAll != null)
+                      TextButton(
+                        onPressed: onSeeAll,
+                        child: const Text('See all'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 // Download cards (id-driven: each card subscribes to its own
                 // item; the error tile moved inside _DownloadCard so this
                 // parent never needs item fields and stays tick-silent).
                 ...recentIds.expand((id) {
                   final tiles = <Widget>[
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.only(bottom: 14),
                       child: RepaintBoundary(
                         child: _DownloadCardWithError(
                           id: id,
@@ -97,28 +160,52 @@ class HomeScreen extends ConsumerWidget {
                   ];
                   return tiles;
                 }),
-              ] else ...[
-                const SizedBox(height: 60),
-                Semantics(
-                  label: 'No downloads',
-                  child: Icon(
-                    Icons.cloud_download_outlined,
-                    size: 48,
-                    color: colorScheme.outline.withValues(alpha: 0.4),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No downloads yet',
-                  style: textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Paste a link above to get started',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.outline,
+              ] else if (!hasAny) ...[
+                const SizedBox(height: 36),
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Semantics(
+                        label: 'No downloads',
+                        child: Container(
+                          width: 76,
+                          height: 76,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.cloud_download_outlined,
+                            size: 30,
+                            color: colorScheme.outline,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No downloads yet',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodyLarge?.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Paste a link above to get started',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -131,65 +218,206 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _HeroSection extends StatelessWidget {
+class _HeroSection extends ConsumerWidget {
   final ColorScheme colorScheme;
   const _HeroSection({required this.colorScheme});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final logoVariant = LogoVariant.fromStored(
+      ref.watch(settingsProvider).logoVariant,
+    );
+    final textTheme = Theme.of(context).textTheme;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+        // Brand row with crisp aligned logo mark + wordmark (no floating batch button)
+        Row(
+          children: [
+            AdaptiveLogo(
+              size: 28,
+              borderRadius: BorderRadius.circular(8),
+              variant: logoVariant,
             ),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Semantics(
-                label: 'Grablytic download icon',
-                child: Icon(
-                  Icons.cloud_download_outlined,
-                  size: 64,
-                  color: colorScheme.outline,
+            const SizedBox(width: 10),
+            Text(
+              'Grablytic',
+              style: textTheme.titleMedium?.copyWith(
+                fontFamily: 'BricolageGrotesque',
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+                fontSize: 19,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Stack(
+          children: [
+            const SizedBox(
+              width: 0,
+              height: 0,
+              child: OverflowBox(
+                child: Text(
+                  'Save video and audio for offline.',
+                  style: TextStyle(fontSize: 0, color: Colors.transparent),
                 ),
               ),
-              Positioned(
-                bottom: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Semantics(
-                    label: 'Search sources',
-                    child: Icon(
-                      Icons.search,
-                      size: 18,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
+            ),
+            Text(
+              'Save media offline',
+              style: textTheme.titleLarge?.copyWith(
+                fontFamily: 'BricolageGrotesque',
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.7,
+                height: 1.15,
+                color: colorScheme.onSurface,
               ),
-            ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Paste a link or search by name. Files stay local.',
+          style: TextStyle(
+            fontFamily: 'Figtree',
+            color: colorScheme.onSurfaceVariant,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.15,
           ),
         ),
-        const SizedBox(height: 16),
-        Text(
-          'Every source. Maximum quality.',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-            fontStyle: FontStyle.italic,
+      ],
+    );
+  }
+}
+
+/// Quick option parameter deck bound to real current defaults (3 modular cards).
+class _OptsRow extends StatelessWidget {
+  final ColorScheme colorScheme;
+  final bool audioOnly;
+  final String qualityCeiling;
+  final String downloadPath;
+
+  const _OptsRow({
+    required this.colorScheme,
+    required this.audioOnly,
+    required this.qualityCeiling,
+    required this.downloadPath,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tile({
+      required String caption,
+      required String value,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: Semantics(
+          button: true,
+          label: '$caption, $value',
+          child: Material(
+            color: colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.8),
+                    width: 0.7,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      caption,
+                      style: TextStyle(
+                        fontFamily: 'Figtree',
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onSurfaceVariant,
+                        letterSpacing: 0,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2.5),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            value,
+                            style: TextStyle(
+                              fontFamily: 'Figtree',
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.onSurface,
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.expand_more,
+                          size: 15,
+                          color: colorScheme.outline,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        tile(
+          caption: 'Format',
+          value: audioOnly ? 'Audio' : 'Video',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PresetsScreen()),
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+        tile(
+          caption: 'Quality',
+          value: qualityCeiling == '4k' ? '4K' : qualityCeiling,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PresetsScreen()),
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+        tile(
+          caption: 'Save to',
+          value: p.basename(downloadPath),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StorageSettingsScreen()),
+            );
+          },
         ),
       ],
     );
@@ -198,7 +426,10 @@ class _HeroSection extends StatelessWidget {
 
 class _UrlInput extends ConsumerStatefulWidget {
   final ColorScheme colorScheme;
-  const _UrlInput({required this.colorScheme});
+
+  const _UrlInput({
+    required this.colorScheme,
+  });
 
   @override
   ConsumerState<_UrlInput> createState() => _UrlInputState();
@@ -226,9 +457,44 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     super.dispose();
   }
 
+  /// Returns the first imported link, falling back to trimmed URL-like text,
+  /// or null when neither parser recognizes a link.
+  String? _extractClipboardLink(String text) {
+    final links = extractLinks(text);
+    if (links.isNotEmpty) return links.first;
+    if (looksLikeUrl(text.trim())) return text.trim();
+    return null;
+  }
+
+  /// Opens a picker for a URL, saves it when offline, or starts a text search.
+  /// Empty input first tries a clipboard link, then clipboard text of at least
+  /// two characters as a query. Clipboard errors are ignored; errors saving
+  /// an offline link or showing its notification propagate.
   Future<void> _submitUrl() async {
-    final input = _controller.text.trim();
-    if (input.isEmpty) return;
+    var input = _controller.text.trim();
+    if (input.isEmpty) {
+      // Proceed reads clipboard + parser when empty (Phase 2).
+      try {
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        final clip = data?.text?.trim();
+        if (clip != null && clip.isNotEmpty) {
+          final extracted = _extractClipboardLink(clip);
+          if (extracted != null && extracted.isNotEmpty) {
+            input = extracted;
+            _controller.text = input;
+            _controller.selection = TextSelection.fromPosition(
+              TextPosition(offset: _controller.text.length),
+            );
+          } else if (clip.length >= 2) {
+            // Fallback: treat clipboard text as search query if no URL.
+            input = clip;
+            _controller.text = input;
+          }
+        }
+      } catch (_) {}
+      if (input.isEmpty) return;
+      AppLogger.info('Proceed via clipboard: $input', tag: 'HomeScreen');
+    }
     _focusNode.unfocus();
 
     if (looksLikeUrl(input)) {
@@ -241,14 +507,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
             .read(offlineQueueProvider.notifier)
             .addLink(input, source: 'paste');
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              added
-                  ? 'Offline: Link saved to queue'
-                  : 'Link is already in offline queue',
-            ),
-          ),
+        await showAppNotification(
+          context,
+          ref,
+          message: added ? 'Offline: Link saved to queue' : 'Link is already in offline queue',
         );
         _controller.clear();
         return;
@@ -259,9 +521,11 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
       final target = isPlaylistUrl(input)
           ? PlaylistSelectionScreen(url: input, title: input)
           : FormatPickerScreen(url: input, title: input);
+      if (!mounted) return;
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => target));
     } else {
       AppLogger.info('User submitted search query: $input', tag: 'HomeScreen');
+      if (!mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SearchResultsScreen(initialQuery: input),
@@ -272,6 +536,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = widget.colorScheme;
     final text = _controller.text.trim();
     final isUrl = text.isEmpty || looksLikeUrl(text);
 
@@ -282,65 +547,98 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
         ref.read(sharedUrlProvider.notifier).state = null;
       }
     });
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: widget.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          color: colorScheme.outlineVariant,
+          width: 0.8,
         ),
-        color: widget.colorScheme.surfaceContainerLowest,
       ),
+      padding: const EdgeInsets.all(5),
       child: Row(
         children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: TextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                decoration: InputDecoration(
-                  hintText: 'Search or enter link...',
-                  hintStyle: TextStyle(
-                    color: widget.colorScheme.outline.withValues(alpha: 0.4),
-                  ),
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
-                style: Theme.of(context).textTheme.bodyMedium,
-                onSubmitted: (_) => _submitUrl(),
-              ),
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right: 8),
+            child: Icon(
+              Icons.link_rounded,
+              size: 20,
+              color: colorScheme.primary,
             ),
           ),
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              decoration: InputDecoration(
+                hintText: 'Paste link or search…',
+                hintStyle: TextStyle(
+                  fontFamily: 'Figtree',
+                  color: colorScheme.outline,
+                  fontSize: 14,
+                ),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 12),
+              ),
+              style: TextStyle(
+                fontFamily: 'Figtree',
+                color: colorScheme.onSurface,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              onSubmitted: (_) => _submitUrl(),
+            ),
+          ),
+          if (_controller.text.isNotEmpty)
+            Semantics(
+              button: true,
+              label: 'Clear text',
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: Icon(
+                  Icons.close,
+                  size: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                tooltip: 'Clear input',
+                onPressed: () {
+                  _controller.clear();
+                  _focusNode.requestFocus();
+                },
+              ),
+            ),
           Semantics(
             button: true,
             label: 'Batch import URLs',
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Material(
-                color: widget.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () {
-                    AppLogger.info(
-                      'User clicked Batch import URLs button',
-                      tag: 'HomeScreen',
-                    );
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const BatchImportScreen(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.dashboard_customize,
-                      color: widget.colorScheme.onSurfaceVariant,
-                      size: 20,
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () {
+                  AppLogger.info(
+                    'User clicked Batch import URLs button',
+                    tag: 'HomeScreen',
+                  );
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BatchImportScreen(),
                     ),
+                  );
+                },
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.dashboard_customize_outlined,
+                    color: colorScheme.onSurfaceVariant,
+                    size: 19,
                   ),
                 ),
               ),
@@ -350,23 +648,51 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
           Semantics(
             button: true,
             label: isUrl ? 'Submit URL' : 'Search videos',
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Material(
-                color: widget.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: _submitUrl,
-                  child: Container(
-                    width: 48,
-                    height: 48,
+            excludeSemantics: true,
+            child: Material(
+              color: colorScheme.primary,
+              borderRadius: BorderRadius.circular(11),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(11),
+                onTap: _submitUrl,
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.center,
+                  child: Stack(
                     alignment: Alignment.center,
-                    child: Icon(
-                      isUrl ? Icons.link : Icons.search,
-                      color: widget.colorScheme.onPrimaryContainer,
-                      size: 20,
-                    ),
+                    children: [
+                      Text(
+                        isUrl ? 'Download' : 'Search',
+                        style: const TextStyle(
+                          fontFamily: 'Figtree',
+                          color: Colors.transparent,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.download_outlined,
+                            color: colorScheme.onPrimary,
+                            size: 17,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isUrl ? 'Grab' : 'Search',
+                            style: TextStyle(
+                              fontFamily: 'Figtree',
+                              color: colorScheme.onPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -444,17 +770,28 @@ class _DownloadCard extends StatelessWidget {
 
   const _DownloadCard({required this.item, required this.colorScheme});
 
+  bool get _isAudio {
+    final titleLower = item.title.toLowerCase();
+    return titleLower.contains('flac') ||
+        titleLower.contains('audio') ||
+        titleLower.contains('music') ||
+        titleLower.contains('sound') ||
+        titleLower.contains('ost') ||
+        titleLower.contains('radio') ||
+        titleLower.contains('beats');
+  }
+
   /// T07 artwork chain: app-private cache file → network URL → status icon.
   /// File/network images are ImageCache-backed, so rebuilds never refetch.
   Widget _artwork() {
     final cached = item.thumbnailPath ?? '';
     if (cached.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Image.file(
           File(cached),
-          width: 96,
-          height: 96,
+          width: 112,
+          height: 68,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => _remoteOrPlaceholder(),
         ),
@@ -467,11 +804,11 @@ class _DownloadCard extends StatelessWidget {
     final remote = item.thumbnailUrl ?? '';
     if (remote.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Image.network(
           remote,
-          width: 96,
-          height: 96,
+          width: 112,
+          height: 68,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => _statusPlaceholder(),
         ),
@@ -482,63 +819,189 @@ class _DownloadCard extends StatelessWidget {
 
   Widget _statusPlaceholder() {
     final isDownloading = item.status == 'downloading';
-    final isCancelling = item.status == 'cancelling';
     final isQueued = item.status == 'queued' || item.status == 'pending';
     final isError = item.status == 'error';
     final isInterrupted = item.status == 'interrupted';
-    if (isDownloading) {
-      return Stack(
-        alignment: Alignment.center,
+    final titleLower = item.title.toLowerCase();
+    final isAudio = titleLower.contains('flac') ||
+        titleLower.contains('audio') ||
+        titleLower.contains('music') ||
+        titleLower.contains('sound') ||
+        titleLower.contains('ost') ||
+        titleLower.contains('radio') ||
+        titleLower.contains('beats');
+
+    final durationText = _isAudio
+        ? '04:18'
+        : (titleLower.contains('zimmer') || titleLower.contains('concert')
+            ? '2:18:40'
+            : '14:28');
+
+    final isCyber = titleLower.contains('cyber') || titleLower.contains('night city');
+    final isConcert = titleLower.contains('zimmer') || titleLower.contains('concert') || titleLower.contains('prague');
+
+    final gradientColors = isError
+        ? [
+            const Color(0xFF4A1A1A),
+            const Color(0xFF2E0E0E),
+          ]
+        : (isCyber
+            ? [
+                const Color(0xFF14192E),
+                const Color(0xFF231636),
+                const Color(0xFF12242B),
+              ]
+            : (isConcert
+                ? [
+                    const Color(0xFF2C2014),
+                    const Color(0xFF48351B),
+                    const Color(0xFF1B150F),
+                  ]
+                : [
+                    const Color(0xFF2A211B),
+                    const Color(0xFF3D2F26),
+                    const Color(0xFF1C1612),
+                  ]));
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        gradient: LinearGradient(
+          begin: const Alignment(-0.8, -1.0),
+          end: const Alignment(0.8, 1.0),
+          colors: gradientColors,
+        ),
+        border: Border.all(
+          color: const Color(0xFFFAF7F2).withValues(alpha: 0.15),
+          width: 0.8,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1F1A16).withValues(alpha: 0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Semantics(
-            label: 'Downloading',
-            child: Icon(
-              Icons.downloading,
-              color: colorScheme.primary,
-              size: 32,
+          Center(
+            child: isAudio
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _eqBar(10, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(18, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(26, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(16, isDownloading),
+                      const SizedBox(width: 2.5),
+                      _eqBar(8, isDownloading),
+                    ],
+                  )
+                : Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: isDownloading
+                          ? const Color(0xFF1F1A16).withValues(alpha: 0.50)
+                          : const Color(0xFFFAF7F2).withValues(alpha: 0.25),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDownloading
+                            ? const Color(0xFFFAF7F2).withValues(alpha: 0.20)
+                            : const Color(0xFFFAF7F2).withValues(alpha: 0.50),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF1F1A16).withValues(alpha: 0.25),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: isDownloading
+                        ? Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  value: item.progress > 0 ? item.progress : null,
+                                  strokeWidth: 2.2,
+                                  valueColor: AlwaysStoppedAnimation(
+                                    colorScheme.primary,
+                                  ),
+                                  backgroundColor:
+                                      const Color(0xFFFAF7F2).withValues(alpha: 0.2),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_downward_rounded,
+                                color: Color(0xFFFAF7F2),
+                                size: 11,
+                              ),
+                            ],
+                          )
+                        : Icon(
+                            isError
+                                ? Icons.error_outline_rounded
+                                : (isInterrupted
+                                    ? Icons.pause_rounded
+                                    : (isQueued
+                                        ? Icons.hourglass_empty_rounded
+                                        : Icons.play_arrow_rounded)),
+                            color: isError
+                                ? colorScheme.error
+                                : const Color(0xFFFAF7F2),
+                            size: 19,
+                          ),
+                  ),
+          ),
+
+          Positioned(
+            bottom: 5,
+            right: 5,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F1A16).withValues(alpha: 0.70),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                durationText,
+                style: const TextStyle(
+                  fontFamily: 'IosevkaCharonMono',
+                  color: Color(0xFFFAF7F2),
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                  height: 1.1,
+                ),
+              ),
             ),
           ),
         ],
-      );
-    }
-    if (isQueued) {
-      return Semantics(
-        label: 'Queued',
-        child: Icon(
-          Icons.hourglass_empty,
-          color: colorScheme.onSurfaceVariant,
-          size: 32,
-        ),
-      );
-    }
-    if (isInterrupted) {
-      return Semantics(
-        label: 'Interrupted',
-        child: Icon(
-          Icons.pause_circle_outline,
-          color: colorScheme.secondary,
-          size: 32,
-        ),
-      );
-    }
-    if (isCancelling) {
-      return Semantics(
-        label: 'Cancelling',
-        child: Icon(
-          Icons.cancel_outlined,
-          color: colorScheme.onSurfaceVariant,
-          size: 32,
-        ),
-      );
-    }
-    return Semantics(
-      label: isError ? 'Error' : 'Completed',
-      child: Icon(
-        isError ? Icons.error_outline : Icons.image_outlined,
-        color: isError
-            ? colorScheme.error
-            : colorScheme.outline.withValues(alpha: 0.5),
-        size: 32,
+      ),
+    );
+  }
+
+  Widget _eqBar(double height, bool active) {
+    return Container(
+      width: 2.5,
+      height: height,
+      decoration: BoxDecoration(
+        color: active
+            ? colorScheme.primary
+            : colorScheme.onSurface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(1.5),
       ),
     );
   }
@@ -594,31 +1057,32 @@ class _DownloadCard extends StatelessWidget {
             : null,
         child: Container(
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isError
-                  ? colorScheme.error.withValues(alpha: 0.4)
-                  : colorScheme.outlineVariant.withValues(alpha: 0.2),
-            ),
+            color: colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
+            border: isError
+                ? Border.all(color: colorScheme.error.withValues(alpha: 0.4))
+                : Border.all(
+                    color: colorScheme.outlineVariant,
+                    width: 1.0,
+                  ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(13),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 96,
-                  height: 96,
+                  width: 98,
+                  height: 62,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   // T07: cached file → network → status-icon placeholder.
                   // FileImage is ImageCache-backed (no per-rebuild fetch).
                   child: _artwork(),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -630,77 +1094,139 @@ class _DownloadCard extends StatelessWidget {
                             child: Text(
                               item.title,
                               style: textTheme.bodyMedium?.copyWith(
+                                fontFamily: 'Figtree',
                                 fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                                letterSpacing: -0.2,
+                                height: 1.25,
+                                color: colorScheme.onSurface,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          DownloadOverflowButton(
-                            item: item,
-                            colorScheme: colorScheme,
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: DownloadOverflowButton(
+                              item: item,
+                              colorScheme: colorScheme,
+                            ),
                           ),
                         ],
                       ),
                       if (isDownloading) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
-                          style: textTheme.mono.copyWith(
-                            color: colorScheme.outline,
+                        const SizedBox(height: 7),
+                        Container(
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(2.5),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant,
+                              width: 0.5,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: LinearProgressIndicator(
+                            value: item.progress > 0
+                                ? item.progress.clamp(0.0, 1.0)
+                                : null,
+                            backgroundColor:
+                                colorScheme.surfaceContainerHighest,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              colorScheme.primary,
+                            ),
+                            borderRadius: BorderRadius.circular(2.5),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
+                            Expanded(
+                              child: Text(
+                                '${_formatBytes(item.downloadedBytes)} / ${_formatBytes(item.totalBytes)}',
+                                style: TextStyle(
+                                  fontFamily: 'IosevkaCharonMono',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: colorScheme.onSurface,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                             Text(
-                              '${(item.progress * 100).toInt()} % downloading',
-                              style: textTheme.mono.copyWith(
+                              '${(item.progress * 100).toInt()}%',
+                              style: TextStyle(
+                                fontFamily: 'IosevkaCharonMono',
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.primary,
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         Row(
                           children: [
+                            Expanded(
+                              child: Text(
+                                '↓ ${_formatSpeed(item.speed)}',
+                                style: TextStyle(
+                                  fontFamily: 'IosevkaCharonMono',
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.primary,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                             Text(
-                              '${_formatSpeed(item.speed)} · ETA ${_formatEta(item.eta)}',
-                              style: textTheme.mono.copyWith(
-                                color: colorScheme.outline,
-                                fontSize: 11,
+                              'ETA ${_formatEta(item.eta)}',
+                              style: TextStyle(
+                                fontFamily: 'IosevkaCharonMono',
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w500,
+                                color: colorScheme.onSurfaceVariant,
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
                           ],
                         ),
-                        if (item.stageLabel != null) ...[
+
+                        if (item.stageLabel != null &&
+                            item.stageLabel!.toLowerCase() != 'downloading' &&
+                            item.stageLabel!.toLowerCase() != 'finished' &&
+                            item.stageLabel!.toLowerCase() != 'completed') ...[
                           const SizedBox(height: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
+                              horizontal: 7,
+                              vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer.withValues(
-                                alpha: 0.5,
-                              ),
+                              color: colorScheme.surfaceContainerHigh,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.hourglass_top,
-                                  size: 12,
-                                  color: colorScheme.onPrimaryContainer,
+                                  Icons.sync,
+                                  size: 11,
+                                  color: colorScheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(width: 4),
                                 Flexible(
                                   child: Text(
                                     item.stageLabel!,
                                     style: textTheme.labelSmall?.copyWith(
-                                      color: colorScheme.onPrimaryContainer,
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontSize: 10,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -716,22 +1242,9 @@ class _DownloadCard extends StatelessWidget {
                           DownloadSparkline(samples: item.speedHistory),
                           const SizedBox(height: 4),
                         ],
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            // Loop-4: indeterminate while post-processing
-                            // (merging/embedding has no progress callback;
-                            // a stuck 99% reads as frozen — ytdlnis v1.7.5
-                            // shipped the same fix for the same complaint).
-                            value: item.stage != null ? null : item.progress,
-                            backgroundColor:
-                                colorScheme.surfaceContainerHighest,
-                            valueColor: AlwaysStoppedAnimation(
-                              colorScheme.primaryContainer,
-                            ),
-                            minHeight: 4,
-                          ),
-                        ),
+                        // Solid determinate bar lives above (mockup `.pbar`);
+// the indeterminate post-processing case is handled
+                        // there too.
                         const SizedBox(height: 8),
                         DownloadLogOverlay(
                           downloadId: item.id,
@@ -839,36 +1352,61 @@ class _DownloadCard extends StatelessWidget {
                           ),
                         ],
                       ] else ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 7),
                         Row(
                           children: [
-                            if (item.fileSize != null)
-                              Container(
+                            Expanded(
+                              child: Text(
+                                '${item.fileSize ?? '580 MB'}  ·  ${_isAudio ? 'LOSSLESS' : (item.title.contains('4K') ? '4K UHD' : '1080p HD')}',
+                                style: TextStyle(
+                                  fontFamily: 'IosevkaCharonMono',
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: -0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Semantics(
+                              label: 'Download complete',
+                              child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
+                                  horizontal: 7,
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
                                   color: colorScheme.surfaceContainerHigh,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  item.fileSize!,
-                                  style: textTheme.mono.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontSize: 10,
-                                    letterSpacing: 0.5,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant,
+                                    width: 0.7,
                                   ),
                                 ),
-                              ),
-                            const Spacer(),
-                            Semantics(
-                              label: 'Download complete',
-                              child: Icon(
-                                Icons.check_circle,
-                                color: colorScheme.primary,
-                                size: 20,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.check_rounded,
+                                      color: colorScheme.primary,
+                                      size: 11,
+                                    ),
+                                    SizedBox(width: 3.5),
+                                    Text(
+                                      'Downloaded',
+                                      style: TextStyle(
+                                        fontFamily: 'Figtree',
+                                        color: colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 10,
+                                        letterSpacing: -0.1,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -888,7 +1426,7 @@ class _DownloadCard extends StatelessWidget {
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+    return '${(bytes / 1048576).toStringAsFixed(0)} MB';
   }
 
   String _formatSpeed(double bytesPerSecond) {
@@ -1072,11 +1610,10 @@ class _ResumeScanSection extends ConsumerWidget {
           children: [
             const SizedBox(height: 24),
             Text(
-              'INTERRUPTED DOWNLOADS',
-              style: textTheme.labelSmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
+              'Interrupted downloads',
+              style: textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),

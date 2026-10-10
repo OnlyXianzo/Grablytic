@@ -4,7 +4,15 @@
 /// the WebView login flow, paste-import, and per-site profile regen.
 /// Mirrors ytdlnis (`cacheDir/cookies.txt`, Netscape, app-private, no
 /// special Android permission) without its merge-dedup bug.
+///
+/// Supports auto-detection of multiple paste formats (Phase 6):
+/// - Netscape/Mozilla cookies.txt (7-tab-field, # Netscape header)
+/// - JSON exports (EditThisCookie, etc.)
+/// - Cookie header strings (`name=value; name2=value2`)
+/// - Base64-encoded variants of any of the above (yt-dlp guides)
 library;
+
+import 'dart:convert';
 
 /// Header stamped on every generated file (ytdlnis-compatible first line
 /// so files stay interchangeable with pasted ytdlnis exports).
@@ -40,8 +48,22 @@ class NetscapeCookie {
       cleanLine = cleanLine.substring('#HttpOnly_'.length);
     }
     final parts = cleanLine.split('\t');
-    if (parts.length < 7) {
+    if (parts.length < 6) {
       throw FormatException('Invalid Netscape cookie line: $line');
+    }
+    if (parts.length == 6) {
+      // Empty value: toLine() produces trailing \t which trim() removes.
+      // Treat 6-field split as valid with empty 7th field.
+      return NetscapeCookie(
+        domain: parts[0],
+        includeSubdomains: parts[1],
+        path: parts[2],
+        secure: parts[3],
+        expiration: parts[4],
+        name: parts[5],
+        value: '',
+        isHttpOnly: isHttpOnly,
+      );
     }
     return NetscapeCookie(
       domain: parts[0],
@@ -62,6 +84,42 @@ class NetscapeCookie {
 
   /// Merge key: one entry per domain+name (last write wins).
   String get mergeKey => '$domain\x00$name';
+}
+
+/// Checks the importer's basic domain syntax, allowing a leading dot and
+/// `#HttpOnly_` prefix. This does not validate DNS labels or public suffixes
+/// and can accept numeric IP addresses.
+bool _isValidCookieDomain(String raw) {
+  if (raw.isEmpty) return false;
+  var d = raw.trim().toLowerCase();
+  if (d.startsWith('#httponly_')) d = d.substring('#httponly_'.length);
+  if (d.startsWith('.')) d = d.substring(1);
+  if (d.isEmpty || !d.contains('.')) return false;
+  if (!RegExp(r'^[a-z0-9.-]+$').hasMatch(d)) return false;
+  if (d.startsWith('-') || d.endsWith('-') || d.contains('..')) return false;
+  // Reject public-suffix-only or IP
+  if (d == 'com' || d == 'net' || d == 'org') return false;
+  return true;
+}
+
+/// Classifies domains for the unrelated-cookie count; an empty [urlHost]
+/// accepts all domains. Matching is case-insensitive and accepts either
+/// domain as a subdomain of the other. Hosts containing `youtube`, `youtu.be`,
+/// or `google` also accept the listed Google/YouTube domains and subdomains.
+//  - exact match, subdomain, or sibling google/youtube cluster.
+bool _isDomainRelatedToUrl(String cookieDomain, String urlHost) {
+  if (urlHost.isEmpty) return true; // no URL → allow all (user pasted without site)
+  var cd = cookieDomain.toLowerCase();
+  if (cd.startsWith('#httponly_')) cd = cd.substring('#httponly_'.length);
+  if (cd.startsWith('.')) cd = cd.substring(1);
+  final host = urlHost.toLowerCase();
+  if (cd == host) return true;
+  if (host.endsWith('.$cd') || cd.endsWith('.$host')) return true;
+  // Google cluster that youtube legitimately needs (accounts.google.com etc.)
+  const googleCluster = {'google.com', 'accounts.google.com', 'googleapis.com', 'gstatic.com', 'ggpht.com', 'youtube.com', 'youtu.be', 'ytimg.com', 'doubleclick.net'};
+  if ((host.contains('youtube') || host.contains('youtu.be')) && googleCluster.any((g) => cd == g || cd.endsWith('.$g'))) return true;
+  if ((host.contains('google')) && googleCluster.any((g) => cd == g || cd.endsWith('.$g'))) return true;
+  return false;
 }
 
 /// Parse valid Netscape data lines out of pasted text (header lines and
@@ -126,15 +184,237 @@ String? domainForUrl(String siteUrl) {
   return host.startsWith('.') ? host : '.$host';
 }
 
+/// Hint describing which format was detected for a paste.
+enum CookieParseFormat { netscape, json, header, base64, unknown }
+
+/// Detects the likely format of [text] without fully parsing.
+/// Used to show a hint (`Expected: Netscape HTTP Cookie File…`) in the UI.
+CookieParseFormat detectCookieFormat(String text) {
+  final t = text.trim();
+  if (t.isEmpty) return CookieParseFormat.unknown;
+  if (t.contains('# Netscape HTTP Cookie File') || t.contains('# HTTP Cookie File')) {
+    return CookieParseFormat.netscape;
+  }
+  final b64 = _tryBase64Decode(t);
+  if (b64 != null) {
+    final inner = detectCookieFormat(b64);
+    if (inner != CookieParseFormat.unknown) return CookieParseFormat.base64;
+  }
+  if ((t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))) {
+    try {
+      final decoded = jsonDecode(t);
+      if (decoded is List && decoded.isNotEmpty) {
+        // Check if list contains cookie-like objects.
+        if (decoded.first is Map && (decoded.first as Map).containsKey('name')) {
+          return CookieParseFormat.json;
+        }
+      } else if (decoded is Map && decoded.containsKey('cookies')) {
+        return CookieParseFormat.json;
+      }
+    } catch (_) {}
+  }
+  if (parseNetscapeLines(t).isNotEmpty) return CookieParseFormat.netscape;
+  if (t.contains('=') && (t.contains(';') || t.contains('\t'))) {
+    // Header-like or single pair.
+    return CookieParseFormat.header;
+  }
+  if (t.contains('=') && !t.contains('\t')) return CookieParseFormat.header;
+  return CookieParseFormat.unknown;
+}
+
+/// Human-readable hint for the expected format (yt-dlp supports only Netscape,
+/// but we auto-convert the others).
+String cookieFormatHint(CookieParseFormat fmt) {
+  switch (fmt) {
+    case CookieParseFormat.netscape:
+      return 'Detected: Netscape cookies.txt — will import directly.';
+    case CookieParseFormat.json:
+      return 'Detected: JSON cookies — will convert to Netscape format.';
+    case CookieParseFormat.header:
+      return 'Detected: Cookie header — will convert to Netscape format.';
+    case CookieParseFormat.base64:
+      return 'Detected: Base64-encoded cookies — will decode and convert.';
+    case CookieParseFormat.unknown:
+      return 'Expected: Netscape HTTP Cookie File (# Netscape HTTP Cookie File) or Cookie header (name=value; ...) or JSON export. Paste any — auto-detected.';
+  }
+}
+
+/// Decodes standard or URL-safe Base64 only when the UTF-8 result looks like
+/// cookie text. After whitespace removal, input must be at least 24 characters
+/// and a multiple of four; missing padding is not added. Returns null for
+/// rejected input or decoding errors.
+String? _tryBase64Decode(String text) {
+  final s = text.replaceAll(RegExp(r'\s'), '');
+  if (s.length < 24 || s.length % 4 != 0) return null;
+  if (!RegExp(r'^[A-Za-z0-9+/=_-]+$').hasMatch(s)) return null;
+  var padded = s.replaceAll('-', '+').replaceAll('_', '/');
+  try {
+    final bytes = base64Decode(padded);
+    final decoded = utf8.decode(bytes);
+    if (decoded.contains('\t') || decoded.contains('=') || decoded.startsWith('[') || decoded.startsWith('{') || decoded.contains('# Netscape')) {
+      return decoded;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/// Parse JSON cookie exports (EditThisCookie, etc.) into Netscape lines.
+/// Uses [siteUrl] for missing domains, falling back to `.example.com` for
+/// array entries when the URL is unusable; simple maps require a usable URL.
+/// Expiration values are Unix seconds, with a ten-year fallback when absent
+/// or unrecognized. Skips entries without names and returns an empty list if
+/// decoding or conversion throws. Domain filtering is left to the caller.
+/// Supports:
+//  - [{"domain":".example.com","name":"SID","value":"...","path":"/","secure":true, "expirationDate":...}, ...]
+//  - {"cookies": [...]}
+//  - {"SID":"value", ...}  (simple map fallback via siteUrl domain)
+List<String> _parseJsonCookiesToLines(String text, String siteUrl) {
+  final t = text.trim();
+  if (t.isEmpty) return [];
+  if (!(t.startsWith('[') || t.startsWith('{'))) return [];
+  try {
+    final decoded = jsonDecode(t);
+    final List<dynamic> list;
+    if (decoded is List) {
+      list = decoded;
+    } else if (decoded is Map && decoded['cookies'] is List) {
+      list = decoded['cookies'] as List;
+    } else if (decoded is Map) {
+      // Try simple name->value map fallback.
+      final domain = domainForUrl(siteUrl);
+      if (domain == null) return [];
+      final expiry = (DateTime.now().millisecondsSinceEpoch ~/ 1000) + 10 * 365 * 24 * 60 * 60;
+      final out = <String>[];
+      for (final entry in decoded.entries) {
+        final name = entry.key.toString().trim();
+        final value = entry.value.toString().trim();
+        if (name.isEmpty || value.isEmpty) continue;
+        out.add(NetscapeCookie(
+          domain: domain,
+          includeSubdomains: 'TRUE',
+          path: '/',
+          secure: 'TRUE',
+          expiration: expiry.toString(),
+          name: name,
+          value: value,
+        ).toLine());
+      }
+      return out;
+    } else {
+      return [];
+    }
+
+    final domainFallback = domainForUrl(siteUrl);
+    final expiryFallback = (DateTime.now().millisecondsSinceEpoch ~/ 1000) + 10 * 365 * 24 * 60 * 60;
+    final out = <String>[];
+    for (final item in list) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final name = (map['name'] ?? map['key'] ?? '').toString().trim();
+      final value = (map['value'] ?? '').toString().trim();
+      if (name.isEmpty) continue;
+      var domain = (map['domain'] ?? map['host'] ?? '').toString().trim();
+      if (domain.isEmpty) domain = domainFallback ?? '.example.com';
+      if (!domain.startsWith('.')) domain = '.$domain';
+      final path = (map['path'] ?? '/').toString();
+      final secure = (map['secure'] == true || map['secure'] == 'TRUE') ? 'TRUE' : 'FALSE';
+      final includeSub = (map['hostOnly'] == false || (map['domain'] != null && map['domain'].toString().startsWith('.'))) ? 'TRUE' : 'FALSE';
+      String expiryStr;
+      final exp = map['expirationDate'] ?? map['expires'] ?? map['expiry'] ?? map['expiration'];
+      if (exp is num) {
+        expiryStr = exp.toInt().toString();
+      } else if (exp is String && int.tryParse(exp) != null) {
+        expiryStr = exp;
+      } else {
+        expiryStr = expiryFallback.toString();
+      }
+      final isHttpOnly = map['httpOnly'] == true || map['httponly'] == true;
+      out.add(NetscapeCookie(
+        domain: domain,
+        includeSubdomains: includeSub,
+        path: path,
+        secure: secure,
+        expiration: expiryStr,
+        name: name,
+        value: value,
+        isHttpOnly: isHttpOnly,
+      ).toLine());
+    }
+    return out;
+  } catch (_) {
+    return [];
+  }
+}
+
+/// Drops unparseable lines and domains rejected by [_isValidCookieDomain],
+/// preserving order and duplicates. Unrelated domains are retained; when
+/// [urlHost] is supplied, their count replaces [lastCookieUnrelatedCount].
+/// Without [urlHost], the count is reset to zero. Per-line errors are skipped.
+List<String> _filterValidNetscapeLines(List<String> lines, {String? urlHost}) {
+  final out = <String>[];
+  var droppedInvalid = 0;
+  var droppedUnrelated = 0;
+  for (final l in lines) {
+    try {
+      final c = NetscapeCookie.fromLine(l);
+      if (!_isValidCookieDomain(c.domain)) {
+        droppedInvalid++;
+        continue;
+      }
+      if (urlHost != null && !_isDomainRelatedToUrl(c.domain, urlHost)) {
+        // Keep but warn — do not silently drop google.com when pasting for youtube.
+        // Only drop if domain is clearly unrelated *and* looks like evil injection:
+        // we keep it but count as unrelated for UI hint. The caller can decide to
+        // drop after showing a dialog; here we keep to avoid breaking youtube cluster
+        // but the warning is surfaced via _lastUnrelatedDomains.
+        droppedUnrelated++;
+      }
+      out.add(c.toLine());
+    } catch (_) {
+      droppedInvalid++;
+    }
+  }
+  if (droppedInvalid > 0) {
+    // AppLogger not available in pure helper; caller logs via cookieFormatHint.
+  }
+  _lastUnrelatedCount = droppedUnrelated;
+  return out;
+}
+
+int _lastUnrelatedCount = 0;
+int get lastCookieUnrelatedCount => _lastUnrelatedCount;
+
 /// Parse pasted cookie text into Netscape data lines. Accepts:
-/// (a) full/partial Netscape files (with or without the header), and
+/// (a) full/partial Netscape files (with or without the header),
 /// (b) raw `Cookie:` header strings (`name=value; name2=value2`) using
-/// [siteUrl] for the domain. Returns empty when nothing parses.
+/// [siteUrl] for the domain,
+/// (c) JSON exports (EditThisCookie array) — auto-converted,
+/// (d) Base64-encoded variants of any of the above.
+/// Returns empty when nothing parses.
+///
+/// Netscape and JSON imports drop malformed domains, retain duplicates and
+/// unrelated domains, and update [lastCookieUnrelatedCount]. Header imports
+/// require a usable [siteUrl], use `/`, allow subdomains, and expire in ten
+/// years; they leave that count unchanged. JSON also accepts a `cookies` list
+/// or a name/value map. Decode failures fall through to the remaining formats.
 List<String> parsePastedCookies(String text, String siteUrl) {
+  final urlHost = domainForUrl(siteUrl)?.replaceFirst(RegExp(r'^\.'), '') ?? siteUrl.trim().toLowerCase();
+  // 1. Try base64 wrapper first (yt-dlp guides sometimes paste base64).
+  final b64 = _tryBase64Decode(text.trim());
+  if (b64 != null) {
+    final inner = parsePastedCookies(b64, siteUrl);
+    if (inner.isNotEmpty) return inner;
+  }
+  // 2. Direct Netscape.
   final netscape = parseNetscapeLines(text);
   if (netscape.isNotEmpty) {
-    return netscape.map((c) => c.toLine()).toList();
+    final lines = netscape.map((c) => c.toLine()).toList();
+    return _filterValidNetscapeLines(lines, urlHost: urlHost);
   }
+  // 3. Try JSON (EditThisCookie, etc.).
+  final jsonLines = _parseJsonCookiesToLines(text, siteUrl);
+  if (jsonLines.isNotEmpty) return _filterValidNetscapeLines(jsonLines, urlHost: urlHost);
+
   final domain = domainForUrl(siteUrl);
   if (domain == null) return [];
   final out = <String>[];

@@ -73,8 +73,8 @@ void main() {
 
       expect(find.text('Shared link'), findsOneWidget);
       expect(find.textContaining('youtube.com'), findsOneWidget);
-      final cta = tester.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Choose quality & download'),
+      final cta = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Choose quality & download'),
       );
       expect(cta.onPressed, isNotNull);
       expect(find.text('Not now'), findsOneWidget);
@@ -131,8 +131,8 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('Setting up the engine'), findsOneWidget);
-      final cta = tester.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Choose quality & download'),
+      final cta = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Choose quality & download'),
       );
       expect(cta.onPressed, isNull);
     });

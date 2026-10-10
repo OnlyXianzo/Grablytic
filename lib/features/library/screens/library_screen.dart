@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
@@ -23,6 +24,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   double _fabScale = 0.0;
+
+  /// Local Videos-tab filters (presentation only — no provider changes):
+  /// free-text query matched against row titles, plus status chip filter.
+  /// 'all' | 'completed' | 'failed' | 'progress'(=pending).
+  String _searchQuery = '';
+  String _statusFilter = 'all';
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -50,6 +58,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   void dispose() {
     _tabController.animation?.removeListener(_syncFabScale);
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -130,7 +139,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   Text(
                     'Library',
                     style: textTheme.headlineSmall?.copyWith(
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -143,28 +152,45 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
             ),
-            // Tabs
-            TabBar(
-              controller: _tabController,
-              indicatorColor: colorScheme.primary,
-              labelColor: colorScheme.primary,
-              unselectedLabelColor: colorScheme.onSurfaceVariant,
-              labelStyle: textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.bold,
+            // Old-style underline tabs (user feedback: revert pill SegTabs).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: colorScheme.primary,
+                unselectedLabelColor: colorScheme.onSurfaceVariant,
+                indicatorColor: colorScheme.primary,
+                indicatorWeight: 3,
+                dividerColor: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                labelStyle: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                unselectedLabelStyle: textTheme.titleMedium,
+                tabs: const [
+                  Tab(text: 'Videos'),
+                  Tab(text: 'Playlists'),
+                  Tab(text: 'History'),
+                ],
+                onTap: (index) => _tabController.animateTo(index),
               ),
-              unselectedLabelStyle: textTheme.labelLarge,
-              tabs: const [
-                Tab(text: 'Videos'),
-                Tab(text: 'Playlists'),
-                Tab(text: 'History'),
-              ],
             ),
             // Content
+            // Videos-tab filter bar (search + status chips, mockup `.search`
+            // + `.chip`): local state only, filters the real section lists.
+            if (_tabController.index == 0)
+              _buildVideosFilter(colorScheme, textTheme),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildLibraryContent(sections, colorScheme, textTheme, settings.useGridView),
+                  _buildLibraryContent(
+                    sections,
+                    colorScheme,
+                    textTheme,
+                    settings.useGridView,
+                    _searchQuery,
+                    _statusFilter,
+                  ),
                   _buildPlaylistsTab(playlists, colorScheme, textTheme, settings.useGridView),
                   DownloadHistoryScreen(useGridView: settings.useGridView),
                 ],
@@ -176,25 +202,135 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
+  /// Videos-tab search + status chips (unified with History style).
+  Widget _buildVideosFilter(ColorScheme colorScheme, TextTheme textTheme) {
+    const chips = [
+      ('all', 'All'),
+      ('completed', 'Completed'),
+      ('failed', 'Failed'),
+      ('progress', 'In Progress'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            label: 'Search videos',
+            child: TextField(
+              controller: _searchController,
+              style: textTheme.bodyMedium,
+              decoration: InputDecoration(
+                hintText: 'Search by title or URL...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerLow,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              onChanged: (v) =>
+                  setState(() => _searchQuery = v.trim().toLowerCase()),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final (value, label) in chips)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _VideosFilterChip(
+                      label: label,
+                      selected: _statusFilter == value,
+                      colorScheme: colorScheme,
+                      textTheme: textTheme,
+                      onSelected: () =>
+                          setState(() => _statusFilter = value),
+                    ),
+                  ),
+                // Trailing breathing room so the last chip ("In Progress")
+                // never sits half-clipped at the scroll edge on-device.
+                const SizedBox(width: 12),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLibraryContent(
     DownloadSections sections,
     ColorScheme colorScheme,
     TextTheme textTheme,
     bool useGridView,
+    String query,
+    String statusFilter,
   ) {
-    final pending = sections.pendingIds;
-    final failed = sections.failedIds;
-    final completed = sections.completedIds;
+    // Chips pick real sections: progress=pending (mockup "In progress").
+    final showPending = statusFilter == 'all' || statusFilter == 'progress';
+    final showFailed = statusFilter == 'all' || statusFilter == 'failed';
+    final showCompleted =
+        statusFilter == 'all' || statusFilter == 'completed';
+    final pending = showPending ? sections.pendingIds : const <String>[];
+    final failed = showFailed ? sections.failedIds : const <String>[];
+    final completed =
+        showCompleted ? sections.completedIds : const <String>[];
 
     if (sections.allIds.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.only(top: 60),
-          child: Text(
-            'No downloads yet',
-            style: textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.primary.withValues(alpha: 0.08),
+                ),
+                child: Icon(
+                  Icons.video_library_outlined,
+                  size: 36,
+                  color: colorScheme.primary.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No downloads yet',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Your completed and ongoing downloads will appear here.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -203,8 +339,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: useGridView
-          ? _buildGridView(completed, pending, failed, colorScheme, textTheme)
-          : _buildListView(completed, pending, failed, colorScheme, textTheme),
+          ? _buildGridView(
+              completed, pending, failed, colorScheme, textTheme, query)
+          : _buildListView(
+              completed, pending, failed, colorScheme, textTheme, query),
     );
   }
 
@@ -214,6 +352,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     List<String> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
+    String query,
   ) {
     // Lazily-built slivers: the old eager ListView(children:) constructed
     // every row (thumbnails, progress painters) on each frame — visible
@@ -221,13 +360,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     Widget sectionHeader(String label, Color color) => SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Text(
-              label,
-              style: textTheme.labelSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -238,7 +390,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       slivers: [
         const SliverToBoxAdapter(child: SizedBox(height: 16)),
         if (pending.isNotEmpty) ...[
-          sectionHeader('PENDING', colorScheme.primary),
+          sectionHeader('Pending downloads', colorScheme.primary),
           SliverList.builder(
             itemCount: pending.length,
             itemBuilder: (context, i) => Padding(
@@ -247,13 +399,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 id: pending[i],
                 colorScheme: colorScheme,
                 isDownloading: true,
+                query: query,
               ),
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],
         if (failed.isNotEmpty) ...[
-          sectionHeader('FAILED', colorScheme.error),
+          sectionHeader('Failed downloads', colorScheme.error),
           SliverList.builder(
             itemCount: failed.length,
             itemBuilder: (context, i) => Padding(
@@ -262,13 +415,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 id: failed[i],
                 colorScheme: colorScheme,
                 isError: true,
+                query: query,
               ),
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],
         if (completed.isNotEmpty) ...[
-          sectionHeader('DOWNLOADED', colorScheme.primary),
+          sectionHeader('Downloaded', colorScheme.primary),
           SliverList.builder(
             itemCount: completed.length,
             itemBuilder: (context, i) => Padding(
@@ -277,6 +431,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 id: completed[i],
                 colorScheme: colorScheme,
                 isDownloading: false,
+                query: query,
               ),
             ),
           ),
@@ -292,6 +447,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     List<String> failed,
     ColorScheme colorScheme,
     TextTheme textTheme,
+    String query,
   ) {
     final all = [...pending, ...failed, ...completed];
     // Flags recovered from section ranges (same partition as _buildListView).
@@ -315,6 +471,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           textTheme: textTheme,
           isDownloading: rangeIsDownloading(index),
           isError: rangeIsError(index),
+          query: query,
         );
       },
     );
@@ -328,34 +485,58 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   ]) {
     if (playlists.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Semantics(
-              label: 'No playlists',
-              child: Icon(
-                Icons.playlist_add,
-                size: 64,
-                color: colorScheme.outline.withValues(alpha: 0.5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.primary.withValues(alpha: 0.08),
+                ),
+                child: Semantics(
+                  label: 'No playlists',
+                  child: Icon(
+                    Icons.playlist_add,
+                    size: 36,
+                    color: colorScheme.primary.withValues(alpha: 0.7),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No playlists yet',
-              style: textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+              const SizedBox(height: 16),
+              Text(
+                'No playlists yet',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _showCreatePlaylistDialog(context, ref, colorScheme, textTheme),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
+              const SizedBox(height: 6),
+              Text(
+                'Group your favorite downloads into custom playlists for easy playback.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
-              child: const Text('Create Playlist'),
-            ),
-          ],
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => _showCreatePlaylistDialog(context, ref, colorScheme, textTheme),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Create Playlist'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -378,13 +559,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             elevation: 0,
             color: colorScheme.surfaceContainerLow,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               side: BorderSide(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                color: colorScheme.outlineVariant.withValues(alpha: 0.25),
               ),
             ),
             child: InkWell(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -417,7 +598,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     Text(
                       '${playlist.downloadIds.length} items',
                       style: textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant),
+                        color: colorScheme.onSurfaceVariant,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Semantics(
@@ -443,9 +626,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           elevation: 0,
           color: colorScheme.surfaceContainerLow,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             side: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              color: colorScheme.outlineVariant.withValues(alpha: 0.25),
             ),
           ),
           child: ListTile(
@@ -462,7 +645,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
                 '${playlist.downloadIds.length} items',
-                style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                style: textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ),
             trailing: Semantics(
@@ -542,12 +728,16 @@ class _LibraryGridCard extends ConsumerWidget {
   final bool isDownloading;
   final bool isError;
 
+  /// Free-text filter (lowercased); rows whose title doesn't match hide.
+  final String query;
+
   const _LibraryGridCard({
     required this.id,
     required this.colorScheme,
     required this.textTheme,
     this.isDownloading = false,
     this.isError = false,
+    this.query = '',
   });
 
   @override
@@ -555,6 +745,10 @@ class _LibraryGridCard extends ConsumerWidget {
     // Own-item subscription (Loop-3): rebuilds only when this item changes.
     final item = ref.watch(downloadItemProvider(id));
     if (item == null) return const SizedBox.shrink();
+    if (query.isNotEmpty &&
+        !item.title.toLowerCase().contains(query)) {
+      return const SizedBox.shrink();
+    }
     final label = isError
         ? '${item.title}, failed'
         : '${item.title}, ${isDownloading ? 'downloading' : 'completed'}';
@@ -565,7 +759,7 @@ class _LibraryGridCard extends ConsumerWidget {
         elevation: 0,
         color: colorScheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(
             color: isError
                 ? colorScheme.error.withValues(alpha: 0.4)
@@ -579,25 +773,9 @@ class _LibraryGridCard extends ConsumerWidget {
             Expanded(
               child: Container(
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: isError
-                      ? LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            colorScheme.errorContainer.withValues(alpha: 0.4),
-                            colorScheme.error.withValues(alpha: 0.15),
-                          ],
-                        )
-                      : LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            colorScheme.primary.withValues(alpha: 0.3),
-                            colorScheme.tertiary.withValues(alpha: 0.3),
-                          ],
-                        ),
-                ),
+                color: isError
+                    ? colorScheme.errorContainer.withValues(alpha: 0.2)
+                    : colorScheme.surfaceContainerHigh,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -642,6 +820,7 @@ class _LibraryGridCard extends ConsumerWidget {
                                     color: colorScheme.primary,
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
+                                    fontFeatures: const [FontFeature.tabularFigures()],
                                   ),
                                 ),
                               ],
@@ -747,6 +926,7 @@ class _LibraryGridCard extends ConsumerWidget {
                               style: textTheme.mono.copyWith(
                                 fontSize: 10,
                                 color: colorScheme.onPrimaryContainer,
+                                fontFeatures: const [FontFeature.tabularFigures()],
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -769,6 +949,7 @@ class _LibraryGridCard extends ConsumerWidget {
                             style: textTheme.mono.copyWith(
                               fontSize: 10,
                               color: colorScheme.onPrimaryContainer,
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                         ),
@@ -791,11 +972,15 @@ class _LibraryItem extends ConsumerWidget {
   final bool isDownloading;
   final bool isError;
 
+  /// Free-text filter (lowercased); rows whose title doesn't match hide.
+  final String query;
+
   const _LibraryItem({
     required this.id,
     required this.colorScheme,
     this.isDownloading = false,
     this.isError = false,
+    this.query = '',
   });
 
   @override
@@ -803,6 +988,10 @@ class _LibraryItem extends ConsumerWidget {
     // Own-item subscription (Loop-3): rebuilds only when this item changes.
     final item = ref.watch(downloadItemProvider(id));
     if (item == null) return const SizedBox.shrink();
+    if (query.isNotEmpty &&
+        !item.title.toLowerCase().contains(query)) {
+      return const SizedBox.shrink();
+    }
     final textTheme = Theme.of(context).textTheme;
 
     final label = isError
@@ -819,14 +1008,14 @@ class _LibraryItem extends ConsumerWidget {
               : CrossAxisAlignment.start,
           children: [
             Container(
-              width: 128,
-              height: 72,
+              width: 92,
+              height: 68,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: isError
                     ? colorScheme.errorContainer.withValues(alpha: 0.2)
                     : colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 border: isError
                     ? Border.all(
                         color: colorScheme.error.withValues(alpha: 0.3),
@@ -967,6 +1156,23 @@ class _LibraryItem extends ConsumerWidget {
                         item: item,
                         colorScheme: colorScheme,
                       ),
+                      // In-row delete (mockup `.acts`): terminal rows only,
+                      // mirroring the overflow menu's guarded confirm flow.
+                      if (!isDownloading)
+                        Semantics(
+                          label: 'Delete file',
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: colorScheme.error,
+                            ),
+                            onPressed: () => _confirmDelete(
+                                context, ref, item),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Delete',
+                          ),
+                        ),
                     ],
                   ),
                   if (isDownloading) ...[
@@ -1020,6 +1226,7 @@ class _LibraryItem extends ConsumerWidget {
                           '${(item.progress * 100).toInt()} % downloading',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.primary,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                         Text(
@@ -1028,6 +1235,7 @@ class _LibraryItem extends ConsumerWidget {
                               : '${_formatBytes(item.downloadedBytes)}/${_formatBytes(item.totalBytes)}',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
@@ -1068,6 +1276,7 @@ class _LibraryItem extends ConsumerWidget {
                           item.completedDate ?? 'Unknown',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1084,6 +1293,7 @@ class _LibraryItem extends ConsumerWidget {
                           item.fileSize ?? '',
                           style: textTheme.mono.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
@@ -1093,6 +1303,107 @@ class _LibraryItem extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Guarded delete mirroring `DownloadOverflowButton`'s delete_file flow:
+  /// terminal rows only (call site), user confirm, same snackbars.
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    DownloadItem item,
+  ) async {
+    final name =
+        item.filePath?.split('/').lastWhere((s) => s.isNotEmpty, orElse: () => '') ?? '';
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text('Delete file?'),
+        content: Text(
+          name.isNotEmpty
+              ? '“$name” will be permanently deleted from disk and removed from history.'
+              : 'The downloaded file will be permanently deleted from disk and removed from history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (go == true && context.mounted) {
+      final ok = await ref
+          .read(downloadProvider.notifier)
+          .deleteFileAndHistory(item.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          styledSnackBar(
+            context,
+            ok ? 'File deleted' : 'Could not delete — try again',
+          ),
+        );
+      }
+    }
+  }
+}
+
+/// History-style filter chip (brown primary when selected).
+class _VideosFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+  final VoidCallback onSelected;
+
+  const _VideosFilterChip({
+    required this.label,
+    required this.selected,
+    required this.colorScheme,
+    required this.textTheme,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: onSelected,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? colorScheme.primary
+                : colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? colorScheme.primary
+                  : colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Text(
+            label,
+            style: textTheme.labelMedium?.copyWith(
+              color: selected
+                  ? colorScheme.onPrimary
+                  : colorScheme.onSurfaceVariant,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
         ),
       ),
     );

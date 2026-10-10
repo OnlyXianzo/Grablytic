@@ -730,3 +730,22 @@ def test_config_schema_validation():
     assert cleaned["container"] == "mp4"
 
 
+def test_aria2c_enabled_without_binary_warns_with_reason():
+    """Silent fallback is undebuggable: enabling aria2c while the native
+    binary is missing/unusable must log a WARN naming the reason, so the
+    'Download config: ... aria2c=no' line is explainable from logs alone."""
+    import queue
+    from grablytic_engine.logger import get_logger
+    q: queue.Queue = queue.Queue()
+    get_logger("grablytic_engine.opts_builder").set_queue(q)
+    opts = build_ydl_opts(config={"aria2c_enabled": True})
+    assert "external_downloader" not in opts
+    messages = []
+    while not q.empty():
+        messages.append(q.get_nowait()["message"])
+    assert any(
+        "aria2c" in m and ("missing" in m or "not executable" in m)
+        for m in messages
+    ), f"expected aria2c-missing WARN, got: {messages}"
+
+

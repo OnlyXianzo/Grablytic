@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/theme/adaptive_logo.dart';
+import '../../../core/widgets/grablytic_components.dart';
+import '../../../core/utils/notification_helper.dart';
+import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 
 /// Contact + repository surface. Tapping opens the page in whatever handles
@@ -28,9 +32,7 @@ class AboutScreen extends ConsumerWidget {
     await Clipboard.setData(ClipboardData(text: target));
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Nothing could open it — copied instead:\n$target'),
-      ),
+      styledSnackBar(context, 'Nothing could open it — copied instead:\n$target'),
     );
   }
 
@@ -40,27 +42,21 @@ class AboutScreen extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('About'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.primary,
-        elevation: 0,
-      ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
           children: [
-            const SizedBox(height: 24),
+            const BackHeader(label: 'Settings'),
+            const SizedBox(height: 8),
             Center(
               child: Column(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      'assets/brand/grablytic_logo.png',
-                      width: 96,
-                      height: 96,
-                      fit: BoxFit.contain,
+                  AdaptiveLogo(
+                    size: 104,
+                    borderRadius:
+                        BorderRadius.all(Radius.circular(30)),
+                    variant: LogoVariant.fromStored(
+                      ref.watch(settingsProvider).logoVariant,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -95,7 +91,7 @@ class AboutScreen extends ConsumerWidget {
               elevation: 0,
               color: colorScheme.surfaceContainerLow,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
                   color: colorScheme.outlineVariant.withValues(alpha: 0.3),
                 ),
@@ -129,7 +125,7 @@ class AboutScreen extends ConsumerWidget {
                         foregroundColor: colorScheme.onPrimary,
                         minimumSize: const Size(double.infinity, 48),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(18),
                         ),
                       ),
                     ),
@@ -141,7 +137,7 @@ class AboutScreen extends ConsumerWidget {
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 48),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(18),
                         ),
                       ),
                     ),

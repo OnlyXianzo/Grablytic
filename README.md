@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="assets/brand/grablytic_logo_circle.png" alt="Grablytic Logo" width="160" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/grablytic_logo_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/brand/grablytic_logo_light.png">
+  <img src="assets/brand/grablytic_logo_light.png" alt="Grablytic Logo" width="160" />
+</picture>
 
 # 🎬 Grablytic
 
@@ -16,6 +20,7 @@ Built with **Flutter** + **Python (yt-dlp)** — one Dart codebase for **Android
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Linux](https://img.shields.io/badge/Linux-Ubuntu_%7C_Fedora_%7C_Debian-FCC624?logo=linux&logoColor=black)](https://www.linux.org)
 [![CI](https://img.shields.io/badge/CI-verify.ymlpassing-brightgreen?logo=githubactions&logoColor=white)](.github/workflows/verify.yml)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/OnlyXianzo/Grablytic?utm_source=oss&utm_medium=github&utm_campaign=OnlyXianzo%2FGrablytic&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://github.com/OnlyXianzo/Grablytic/pulls?q=is%3Apr+is%3Aopen)
 [![Version](https://img.shields.io/badge/version-0.0.1--beta-blue)](pubspec.yaml)
 [![Get it on Obtainium](https://img.shields.io/badge/Get_it_on-Obtainium-1e88e5?logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%7D)
 

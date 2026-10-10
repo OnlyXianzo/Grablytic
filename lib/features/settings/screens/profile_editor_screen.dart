@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/preset_provider.dart';
 
 class ProfileEditorScreen extends ConsumerStatefulWidget {
@@ -127,9 +128,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Quality Ceiling', style: textTheme.bodyLarge),
+                    Text('Quality', style: textTheme.bodyLarge),
                     Semantics(
-                      label: 'Quality Ceiling, currently $_selectedQuality',
+                      label: 'Quality, currently $_selectedQuality',
                       child: DropdownButton<String>(
                         value: _selectedQuality,
                         dropdownColor: colorScheme.surfaceContainerHigh,
@@ -200,9 +201,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Preferred Container', style: textTheme.bodyLarge),
+                  Text('Format', style: textTheme.bodyLarge),
                   Semantics(
-                    label: 'Preferred Container, currently $_selectedContainer',
+                    label: 'Format, currently $_selectedContainer',
                     child: DropdownButton<String>(
                       value: _selectedContainer,
                       dropdownColor: colorScheme.surfaceContainerHigh,
@@ -256,7 +257,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                               .deletePreset(widget.profileId!);
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Preset deleted')),
+                            styledSnackBar(context, 'Preset deleted'),
                           );
                         },
                         style: OutlinedButton.styleFrom(
@@ -278,9 +279,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                         final name = _nameController.text.trim();
                         if (name.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter a preset name'),
-                            ),
+                            styledSnackBar(context, 'Please enter a preset name'),
                           );
                           return;
                         }
@@ -303,9 +302,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
 
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Preset saved successfully'),
-                          ),
+                          styledSnackBar(context, 'Preset saved successfully'),
                         );
                       },
                       style: ElevatedButton.styleFrom(

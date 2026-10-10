@@ -27,7 +27,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Clear analytics?'),
         content: const Text(
           'All locally stored counts and the failed-job list will be deleted.',
@@ -206,7 +206,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: colorScheme.outlineVariant.withValues(alpha: 0.25),
           ),

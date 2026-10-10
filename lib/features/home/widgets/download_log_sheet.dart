@@ -7,6 +7,7 @@ import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../providers/log_provider.dart';
+import '../../../core/utils/notification_helper.dart';
 
 /// Modal bottom sheet displaying logs scoped to an individual download.
 ///
@@ -226,14 +227,14 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
   void _copyAllLogs(List<LogEntry> entries) {
     if (entries.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No logs to copy')),
+        styledSnackBar(context, 'No logs to copy'),
       );
       return;
     }
     final fullText = entries.map((e) => e.formattedLine).join('\n');
     Clipboard.setData(ClipboardData(text: fullText));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied ${entries.length} log lines to clipboard')),
+      styledSnackBar(context, 'Copied ${entries.length} log lines to clipboard'),
     );
   }
 
@@ -295,8 +296,8 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: cs.surfaceContainerLow,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: const [
           BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -2)),
         ],
@@ -306,8 +307,8 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
           // Drag handle
           Center(
             child: Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 6),
-              width: 36,
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 40,
               height: 4,
               decoration: BoxDecoration(
                 color: cs.outlineVariant,
@@ -338,10 +339,10 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                         children: [
                           if (widget.status != null) ...[
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: _statusColor(widget.status, cs).withAlpha(40),
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
                                   color: _statusColor(widget.status, cs).withAlpha(120),
                                   width: 0.8,
@@ -353,6 +354,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: _statusColor(widget.status, cs),
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ),
@@ -363,10 +365,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                               onTap: () {
                                 Clipboard.setData(ClipboardData(text: widget.downloadId));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Download ID copied to clipboard'),
-                                    duration: Duration(seconds: 2),
-                                  ),
+                                  styledSnackBar(context, 'Download ID copied to clipboard'),
                                 );
                               },
                               child: Text(
@@ -375,6 +374,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                                   fontSize: 11,
                                   color: cs.onSurfaceVariant,
                                   decoration: TextDecoration.underline,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -387,9 +387,15 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 18),
-                  tooltip: 'Copy all logs',
-                  onPressed: () => _copyAllLogs(entries),
+                  icon: Icon(
+                    Icons.copy,
+                    size: 18,
+                    color: entries.isNotEmpty
+                        ? null
+                        : cs.onSurface.withValues(alpha: 0.38),
+                  ),
+                  tooltip: entries.isNotEmpty ? 'Copy all logs' : 'No logs to copy',
+                  onPressed: entries.isNotEmpty ? () => _copyAllLogs(entries) : null,
                 ),
                 IconButton(
                   icon: Icon(
@@ -433,7 +439,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                           : null,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     onChanged: (v) => setState(() => _searchQuery = v),
                   ),
@@ -441,6 +447,14 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                 const SizedBox(width: 8),
                 PopupMenuButton<_LogFilter>(
                   tooltip: 'Filter by level',
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: cs.outlineVariant.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  color: cs.surfaceContainerHigh,
+                  elevation: 3,
                   icon: Icon(
                     Icons.filter_list,
                     size: 20,
@@ -448,19 +462,45 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                   ),
                   onSelected: (filter) => setState(() => _selectedFilter = filter),
                   itemBuilder: (ctx) => [
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: _LogFilter.all,
-                      child: Text('ALL LEVELS'),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.done_all,
+                            size: 16,
+                            color: _selectedFilter == _LogFilter.all
+                                ? cs.primary
+                                : cs.outline.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text('ALL LEVELS'),
+                        ],
+                      ),
                     ),
+                    const PopupMenuDivider(),
                     for (final filter in _LogFilter.values.where((f) => f != _LogFilter.all))
                       PopupMenuItem(
                         value: filter,
-                        child: Text(
-                          filter.name.toUpperCase(),
-                          style: TextStyle(
-                            color: _levelFilterColor(filter, cs),
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _levelFilterColor(filter, cs),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              filter.name.toUpperCase(),
+                              style: TextStyle(
+                                color: _levelFilterColor(filter, cs),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
@@ -478,11 +518,25 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.terminal, size: 48, color: cs.outline.withAlpha(120)),
-                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: cs.primary.withValues(alpha: 0.08),
+                              ),
+                              child: Icon(
+                                Icons.terminal_rounded,
+                                size: 36,
+                                color: cs.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
                             Text(
                               'No logs recorded for this download yet',
-                              style: tt.bodyMedium?.copyWith(color: cs.outline),
+                              style: tt.bodyMedium?.copyWith(
+                                color: cs.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -497,22 +551,71 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: Colors.black.withAlpha(220),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: cs.outlineVariant.withAlpha(60)),
                         ),
                         child: Column(
                           children: [
-                            if (entries.length > _maxRenderedRows)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  'Showing last $_maxRenderedRows of ${entries.length} lines — copy all for the full log',
-                                  style: tt.mono.copyWith(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade500,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFFFF5F56),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFFFFBD2E),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFF27C93F),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'CONSOLE',
+                                    style: tt.mono.copyWith(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.1,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    entries.length > _maxRenderedRows
+                                        ? 'Last $_maxRenderedRows of ${entries.length} lines'
+                                        : '${entries.length} lines',
+                                    style: tt.mono.copyWith(
+                                      fontSize: 9.5,
+                                      color: Colors.grey.shade500,
+                                      fontFeatures: const [FontFeature.tabularFigures()],
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                            const Divider(height: 1, color: Colors.white12),
+                            const SizedBox(height: 6),
                             Expanded(
                               child: ListView.builder(
                                 controller: _scrollController,
@@ -553,6 +656,9 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                                           fontSize: 11.5,
                                           height: 1.35,
                                           color: Colors.white70,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures(),
+                                          ],
                                         ),
                                         children: [
                                           TextSpan(

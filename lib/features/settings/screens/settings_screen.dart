@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/search_provider.dart';
 import '../../../providers/engine_status_provider.dart';
@@ -18,15 +19,38 @@ import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
 import 'sponsorblock_settings_screen.dart';
 import 'about_screen.dart';
+import '../../home/screens/link_saver_screen.dart';
 import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
 import '../../../core/utils/offline_link_queue.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Matches the query as a case-insensitive substring of either label;
+  /// an empty query includes every setting.
+  bool _matches(String title, String subtitle) {
+    if (_query.isEmpty) return true;
+    final q = _query.toLowerCase();
+    return title.toLowerCase().contains(q) || subtitle.toLowerCase().contains(q);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -45,137 +69,205 @@ class SettingsScreen extends ConsumerWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              const SizedBox(height: 16),
+              Semantics(
+                label: 'Search settings',
+                child: TextField(
+                  key: const Key('settings_search_field'),
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search settings…',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    filled: true,
+                    fillColor: colorScheme.surfaceContainerLow,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  style: textTheme.bodyMedium,
+                  onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                ),
+              ),
               const SizedBox(height: 24),
               // T14: root is a category list; options live in sub-menus.
-              _SettingNavItem(
-                icon: Icons.tune,
-                title: 'General & Interface',
-                subtitle: 'Auto-start, defaults',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const GeneralSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.security,
-                title: 'Permissions',
-                subtitle: 'Notifications, background',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PermissionsSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.palette_outlined,
-                title: 'Appearance',
-                subtitle: 'Theme, grid view',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AppearanceSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.folder_outlined,
-                title: 'Directories & Storage',
-                subtitle: settings.downloadPath,
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const StorageSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.speed,
-                title: 'Network & Acceleration',
-                subtitle: 'Wi-Fi, turbo, proxy, presets',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const NetworkSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.movie_filter_outlined,
-                title: 'Media & Subtitles',
-                subtitle: 'Subtitles, SponsorBlock, thumbnails',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MediaSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.auto_mode,
-                title: 'Automation & Scheduling',
-                subtitle: 'Schedules, sources, command templates',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AutomationSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.security,
-                title: 'Accounts & Authentication',
-                subtitle: 'Site logins for members-only content',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AccountsSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.inventory_2_outlined,
-                title: 'Packages & Updates',
-                subtitle: settings.updateChannel,
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PackagesSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.info_outline,
-                title: 'System & Diagnostics',
-                subtitle: 'Logs, diagnostics, about',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SystemSettingsScreen(),
-                    ),
-                  );
-                },
+              // Grouped per redesign mockup: Downloads vs App.
+              if (_matches('General', 'Auto-start and defaults') ||
+                  _matches('Storage', settings.downloadPath) ||
+                  _matches('Network and speed', 'Wi-Fi only, turbo, proxy') ||
+                  _matches('Media and subtitles', 'Subtitles, SponsorBlock, thumbnails') ||
+                  _matches('Automation', 'Schedules, sources, command templates'))
+                _SettingsSection(
+                  title: 'Downloads',
+                  icon: Icons.download_outlined,
+                  children: [
+                    if (_matches('General', 'Auto-start and defaults'))
+                      _SettingNavItem(
+                        icon: Icons.tune,
+                        title: 'General',
+                        subtitle: 'Auto-start and defaults',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const GeneralSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Storage', settings.downloadPath))
+                      _SettingNavItem(
+                        icon: Icons.folder_outlined,
+                        title: 'Storage',
+                        subtitle: settings.downloadPath,
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const StorageSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Network and speed', 'Wi-Fi only, turbo, proxy'))
+                      _SettingNavItem(
+                        icon: Icons.speed,
+                        title: 'Network and speed',
+                        subtitle: 'Wi-Fi only, turbo, proxy',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const NetworkSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Media and subtitles', 'Subtitles, SponsorBlock, thumbnails'))
+                      _SettingNavItem(
+                        icon: Icons.movie_filter_outlined,
+                        title: 'Media and subtitles',
+                        subtitle: 'Subtitles, SponsorBlock, thumbnails',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const MediaSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Automation', 'Schedules, sources, command templates'))
+                      _SettingNavItem(
+                        icon: Icons.auto_mode,
+                        title: 'Automation',
+                        subtitle: 'Schedules, sources, command templates',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AutomationSettingsScreen()),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              if (_matches('Appearance', 'Theme and grid view') ||
+                  _matches('Permissions', 'Notifications and background') ||
+                  _matches('Link Saver', 'Saved offline links') ||
+                  _matches('Cookies', 'Site logins for members-only content') ||
+                  _matches('Packages & Updates', settings.updateChannel) ||
+                  _matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                _SettingsSection(
+                  title: 'App',
+                  icon: Icons.apps_outlined,
+                  children: [
+                    if (_matches('Appearance', 'Theme and grid view'))
+                      _SettingNavItem(
+                        icon: Icons.palette_outlined,
+                        title: 'Appearance',
+                        subtitle: 'Theme and grid view',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AppearanceSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Permissions', 'Notifications and background'))
+                      _SettingNavItem(
+                        icon: Icons.shield_outlined,
+                        title: 'Permissions',
+                        subtitle: 'Notifications and background',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PermissionsSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Link Saver', 'Saved offline links'))
+                      _SettingNavItem(
+                        icon: Icons.bookmark_outline,
+                        title: 'Link Saver',
+                        subtitle: 'Saved offline links',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const LinkSaverScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Cookies', 'Site logins for members-only content'))
+                      _SettingNavItem(
+                        icon: Icons.cookie_outlined,
+                        title: 'Cookies',
+                        subtitle: 'Site logins for members-only content',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CookiesScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Packages & Updates', settings.updateChannel))
+                      _SettingNavItem(
+                        icon: Icons.inventory_2_outlined,
+                        title: 'Packages & Updates',
+                        subtitle: settings.updateChannel,
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PackagesSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                      _SettingNavItem(
+                        icon: Icons.info_outline,
+                        title: 'System & Diagnostics',
+                        subtitle: 'Logs, diagnostics, about',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SystemSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                ],
               ),
 
               // (T14: moved to StorageSettingsScreen)
@@ -191,6 +283,27 @@ class SettingsScreen extends ConsumerWidget {
               // (T14: moved to PackagesSettingsScreen)
 
               // (T14: moved to SystemSettingsScreen)
+              if (_query.isNotEmpty &&
+                  !_matches('General', 'Auto-start and defaults') &&
+                  !_matches('Storage', settings.downloadPath) &&
+                  !_matches('Network and speed', 'Wi-Fi only, turbo, proxy') &&
+                  !_matches('Media and subtitles', 'Subtitles, SponsorBlock, thumbnails') &&
+                  !_matches('Automation', 'Schedules, sources, command templates') &&
+                  !_matches('Appearance', 'Theme and grid view') &&
+                  !_matches('Permissions', 'Notifications and background') &&
+                  !_matches('Link Saver', 'Saved offline links') &&
+                  !_matches('Cookies', 'Site logins for members-only content') &&
+                  !_matches('Packages & Updates', settings.updateChannel) &&
+                  !_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'No settings match “$_query”',
+                      style: textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 32),
               // Version badge
               Center(
@@ -264,11 +377,7 @@ class PermissionsSettingsScreen extends ConsumerWidget {
                     if (!context.mounted) return;
                     if (!granted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Notification permission is required for queue reminders',
-                          ),
-                        ),
+                        styledSnackBar(context, 'Notification permission is required for queue reminders'),
                       );
                       return;
                     }
@@ -312,6 +421,13 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 currentTheme: settings.themeMode,
                 onChanged: (mode) =>
                     ref.read(settingsProvider.notifier).setThemeMode(mode),
+                colorScheme: colorScheme,
+              ),
+              _SettingLogoSelector(
+                currentLogo: settings.logoVariant,
+                onChanged: (variant) => ref
+                    .read(settingsProvider.notifier)
+                    .setLogoVariant(variant),
                 colorScheme: colorScheme,
               ),
               _SettingSwitch(
@@ -399,7 +515,7 @@ class StorageSettingsScreen extends ConsumerWidget {
                   } catch (e) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error picking folder: $e')),
+                        styledSnackBar(context, 'Error picking folder: $e'),
                       );
                     }
                   }
@@ -434,7 +550,7 @@ class StorageSettingsScreen extends ConsumerWidget {
                 onTap: () {
                   ref.read(searchProvider.notifier).clear();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Search history cleared')),
+                    styledSnackBar(context, 'Search history cleared'),
                   );
                 },
               ),
@@ -549,7 +665,7 @@ class NetworkSettingsScreen extends ConsumerWidget {
                     context: context,
                     builder: (ctx) => AlertDialog(
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       title: const Text('Proxy server'),
                       content: TextField(
@@ -775,11 +891,7 @@ class AutomationSettingsScreen extends ConsumerWidget {
                     if (!context.mounted) return;
                     if (!granted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Notification permission is required for queue reminders',
-                          ),
-                        ),
+                        styledSnackBar(context, 'Notification permission is required for queue reminders'),
                       );
                       return;
                     }
@@ -826,40 +938,6 @@ class AutomationSettingsScreen extends ConsumerWidget {
   }
 }
 
-class AccountsSettingsScreen extends ConsumerWidget {
-  const AccountsSettingsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Accounts & Authentication')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-        children: [
-          _SettingsSection(
-            title: 'Accounts & Authentication',
-            icon: Icons.security,
-            children: [
-              _SettingNavItem(
-                icon: Icons.cookie_outlined,
-                title: 'Logins for members-only videos',
-                subtitle: 'Site logins for members-only content',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const CookiesScreen()),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class PackagesSettingsScreen extends ConsumerWidget {
   const PackagesSettingsScreen({super.key});
 
@@ -877,9 +955,10 @@ class PackagesSettingsScreen extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 8, bottom: 8),
             child: Text(
               'Packages',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.w600,
+              style: textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
               ),
             ),
           ),
@@ -894,7 +973,7 @@ class PackagesSettingsScreen extends ConsumerWidget {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   title: const Text('Update channel'),
                   content: RadioGroup<String>(
@@ -1037,9 +1116,10 @@ class _SettingsSection extends StatelessWidget {
                 ],
                 Text(
                   title,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
                   ),
                 ),
               ],
@@ -1048,7 +1128,7 @@ class _SettingsSection extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: colorScheme.outlineVariant.withValues(alpha: 0.25),
               ),
@@ -1112,9 +1192,9 @@ class _SettingSwitch extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                  child: Icon(icon, color: colorScheme.primary, size: 20),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1122,7 +1202,10 @@ class _SettingSwitch extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: textTheme.bodyLarge),
+                    Text(title,
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        )),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
@@ -1191,9 +1274,9 @@ class _SettingNavItem extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainer,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                  child: Icon(icon, color: colorScheme.primary, size: 20),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1201,14 +1284,18 @@ class _SettingNavItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: textTheme.bodyLarge),
+                    Text(title,
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        )),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: textTheme.labelSmall?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurfaceVariant,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -1267,9 +1354,9 @@ class _SettingAction extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHigh,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: colorScheme.outline, size: 20),
+                  child: Icon(icon, color: colorScheme.primary, size: 20),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1335,16 +1422,21 @@ class _SettingSelect<T> extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainer,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: colorScheme.outline, size: 20),
+            child: Icon(icon, color: colorScheme.primary, size: 20),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: textTheme.bodyLarge),
+                Text(
+                  title,
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
@@ -1361,6 +1453,10 @@ class _SettingSelect<T> extends StatelessWidget {
             underline: const SizedBox.shrink(),
             onChanged: onChanged,
             dropdownColor: colorScheme.surfaceContainerHigh,
+            style: TextStyle(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
             items: items,
           ),
         ],
@@ -1406,11 +1502,11 @@ class _ConcurrencySlider extends StatelessWidget {
                     height: 40,
                     decoration: BoxDecoration(
                       color: colorScheme.surfaceContainer,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: Icon(
                       Icons.download_outlined,
-                      color: colorScheme.outline,
+                      color: colorScheme.primary,
                       size: 20,
                     ),
                   ),
@@ -1524,9 +1620,9 @@ class _Aria2cChunkSlider extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainer,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(13),
               ),
-              child: Icon(Icons.link, color: colorScheme.outline, size: 20),
+              child: Icon(Icons.link, color: colorScheme.primary, size: 20),
             ),
           ),
           const SizedBox(width: 16),
@@ -1620,11 +1716,11 @@ class _Aria2cSpeedFieldState extends State<_Aria2cSpeedField> {
               height: 40,
               decoration: BoxDecoration(
                 color: widget.colorScheme.surfaceContainer,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(13),
               ),
               child: Icon(
                 Icons.speed,
-                color: widget.colorScheme.outline,
+                color: widget.colorScheme.primary,
                 size: 20,
               ),
             ),
@@ -1713,11 +1809,11 @@ class _SettingThemeSelector extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   Icons.palette_outlined,
-                  color: colorScheme.outline,
+                  color: colorScheme.primary,
                   size: 20,
                 ),
               ),
@@ -1746,6 +1842,10 @@ class _SettingThemeSelector extends StatelessWidget {
                   if (val != null) onChanged(val);
                 },
                 dropdownColor: colorScheme.surfaceContainerHigh,
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
                 items: const [
                   DropdownMenuItem(
                     value: AppThemeMode.system,
@@ -1758,6 +1858,100 @@ class _SettingThemeSelector extends StatelessWidget {
                   DropdownMenuItem(
                     value: AppThemeMode.dark,
                     child: Text('Dark'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// App-logo picker: follow the theme (System) or pin Dark / Light / Legacy.
+/// Mirrors [_SettingThemeSelector] so the two rows behave identically.
+class _SettingLogoSelector extends StatelessWidget {
+  final String currentLogo;
+  final ValueChanged<String> onChanged;
+  final ColorScheme colorScheme;
+
+  const _SettingLogoSelector({
+    required this.currentLogo,
+    required this.onChanged,
+    required this.colorScheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Semantics(
+      label: 'App logo, Choose System, Dark, Light, or Legacy',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Semantics(
+              label: 'App logo',
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  Icons.image_outlined,
+                  color: colorScheme.primary,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('App logo', style: textTheme.bodyLarge),
+                  Text(
+                    'Follow theme, or pin Dark, Light, Legacy',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Semantics(
+              label: 'Logo selection, currently $currentLogo',
+              child: DropdownButton<String>(
+                value: currentLogo,
+                underline: const SizedBox.shrink(),
+                onChanged: (val) {
+                  if (val != null) onChanged(val);
+                },
+                dropdownColor: colorScheme.surfaceContainerHigh,
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'system',
+                    child: Text('System'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'dark',
+                    child: Text('Dark'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'light',
+                    child: Text('Light'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'legacy',
+                    child: Text('Legacy'),
                   ),
                 ],
               ),
@@ -1823,7 +2017,7 @@ class _BackgroundPermissionsSectionState
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Download notifications?'),
         content: const Text(
           'Grablytic shows download progress while downloading and an alert '
@@ -2016,15 +2210,15 @@ class _PackagesSection extends ConsumerWidget {
           ),
           _SettingsBinaryInfo(
             name: 'aria2c',
-            ok: aria2c.ok || Platform.isAndroid,
-            version:
-                aria2c.version ??
-                (Platform.isAndroid ? 'Compiled v1.37.0' : null),
-            source: Platform.isAndroid ? 'bundled' : aria2c.source,
-            detail: Platform.isAndroid
-                ? 'Compiled static native downloader (bundled execution)'
-                : (aria2c.detail ?? 'Multi-connection accelerated downloader'),
-            actionable: !Platform.isAndroid && aria2c.isActionable,
+            // No masking: on Android no binary is bundled (see engine
+            // bootstrap verdict); the entry shows unsupported/pending and
+            // the download log explains why when the toggle is on.
+            ok: aria2c.ok,
+            version: aria2c.version,
+            source: aria2c.source,
+            detail: aria2c.detail ??
+                'Multi-connection accelerated downloader',
+            actionable: aria2c.isActionable,
           ),
           _SettingsBinaryInfo(
             name: 'Deno',
@@ -2041,7 +2235,7 @@ class _PackagesSection extends ConsumerWidget {
         return Container(
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: colorScheme.outlineVariant.withAlpha(40)),
           ),
           padding: const EdgeInsets.all(16),
@@ -2054,7 +2248,7 @@ class _PackagesSection extends ConsumerWidget {
                   Text(
                     'INSTALLED PACKAGES',
                     style: textTheme.labelSmall?.copyWith(
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
@@ -2119,6 +2313,9 @@ class _PackagesSection extends ConsumerWidget {
                                     style: textTheme.mono.copyWith(
                                       color: colorScheme.outline,
                                       fontSize: 11,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
                                     ),
                                   )
                                 else
@@ -2133,6 +2330,9 @@ class _PackagesSection extends ConsumerWidget {
                                           ? colorScheme.tertiary
                                           : colorScheme.outline,
                                       fontSize: 11,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
                                     ),
                                   ),
                               ],
@@ -2281,7 +2481,7 @@ class _PackagesSection extends ConsumerWidget {
                     style: textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -2299,7 +2499,7 @@ class _PackagesSection extends ConsumerWidget {
                   style: textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.2,
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),

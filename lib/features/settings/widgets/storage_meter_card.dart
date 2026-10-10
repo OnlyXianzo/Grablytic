@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/utils/trust_boundary.dart';
@@ -169,7 +170,7 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Delete file?'),
         content: Text(
           '${entry.name} (${formatBytes(entry.sizeBytes)})\n\n'
@@ -196,7 +197,7 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
     setState(() => _deleting = false);
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete that file')),
+        styledSnackBar(context, 'Could not delete that file'),
       );
       return;
     }
@@ -220,10 +221,10 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
                 height: 40,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(Icons.storage_outlined,
-                    color: colorScheme.outline, size: 20),
+                    color: colorScheme.primary, size: 20),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -245,6 +246,9 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
                           subtitle,
                           style: textTheme.labelSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures(),
+                            ],
                           ),
                         );
                       },
@@ -268,8 +272,7 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
             child: Text(
               widget.downloadPath,
               style: textTheme.labelSmall?.copyWith(
-                color: colorScheme.primary,
-                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurfaceVariant,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -321,6 +324,9 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
                             formatBytes(entry.sizeBytes),
                             style: textTheme.labelSmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                             ),
                           ),
                           IconButton(

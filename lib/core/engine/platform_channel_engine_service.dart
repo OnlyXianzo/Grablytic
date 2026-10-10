@@ -559,4 +559,21 @@ class PlatformChannelEngineService implements EngineService {
       });
     } catch (_) {}
   }
+
+  /// Requests a native success notification, discarding the response and
+  /// suppressing channel errors, including a missing native implementation.
+  @override
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  }) async {
+    try {
+      await _channel.invokeMethod('notification/show_success', {
+        'download_id': downloadId,
+        'title': title,
+        'message': message,
+      });
+    } catch (_) {}
+  }
 }

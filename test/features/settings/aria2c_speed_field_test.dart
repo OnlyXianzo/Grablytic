@@ -54,8 +54,8 @@ void main() {
       await tester.pumpWidget(createSubject(container));
       await tester.pumpAndSettle();
 
-      // aria2c controls live in Network & Acceleration now.
-      final netCat = find.text('Network & Acceleration');
+      // aria2c controls live in Network and speed now.
+      final netCat = find.text('Network and speed');
       await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
@@ -100,8 +100,8 @@ void main() {
       await tester.pumpWidget(createSubject(container));
       await tester.pumpAndSettle();
 
-      // aria2c controls live in Network & Acceleration now.
-      final netCat = find.text('Network & Acceleration');
+      // aria2c controls live in Network and speed now.
+      final netCat = find.text('Network and speed');
       await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
@@ -136,8 +136,8 @@ void main() {
       await tester.pumpWidget(createSubject(container));
       await tester.pumpAndSettle();
 
-      // aria2c controls live in Network & Acceleration now.
-      final netCat = find.text('Network & Acceleration');
+      // aria2c controls live in Network and speed now.
+      final netCat = find.text('Network and speed');
       await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();

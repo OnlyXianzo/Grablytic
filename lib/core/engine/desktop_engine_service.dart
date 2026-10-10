@@ -513,8 +513,10 @@ class DesktopEngineService implements EngineService {
 
     Future<void> writeRequest() async {
       await _ensureRunning();
-      _process!.stdin.writeln(request);
-      _process!.stdin.flush();
+      final proc = _process;
+      if (proc == null) throw StateError('engine process died before write');
+      proc.stdin.writeln(request);
+      proc.stdin.flush();
     }
 
     if (isFastLaneMethod(method)) {
@@ -884,5 +886,13 @@ class DesktopEngineService implements EngineService {
     required String downloadId,
     required String title,
     required String error,
+  }) async {}
+
+  /// Completes without posting a notification; desktop support is unavailable.
+  @override
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
   }) async {}
 }

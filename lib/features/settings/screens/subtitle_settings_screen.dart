@@ -61,7 +61,7 @@ class SubtitleSettingsScreen extends ConsumerWidget {
                 Text(
                   'SUBTITLE LANGUAGES',
                   style: textTheme.labelSmall?.copyWith(
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.5,
                   ),
@@ -156,16 +156,21 @@ class _SubtitleSwitch extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainer,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: colorScheme.outline, size: 20),
+            child: Icon(icon, color: colorScheme.primary, size: 20),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: textTheme.bodyLarge),
+                Text(
+                  title,
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 Text(
                   subtitle,
                   style: textTheme.labelSmall?.copyWith(

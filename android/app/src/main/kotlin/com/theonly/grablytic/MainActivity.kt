@@ -412,6 +412,7 @@ open class MainActivity : FlutterActivity() {
         }
     }
 
+    // skipcq: KT-R1006
     private fun setupChannels(flutterEngine: FlutterEngine) {
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)
         methodChannel = channel
@@ -427,6 +428,64 @@ open class MainActivity : FlutterActivity() {
                     val error = call.argument<String>("error") ?: "Extraction or download failed"
                     DownloadService.failed(applicationContext, downloadId, "$title: $error")
                     result.success(mapOf("success" to true))
+                }
+                "notification/show_success" -> {
+                    val downloadId = call.argument<String>("download_id") ?: "ok_${System.currentTimeMillis()}"
+                    val title = call.argument<String>("title") ?: "Download complete"
+                    val message = call.argument<String>("message") ?: title
+                    // Gate on runtime permission (Android 13+) — matches NotificationManagerCompat.areNotificationsEnabled
+                    // contract. Prevents SecurityException and silent drop (caught below as fallback).
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted()) {
+                        result.success(mapOf("success" to false, "granted" to false, "error" to "permission denied")) // skipcq: KT-W1042
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val mgr = applicationContext.getSystemService(android.app.NotificationManager::class.java)
+                        if (mgr != null) {
+                            // Ensure channel exists (mirrors DownloadService.ensureChannel)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                if (mgr.getNotificationChannel(\"download_complete\") == null) {
+                                    mgr.createNotificationChannel(
+                                        android.app.NotificationChannel(
+                                            \"download_complete\",
+                                            \"Download complete\",
+                                            android.app.NotificationManager.IMPORTANCE_HIGH,
+                                        ).apply { description = \"Alerts when a download finishes\" }
+                                    )
+                                }
+                            }
+                            val openApp = try {
+                                val launch = packageManager.getLaunchIntentForPackage(packageName)
+                                val target = launch ?: android.content.Intent(this, MainActivity::class.java)
+                                android.app.PendingIntent.getActivity(
+                                    this, 0, target,
+                                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                                )
+                            } catch (_: Exception) { null }
+                            val notif = androidx.core.app.NotificationCompat.Builder(applicationContext, \"download_complete\")
+                                .setContentTitle(title)
+                                .setContentText(message)
+                                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
+                                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                                .setContentIntent(openApp)
+                                .setAutoCancel(true)
+                                .setCategory(androidx.core.app.NotificationCompat.CATEGORY_STATUS)
+                                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                                .build()
+                            try {
+                                mgr.notify(downloadId.hashCode(), notif)
+                            } catch (e: SecurityException) {
+                                android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied for success: ${e.message}")
+                                result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied"))) // skipcq: KT-W1042
+                                return@setMethodCallHandler
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied: ${e.message}")
+                        result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied"))) // skipcq: KT-W1042
+                        return@setMethodCallHandler
+                    }
+                    result.success(mapOf("success" to true, "granted" to true))
                 }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
@@ -968,6 +1027,51 @@ open class MainActivity : FlutterActivity() {
                     )
                     result.success(mapOf("success" to true))
                 }
+                "launcher/set_icon" -> { // skipcq: KT-W1042
+                    val variant = call.argument<String>("variant") ?: "system" // skipcq: KT-W1042
+                    try {
+                        val pm = packageManager
+                        val pkg = packageName
+                        val main = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")
+                        val light = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")
+                        val dark = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")
+                        val legacy = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")
+                        val all = mapOf(
+                            "system" to main,
+                            "light" to light,
+                            "dark" to dark,
+                            "legacy" to legacy
+                        )
+                        val target = all[variant] ?: main
+                        // Enable target first, then disable others (DONT_KILL_APP to avoid process kill)
+                        pm.setComponentEnabledSetting(target, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                        for ((k, comp) in all) {
+                            if (comp != target) {
+                                pm.setComponentEnabledSetting(comp, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                            }
+                        }
+                        result.success(mapOf("success" to true, "variant" to variant))
+                    } catch (e: Exception) { // skipcq: KT-W1009
+                        result.success(mapOf("success" to false, "error" to (e.message ?: "set_icon failed")))
+                    }
+                }
+                "launcher/get_icon" -> {
+                    try {
+                        val pm = packageManager
+                        val pkg = packageName
+                        val states = mapOf(
+                            "system" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
+                            "light" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")),
+                            "dark" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")),
+                            "legacy" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy"))
+                        )
+                        val enabled = states.entries.firstOrNull { it.value == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }?.key
+                            ?: if (states["system"] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) "system" else "system"
+                        result.success(mapOf("success" to true, "variant" to enabled, "states" to states))
+                    } catch (e: Exception) { // skipcq: KT-W1009
+                        result.success(mapOf("success" to false, "error" to (e.message ?: "get_icon failed")))
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -1001,6 +1105,7 @@ open class MainActivity : FlutterActivity() {
      * media), common containers covered explicitly; falls back to the
      * system MimeTypeMap, then a wildcard type so a chooser still appears
      * instead of failing closed. Never throws. */
+    // skipcq: KT-R1006
     private fun mimeTypeForFile(name: String): String {
         val lower = name.lowercase()
         val ext = lower.substringAfterLast('.', "")
@@ -1044,8 +1149,9 @@ open class MainActivity : FlutterActivity() {
      * "log too large" — large engine logs are exactly the ones users need
      * to hand over for triage.
      */
+    // skipcq: KT-R1006
     private fun exportFileToDownloads(src: File, displayName: String): String {
-        if (!src.isFile) throw IllegalArgumentException("log file missing")
+        require(src.isFile) { "log file missing" }
         // T10: Dart passes `grablytic logs - YYYY-MM-DD HH-mm-ss.log` (no
         // colons). Preserve spaces/dots/dashes; strip path separators and
         // colons; ensure .log. Falls back to a spec-shaped name, never blank.
@@ -1095,7 +1201,7 @@ open class MainActivity : FlutterActivity() {
                         // copy); the header already marks truncation.
                     }
                 } ?: throw java.io.IOException("MediaStore open failed")
-            } catch (e: Exception) {
+            } catch (e: Exception) { // skipcq: KT-W1009 KT-W1064
                 try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
                 throw e
             }
