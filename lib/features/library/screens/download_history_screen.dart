@@ -565,6 +565,8 @@ class _HistoryItem extends ConsumerWidget {
       child: Semantics(
         label:
             '${record.title}, status: ${record.status}, ${formatSize(record.fileSize)}',
+        hint: 'Double tap to show actions, swipe left to delete',
+        onDismiss: onDelete,
         child: Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(
@@ -661,10 +663,13 @@ class _HistoryItem extends ConsumerWidget {
               ),
               Semantics(
                 label: 'More options for ${record.title}',
+                hint: 'Shows Play, View logs, Delete actions',
+                button: true,
                 child: PopupMenuButton<String>(
                   key: Key('history-menu-${record.id}'),
                   icon: Icon(Icons.more_vert, size: 20, color: colorScheme.outline),
-                  tooltip: 'More options',
+                  tooltip: 'More options for ${record.title} — shows Play, Logs, Delete',
+                  iconSize: 20,
                   onSelected: (value) {
                     switch (value) {
                       case 'play':
@@ -688,27 +693,42 @@ class _HistoryItem extends ConsumerWidget {
                     if (playable)
                       PopupMenuItem(
                         value: 'play',
-                        child: Row(children: [
-                          Icon(Icons.play_circle_outline, size: 18, color: colorScheme.primary),
-                          const SizedBox(width: 8),
-                          const Text('Play'),
-                        ]),
+                        child: Semantics(
+                          button: true,
+                          label: 'Play ${record.title}',
+                          hint: 'Double tap to play this download',
+                          child: Row(children: [
+                            Icon(Icons.play_circle_outline, size: 18, color: colorScheme.primary),
+                            const SizedBox(width: 8),
+                            const Text('Play'),
+                          ]),
+                        ),
                       ),
                     PopupMenuItem(
                       value: 'logs',
-                      child: Row(children: [
-                        Icon(Icons.terminal, size: 18, color: colorScheme.outline),
-                        const SizedBox(width: 8),
-                        const Text('View logs'),
-                      ]),
+                      child: Semantics(
+                        button: true,
+                        label: 'View logs for ${record.title}',
+                        hint: 'Double tap to view download logs',
+                        child: Row(children: [
+                          Icon(Icons.terminal, size: 18, color: colorScheme.outline),
+                          const SizedBox(width: 8),
+                          const Text('View logs'),
+                        ]),
+                      ),
                     ),
                     PopupMenuItem(
                       value: 'delete',
-                      child: Row(children: [
-                        Icon(Icons.delete_outline, size: 18, color: colorScheme.error),
-                        const SizedBox(width: 8),
-                        Text('Delete', style: TextStyle(color: colorScheme.error)),
-                      ]),
+                      child: Semantics(
+                        button: true,
+                        label: 'Delete ${record.title}',
+                        hint: 'Double tap to delete this download — swipe to delete also available',
+                        child: Row(children: [
+                          Icon(Icons.delete_outline, size: 18, color: colorScheme.error),
+                          const SizedBox(width: 8),
+                          Text('Delete', style: TextStyle(color: colorScheme.error)),
+                        ]),
+                      ),
                     ),
                   ],
                 ),
@@ -846,10 +866,13 @@ class _HistoryGridCard extends ConsumerWidget {
                 alignment: Alignment.centerRight,
                 child: Semantics(
                   label: 'More options for ${record.title}',
+                  hint: 'Shows Play, View logs, Delete actions',
+                  button: true,
                   child: PopupMenuButton<String>(
                     key: Key('history-grid-menu-${record.id}'),
                     icon: Icon(Icons.more_vert, size: 20, color: colorScheme.outline),
-                    tooltip: 'More options',
+                    tooltip: 'More options for ${record.title} — shows Play, Logs, Delete',
+                    iconSize: 20,
                     onSelected: (value) {
                       switch (value) {
                         case 'play':
@@ -873,27 +896,42 @@ class _HistoryGridCard extends ConsumerWidget {
                       if (playable)
                         PopupMenuItem(
                           value: 'play',
-                          child: Row(children: [
-                            Icon(Icons.play_circle_outline, size: 18, color: colorScheme.primary),
-                            const SizedBox(width: 8),
-                            const Text('Play'),
-                          ]),
+                          child: Semantics(
+                            button: true,
+                            label: 'Play ${record.title}',
+                            hint: 'Double tap to play this download',
+                            child: Row(children: [
+                              Icon(Icons.play_circle_outline, size: 18, color: colorScheme.primary),
+                              const SizedBox(width: 8),
+                              const Text('Play'),
+                            ]),
+                          ),
                         ),
                       PopupMenuItem(
                         value: 'logs',
-                        child: Row(children: [
-                          Icon(Icons.terminal, size: 18, color: colorScheme.outline),
-                          const SizedBox(width: 8),
-                          const Text('View logs'),
-                        ]),
+                        child: Semantics(
+                          button: true,
+                          label: 'View logs for ${record.title}',
+                          hint: 'Double tap to view download logs',
+                          child: Row(children: [
+                            Icon(Icons.terminal, size: 18, color: colorScheme.outline),
+                            const SizedBox(width: 8),
+                            const Text('View logs'),
+                          ]),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 'delete',
-                        child: Row(children: [
-                          Icon(Icons.delete_outline, size: 18, color: colorScheme.error),
-                          const SizedBox(width: 8),
-                          Text('Delete', style: TextStyle(color: colorScheme.error)),
-                        ]),
+                        child: Semantics(
+                          button: true,
+                          label: 'Delete ${record.title}',
+                          hint: 'Double tap to delete this download — swipe to delete also available',
+                          child: Row(children: [
+                            Icon(Icons.delete_outline, size: 18, color: colorScheme.error),
+                            const SizedBox(width: 8),
+                            Text('Delete', style: TextStyle(color: colorScheme.error)),
+                          ]),
+                        ),
                       ),
                     ],
                   ),
