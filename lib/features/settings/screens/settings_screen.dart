@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/search_provider.dart';
 import '../../../providers/engine_status_provider.dart';
@@ -374,11 +375,7 @@ class PermissionsSettingsScreen extends ConsumerWidget {
                     if (!context.mounted) return;
                     if (!granted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Notification permission is required for queue reminders',
-                          ),
-                        ),
+                        styledSnackBar(context, 'Notification permission is required for queue reminders'),
                       );
                       return;
                     }
@@ -516,7 +513,7 @@ class StorageSettingsScreen extends ConsumerWidget {
                   } catch (e) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error picking folder: $e')),
+                        styledSnackBar(context, 'Error picking folder: $e'),
                       );
                     }
                   }
@@ -892,11 +889,7 @@ class AutomationSettingsScreen extends ConsumerWidget {
                     if (!context.mounted) return;
                     if (!granted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Notification permission is required for queue reminders',
-                          ),
-                        ),
+                        styledSnackBar(context, 'Notification permission is required for queue reminders'),
                       );
                       return;
                     }

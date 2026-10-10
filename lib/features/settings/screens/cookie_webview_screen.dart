@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/utils/cookie_store.dart';
 
@@ -74,8 +75,7 @@ class _CookieWebViewScreenState extends ConsumerState<CookieWebViewScreen> {
         if (!autoClose) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('No cookies found. Please make sure you have loaded the page.'),
+              styledSnackBar(context, 'No cookies found. Please make sure you have loaded the page.',
               ),
             );
           }

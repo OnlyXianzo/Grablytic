@@ -16,6 +16,7 @@ import '../../../providers/metered_guard.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/link_importer.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils/download_config.dart';
@@ -145,7 +146,7 @@ class _AppShellState extends ConsumerState<AppShell>
         final added = await ref.read(offlineQueueProvider.notifier).addLink(candidate, source: 'clipboard');
         if (added && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Offline: Clipboard link queued ($candidate)')),
+            styledSnackBar(context, 'Offline: Clipboard link queued ($candidate)'),
           );
         }
         return;
@@ -327,11 +328,7 @@ class _AppShellState extends ConsumerState<AppShell>
         _currentIndex = 0;
         _pageController.jumpToPage(0);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Engine still setting up — review the link, then retry.',
-            ),
-          ),
+          styledSnackBar(context, 'Engine still setting up — review the link, then retry.'),
         );
         return;
       }
@@ -377,9 +374,7 @@ class _AppShellState extends ConsumerState<AppShell>
       final notifier = ref.read(downloadProvider.notifier);
       if (notifier.isDownloading(url)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Download already in progress for this link'),
-          ),
+          styledSnackBar(context, 'Download already in progress for this link'),
         );
         _currentIndex = 0;
         _pageController.jumpToPage(0);
@@ -439,7 +434,7 @@ class _AppShellState extends ConsumerState<AppShell>
               );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Auto-download failed: $errorMsg')),
+            styledSnackBar(context, 'Auto-download failed: $errorMsg'),
           );
         }
       } catch (e) {
@@ -454,7 +449,7 @@ class _AppShellState extends ConsumerState<AppShell>
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Auto-download failed: $e')));
+        ).showSnackBar(styledSnackBar(context, 'Auto-download failed: $e'));
       }
 
       _currentIndex = 0;
