@@ -11,6 +11,7 @@ import '../../../providers/metered_guard.dart';
 import '../../../providers/preset_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../widgets/batch_quality_dialog.dart';
+import '../../../core/utils/notification_helper.dart';
 
 const _uuid = Uuid();
 
@@ -166,9 +167,7 @@ class _PlaylistSelectionScreenState
     if (notifier.isDownloading(widget.url)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Download already in progress for this link'),
-        ),
+        styledSnackBar(context, 'Download already in progress for this link'),
       );
       return;
     }
@@ -253,18 +252,15 @@ class _PlaylistSelectionScreenState
       );
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            wasQueued
-                ? 'Queued — starts when a slot frees up'
-                : 'Playlist download started',
-          ),
+        styledSnackBar(
+          context,
+          wasQueued ? 'Queued — starts when a slot frees up' : 'Playlist download started',
         ),
       );
     } else {
       setState(() => _isStarting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not start playlist download')),
+        styledSnackBar(context, 'Could not start playlist download'),
       );
     }
   }
