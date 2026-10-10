@@ -48,8 +48,22 @@ class NetscapeCookie {
       cleanLine = cleanLine.substring('#HttpOnly_'.length);
     }
     final parts = cleanLine.split('\t');
-    if (parts.length < 7) {
+    if (parts.length < 6) {
       throw FormatException('Invalid Netscape cookie line: $line');
+    }
+    if (parts.length == 6) {
+      // Empty value: toLine() produces trailing \t which trim() removes.
+      // Treat 6-field split as valid with empty 7th field.
+      return NetscapeCookie(
+        domain: parts[0],
+        includeSubdomains: parts[1],
+        path: parts[2],
+        secure: parts[3],
+        expiration: parts[4],
+        name: parts[5],
+        value: '',
+        isHttpOnly: isHttpOnly,
+      );
     }
     return NetscapeCookie(
       domain: parts[0],
