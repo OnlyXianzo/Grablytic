@@ -6,6 +6,7 @@ import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/github_reporter.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/log_provider.dart';
 import '../widgets/live_log_view.dart';
 
@@ -73,7 +74,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
 
   void _copyToClipboard(String text, String msg) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(styledSnackBar(context, msg));
   }
 
   void _copyAiPrompt() {
@@ -104,11 +105,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
       ),
     );
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'GitHub link copied! Open your browser and paste to create the issue.',
-        ),
-      ),
+      styledSnackBar(context, 'GitHub link copied! Open your browser and paste to create the issue.'),
     );
   }
 
@@ -137,11 +134,11 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
         case GithubReportStatus.created:
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('Issue filed: ${result.url}')));
+          ).showSnackBar(styledSnackBar(context, 'Issue filed: ${result.url}'));
           break;
         case GithubReportStatus.duplicate:
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Duplicate exists: ${result.url}')),
+            styledSnackBar(context, 'Duplicate exists: ${result.url}'),
           );
           break;
         case GithubReportStatus.manualNeeded:
@@ -150,12 +147,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new',
-              ),
-              duration: Duration(seconds: 5),
-            ),
+            styledSnackBar(context, 'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new', duration: const Duration(seconds: 5)),
           );
           break;
         case GithubReportStatus.failed:
@@ -164,11 +156,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Upload failed — issue text copied for manual filing.',
-              ),
-            ),
+            styledSnackBar(context, 'Upload failed — issue text copied for manual filing.'),
           );
           break;
       }
@@ -208,7 +196,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
+        styledSnackBar(context, msg, duration: const Duration(seconds: 5)),
       );
     } finally {
       if (mounted) setState(() => _exporting = false);

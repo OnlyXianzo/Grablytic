@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/widgets/grablytic_components.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 
@@ -31,9 +32,7 @@ class AboutScreen extends ConsumerWidget {
     await Clipboard.setData(ClipboardData(text: target));
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Nothing could open it — copied instead:\n$target'),
-      ),
+      styledSnackBar(context, 'Nothing could open it — copied instead:\n$target'),
     );
   }
 

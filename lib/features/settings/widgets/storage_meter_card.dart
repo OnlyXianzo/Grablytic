@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/utils/trust_boundary.dart';
@@ -196,7 +197,7 @@ class _StorageMeterCardState extends State<StorageMeterCard> {
     setState(() => _deleting = false);
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete that file')),
+        styledSnackBar(context, 'Could not delete that file'),
       );
       return;
     }
