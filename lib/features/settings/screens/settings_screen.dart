@@ -18,15 +18,36 @@ import 'subtitle_settings_screen.dart';
 import 'schedule_settings_screen.dart';
 import 'sponsorblock_settings_screen.dart';
 import 'about_screen.dart';
+import '../../home/screens/link_saver_screen.dart';
 import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
 import '../../../core/utils/offline_link_queue.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  bool _matches(String title, String subtitle) {
+    if (_query.isEmpty) return true;
+    final q = _query.toLowerCase();
+    return title.toLowerCase().contains(q) || subtitle.toLowerCase().contains(q);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -45,149 +66,204 @@ class SettingsScreen extends ConsumerWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              const SizedBox(height: 16),
+              Semantics(
+                label: 'Search settings',
+                child: TextField(
+                  key: const Key('settings_search_field'),
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search settings…',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    filled: true,
+                    fillColor: colorScheme.surfaceContainerLow,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  style: textTheme.bodyMedium,
+                  onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                ),
+              ),
               const SizedBox(height: 24),
               // T14: root is a category list; options live in sub-menus.
               // Grouped per redesign mockup: Downloads vs App.
-              _SettingsSection(
-                title: 'Downloads',
-                icon: Icons.download_outlined,
-                children: [
-              _SettingNavItem(
-                icon: Icons.tune,
-                title: 'General',
-                subtitle: 'Auto-start and defaults',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const GeneralSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.folder_outlined,
-                title: 'Storage',
-                subtitle: settings.downloadPath,
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const StorageSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.speed,
-                title: 'Network and speed',
-                subtitle: 'Wi-Fi only, turbo, proxy',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const NetworkSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.movie_filter_outlined,
-                title: 'Media and subtitles',
-                subtitle: 'Subtitles, SponsorBlock, thumbnails',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MediaSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.auto_mode,
-                title: 'Automation',
-                subtitle: 'Schedules, sources, command templates',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AutomationSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-                ],
-              ),
-              _SettingsSection(
-                title: 'App',
-                icon: Icons.apps_outlined,
-                children: [
-              _SettingNavItem(
-                icon: Icons.palette_outlined,
-                title: 'Appearance',
-                subtitle: 'Theme and grid view',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AppearanceSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.shield_outlined,
-                title: 'Permissions',
-                subtitle: 'Notifications and background',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PermissionsSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.cookie_outlined,
-                title: 'Cookies',
-                subtitle: 'Site logins for members-only content',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const CookiesScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.inventory_2_outlined,
-                title: 'Packages & Updates',
-                subtitle: settings.updateChannel,
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PackagesSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _SettingNavItem(
-                icon: Icons.info_outline,
-                title: 'System & Diagnostics',
-                subtitle: 'Logs, diagnostics, about',
-                colorScheme: colorScheme,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SystemSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
+              if (_matches('General', 'Auto-start and defaults') ||
+                  _matches('Storage', settings.downloadPath) ||
+                  _matches('Network and speed', 'Wi-Fi only, turbo, proxy') ||
+                  _matches('Media and subtitles', 'Subtitles, SponsorBlock, thumbnails') ||
+                  _matches('Automation', 'Schedules, sources, command templates'))
+                _SettingsSection(
+                  title: 'Downloads',
+                  icon: Icons.download_outlined,
+                  children: [
+                    if (_matches('General', 'Auto-start and defaults'))
+                      _SettingNavItem(
+                        icon: Icons.tune,
+                        title: 'General',
+                        subtitle: 'Auto-start and defaults',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const GeneralSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Storage', settings.downloadPath))
+                      _SettingNavItem(
+                        icon: Icons.folder_outlined,
+                        title: 'Storage',
+                        subtitle: settings.downloadPath,
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const StorageSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Network and speed', 'Wi-Fi only, turbo, proxy'))
+                      _SettingNavItem(
+                        icon: Icons.speed,
+                        title: 'Network and speed',
+                        subtitle: 'Wi-Fi only, turbo, proxy',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const NetworkSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Media and subtitles', 'Subtitles, SponsorBlock, thumbnails'))
+                      _SettingNavItem(
+                        icon: Icons.movie_filter_outlined,
+                        title: 'Media and subtitles',
+                        subtitle: 'Subtitles, SponsorBlock, thumbnails',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const MediaSettingsScreen()),
+                          );
+                        },
+                      ),
+                    if (_matches('Automation', 'Schedules, sources, command templates'))
+                      _SettingNavItem(
+                        icon: Icons.auto_mode,
+                        title: 'Automation',
+                        subtitle: 'Schedules, sources, command templates',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AutomationSettingsScreen()),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              if (_matches('Appearance', 'Theme and grid view') ||
+                  _matches('Permissions', 'Notifications and background') ||
+                  _matches('Link Saver', 'Saved offline links') ||
+                  _matches('Cookies', 'Site logins for members-only content') ||
+                  _matches('Packages & Updates', settings.updateChannel) ||
+                  _matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                _SettingsSection(
+                  title: 'App',
+                  icon: Icons.apps_outlined,
+                  children: [
+                    if (_matches('Appearance', 'Theme and grid view'))
+                      _SettingNavItem(
+                        icon: Icons.palette_outlined,
+                        title: 'Appearance',
+                        subtitle: 'Theme and grid view',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AppearanceSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Permissions', 'Notifications and background'))
+                      _SettingNavItem(
+                        icon: Icons.shield_outlined,
+                        title: 'Permissions',
+                        subtitle: 'Notifications and background',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PermissionsSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Link Saver', 'Saved offline links'))
+                      _SettingNavItem(
+                        icon: Icons.bookmark_outline,
+                        title: 'Link Saver',
+                        subtitle: 'Saved offline links',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const LinkSaverScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Cookies', 'Site logins for members-only content'))
+                      _SettingNavItem(
+                        icon: Icons.cookie_outlined,
+                        title: 'Cookies',
+                        subtitle: 'Site logins for members-only content',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CookiesScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('Packages & Updates', settings.updateChannel))
+                      _SettingNavItem(
+                        icon: Icons.inventory_2_outlined,
+                        title: 'Packages & Updates',
+                        subtitle: settings.updateChannel,
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PackagesSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                      _SettingNavItem(
+                        icon: Icons.info_outline,
+                        title: 'System & Diagnostics',
+                        subtitle: 'Logs, diagnostics, about',
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SystemSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
                 ],
               ),
 
@@ -204,6 +280,27 @@ class SettingsScreen extends ConsumerWidget {
               // (T14: moved to PackagesSettingsScreen)
 
               // (T14: moved to SystemSettingsScreen)
+              if (_query.isNotEmpty &&
+                  !_matches('General', 'Auto-start and defaults') &&
+                  !_matches('Storage', settings.downloadPath) &&
+                  !_matches('Network and speed', 'Wi-Fi only, turbo, proxy') &&
+                  !_matches('Media and subtitles', 'Subtitles, SponsorBlock, thumbnails') &&
+                  !_matches('Automation', 'Schedules, sources, command templates') &&
+                  !_matches('Appearance', 'Theme and grid view') &&
+                  !_matches('Permissions', 'Notifications and background') &&
+                  !_matches('Link Saver', 'Saved offline links') &&
+                  !_matches('Cookies', 'Site logins for members-only content') &&
+                  !_matches('Packages & Updates', settings.updateChannel) &&
+                  !_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'No settings match “$_query”',
+                      style: textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 32),
               // Version badge
               Center(

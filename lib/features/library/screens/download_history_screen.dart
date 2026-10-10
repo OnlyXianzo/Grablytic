@@ -659,45 +659,58 @@ class _HistoryItem extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (playable)
-                Semantics(
-                  label: 'Play ${record.title}',
-                  child: IconButton(
-                    key: Key('history-play-${record.id}'),
-                    icon: Icon(Icons.play_circle_outline,
-                        size: 20, color: colorScheme.primary),
-                    onPressed: () =>
-                        playHistoryRecord(context, ref, record),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Play',
-                  ),
-                ),
               Semantics(
-                label: 'View download logs',
-                child: IconButton(
-                  icon: Icon(Icons.terminal,
-                      size: 18, color: colorScheme.outline),
-                  onPressed: () {
-                    DownloadLogSheet.show(
-                      context,
-                      downloadId: record.id,
-                      title: record.title,
-                      status: record.status,
-                      url: record.url,
-                    );
+                label: 'More options for ${record.title}',
+                child: PopupMenuButton<String>(
+                  key: Key('history-menu-${record.id}'),
+                  icon: Icon(Icons.more_vert, size: 20, color: colorScheme.outline),
+                  tooltip: 'More options',
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'play':
+                        playHistoryRecord(context, ref, record);
+                        break;
+                      case 'logs':
+                        DownloadLogSheet.show(
+                          context,
+                          downloadId: record.id,
+                          title: record.title,
+                          status: record.status,
+                          url: record.url,
+                        );
+                        break;
+                      case 'delete':
+                        onDelete();
+                        break;
+                    }
                   },
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'View logs',
-                ),
-              ),
-              Semantics(
-                label: 'Delete download record',
-                child: IconButton(
-                  icon: Icon(Icons.delete_outline,
-                      size: 18, color: colorScheme.outline),
-                  onPressed: onDelete,
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'Delete',
+                  itemBuilder: (ctx) => [
+                    if (playable)
+                      PopupMenuItem(
+                        value: 'play',
+                        child: Row(children: [
+                          Icon(Icons.play_circle_outline, size: 18, color: colorScheme.primary),
+                          const SizedBox(width: 8),
+                          const Text('Play'),
+                        ]),
+                      ),
+                    PopupMenuItem(
+                      value: 'logs',
+                      child: Row(children: [
+                        Icon(Icons.terminal, size: 18, color: colorScheme.outline),
+                        const SizedBox(width: 8),
+                        const Text('View logs'),
+                      ]),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(children: [
+                        Icon(Icons.delete_outline, size: 18, color: colorScheme.error),
+                        const SizedBox(width: 8),
+                        Text('Delete', style: TextStyle(color: colorScheme.error)),
+                      ]),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -829,51 +842,62 @@ class _HistoryGridCard extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (playable)
-                    Semantics(
-                      label: 'Play ${record.title}',
-                      child: IconButton(
-                        key: Key('history-play-${record.id}'),
-                        icon: Icon(Icons.play_circle_outline,
-                            size: 20, color: colorScheme.primary),
-                        onPressed: () =>
-                            playHistoryRecord(context, ref, record),
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Play',
+              Align(
+                alignment: Alignment.centerRight,
+                child: Semantics(
+                  label: 'More options for ${record.title}',
+                  child: PopupMenuButton<String>(
+                    key: Key('history-grid-menu-${record.id}'),
+                    icon: Icon(Icons.more_vert, size: 20, color: colorScheme.outline),
+                    tooltip: 'More options',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'play':
+                          playHistoryRecord(context, ref, record);
+                          break;
+                        case 'logs':
+                          DownloadLogSheet.show(
+                            context,
+                            downloadId: record.id,
+                            title: record.title,
+                            status: record.status,
+                            url: record.url,
+                          );
+                          break;
+                        case 'delete':
+                          onDelete();
+                          break;
+                      }
+                    },
+                    itemBuilder: (ctx) => [
+                      if (playable)
+                        PopupMenuItem(
+                          value: 'play',
+                          child: Row(children: [
+                            Icon(Icons.play_circle_outline, size: 18, color: colorScheme.primary),
+                            const SizedBox(width: 8),
+                            const Text('Play'),
+                          ]),
+                        ),
+                      PopupMenuItem(
+                        value: 'logs',
+                        child: Row(children: [
+                          Icon(Icons.terminal, size: 18, color: colorScheme.outline),
+                          const SizedBox(width: 8),
+                          const Text('View logs'),
+                        ]),
                       ),
-                    ),
-                  Semantics(
-                    label: 'View download logs',
-                    child: IconButton(
-                      icon: Icon(Icons.terminal,
-                          size: 18, color: colorScheme.outline),
-                      onPressed: () {
-                        DownloadLogSheet.show(
-                          context,
-                          downloadId: record.id,
-                          title: record.title,
-                          status: record.status,
-                          url: record.url,
-                        );
-                      },
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'View logs',
-                    ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(children: [
+                          Icon(Icons.delete_outline, size: 18, color: colorScheme.error),
+                          const SizedBox(width: 8),
+                          Text('Delete', style: TextStyle(color: colorScheme.error)),
+                        ]),
+                      ),
+                    ],
                   ),
-                  Semantics(
-                    label: 'Delete download record',
-                    child: IconButton(
-                      icon: Icon(Icons.delete_outline,
-                          size: 18, color: colorScheme.outline),
-                      onPressed: onDelete,
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Delete',
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),

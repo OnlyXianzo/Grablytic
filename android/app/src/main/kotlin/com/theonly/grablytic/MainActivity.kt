@@ -428,6 +428,48 @@ open class MainActivity : FlutterActivity() {
                     DownloadService.failed(applicationContext, downloadId, "$title: $error")
                     result.success(mapOf("success" to true))
                 }
+                "notification/show_success" -> {
+                    val downloadId = call.argument<String>("download_id") ?: "ok_${System.currentTimeMillis()}"
+                    val title = call.argument<String>("title") ?: "Download complete"
+                    val message = call.argument<String>("message") ?: title
+                    try {
+                        val mgr = applicationContext.getSystemService(android.app.NotificationManager::class.java)
+                        if (mgr != null) {
+                            // Ensure channel exists (mirrors DownloadService.ensureChannel)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                if (mgr.getNotificationChannel(\"download_complete\") == null) {
+                                    mgr.createNotificationChannel(
+                                        android.app.NotificationChannel(
+                                            \"download_complete\",
+                                            \"Download complete\",
+                                            android.app.NotificationManager.IMPORTANCE_HIGH,
+                                        ).apply { description = \"Alerts when a download finishes\" }
+                                    )
+                                }
+                            }
+                            val openApp = try {
+                                val launch = packageManager.getLaunchIntentForPackage(packageName)
+                                val target = launch ?: android.content.Intent(this, MainActivity::class.java)
+                                android.app.PendingIntent.getActivity(
+                                    this, 0, target,
+                                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                                )
+                            } catch (_: Exception) { null }
+                            val notif = androidx.core.app.NotificationCompat.Builder(applicationContext, \"download_complete\")
+                                .setContentTitle(title)
+                                .setContentText(message)
+                                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
+                                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                                .setContentIntent(openApp)
+                                .setAutoCancel(true)
+                                .setCategory(androidx.core.app.NotificationCompat.CATEGORY_STATUS)
+                                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                                .build()
+                            mgr.notify(downloadId.hashCode(), notif)
+                        }
+                    } catch (_: Exception) { }
+                    result.success(mapOf("success" to true))
+                }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
                     // drain loop collects every queued share, in order.

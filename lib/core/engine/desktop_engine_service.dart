@@ -885,4 +885,11 @@ class DesktopEngineService implements EngineService {
     required String title,
     required String error,
   }) async {}
+
+  @override
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  }) async {}
 }

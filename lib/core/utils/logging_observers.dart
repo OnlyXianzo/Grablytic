@@ -455,6 +455,20 @@ class TracedEngineService implements EngineService {
   );
 
   @override
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  }) => _traced(
+    'notification/show_success',
+    () => _inner.showSuccessNotification(
+      downloadId: downloadId,
+      title: title,
+      message: message,
+    ),
+  );
+
+  @override
   void dispose() {
     try {
       _inner.dispose();

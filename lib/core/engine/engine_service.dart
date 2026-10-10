@@ -123,6 +123,14 @@ abstract class EngineService {
     required String error,
   });
 
+  /// Displays a success/completion system notification (CHANNEL_COMPLETE).
+  /// Never throws.
+  Future<void> showSuccessNotification({
+    required String downloadId,
+    required String title,
+    required String message,
+  });
+
   /// Releases transport resources (broadcast controllers, native process
   /// handles, pending completers). Idempotent, never throws. The provider
   /// calls it for every implementation on dispose — previously only the
