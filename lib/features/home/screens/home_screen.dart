@@ -501,11 +501,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
             .read(offlineQueueProvider.notifier)
             .addLink(input, source: 'paste');
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          styledSnackBar(
-            context,
-            added ? 'Offline: Link saved to queue' : 'Link is already in offline queue',
-          ),
+        await showAppNotification(
+          context,
+          ref,
+          message: added ? 'Offline: Link saved to queue' : 'Link is already in offline queue',
         );
         _controller.clear();
         return;
