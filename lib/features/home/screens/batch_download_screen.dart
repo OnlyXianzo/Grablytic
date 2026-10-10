@@ -9,11 +9,13 @@ import '../widgets/batch_quality_dialog.dart';
 class BatchDownloadScreen extends ConsumerStatefulWidget {
   final List<BatchItem> items;
   final String? playlistId;
+  final bool skipQualityDialog;
 
   const BatchDownloadScreen({
     super.key,
     required this.items,
     this.playlistId,
+    this.skipQualityDialog = false,
   });
 
   @override
@@ -27,6 +29,9 @@ class _BatchDownloadScreenState extends ConsumerState<BatchDownloadScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || widget.items.isEmpty) return;
+      if (widget.skipQualityDialog) return;
+      final batch = ref.read(batchProvider);
+      if (batch.isRunning && batch.items.length == widget.items.length) return;
       // One metered confirm for the whole batch (Seal parity) — "Wait"
       // backs out of the batch screen instead of starting silently.
       if (!await ensureUnmeteredDownload(context: context, ref: ref)) {

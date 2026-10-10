@@ -3,6 +3,7 @@ import 'dart:io' show File;
 import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
 import '../../../core/theme/text_styles.dart';
@@ -27,9 +28,11 @@ import '../../settings/screens/log_viewer_screen.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils.dart';
+import '../../../core/utils/link_importer.dart';
 import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../widgets/offline_queue_banner.dart';
+import 'link_saver_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   /// Optional hook for the "See all" affordance (AppShell wires tab switch).
@@ -51,7 +54,21 @@ class HomeScreen extends ConsumerWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
+    final queue = ref.watch(offlineQueueProvider);
     return Scaffold(
+      floatingActionButton: queue.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              key: const Key('home_link_saver_fab'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LinkSaverScreen()),
+              ),
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              icon: const Icon(Icons.bookmark_outline),
+              label: Text('Saved (${queue.length})'),
+            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -439,9 +456,38 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     super.dispose();
   }
 
+  String? _extractClipboardLink(String text) {
+    final links = extractLinks(text);
+    if (links.isNotEmpty) return links.first;
+    if (looksLikeUrl(text.trim())) return text.trim();
+    return null;
+  }
+
   Future<void> _submitUrl() async {
-    final input = _controller.text.trim();
-    if (input.isEmpty) return;
+    var input = _controller.text.trim();
+    if (input.isEmpty) {
+      // Proceed reads clipboard + parser when empty (Phase 2).
+      try {
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        final clip = data?.text?.trim();
+        if (clip != null && clip.isNotEmpty) {
+          final extracted = _extractClipboardLink(clip);
+          if (extracted != null && extracted.isNotEmpty) {
+            input = extracted;
+            _controller.text = input;
+            _controller.selection = TextSelection.fromPosition(
+              TextPosition(offset: _controller.text.length),
+            );
+          } else if (clip.length >= 2) {
+            // Fallback: treat clipboard text as search query if no URL.
+            input = clip;
+            _controller.text = input;
+          }
+        }
+      } catch (_) {}
+      if (input.isEmpty) return;
+      AppLogger.info('Proceed via clipboard: $input', tag: 'HomeScreen');
+    }
     _focusNode.unfocus();
 
     if (looksLikeUrl(input)) {

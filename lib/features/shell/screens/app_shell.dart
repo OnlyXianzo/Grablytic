@@ -16,6 +16,7 @@ import '../../../providers/metered_guard.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/link_importer.dart';
 import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/offline_link_queue.dart';
@@ -113,6 +114,65 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Startup auto-check: inspects clipboard once after cold start and offers
+  /// to use the link (online → SnackBar with Paste action, offline → auto-queue).
+  /// Deduplicated via [_lastInspectedClipboardText] so foreground resume does not
+  /// re-prompt for the same text.
+  Future<void> _checkClipboardOnStartup() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text == null || text.isEmpty || text == _lastInspectedClipboardText) return;
+      // Extract first URL via importer (handles shortcodes, csv quirks) or fallback to raw URL.
+      String? candidate;
+      final links = extractLinks(text);
+      if (links.isNotEmpty) {
+        candidate = normalizeQueueUrl(links.first) ?? links.first;
+      } else {
+        final trimmed = text.trim();
+        if (trimmed.contains(' ') == false && trimmed.contains('.')) {
+          candidate = normalizeQueueUrl(trimmed) ?? (trimmed.startsWith('http') ? trimmed : null);
+        }
+      }
+      if (candidate == null || candidate.isEmpty) return;
+      // Already queued → silent.
+      final queued = ref.read(offlineQueueProvider);
+      if (queued.any((q) => q.url == candidate)) return;
+      _lastInspectedClipboardText = text;
+      final offline = await isDeviceOffline();
+      if (!mounted) return;
+      if (offline) {
+        final added = await ref.read(offlineQueueProvider.notifier).addLink(candidate, source: 'clipboard');
+        if (added && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Offline: Clipboard link queued ($candidate)')),
+          );
+        }
+        return;
+      }
+      // Online: offer to paste via sharedUrl (HomeScreen omnibox listens).
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Clipboard link found: $candidate'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Paste',
+            onPressed: () {
+              ref.read(sharedUrlProvider.notifier).state = candidate;
+              // Switch to Home tab if not already there.
+              if (_currentIndex != 0) {
+                setState(() => _currentIndex = 0);
+                _pageController.animateToPage(0, duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+              }
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      AppLogger.warn('Startup clipboard check failed: $e', tag: 'AppShell');
+    }
+  }
+
   void _initSharedUrlListening() {
     final engine = ref.read(engineProvider);
     // The native intent/shared_url push is a WAKE-UP HINT only (the queue
@@ -127,6 +187,9 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _drainNativeQueue();
       _checkBatteryPrompt();
+      // Auto-check clipboard after first frame (Phase 2).
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) await _checkClipboardOnStartup();
     });
   }
 

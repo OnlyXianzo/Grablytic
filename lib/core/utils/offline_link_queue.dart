@@ -281,6 +281,8 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
     await clear();
 
     if (context.mounted) {
+      // View Batch now uses rootNavigator and longer duration so the
+      // action survives the queue-banner rebuild that follows clear().
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -288,12 +290,19 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
                 ? 'Queued link sent to downloads'
                 : 'All $count queued links sent to downloads',
           ),
+          duration: const Duration(seconds: 5),
           action: SnackBarAction(
             label: 'View Batch',
             onPressed: () {
-              Navigator.of(context).push(
+              // Use root navigator — the banner lives inside a nested
+              // Scaffold/PageView where a plain Navigator.of may resolve
+              // to the wrong scope and silently no-op.
+              Navigator.of(context, rootNavigator: true).push(
                 MaterialPageRoute(
-                  builder: (_) => BatchDownloadScreen(items: items),
+                  builder: (_) => BatchDownloadScreen(
+                    items: items,
+                    skipQualityDialog: true,
+                  ),
                 ),
               );
             },
