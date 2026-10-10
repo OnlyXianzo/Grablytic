@@ -84,18 +84,30 @@ void main() {
     testWidgets('opts tiles show real defaults and navigate', (tester) async {
       SharedPreferences.setMockInitialValues({
         'onboardingCompleted': true,
-        'audioOnly': true,
-        'qualityCeiling': '720p',
+        'activePresetId': 'preset_720p',
         'downloadPath': '/storage/emulated/0/Download/Grablytic',
       });
       final prefs = await SharedPreferences.getInstance();
       await _pumpHome(tester, prefs, MockEngineService());
-      expect(find.text('Audio'), findsOneWidget);
+      expect(find.text('Video'), findsOneWidget);
       expect(find.text('720p'), findsOneWidget);
       expect(find.text('Grablytic'), findsWidgets);
       await tester.tap(find.text('720p'));
       await tester.pumpAndSettle();
       expect(find.byType(PresetsScreen), findsOneWidget);
+    });
+
+    testWidgets('opts tiles reflect audio preset as Audio + OPUS (bug fix)',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'onboardingCompleted': true,
+        'activePresetId': 'preset_opus',
+        'downloadPath': '/storage/emulated/0/Download/Grablytic',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await _pumpHome(tester, prefs, MockEngineService());
+      expect(find.text('Audio'), findsOneWidget);
+      expect(find.text('OPUS'), findsOneWidget);
     });
 
     testWidgets('downloading and recent sections render with See-all',

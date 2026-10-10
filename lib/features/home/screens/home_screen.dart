@@ -9,6 +9,7 @@ import '../../../core/theme/text_styles.dart';
 import '../../../core/widgets/grablytic_components.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/engine_status_provider.dart';
+import '../../../providers/preset_provider.dart';
 import '../../../providers/resume_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../screens/format_picker_screen.dart';
@@ -43,6 +44,7 @@ class HomeScreen extends ConsumerWidget {
     // own item via [downloadItemProvider] and rebuilds alone.
     final sections = ref.watch(downloadSectionsProvider);
     final settings = ref.watch(settingsProvider);
+    final preset = ref.watch(presetsProvider).activePreset;
     final downloadingIds = sections.pendingIds.take(3).toList();
     final recentIds = sections.completedIds.take(3).toList();
     final hasAny = sections.allIds.isNotEmpty;
@@ -71,11 +73,17 @@ class HomeScreen extends ConsumerWidget {
                 colorScheme: colorScheme,
               ),
               const SizedBox(height: 12),
-              // Modular 3-tile options row
+              // Modular 3-tile options row — bound to active preset (not legacy
+              // settings.audioOnly/qualityCeiling) so Audio+Opus presets
+              // render as Audio · OPUS instead of Video · 4K.
               _OptsRow(
                 colorScheme: colorScheme,
-                audioOnly: settings.audioOnly,
-                qualityCeiling: settings.qualityCeiling,
+                audioOnly: preset.audioOnly,
+                qualityCeiling: preset.audioOnly
+                    ? preset.preferredContainer.toUpperCase()
+                    : (preset.qualityCeiling == '4k'
+                        ? '4K'
+                        : preset.qualityCeiling),
                 downloadPath: settings.downloadPath,
               ),
               const SizedBox(height: 16),
