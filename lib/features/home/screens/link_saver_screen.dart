@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/batch_provider.dart';
 import '../../../providers/preset_provider.dart';
 import 'batch_download_screen.dart';
@@ -84,9 +85,9 @@ class LinkSaverScreen extends ConsumerWidget {
                           ref.read(batchProvider.notifier).startBatch([item], qualityCeiling: preset.qualityCeiling);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Downloading ${link.url}'),
-                                duration: const Duration(seconds: 3),
+                              styledSnackBar(
+                                context,
+                                'Downloading ${link.url}',
                                 action: SnackBarAction(
                                   label: 'View Batch',
                                   onPressed: () => Navigator.of(context, rootNavigator: true).push(
