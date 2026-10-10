@@ -444,13 +444,13 @@ open class MainActivity : FlutterActivity() {
                         if (mgr != null) {
                             // Ensure channel exists (mirrors DownloadService.ensureChannel)
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                if (mgr.getNotificationChannel(\"download_complete\") == null) {
+                                if (mgr.getNotificationChannel("download_complete") == null) {
                                     mgr.createNotificationChannel(
                                         android.app.NotificationChannel(
-                                            \"download_complete\",
-                                            \"Download complete\",
+                                            "download_complete",
+                                            "Download complete",
                                             android.app.NotificationManager.IMPORTANCE_HIGH,
-                                        ).apply { description = \"Alerts when a download finishes\" }
+                                        ).apply { description = "Alerts when a download finishes" }
                                     )
                                 }
                             }
@@ -462,7 +462,7 @@ open class MainActivity : FlutterActivity() {
                                     android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
                                 )
                             } catch (_: Exception) { null }
-                            val notif = androidx.core.app.NotificationCompat.Builder(applicationContext, \"download_complete\")
+                            val notif = androidx.core.app.NotificationCompat.Builder(applicationContext, "download_complete")
                                 .setContentTitle(title)
                                 .setContentText(message)
                                 .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
