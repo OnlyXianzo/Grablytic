@@ -41,6 +41,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
+  /// Matches the query as a case-insensitive substring of either label;
+  /// an empty query includes every setting.
   bool _matches(String title, String subtitle) {
     if (_query.isEmpty) return true;
     final q = _query.toLowerCase();

@@ -454,6 +454,7 @@ class TracedEngineService implements EngineService {
     ),
   );
 
+  /// Forwards the notification request, propagating errors from the delegate.
   @override
   Future<void> showSuccessNotification({
     required String downloadId,

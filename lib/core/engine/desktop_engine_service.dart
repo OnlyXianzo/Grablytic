@@ -886,6 +886,7 @@ class DesktopEngineService implements EngineService {
     required String error,
   }) async {}
 
+  /// Completes without posting a notification; desktop support is unavailable.
   @override
   Future<void> showSuccessNotification({
     required String downloadId,

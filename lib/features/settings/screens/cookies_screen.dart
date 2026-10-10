@@ -168,6 +168,9 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Prompts for cookie text with a live format hint, then saves an imported
+  /// profile, regenerates cookies.txt, and enables cookies. Cancellation or
+  /// unparseable input saves nothing; import/write errors are shown in-app.
   Future<void> _addViaPaste() async {
     final urlCtrl = TextEditingController();
     final pasteCtrl = TextEditingController();

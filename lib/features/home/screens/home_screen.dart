@@ -457,6 +457,8 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     super.dispose();
   }
 
+  /// Returns the first imported link, falling back to trimmed URL-like text,
+  /// or null when neither parser recognizes a link.
   String? _extractClipboardLink(String text) {
     final links = extractLinks(text);
     if (links.isNotEmpty) return links.first;
@@ -464,6 +466,10 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
     return null;
   }
 
+  /// Opens a picker for a URL, saves it when offline, or starts a text search.
+  /// Empty input first tries a clipboard link, then clipboard text of at least
+  /// two characters as a query. Clipboard errors are ignored; errors saving
+  /// an offline link or showing its notification propagate.
   Future<void> _submitUrl() async {
     var input = _controller.text.trim();
     if (input.isEmpty) {

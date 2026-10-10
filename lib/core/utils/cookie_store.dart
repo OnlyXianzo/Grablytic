@@ -72,6 +72,9 @@ class NetscapeCookie {
   String get mergeKey => '$domain\x00$name';
 }
 
+/// Checks the importer's basic domain syntax, allowing a leading dot and
+/// `#HttpOnly_` prefix. This does not validate DNS labels or public suffixes
+/// and can accept numeric IP addresses.
 bool _isValidCookieDomain(String raw) {
   if (raw.isEmpty) return false;
   var d = raw.trim().toLowerCase();
@@ -85,10 +88,10 @@ bool _isValidCookieDomain(String raw) {
   return true;
 }
 
-/// Returns true if [cookieDomain] is meaningfully related to [urlHost].
-/// Used to warn when a paste for youtube.com contains evil.com (unrelated)
-/// but without breaking legitimate multi-domain exports (youtube needs
-/// google.com + accounts.google.com). We consider related if:
+/// Classifies domains for the unrelated-cookie count; an empty [urlHost]
+/// accepts all domains. Matching is case-insensitive and accepts either
+/// domain as a subdomain of the other. Hosts containing `youtube`, `youtu.be`,
+/// or `google` also accept the listed Google/YouTube domains and subdomains.
 //  - exact match, subdomain, or sibling google/youtube cluster.
 bool _isDomainRelatedToUrl(String cookieDomain, String urlHost) {
   if (urlHost.isEmpty) return true; // no URL → allow all (user pasted without site)
@@ -222,7 +225,10 @@ String cookieFormatHint(CookieParseFormat fmt) {
   }
 }
 
-/// Try to base64-decode [text] (whitespace stripped). Returns decoded UTF8 string or null.
+/// Decodes standard or URL-safe Base64 only when the UTF-8 result looks like
+/// cookie text. After whitespace removal, input must be at least 24 characters
+/// and a multiple of four; missing padding is not added. Returns null for
+/// rejected input or decoding errors.
 String? _tryBase64Decode(String text) {
   final s = text.replaceAll(RegExp(r'\s'), '');
   if (s.length < 24 || s.length % 4 != 0) return null;
@@ -239,6 +245,11 @@ String? _tryBase64Decode(String text) {
 }
 
 /// Parse JSON cookie exports (EditThisCookie, etc.) into Netscape lines.
+/// Uses [siteUrl] for missing domains, falling back to `.example.com` for
+/// array entries when the URL is unusable; simple maps require a usable URL.
+/// Expiration values are Unix seconds, with a ten-year fallback when absent
+/// or unrecognized. Skips entries without names and returns an empty list if
+/// decoding or conversion throws. Domain filtering is left to the caller.
 /// Supports:
 //  - [{"domain":".example.com","name":"SID","value":"...","path":"/","secure":true, "expirationDate":...}, ...]
 //  - {"cookies": [...]}
@@ -321,9 +332,10 @@ List<String> _parseJsonCookiesToLines(String text, String siteUrl) {
   }
 }
 
-/// Validates, filters and de-duplicates already-serialized Netscape lines
-/// by syntactically invalid domains. Returns the filtered list and logs a
-/// warning for dropped entries (attacker injection or corrupt export).
+/// Drops unparseable lines and domains rejected by [_isValidCookieDomain],
+/// preserving order and duplicates. Unrelated domains are retained; when
+/// [urlHost] is supplied, their count replaces [lastCookieUnrelatedCount].
+/// Without [urlHost], the count is reset to zero. Per-line errors are skipped.
 List<String> _filterValidNetscapeLines(List<String> lines, {String? urlHost}) {
   final out = <String>[];
   var droppedInvalid = 0;
@@ -365,6 +377,12 @@ int get lastCookieUnrelatedCount => _lastUnrelatedCount;
 /// (c) JSON exports (EditThisCookie array) — auto-converted,
 /// (d) Base64-encoded variants of any of the above.
 /// Returns empty when nothing parses.
+///
+/// Netscape and JSON imports drop malformed domains, retain duplicates and
+/// unrelated domains, and update [lastCookieUnrelatedCount]. Header imports
+/// require a usable [siteUrl], use `/`, allow subdomains, and expire in ten
+/// years; they leave that count unchanged. JSON also accepts a `cookies` list
+/// or a name/value map. Decode failures fall through to the remaining formats.
 List<String> parsePastedCookies(String text, String siteUrl) {
   final urlHost = domainForUrl(siteUrl)?.replaceFirst(RegExp(r'^\.'), '') ?? siteUrl.trim().toLowerCase();
   // 1. Try base64 wrapper first (yt-dlp guides sometimes paste base64).

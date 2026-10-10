@@ -460,6 +460,7 @@ class MockEngineService implements EngineService {
     });
   }
 
+  /// Records the request in [successNotifications] without posting it.
   @override
   Future<void> showSuccessNotification({
     required String downloadId,

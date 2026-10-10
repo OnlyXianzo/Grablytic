@@ -271,6 +271,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     });
   }
 
+  /// Checks a template before passing it to the engine as an output name.
+  /// Allows empty input, relative subdirectories, and yt-dlp placeholders.
+  /// Rejects more than 256 UTF-16 code units, NULs, absolute or tilde-prefixed
+  /// paths, a colon in position two, and `..` path segments with either slash.
+  /// This does not validate placeholder syntax or filesystem-specific names.
   bool _isSafeFileName(String tmpl) {
     if (tmpl.isEmpty) return true;
     if (tmpl.length > 256) return false;
@@ -283,6 +288,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     return true;
   }
 
+  /// Updates the error for the trimmed custom name; empty input clears it
+  /// because the selected template or configured default will be used.
   void _validateFileName() {
     final v = _customFileNameController.text.trim();
     if (v.isEmpty) {
@@ -297,6 +304,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     _fileNameError = null;
   }
 
+  /// Validates the custom name and retains the untrimmed input for this session.
   void _onCustomFileNameChanged() {
     setState(() {
       _validateFileName();
@@ -305,6 +313,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     });
   }
 
+  /// Retains the template for this session; null selects the configured default.
+  /// A nonempty custom name takes precedence when starting a download.
   void _onFileNameTemplateChanged(String? value) {
     setState(() {
       _fileNameTemplate = value;
@@ -312,6 +322,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     });
   }
 
+  /// Retains the description-file preference for this session's picker visits.
   void _onSaveDescriptionChanged(bool v) {
     setState(() {
       _saveDescription = v;
@@ -319,6 +330,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     });
   }
 
+  /// Retains the thumbnail-embedding preference for this session's picker visits.
   void _onSaveThumbnailsChanged(bool v) {
     setState(() {
       _saveThumbnails = v;
@@ -742,6 +754,14 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     return result ?? false;
   }
 
+  /// Starts the selected formats after schedule, network, and duplicate checks.
+  ///
+  /// Applies picker metadata and naming overrides, then command-template
+  /// options; explicit format IDs take precedence. A nonempty custom name
+  /// replaces the selected naming template, but unsafe names are not forwarded.
+  /// Successful requests enter the download list and close the picker; an
+  /// unsuccessful response shows feedback. History errors are ignored, while
+  /// thrown download-start errors propagate to the caller.
   Future<void> _startDownload() async {
     if (_selectedVideoFormat == null &&
         _selectedAudioFormat == null &&
@@ -1666,6 +1686,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   );
 }
 
+  /// Builds container, quality, and subtitle controls, hiding quality and
+  /// disabling subtitles in audio-only mode.
   Widget _buildOutputCard(ColorScheme colorScheme, TextTheme textTheme) {
     return Card(
       elevation: 0,
@@ -1770,6 +1792,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
   }
 
+  /// Builds the session's description-file and thumbnail-embedding controls.
   Widget _buildMetadataCard(ColorScheme colorScheme, TextTheme textTheme) {
     return Card(
       elevation: 0,
@@ -1821,6 +1844,8 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
   }
 
+  /// Builds naming-template selection and the custom override with inline
+  /// validation; leaving the override empty uses the selected template.
   Widget _buildNamingCard(ColorScheme colorScheme, TextTheme textTheme) {
     return Card(
       elevation: 0,
@@ -1893,6 +1918,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     );
   }
 
+  /// Builds optional playlist and command-template selectors for this download.
   Widget _buildPlaylistAndTemplateCard(
       ColorScheme colorScheme, TextTheme textTheme) {
     return Card(

@@ -17,6 +17,7 @@ class PickerSessionState {
   String? customFileName;
   String? fileNameTemplate;
 
+  /// Clears session overrides and clip input without changing saved settings.
   void reset() {
     embedSubtitles = null;
     audioOnly = null;

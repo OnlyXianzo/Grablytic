@@ -5,13 +5,15 @@ import 'app_logger.dart';
 
 /// Shows a user-visible notification.
 ///
-/// Prefers a native system notification (NotificationManager) when the
-/// permission is granted; otherwise falls back to an in-app SnackBar that
-/// is themed (inverseSurface) so it never appears as a white stripe at
-/// the bottom. The white-stripe SnackBar (default surface) was reported
-/// as visually broken on both light and dark themes.
+/// With [title] supplied or [isError] true, attempts a native notification if
+/// the engine reports permission granted. [isError] selects the error
+/// notification, using "Notice" when no title is supplied.
 ///
-/// [isError] chooses the native channel (error vs success). Never throws.
+/// Otherwise, or if checking/posting throws, shows a floating SnackBar using
+/// inverse surface colors while [context] is mounted. [duration] and [action]
+/// apply only to that SnackBar. A normally completed native call suppresses
+/// the fallback even if the engine silently skips posting. Errors from the
+/// SnackBar fallback propagate; it requires a ScaffoldMessenger and Scaffold.
 Future<void> showAppNotification(
   BuildContext context,
   WidgetRef ref, {
@@ -68,7 +70,7 @@ Future<void> showAppNotification(
   );
 }
 
-/// Styled SnackBar that never shows as a white stripe.
+/// Creates a floating SnackBar using the theme's inverse surface colors.
 /// Use when a native notification is not appropriate (e.g. quick inline
 /// confirmation) but the default SnackBar would be a white bar.
 SnackBar styledSnackBar(BuildContext context, String message, {SnackBarAction? action, Duration duration = const Duration(seconds: 3)}) {

@@ -560,6 +560,8 @@ class PlatformChannelEngineService implements EngineService {
     } catch (_) {}
   }
 
+  /// Requests a native success notification, discarding the response and
+  /// suppressing channel errors, including a missing native implementation.
   @override
   Future<void> showSuccessNotification({
     required String downloadId,

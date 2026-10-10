@@ -249,7 +249,10 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
 
   /// Dispatches all queued links in one tap when connectivity is restored.
   ///
-  /// Returns the number of links dispatched, or -1 if the device is still offline.
+  /// Starts a batch using the active preset's quality ceiling, then clears the
+  /// saved queue. Returns 0 for an empty queue, -1 while offline, or the number
+  /// handed to the batch; this does not wait for downloads to complete.
+  /// Queue persistence errors propagate after the batch has been started.
   Future<int> sendAll(BuildContext context, WidgetRef ref) async {
     if (state.isEmpty) return 0;
 

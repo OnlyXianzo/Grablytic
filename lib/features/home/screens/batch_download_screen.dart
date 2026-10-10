@@ -11,6 +11,9 @@ class BatchDownloadScreen extends ConsumerStatefulWidget {
   final String? playlistId;
   final bool skipQualityDialog;
 
+  /// Displays batch progress. With [skipQualityDialog], opening the screen
+  /// skips metered-network confirmation, quality selection, and batch startup;
+  /// the caller is responsible for starting the batch beforehand.
   const BatchDownloadScreen({
     super.key,
     required this.items,

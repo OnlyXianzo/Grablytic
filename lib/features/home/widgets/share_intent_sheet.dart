@@ -51,6 +51,8 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     _loadCachedThumbOnly();
   }
 
+  /// Applies a successful cached thumbnail and stream without fetching formats.
+  /// Ignores cache/conversion errors and clears the initial loading indicator.
   void _loadCachedThumbOnly() {
     try {
       final cached = ExtractionCache.instance.get(widget.url);
@@ -61,6 +63,9 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     if (mounted) setState(() => _isLoadingPreview = false);
   }
 
+  /// Loads missing preview data on demand, skipping playlists and concurrent
+  /// loads. A known unready engine or fetch/conversion error marks the preview
+  /// unavailable. Extraction uses no configured cookies or proxy.
   Future<void> _ensurePreviewLoaded() async {
     if (_previewStream != null || isPlaylistUrl(widget.url)) return;
     if (_isLoadingPreview) return;
@@ -92,6 +97,9 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     super.dispose();
   }
 
+  /// Loads preview data from cache or extraction without a readiness check.
+  /// Uses no configured cookies or proxy and converts fetch/conversion errors
+  /// to an unavailable preview, clearing the loading indicator while mounted.
   Future<void> _loadPreview() async {
     try {
       final cached = ExtractionCache.instance.get(widget.url);
@@ -114,6 +122,10 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     }
   }
 
+  /// Applies thumbnail and stream fields from a successful extraction result.
+  /// An unsuccessful result marks the preview unavailable but retains previous
+  /// data. Malformed thumbnail types or non-string stream keys can throw a
+  /// TypeError; callers handle conversion failures.
   void _applyPreview(Map<String, dynamic> result) {
     if (result['success'] == true) {
       _thumbnailUrl = result['thumbnail_url'] as String?;
@@ -129,6 +141,10 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     }
   }
 
+  /// Fetches a missing stream and starts inline playback with its HTTP headers,
+  /// or toggles an initialized player. Initialization and initial-play errors
+  /// mark the preview unavailable; later play/pause errors propagate. A
+  /// non-string stream URL can also throw a TypeError before initialization.
   Future<void> _togglePreviewPlay() async {
     // Lazy: if preview not yet fetched (heavy getFormats), fetch now only on Play tap
     if (_previewStream == null) {
@@ -201,6 +217,8 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     }
   }
 
+  /// Closes the sheet and opens playlist selection or the single-item picker
+  /// according to the shared URL.
   void _continueToPicker(BuildContext context) {
     final navigator = Navigator.of(context);
     navigator.pop();
@@ -210,6 +228,11 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     navigator.push(MaterialPageRoute(builder: (_) => target));
   }
 
+  /// Starts the shared URL with the active preset and settings, reporting the
+  /// network as Wi-Fi without checking connectivity. On success, adds the
+  /// queued/active download and closes the sheet. Unsuccessful responses show
+  /// feedback; thrown errors reset the busy state while mounted, and native
+  /// notification errors are suppressed.
   Future<void> _directDownload() async {
     if (_isDirectDownloading) return;
     setState(() => _isDirectDownloading = true);
@@ -269,6 +292,8 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     }
   }
 
+  /// Builds a thumbnail or fallback image with lazy playback on tap; unavailable
+  /// previews disable tapping, and playlists omit the play overlay.
   Widget _buildThumbnail(ColorScheme cs) {
     if (_isLoadingPreview) {
       return Container(
@@ -315,6 +340,8 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     );
   }
 
+  /// Builds the initialized player with tap-to-toggle and close controls,
+  /// or an empty widget before initialization. Closing disposes the player.
   Widget _buildInlinePlayer(ColorScheme cs, TextTheme tt) {
     final c = _previewController;
     if (c == null || !c.value.isInitialized) return const SizedBox.shrink();
