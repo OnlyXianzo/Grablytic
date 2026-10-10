@@ -256,7 +256,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                               .deletePreset(widget.profileId!);
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Preset deleted')),
+                            styledSnackBar(context, 'Preset deleted'),
                           );
                         },
                         style: OutlinedButton.styleFrom(
@@ -278,9 +278,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                         final name = _nameController.text.trim();
                         if (name.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please enter a preset name'),
-                            ),
+                            styledSnackBar(context, 'Please enter a preset name'),
                           );
                           return;
                         }
@@ -303,9 +301,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
 
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Preset saved successfully'),
-                          ),
+                          styledSnackBar(context, 'Preset saved successfully'),
                         );
                       },
                       style: ElevatedButton.styleFrom(
