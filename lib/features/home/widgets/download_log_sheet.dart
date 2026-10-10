@@ -7,6 +7,7 @@ import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../providers/log_provider.dart';
+import '../../../core/utils/notification_helper.dart';
 
 /// Modal bottom sheet displaying logs scoped to an individual download.
 ///
@@ -226,14 +227,14 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
   void _copyAllLogs(List<LogEntry> entries) {
     if (entries.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No logs to copy')),
+        styledSnackBar(context, 'No logs to copy'),
       );
       return;
     }
     final fullText = entries.map((e) => e.formattedLine).join('\n');
     Clipboard.setData(ClipboardData(text: fullText));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied ${entries.length} log lines to clipboard')),
+      styledSnackBar(context, 'Copied ${entries.length} log lines to clipboard'),
     );
   }
 
@@ -364,10 +365,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
                               onTap: () {
                                 Clipboard.setData(ClipboardData(text: widget.downloadId));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Download ID copied to clipboard'),
-                                    duration: Duration(seconds: 2),
-                                  ),
+                                  styledSnackBar(context, 'Download ID copied to clipboard'),
                                 );
                               },
                               child: Text(
