@@ -432,6 +432,12 @@ open class MainActivity : FlutterActivity() {
                     val downloadId = call.argument<String>("download_id") ?: "ok_${System.currentTimeMillis()}"
                     val title = call.argument<String>("title") ?: "Download complete"
                     val message = call.argument<String>("message") ?: title
+                    // Gate on runtime permission (Android 13+) — matches NotificationManagerCompat.areNotificationsEnabled
+                    // contract. Prevents SecurityException and silent drop (caught below as fallback).
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted()) {
+                        result.success(mapOf("success" to false, "granted" to false, "error" to "permission denied"))
+                        return@setMethodCallHandler
+                    }
                     try {
                         val mgr = applicationContext.getSystemService(android.app.NotificationManager::class.java)
                         if (mgr != null) {
@@ -465,10 +471,20 @@ open class MainActivity : FlutterActivity() {
                                 .setCategory(androidx.core.app.NotificationCompat.CATEGORY_STATUS)
                                 .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                                 .build()
-                            mgr.notify(downloadId.hashCode(), notif)
+                            try {
+                                mgr.notify(downloadId.hashCode(), notif)
+                            } catch (e: SecurityException) {
+                                android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied for success: ${e.message}")
+                                result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied")))
+                                return@setMethodCallHandler
+                            }
                         }
+                    } catch (e: SecurityException) {
+                        android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied: ${e.message}")
+                        result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied")))
+                        return@setMethodCallHandler
                     } catch (_: Exception) { }
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf("success" to true, "granted" to true))
                 }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
