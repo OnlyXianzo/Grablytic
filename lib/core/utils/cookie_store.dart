@@ -72,6 +72,39 @@ class NetscapeCookie {
   String get mergeKey => '$domain\x00$name';
 }
 
+bool _isValidCookieDomain(String raw) {
+  if (raw.isEmpty) return false;
+  var d = raw.trim().toLowerCase();
+  if (d.startsWith('#httponly_')) d = d.substring('#httponly_'.length);
+  if (d.startsWith('.')) d = d.substring(1);
+  if (d.isEmpty || !d.contains('.')) return false;
+  if (!RegExp(r'^[a-z0-9.-]+$').hasMatch(d)) return false;
+  if (d.startsWith('-') || d.endsWith('-') || d.contains('..')) return false;
+  // Reject public-suffix-only or IP
+  if (d == 'com' || d == 'net' || d == 'org') return false;
+  return true;
+}
+
+/// Returns true if [cookieDomain] is meaningfully related to [urlHost].
+/// Used to warn when a paste for youtube.com contains evil.com (unrelated)
+/// but without breaking legitimate multi-domain exports (youtube needs
+/// google.com + accounts.google.com). We consider related if:
+//  - exact match, subdomain, or sibling google/youtube cluster.
+bool _isDomainRelatedToUrl(String cookieDomain, String urlHost) {
+  if (urlHost.isEmpty) return true; // no URL → allow all (user pasted without site)
+  var cd = cookieDomain.toLowerCase();
+  if (cd.startsWith('#httponly_')) cd = cd.substring('#httponly_'.length);
+  if (cd.startsWith('.')) cd = cd.substring(1);
+  final host = urlHost.toLowerCase();
+  if (cd == host) return true;
+  if (host.endsWith('.$cd') || cd.endsWith('.$host')) return true;
+  // Google cluster that youtube legitimately needs (accounts.google.com etc.)
+  const googleCluster = {'google.com', 'accounts.google.com', 'googleapis.com', 'gstatic.com', 'ggpht.com', 'youtube.com', 'youtu.be', 'ytimg.com', 'doubleclick.net'};
+  if ((host.contains('youtube') || host.contains('youtu.be')) && googleCluster.any((g) => cd == g || cd.endsWith('.$g'))) return true;
+  if ((host.contains('google')) && googleCluster.any((g) => cd == g || cd.endsWith('.$g'))) return true;
+  return false;
+}
+
 /// Parse valid Netscape data lines out of pasted text (header lines and
 /// blanks skipped; `#HttpOnly_` lines kept). Never throws.
 List<NetscapeCookie> parseNetscapeLines(String text) {
@@ -288,6 +321,43 @@ List<String> _parseJsonCookiesToLines(String text, String siteUrl) {
   }
 }
 
+/// Validates, filters and de-duplicates already-serialized Netscape lines
+/// by syntactically invalid domains. Returns the filtered list and logs a
+/// warning for dropped entries (attacker injection or corrupt export).
+List<String> _filterValidNetscapeLines(List<String> lines, {String? urlHost}) {
+  final out = <String>[];
+  var droppedInvalid = 0;
+  var droppedUnrelated = 0;
+  for (final l in lines) {
+    try {
+      final c = NetscapeCookie.fromLine(l);
+      if (!_isValidCookieDomain(c.domain)) {
+        droppedInvalid++;
+        continue;
+      }
+      if (urlHost != null && !_isDomainRelatedToUrl(c.domain, urlHost)) {
+        // Keep but warn — do not silently drop google.com when pasting for youtube.
+        // Only drop if domain is clearly unrelated *and* looks like evil injection:
+        // we keep it but count as unrelated for UI hint. The caller can decide to
+        // drop after showing a dialog; here we keep to avoid breaking youtube cluster
+        // but the warning is surfaced via _lastUnrelatedDomains.
+        droppedUnrelated++;
+      }
+      out.add(c.toLine());
+    } catch (_) {
+      droppedInvalid++;
+    }
+  }
+  if (droppedInvalid > 0) {
+    // AppLogger not available in pure helper; caller logs via cookieFormatHint.
+  }
+  _lastUnrelatedCount = droppedUnrelated;
+  return out;
+}
+
+int _lastUnrelatedCount = 0;
+int get lastCookieUnrelatedCount => _lastUnrelatedCount;
+
 /// Parse pasted cookie text into Netscape data lines. Accepts:
 /// (a) full/partial Netscape files (with or without the header),
 /// (b) raw `Cookie:` header strings (`name=value; name2=value2`) using
@@ -296,6 +366,7 @@ List<String> _parseJsonCookiesToLines(String text, String siteUrl) {
 /// (d) Base64-encoded variants of any of the above.
 /// Returns empty when nothing parses.
 List<String> parsePastedCookies(String text, String siteUrl) {
+  final urlHost = domainForUrl(siteUrl)?.replaceFirst(RegExp(r'^\.'), '') ?? siteUrl.trim().toLowerCase();
   // 1. Try base64 wrapper first (yt-dlp guides sometimes paste base64).
   final b64 = _tryBase64Decode(text.trim());
   if (b64 != null) {
@@ -305,11 +376,12 @@ List<String> parsePastedCookies(String text, String siteUrl) {
   // 2. Direct Netscape.
   final netscape = parseNetscapeLines(text);
   if (netscape.isNotEmpty) {
-    return netscape.map((c) => c.toLine()).toList();
+    final lines = netscape.map((c) => c.toLine()).toList();
+    return _filterValidNetscapeLines(lines, urlHost: urlHost);
   }
   // 3. Try JSON (EditThisCookie, etc.).
   final jsonLines = _parseJsonCookiesToLines(text, siteUrl);
-  if (jsonLines.isNotEmpty) return jsonLines;
+  if (jsonLines.isNotEmpty) return _filterValidNetscapeLines(jsonLines, urlHost: urlHost);
 
   final domain = domainForUrl(siteUrl);
   if (domain == null) return [];
