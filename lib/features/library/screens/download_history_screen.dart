@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/download_history_db.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/trust_boundary.dart';
 import '../../../providers/download_history_provider.dart';
 import '../../home/widgets/download_log_sheet.dart';
@@ -23,7 +24,7 @@ Future<void> playHistoryRecord(
   final raw = record.filePath;
   if (raw == null || raw.trim().isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('No file for this entry yet')),
+      styledSnackBar(context, 'No file for this entry yet'),
     );
     return;
   }

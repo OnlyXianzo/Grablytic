@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/cookie_store.dart';
 import 'cookie_webview_screen.dart';
 
@@ -125,7 +126,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
               final url = urlCtrl.text.trim();
               if (url.isEmpty || (!url.startsWith('http://') && !url.startsWith('https://'))) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Enter a full URL starting with https://')),
+                  styledSnackBar(context, 'Enter a full URL starting with https://'),
                 );
                 return;
               }
@@ -236,7 +237,7 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     if (lines.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No cookies found in that text.')),
+          styledSnackBar(context, 'No cookies found in that text.'),
         );
       }
       return;
@@ -258,14 +259,14 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
     if (!await file.exists()) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('No cookies file yet.')));
+            .showSnackBar(styledSnackBar(context, 'No cookies file yet.'));
       }
       return;
     }
     await Clipboard.setData(ClipboardData(text: await file.readAsString()));
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Cookies copied to clipboard.')));
+          .showSnackBar(styledSnackBar(context, 'Cookies copied to clipboard.'));
     }
   }
 

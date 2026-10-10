@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/home/screens/batch_download_screen.dart';
+import 'notification_helper.dart';
 import '../../providers/batch_provider.dart';
 import '../../providers/preset_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -256,9 +257,7 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
     if (offline) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cannot start downloads: device is still offline.'),
-          ),
+          styledSnackBar(context, 'Cannot start downloads: device is still offline.'),
         );
       }
       return -1;
@@ -284,12 +283,9 @@ class OfflineQueueNotifier extends StateNotifier<List<QueuedLink>> {
       // View Batch now uses rootNavigator and longer duration so the
       // action survives the queue-banner rebuild that follows clear().
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            count == 1
-                ? 'Queued link sent to downloads'
-                : 'All $count queued links sent to downloads',
-          ),
+        styledSnackBar(
+          context,
+          count == 1 ? 'Queued link sent to downloads' : 'All $count queued links sent to downloads',
           duration: const Duration(seconds: 5),
           action: SnackBarAction(
             label: 'View Batch',
