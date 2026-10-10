@@ -1201,10 +1201,7 @@ open class MainActivity : FlutterActivity() {
                         // copy); the header already marks truncation.
                     }
                 } ?: throw java.io.IOException("MediaStore open failed")
-            } catch (e: java.io.IOException) { // skipcq: KT-W1009
-                try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
-                throw e
-            } catch (e: Exception) { // skipcq: KT-W1009
+            } catch (e: Exception) { // skipcq: KT-W1009 KT-W1064
                 try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
                 throw e
             }
