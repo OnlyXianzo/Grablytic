@@ -21,22 +21,36 @@ Future<void> showAppNotification(
   Duration duration = const Duration(seconds: 3),
   SnackBarAction? action,
 }) async {
-  // Try native first for important messages (errors & completions).
-  if (isError || title != null) {
+  // Prefer native when we have a meaningful title/message and the
+  // permission is granted (Android 13+). Check first to avoid
+  // SecurityException and double-notify. Pre-33 areNotificationsEnabled
+  // is true if the channel is enabled.
+  if (title != null || isError) {
     try {
       final engine = ref.read(engineProvider);
-      await engine.showErrorNotification(
-        downloadId: 'app_${DateTime.now().millisecondsSinceEpoch}',
-        title: title ?? (isError ? 'Notice' : 'Grablytic'),
-        error: message,
-      );
-      // Also log for diagnostics; native may be denied, but we already
-      // posted — no need to also SnackBar (would double-notify).
-      // For permission-denied we still fall through to SnackBar.
-      final status = await engine.notificationPermissionStatus();
-      if (status['granted'] == true) return;
+      final perm = await engine.notificationPermissionStatus();
+      final granted = perm['granted'] == true;
+      // On <33 granted is always true (compat path); still gate on
+      // areNotificationsEnabled for channel-disabled case.
+      if (granted) {
+        if (isError) {
+          await engine.showErrorNotification(
+            downloadId: 'app_${DateTime.now().millisecondsSinceEpoch}',
+            title: title ?? 'Notice',
+            error: message,
+          );
+        } else {
+          await engine.showSuccessNotification(
+            downloadId: 'app_${DateTime.now().millisecondsSinceEpoch}',
+            title: title ?? 'Grablytic',
+            message: message,
+          );
+        }
+        return;
+      }
+      // Not granted → fall through to styled SnackBar (no native fire)
     } catch (e) {
-      AppLogger.warn('Native notification failed: $e', tag: 'NotificationHelper');
+      AppLogger.warn('Native check/post failed: $e', tag: 'NotificationHelper');
     }
   }
 
