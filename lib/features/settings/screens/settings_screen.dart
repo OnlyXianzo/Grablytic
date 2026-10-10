@@ -551,7 +551,7 @@ class StorageSettingsScreen extends ConsumerWidget {
                 onTap: () {
                   ref.read(searchProvider.notifier).clear();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Search history cleared')),
+                    styledSnackBar(context, 'Search history cleared'),
                   );
                 },
               ),
