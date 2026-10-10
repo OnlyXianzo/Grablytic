@@ -12,6 +12,7 @@ import '../../../core/utils/command_template.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/format_selector.dart';
 import '../../../core/utils/history_guard.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/schedule_guard.dart';
 import '../../../core/utils/picker_session_state.dart';
 import '../../../providers/download_provider.dart';
@@ -752,9 +753,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     final notifier = ref.read(downloadProvider.notifier);
     if (notifier.isDownloading(widget.url)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Download already in progress for this link'),
-        ),
+        styledSnackBar(context, 'Download already in progress for this link'),
       );
       return;
     }
@@ -809,7 +808,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       if (!mounted) return;
       setState(() => _isStarting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_clipValidationError ?? 'Invalid clip range')),
+        styledSnackBar(context, _clipValidationError ?? 'Invalid clip range'),
       );
       return;
     }
@@ -889,12 +888,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         Navigator.pop(context);
         final wasQueued = result['queued'] == true;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              wasQueued
-                  ? 'Queued — starts when a slot frees up'
-                  : 'Download started',
-            ),
+          styledSnackBar(
+            context,
+            wasQueued ? 'Queued — starts when a slot frees up' : 'Download started',
           ),
         );
       }
@@ -903,12 +899,11 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
         setState(() => _isStarting = false);
         final err = result['error_type']?.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              err == 'ERROR_ALREADY_ACTIVE'
-                  ? 'Download already in progress for this link'
-                  : 'Could not start download',
-            ),
+          styledSnackBar(
+            context,
+            err == 'ERROR_ALREADY_ACTIVE'
+                ? 'Download already in progress for this link'
+                : 'Could not start download',
           ),
         );
       }
