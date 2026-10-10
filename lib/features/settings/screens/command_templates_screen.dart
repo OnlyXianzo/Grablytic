@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 
 class CommandTemplatesScreen extends ConsumerWidget {
@@ -128,7 +129,7 @@ class CommandTemplatesScreen extends ConsumerWidget {
               final problem = validateTemplateArgs(args);
               if (problem != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(problem)),
+                  styledSnackBar(context, problem),
                 );
                 return;
               }
@@ -143,9 +144,7 @@ class CommandTemplatesScreen extends ConsumerWidget {
               ref.read(settingsProvider.notifier).setCustomTemplates(updated);
               if (templateWantsExec(args)) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.'),
+                  styledSnackBar(context, 'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.',
                     duration: Duration(seconds: 5),
                   ),
                 );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../providers/batch_provider.dart';
@@ -81,7 +82,7 @@ class _PlaylistDetailsScreenState extends ConsumerState<PlaylistDetailsScreen> {
                             .addDownloadToPlaylist(playlist.id, item.id);
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Added file to playlist')),
+                          styledSnackBar(context, 'Added file to playlist'),
                         );
                       },
                     );
@@ -227,7 +228,7 @@ class _PlaylistDetailsScreenState extends ConsumerState<PlaylistDetailsScreen> {
               ref.read(playlistProvider.notifier).deletePlaylist(playlist.id);
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Playlist deleted')),
+                styledSnackBar(context, 'Playlist deleted'),
               );
             },
           ),
@@ -417,7 +418,7 @@ class _PlaylistRow extends ConsumerWidget {
                   .removeDownloadFromPlaylist(playlistId, item.id);
               onRemoved();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Removed file from playlist')),
+                styledSnackBar(context, 'Removed file from playlist'),
               );
             },
           ),
