@@ -12,6 +12,7 @@ import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'format_picker_screen.dart';
 import 'playlist_selection_screen.dart';
 
@@ -146,7 +147,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
           .addLink(url, source: 'share');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline: Shared link saved to queue')),
+        styledSnackBar(context, 'Offline: Shared link saved to queue'),
       );
       await Future.delayed(const Duration(milliseconds: 600));
       _finish();
@@ -203,13 +204,9 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                startRes['queued'] == true
-                    ? 'Queued — starts when a slot frees up'
-                    : 'Auto-starting download from shared link',
-              ),
-              duration: const Duration(seconds: 2),
+            styledSnackBar(
+              context,
+              startRes['queued'] == true ? 'Queued — starts when a slot frees up' : 'Auto-starting download from shared link',
             ),
           );
         }
@@ -223,10 +220,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Auto-download failed: $errorMsg'),
-              duration: const Duration(seconds: 3),
-            ),
+            styledSnackBar(context, 'Auto-download failed: $errorMsg'),
           );
         }
       }
@@ -239,10 +233,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Auto-download failed: $e'),
-            duration: const Duration(seconds: 3),
-          ),
+          styledSnackBar(context, 'Auto-download failed: $e'),
         );
       }
     }
