@@ -12,6 +12,7 @@ import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../core/utils/notification_helper.dart';
 import 'format_picker_screen.dart';
 import 'playlist_selection_screen.dart';
 
@@ -146,7 +147,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
           .addLink(url, source: 'share');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline: Shared link saved to queue')),
+        styledSnackBar(context, 'Offline: Shared link saved to queue'),
       );
       await Future.delayed(const Duration(milliseconds: 600));
       _finish();
