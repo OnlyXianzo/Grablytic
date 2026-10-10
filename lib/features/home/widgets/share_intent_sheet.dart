@@ -43,7 +43,46 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
   @override
   void initState() {
     super.initState();
-    _loadPreview();
+    // Lazy preview: first paint is instant with URL + buttons; thumbnail
+    // comes from cache if already extracted, otherwise fetched only when
+    // the user taps Play. This keeps showModalBottomSheet <100ms per
+    // Flutter perf guidance (avoid heavy children during slide-up).
+    _loadCachedThumbOnly();
+  }
+
+  void _loadCachedThumbOnly() {
+    try {
+      final cached = ExtractionCache.instance.get(widget.url);
+      if (cached != null && cached['success'] == true) {
+        _applyPreview(cached);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isLoadingPreview = false);
+  }
+
+  Future<void> _ensurePreviewLoaded() async {
+    if (_previewStream != null || isPlaylistUrl(widget.url)) return;
+    if (_isLoadingPreview) return;
+    setState(() => _isLoadingPreview = true);
+    try {
+      final engine = ref.read(engineProvider);
+      // Check engine ready before heavy getFormats (Yt-dlp init can be 10s)
+      final status = ref.read(engineStatusProvider).valueOrNull;
+      if (status != null && !status.ready) {
+        setState(() => _isPreviewUnavailable = true);
+        return;
+      }
+      final result = await ExtractionCache.instance.getOrFetch(
+        widget.url,
+        () => engine.getFormats(url: widget.url, config: const {'cookies_path': null, 'proxy': null, 'verbose': false}),
+      );
+      if (!mounted) return;
+      _applyPreview(result);
+    } catch (_) {
+      if (mounted) setState(() => _isPreviewUnavailable = true);
+    } finally {
+      if (mounted) setState(() => _isLoadingPreview = false);
+    }
   }
 
   @override
@@ -90,7 +129,14 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
   }
 
   Future<void> _togglePreviewPlay() async {
-    if (_previewStream == null || (_previewStream!['url'] as String?)?.isEmpty != false) {
+    // Lazy: if preview not yet fetched (heavy getFormats), fetch now only on Play tap
+    if (_previewStream == null) {
+      await _ensurePreviewLoaded();
+      if (_previewStream == null || (_previewStream!['url'] as String?)?.isEmpty != false) {
+        if (mounted) setState(() => _isPreviewUnavailable = true);
+        return;
+      }
+    } else if ((_previewStream!['url'] as String?)?.isEmpty != false) {
       if (mounted) setState(() => _isPreviewUnavailable = true);
       return;
     }
@@ -247,9 +293,9 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
                 hasThumb
                     ? Image.network(_thumbnailUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHigh, child: Icon(Icons.movie_outlined, color: cs.outline)))
                     : Container(color: cs.surfaceContainerHigh, child: Icon(Icons.movie_outlined, size: 36, color: cs.outline)),
-                if (_isPreviewInitializing)
+                if (_isPreviewInitializing || _isLoadingPreview)
                   Container(color: Colors.black45, child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))))
-                else if (!_isPreviewUnavailable && _previewStream != null)
+                else if (!_isPreviewUnavailable && !isPlaylistUrl(widget.url))
                   Container(
                     color: Colors.black26,
                     child: Center(
