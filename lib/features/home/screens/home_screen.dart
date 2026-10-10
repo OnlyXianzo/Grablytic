@@ -16,6 +16,7 @@ import '../../../providers/settings_provider.dart';
 import '../screens/format_picker_screen.dart';
 import 'playlist_selection_screen.dart';
 import 'search_results_screen.dart';
+import '../../../core/utils/notification_helper.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/presets_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
@@ -501,12 +502,9 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
             .addLink(input, source: 'paste');
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              added
-                  ? 'Offline: Link saved to queue'
-                  : 'Link is already in offline queue',
-            ),
+          styledSnackBar(
+            context,
+            added ? 'Offline: Link saved to queue' : 'Link is already in offline queue',
           ),
         );
         _controller.clear();
