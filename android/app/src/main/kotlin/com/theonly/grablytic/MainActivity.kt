@@ -1151,7 +1151,7 @@ open class MainActivity : FlutterActivity() {
      */
     // skipcq: KT-R1006
     private fun exportFileToDownloads(src: File, displayName: String): String {
-        if (!src.isFile) throw IllegalArgumentException("log file missing")
+        require(src.isFile) { "log file missing" }
         // T10: Dart passes `grablytic logs - YYYY-MM-DD HH-mm-ss.log` (no
         // colons). Preserve spaces/dots/dashes; strip path separators and
         // colons; ensure .log. Falls back to a spec-shaped name, never blank.
@@ -1201,7 +1201,10 @@ open class MainActivity : FlutterActivity() {
                         // copy); the header already marks truncation.
                     }
                 } ?: throw java.io.IOException("MediaStore open failed")
-            } catch (e: Exception) {
+            } catch (e: java.io.IOException) { // skipcq: KT-W1009
+                try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+                throw e
+            } catch (e: Exception) { // skipcq: KT-W1009
                 try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
                 throw e
             }
