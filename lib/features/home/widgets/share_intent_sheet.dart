@@ -357,7 +357,7 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final statusAsync = ref.watch(engineStatusProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;

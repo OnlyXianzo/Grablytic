@@ -1347,8 +1347,9 @@ class _LibraryItem extends ConsumerWidget {
           .deleteFileAndHistory(item.id);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ok ? 'File deleted' : 'Could not delete — try again'),
+          styledSnackBar(
+            context,
+            ok ? 'File deleted' : 'Could not delete — try again',
           ),
         );
       }
