@@ -328,6 +328,16 @@ def poll_queues():
                         except Exception:
                             pass
                         break
+                    else:
+                        # The result reached the client: the cleanup loop
+                        # may now reap the entry.
+                        try:
+                            from grablytic_engine.downloader import (
+                                _mark_result_delivered,
+                            )
+                            _mark_result_delivered(download_id)
+                        except Exception:
+                            pass
 
         time.sleep(0.1)
 

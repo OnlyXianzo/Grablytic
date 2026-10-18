@@ -382,6 +382,29 @@ def _apply_verbosity(opts: dict, config: dict) -> None:
         opts.pop("verbose", None)
 
 
+def _mark_result_delivered(download_id: str) -> None:
+    """Mark a download's terminal result as handed to the client.
+
+    The cleanup loop used to reap an entry when `res_q.empty()` — and
+    `Queue.empty()` is documented as UNRELIABLE in multi-threaded
+    contexts. The invariant it leaned on ("the worker puts its terminal
+    BEFORE stamping finished_at") was an engine-internal detail, not an
+    upstream yt-dlp contract, and a race there reaped an entry whose
+    result the client had not read yet.
+
+    This flag records the fact itself: the result reached the client —
+    through the event callback, or by being drained from the result
+    queue.
+    """
+    try:
+        with _downloads_lock:
+            info = _active_downloads.get(download_id)
+            if isinstance(info, dict):
+                info["result_delivered"] = True
+    except Exception:
+        pass
+
+
 def _new_slot_token() -> str:
     """Unique generation identity for one slot admission (BRUTAL-2a)."""
     return uuid.uuid4().hex
@@ -663,6 +686,8 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
                 "event_callback": entry.get("event_callback"),
+                # Set once the terminal result has reached the client.
+                "result_delivered": False,
             }
         else:
             if "event_callback" not in _active_downloads[download_id] and entry.get("event_callback") is not None:
@@ -863,21 +888,13 @@ def _cleanup_loop():
                 for did, info in list(_active_downloads.items()):
                     fin_at = info.get("finished_at")
                     if fin_at:
-                        res_q = info.get("result_queue")
-                        # NOTE (BRUTAL-2c audit): Queue.empty() is safe HERE
-                        # because (a) this whole scan runs under
-                        # _downloads_lock, same lock as admission, so no
-                        # entry swap can interleave the check and the pop;
-                        # (b) every admission mints FRESH queue objects, so a
-                        # reused id can never append to this res_q; (c) the
-                        # worker always puts its terminal BEFORE stamping
-                        # finished_at, so empty()==True on a finished entry
-                        # means the result was read (or never existed) — it
-                        # cannot mean "result still in flight".
-                        # Clean up immediately if the result has been read by client
-                        if res_q and res_q.empty():
+                        # Reap only when the result actually reached the
+                        # client. `res_q.empty()` is not a safe proxy for
+                        # that (unreliable in multi-threaded contexts).
+                        if info.get("result_delivered"):
                             to_remove.append(did)
-                        # Failsafe: clean up after 30 seconds regardless of read status
+                        # Failsafe: clean up after 30 seconds regardless
+                        # of read status.
                         elif (now - fin_at).total_seconds() > 30:
                             to_remove.append(did)
 
@@ -1729,6 +1746,10 @@ def download_thread(
             # over-admit via an extra pump.
             owned = _close_own_slot(download_id, slot_token)
             if owned:
+                if event_callback is not None:
+                    # The terminal went out through the callback, so the
+                    # client has it.
+                    _mark_result_delivered(download_id)
                 # Free the slot, then promote the next FIFO-parked entry (if any).
                 try:
                     _pump_queue()
@@ -1849,6 +1870,8 @@ def start_download(
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
                 "event_callback": event_callback,
+                # Set once the terminal result has reached the client.
+                "result_delivered": False,
             }
             _index_add(download_id, url, audio_only)
 
