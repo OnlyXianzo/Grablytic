@@ -9,12 +9,31 @@ Never raises: validators return ""/None on garbage (fail closed).
 import ipaddress
 import os
 import socket
+import threading
 from urllib.parse import urlparse
 
 _ALLOWED_MEDIA_SCHEMES = ("http", "https")
 _ALLOWED_PROXY_SCHEMES = ("http", "https", "socks4", "socks5", "socks5h")
 
 _LOCAL_HOSTS = {"localhost", "localhost.", "0.0.0.0", "::", "::1"}
+
+# Cloud metadata endpoints, blocked BY NAME before any DNS lookup. The
+# numeric address is blocked too (see _ip_is_blocked), but a hostname
+# that resolves to it must never reach the resolver at all.
+_METADATA_HOSTNAMES = frozenset({
+    "metadata",
+    "metadata.google.internal",
+    "metadata.goog",
+    "instance-data",
+    "instance-data.ec2.internal",
+})
+
+# DNS lookup budget. `socket.getaddrinfo` takes no timeout, so the lookup
+# runs in a thread with a deadline.
+_DNS_TIMEOUT_S = 5.0
+# Captured at import: the test suite patches `threading.Thread` globally
+# and the resolver must still be able to run.
+_real_thread = threading.Thread
 
 _CLOUD_METADATA_IPV4 = ipaddress.ip_address("169.254.169.254")
 _IPV6_LINK_LOCAL = ipaddress.ip_network("fe80::/10")
@@ -171,28 +190,17 @@ def _host_is_blocked(host: str) -> bool:
             return True
     # 3) Hostname: DNS-resolve and reject if ANY result is non-public
     # (DNS-rebinding guard: 127.0.0.1.nip.io, 169.254.169.254.nip.io, …).
-    try:
-        infos = socket.getaddrinfo(h, 80, type=socket.SOCK_STREAM)
-    except socket.gaierror:
-        # Known residual: on DNS failure we cannot prove rebinding, so fail
-        # OPEN (not blocked) to avoid bricking legitimate downloads while
-        # offline or with broken DNS. Residual risk: an attacker hostname
-        # rebound during an outage slips past; redirect re-validation inside
-        # yt-dlp is out of scope for this ticket.
-        return False
-    except Exception:
-        # Same fail-open rationale for unexpected resolver errors.
-        return False
-    if not infos:
-        return False
-    for info in infos:
-        try:
-            sockaddr = info[4] if len(info) > 4 else None
-            ip_str = sockaddr[0] if sockaddr else ""
-        except Exception:
-            continue
-        if not ip_str:
-            continue
+    if h in _METADATA_HOSTNAMES:
+        return True
+    ips = _resolve_host(h)
+    if not ips:
+        # FAIL CLOSED. We could not prove the host is public, and this
+        # guard is the only thing between a user-supplied URL and the
+        # device's private network. Failing open here is precisely the
+        # window an attacker needs: a name that does not resolve now
+        # resolves to 127.0.0.1 later (DNS rebinding).
+        return True
+    for ip_str in ips:
         if "%" in str(ip_str):
             ip_str = str(ip_str).split("%", 1)[0]
         try:
@@ -205,6 +213,46 @@ def _host_is_blocked(host: str) -> bool:
             return True
     return False
 
+
+
+def _resolve_host(host: str) -> list[str]:
+    """Resolve `host` to a list of IP strings, bounded in time.
+
+    `socket.getaddrinfo` accepts no timeout, so the lookup runs in a REAL
+    thread with a deadline — a hung resolver would otherwise hang the
+    guard (and the whole download) forever.
+
+    Returns [] on timeout, resolver error or an empty answer. The caller
+    then fails CLOSED.
+    """
+    found: list[str] = []
+    done = threading.Event()
+
+    def _resolve():
+        try:
+            infos = socket.getaddrinfo(host, 80, type=socket.SOCK_STREAM)
+        except Exception:
+            infos = []
+        for info in infos or []:
+            try:
+                sockaddr = info[4] if len(info) > 4 else None
+                if sockaddr:
+                    found.append(str(sockaddr[0]))
+            except Exception:
+                continue
+        done.set()
+
+    try:
+        t = _real_thread(target=_resolve, daemon=True)
+        t.start()
+    except Exception:
+        return []
+    # `_DNS_TIMEOUT_S` is read at CALL time on purpose: a default argument
+    # would bind it at def time, and patching the module global would
+    # then have no effect.
+    if not done.wait(_DNS_TIMEOUT_S):
+        return []
+    return found
 
 def is_safe_media_url(url) -> bool:
     """True only for fetchable public http(s) media URLs.

@@ -108,10 +108,10 @@ class TestLegitimateUrls:
     def test_private_ip_literal_rejected(self):
         assert is_safe_media_url("http://192.168.1.50:8096") is False
 
-    def test_dns_failure_fails_open(self, monkeypatch):
+    def test_dns_failure_fails_closed(self, monkeypatch):
+        """We could not prove the host is public, so the URL is blocked."""
         def _raise(host, port, *args, **kwargs):
             raise socket.gaierror("mocked DNS outage")
 
         monkeypatch.setattr(socket, "getaddrinfo", _raise)
-        # Known residual: offline/broken-DNS can't prove rebinding, so allow.
-        assert is_safe_media_url("https://example.com/video") is True
+        assert is_safe_media_url("https://example.com/video") is False
