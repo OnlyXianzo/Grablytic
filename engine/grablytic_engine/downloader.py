@@ -27,6 +27,11 @@ log = get_logger("grablytic_engine.downloader")
 
 _active_downloads: dict[str, dict] = {}
 _downloads_lock = threading.Lock()
+# Condition over the SAME lock as `_downloads_lock`, so a waiter for a free
+# concurrency slot and the admission path can never disagree about who
+# holds the lock. `notify_all` is the wake-up; it must be called with the
+# lock released (see `_notify_slot_change`).
+_slot_cv = threading.Condition(_downloads_lock)
 
 # ── Download queue / concurrency gate (Milestone 1) ──────────────────────
 # Verified approach: default 2 concurrent (Seal-proven 3, YTDLnis default 1,
@@ -354,6 +359,9 @@ def set_max_concurrent(n) -> dict:
             _pump_queue()
         except Exception:
             pass
+        # A download sleeping through a retry backoff may be waiting for
+        # exactly this extra slot.
+        _notify_slot_change()
     return {"success": True, "max_concurrent": _max_concurrent}
 
 
@@ -384,7 +392,9 @@ def _close_own_slot(download_id: str, slot_token) -> bool:
         # The entry is no longer LIVE — drop it from the dedup index so a
         # new download of the same URL is not rejected as a duplicate.
         _index_remove(download_id, info.get("url"), info.get("audio_only"))
-        return True
+    # A slot just freed up — wake anything waiting to re-acquire one.
+    _notify_slot_change()
+    return True
 
 
 # ── Live-URL dedup index ───────────────────────────────────────────────
@@ -458,12 +468,76 @@ def _live_url_index_matches_bruteforce() -> bool:
 
 def _running_count() -> int:
     """Active (non-terminal) downloads. Caller should hold _downloads_lock
-    or accept a best-effort snapshot."""
+    or accept a best-effort snapshot.
+
+    A download that is sleeping through a retry backoff does NOT count:
+    it is not doing any work, and holding a concurrency slot for 15
+    seconds of sleep idles the whole engine.
+    """
     count = 0
     for info in _active_downloads.values():
-        if not info.get("finished_at"):
-            count += 1
+        if info.get("finished_at"):
+            continue
+        if info.get("backing_off"):
+            continue
+        count += 1
     return count
+
+
+def _notify_slot_change() -> None:
+    """Wake any download waiting for a free concurrency slot.
+
+    Must be called with `_downloads_lock` NOT held: `_slot_cv` shares that
+    lock, and a plain `threading.Lock` is not re-entrant.
+    """
+    try:
+        with _slot_cv:
+            _slot_cv.notify_all()
+    except Exception:
+        pass
+
+
+def _begin_backoff(download_id: str, delay: float, cancel) -> None:
+    """Release the concurrency slot for `delay` seconds, then re-acquire one.
+
+    The slot is handed back to the engine for the duration of the sleep
+    (the entry is flagged `backing_off`, so `_running_count` ignores it)
+    and the pending queue is pumped so a waiting download can start
+    immediately.
+
+    After the sleep the download waits for a free slot again. It does NOT
+    barge past a live download: the wait ends only when the engine is
+    actually below the concurrency limit (or the download is cancelled).
+    """
+    with _downloads_lock:
+        info = _active_downloads.get(download_id)
+        if isinstance(info, dict):
+            info["backing_off"] = True
+    # A slot just became free — let a queued download take it.
+    try:
+        _pump_queue()
+    except Exception:
+        pass
+    try:
+        time.sleep(delay)
+    except Exception:
+        pass
+    # Re-acquire a slot (interruptible by cancellation).
+    with _slot_cv:
+        while True:
+            if cancel is not None:
+                try:
+                    if cancel.is_set():
+                        break
+                except Exception:
+                    pass
+            if _running_count() < _max_concurrent:
+                break
+            _slot_cv.wait(timeout=0.5)
+        info = _active_downloads.get(download_id)
+        if isinstance(info, dict):
+            info["backing_off"] = False
+    _notify_slot_change()
 
 
 def _is_audio_mode(config) -> bool:
@@ -1180,7 +1254,9 @@ def _maybe_retry_transient(err, attempts_made: int, cancel, download_id: str) ->
         )
     except Exception:
         pass
-    time.sleep(delay)
+    # The backoff sleep does NOT hold the concurrency slot: the slot is
+    # released for the duration of the wait and re-acquired afterwards.
+    _begin_backoff(download_id, delay, cancel)
     if cancel is not None:
         try:
             if cancel.is_set():
