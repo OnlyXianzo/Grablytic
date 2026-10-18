@@ -79,7 +79,7 @@ def test_shutdown_signals_cancel_and_clears_queue():
 
     # Add a queued item
     with dl_mod._downloads_lock:
-        dl_mod._pending_queue.append({"download_id": "shut-queued-1"})
+        dl_mod._pending_queue["shut-queued-1"] = {"download_id": "shut-queued-1"}
 
     try:
         # Trigger graceful shutdown

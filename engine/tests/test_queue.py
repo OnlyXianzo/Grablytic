@@ -427,7 +427,7 @@ def test_pending_queue_rejects_when_full(monkeypatch):
         assert r_overflow["max_queue_size"] == 3
         assert len(dl_mod._pending_queue) == 3
         assert "overflow-1" not in dl_mod._active_downloads
-        assert not any(e["download_id"] == "overflow-1" for e in dl_mod._pending_queue)
+        assert "overflow-1" not in dl_mod._pending_queue
     finally:
         dl_mod.set_max_concurrent(2)
         _cleanup(*ids)
