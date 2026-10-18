@@ -434,8 +434,6 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 | [JS Runtimes (Android)](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Deno/Node/QuickJS/bgutil research + recommendation |
 | [Contributing](docs/contributing.md) | Style, commits, branches, PRs, architecture rules |
 | [Changelog](docs/CHANGELOG.md) | Release notes distilled from commit history |
-| [Accessibility audit](docs/testing/ACCESSIBILITY_AUDIT.md) | WCAG 2.2 findings & remediation |
-| [Performance audit](docs/testing/PERFORMANCE_AUDIT.md) | Frame-rate methodology |
 | [DMCA / Copyright](DMCA.md) | General-purpose-tool notice, user responsibility, takedown contact |
 
 ---
