@@ -992,8 +992,22 @@ def bootstrap() -> dict:
         "needs_update": len(update_components) > 0,
         "update_components": update_components,
         "binaries": binaries,
+        # FFmpeg serialization gate health. `installed: false` means
+        # concurrent post-processing runs UNSERIALIZED (CPU oversubscription
+        # → thermal throttling → Android LMK). Surfaced so the condition is
+        # observable instead of a silent, log-only warning.
+        "ffmpeg_serialization": _ffmpeg_serialization_status(),
         "contract_version": "1.0",
     }
+
+
+def _ffmpeg_serialization_status() -> dict:
+    """FFmpeg gate health, tolerant of an engine module that lacks it."""
+    try:
+        from grablytic_engine.downloader import ffmpeg_serialization_status
+        return ffmpeg_serialization_status()
+    except Exception as exc:  # pragma: no cover - defensive
+        return {"installed": False, "seam": None, "error": str(exc)[:200]}
 
 
 def update_check() -> dict:

@@ -59,42 +59,263 @@ _FFMPEG_GATE_TIMEOUT = 600.0
 _ffmpeg_semaphore = threading.Semaphore(1)
 _ffmpeg_patched = False
 _ffmpeg_patch_lock = threading.Lock()
+# Diagnostic state for the FFmpeg gate. `installed` is only True when the
+# gate is VERIFIABLY in place (the patch was found on the class and the
+# attribute identity check passed) — never merely "we tried".
+_ffmpeg_patch_state: dict = {
+    "installed": False,
+    "seam": None,
+    "error": None,
+}
+# Thread-local cancel context so the FFmpeg gate can be interrupted by a
+# user cancel while it waits for the semaphore (the wait used to be
+# uninterruptible for up to 600s, so a cancel was acknowledged only after
+# the merge finished — the UI said "cancelled" while FFmpeg kept writing).
+_cancel_ctx = threading.local()
 
 
-def _ensure_ffmpeg_serialized() -> None:
-    global _ffmpeg_patched
-    if _ffmpeg_patched:
-        return
-    with _ffmpeg_patch_lock:
-        if _ffmpeg_patched:
-            return
-        try:
-            import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
-            orig_real_run_ffmpeg = yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg
+def _current_cancel_event():
+    """The cancel event of the download thread that owns this call."""
+    return getattr(_cancel_ctx, "event", None)
 
-            def serialized_real_run_ffmpeg(self, *args, **kwargs):
-                acquired = _ffmpeg_semaphore.acquire(timeout=_FFMPEG_GATE_TIMEOUT)
-                if not acquired:
-                    # NOTE: wording avoids "timeout"/"timed out" so
-                    # classify_error() does not misroute this to
-                    # ERROR_NETWORK (transient list); it surfaces as
-                    # ERROR_UNKNOWN (recoverable) with a Retry action.
-                    msg = (
-                        "FFmpeg post-processing busy: another merge still "
-                        f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
-                        "please retry the download"
-                    )
-                    log.warn(msg)
-                    raise RuntimeError(msg)
+
+def _set_current_cancel_event(event) -> None:
+    _cancel_ctx.event = event
+
+
+def _ffmpeg_gate_acquire(cancel_event=None) -> bool:
+    """Acquire the FFmpeg gate, honouring a cancel request.
+
+    Polls the semaphore in short slices so a cancel lands within
+    ~250ms instead of after the full gate timeout. Returns True when the
+    gate was acquired, False when the wait was cancelled or timed out.
+    """
+    deadline = time.monotonic() + _FFMPEG_GATE_TIMEOUT
+    while True:
+        if cancel_event is not None:
+            try:
+                if cancel_event.is_set():
+                    return False
+            except Exception:
+                pass
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        slice_s = min(0.25, remaining)
+        if _ffmpeg_semaphore.acquire(timeout=slice_s):
+            return True
+
+
+def _ffmpeg_gate_release() -> None:
+    try:
+        _ffmpeg_semaphore.release()
+    except Exception:
+        pass
+
+
+def _install_ffmpeg_seam_primary() -> str:
+    """Install the gate on ``FFmpegPostProcessor.real_run_ffmpeg``.
+
+    Returns the seam name on success, raises on failure. The seam is
+    verified: the attribute must have existed AND the assignment must
+    have stuck (identity check) — a silent no-op used to leave the
+    engine with ZERO serialization and no CI signal.
+    """
+    import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
+
+    pp_cls = getattr(yt_ffmpeg, "FFmpegPostProcessor", None)
+    if pp_cls is None:
+        raise AttributeError(
+            "yt_dlp.postprocessor.ffmpeg.FFmpegPostProcessor is missing"
+        )
+    orig = getattr(pp_cls, "real_run_ffmpeg", None)
+    if orig is None or not callable(orig):
+        raise AttributeError(
+            "FFmpegPostProcessor.real_run_ffmpeg is missing — yt-dlp "
+            "renamed the seam, so the FFmpeg serialization gate cannot "
+            "be installed here"
+        )
+    if getattr(orig, "_grablytic_ffmpeg_gate", False):
+        # Already ours (module reloaded, or a double install).
+        return "FFmpegPostProcessor.real_run_ffmpeg"
+
+    def serialized_real_run_ffmpeg(self, *args, **kwargs):
+        cancel_event = _current_cancel_event()
+        acquired = _ffmpeg_gate_acquire(cancel_event)
+        if not acquired:
+            if cancel_event is not None:
                 try:
-                    return orig_real_run_ffmpeg(self, *args, **kwargs)
-                finally:
-                    _ffmpeg_semaphore.release()
+                    if cancel_event.is_set():
+                        # Cancellation wins over the busy gate: the
+                        # download's normal cancelled path runs.
+                        raise KeyboardInterrupt("Download cancelled by user")
+                except KeyboardInterrupt:
+                    raise
+                except Exception:
+                    pass
+            # NOTE: wording avoids "timeout"/"timed out" so
+            # classify_error() does not misroute this to
+            # ERROR_NETWORK (transient list); it surfaces as
+            # ERROR_UNKNOWN (recoverable) with a Retry action.
+            msg = (
+                "FFmpeg post-processing busy: another merge still "
+                f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
+                "please retry the download"
+            )
+            log.warn(msg)
+            raise RuntimeError(msg)
+        try:
+            return orig(self, *args, **kwargs)
+        finally:
+            _ffmpeg_gate_release()
 
-            yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg = serialized_real_run_ffmpeg
+    serialized_real_run_ffmpeg._grablytic_ffmpeg_gate = True
+    pp_cls.real_run_ffmpeg = serialized_real_run_ffmpeg
+    if getattr(pp_cls, "real_run_ffmpeg", None) is not serialized_real_run_ffmpeg:
+        raise RuntimeError(
+            "FFmpeg serialization assignment did not stick (yt-dlp may "
+            "use __slots__ / a metaclass that rejects attribute writes)"
+        )
+    return "FFmpegPostProcessor.real_run_ffmpeg"
+
+
+def _install_ffmpeg_seam_fallback() -> str:
+    """Fallback seam: serialize every ffmpeg/ffprobe process spawn.
+
+    ``yt_dlp.utils.Popen.run`` is a core utility used by ALL
+    postprocessors, so patching it covers ffmpeg invocations that the
+    primary seam misses (e.g. a renamed PP method). Only used when the
+    primary seam is unavailable — never both, or the gate would be
+    acquired twice and deadlock.
+    """
+    from yt_dlp.utils import Popen
+
+    orig_descriptor = Popen.__dict__.get("run")
+    orig_run = Popen.run
+    if (
+        isinstance(orig_descriptor, classmethod)
+        and getattr(orig_descriptor.__func__, "_grablytic_ffmpeg_gate", False)
+    ):
+        # Already ours (module reloaded, or a double install).
+        return "yt_dlp.utils.Popen.run"
+    if not isinstance(orig_descriptor, classmethod):
+        raise AttributeError(
+            "yt_dlp.utils.Popen.run is no longer a classmethod — the "
+            "fallback serialization seam cannot be installed"
+        )
+
+    _FFMPEG_BINARIES = ("ffmpeg", "ffprobe", "avconv")
+
+    def _is_ffmpeg_cmd(args) -> bool:
+        try:
+            cmd = args[0]
+            if isinstance(cmd, (list, tuple)) and cmd:
+                exe = str(cmd[0])
+            elif isinstance(cmd, str):
+                exe = cmd
+            else:
+                return False
+            base = os.path.basename(exe).lower()
+            if base.endswith(".exe"):
+                base = base[: -len(".exe")]
+            return base in _FFMPEG_BINARIES
+        except Exception:
+            return False
+
+    def _serialized_run_impl(cls, *args, **kwargs):
+        if not _is_ffmpeg_cmd(args):
+            return orig_run(*args, **kwargs)
+        cancel_event = _current_cancel_event()
+        if not _ffmpeg_gate_acquire(cancel_event):
+            if cancel_event is not None:
+                try:
+                    if cancel_event.is_set():
+                        raise KeyboardInterrupt("Download cancelled by user")
+                except KeyboardInterrupt:
+                    raise
+                except Exception:
+                    pass
+            msg = (
+                "FFmpeg post-processing busy: another merge still "
+                f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
+                "please retry the download"
+            )
+            log.warn(msg)
+            raise RuntimeError(msg)
+        try:
+            return orig_run(*args, **kwargs)
+        finally:
+            _ffmpeg_gate_release()
+
+    _serialized_run_impl._grablytic_ffmpeg_gate = True
+    Popen.run = classmethod(_serialized_run_impl)
+    # NOTE: `Popen.run` is a classmethod, so `getattr(Popen, "run")`
+    # returns a NEW bound method on every access — an `is` comparison
+    # would always be False. Verify through the class __dict__ instead.
+    installed = Popen.__dict__.get("run")
+    if (
+        not isinstance(installed, classmethod)
+        or installed.__func__ is not _serialized_run_impl
+    ):
+        raise RuntimeError("Popen.run serialization assignment did not stick")
+    return "yt_dlp.utils.Popen.run"
+
+
+def _ensure_ffmpeg_serialized() -> bool:
+    """Install the process-wide FFmpeg serialization gate.
+
+    Returns True when the gate is verifiably installed. NEVER raises and
+    NEVER fails silently: a failure is recorded in
+    ``_ffmpeg_patch_state`` and logged at ERROR level, and the status is
+    surfaced by :func:`ffmpeg_serialization_status` (and therefore by
+    bootstrap) so the condition is visible instead of invisible.
+    """
+    global _ffmpeg_patched
+    if _ffmpeg_patched and _ffmpeg_patch_state.get("installed"):
+        return True
+    with _ffmpeg_patch_lock:
+        if _ffmpeg_patched and _ffmpeg_patch_state.get("installed"):
+            return True
+        errors: list[str] = []
+        for name, installer in (
+            ("primary", _install_ffmpeg_seam_primary),
+            ("fallback", _install_ffmpeg_seam_fallback),
+        ):
+            try:
+                seam = installer()
+            except Exception as exc:
+                errors.append(f"{name}: {type(exc).__name__}: {exc}")
+                continue
             _ffmpeg_patched = True
-        except Exception as e:
-            log.warning(f"Failed to serialize FFmpeg postprocessor: {e}")
+            _ffmpeg_patch_state.update(
+                installed=True, seam=seam, error=None,
+            )
+            log.info(f"FFmpeg serialization gate installed on {seam}")
+            return True
+        # Both seams failed. Loudly record it: the engine still works, but
+        # concurrent post-processing is UNSERIALIZED, which is exactly the
+        # CPU-oversubscription / thermal-throttling / LMK failure the gate
+        # exists to prevent.
+        detail = "; ".join(errors) or "unknown error"
+        _ffmpeg_patched = False
+        _ffmpeg_patch_state.update(installed=False, seam=None, error=detail)
+        try:
+            log.error(
+                "FFmpeg serialization gate NOT installed — concurrent "
+                f"post-processing is unsynchronized ({detail})"
+            )
+        except Exception:
+            pass
+        return False
+
+
+def ffmpeg_serialization_status() -> dict:
+    """Health of the FFmpeg gate: {'installed', 'seam', 'error'}."""
+    return {
+        "installed": bool(_ffmpeg_patch_state.get("installed")),
+        "seam": _ffmpeg_patch_state.get("seam"),
+        "error": _ffmpeg_patch_state.get("error"),
+    }
 
 
 _ensure_ffmpeg_serialized()
@@ -891,6 +1112,18 @@ def download_thread(
             _active_downloads[download_id] = existing
 
         log.set_context(download_id=download_id)
+        # Bind this thread's cancel event so the FFmpeg gate can be
+        # interrupted while it waits for the process-wide semaphore
+        # (a cancel used to be ignored for up to the 600s gate timeout).
+        _set_current_cancel_event(cancel)
+        # Self-heal the FFmpeg gate: a module reload or a late yt-dlp
+        # import can invalidate the patch. Re-verify per download instead
+        # of trusting the import-time install.
+        try:
+            _ensure_ffmpeg_serialized()
+        except Exception:
+            pass
+
         # T1-9: bound before try — the except-handler below logs safe_url,
         # so a failure before its in-try assignment must not raise
         # UnboundLocalError and mask the real error.
@@ -1221,6 +1454,10 @@ def download_thread(
                 })
         finally:
             log.clear_context()
+            # Drop the thread-local cancel binding so a later FFmpeg call
+            # on this (pooled) thread never sees a stale event.
+            _set_current_cancel_event(None)
+
             # BRUTAL-2a: stamp + promote only our own generation. A stale
             # worker exiting after a same-id retry must not mark the fresh
             # download terminal (cleanup would reap it mid-flight) nor
