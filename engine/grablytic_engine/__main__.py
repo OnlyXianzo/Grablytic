@@ -40,6 +40,15 @@ _stdout_lock = threading.Lock()
 # id over the single stdout lock, so out-of-order completion is safe. The
 # envelope contract and method ids are byte-identical (BRUTAL-1).
 _MAX_IPC_WORKERS = 8
+# Back-pressure (finding: unbounded pool queue). The number of slow-lane
+# requests allowed in flight (running + queued) at any moment. The old
+# unbounded `pool.submit()` grew without limit: every queued request held
+# its params, and a stalled Dart reader could wedge all 8 workers on the
+# stdout lock while the queue grew until the process died. Past this
+# bound the engine SHEDS LOAD with an explicit, retryable ERROR_BUSY
+# envelope instead of silently queueing — the client learns immediately
+# that the engine is saturated rather than hanging until timeout.
+_MAX_IPC_INFLIGHT = 24
 # Fast local-only methods bypass the pool entirely and run inline in the
 # reader thread: a 30s extraction must never delay cancel/queue-status.
 # All are in-memory + lock-guarded (no network), so inline is safe.
@@ -49,7 +58,173 @@ _FAST_IPC_METHODS = frozenset({
     "download/set_concurrency",
     "download/clear_archive",
 })
+# A single IPC line longer than this is refused instead of being read
+# into memory. Legit envelopes (a 200-format preview) are far smaller;
+# a runaway writer must not be able to OOM the engine.
+_MAX_IPC_LINE_BYTES = 4 * 1024 * 1024
 _paths_lock = threading.Lock()
+
+# ── stdout framing firewall ────────────────────────────────────────────
+# stdout is a FRAMED protocol channel: every byte must be exactly one
+# JSON envelope followed by '\n'. A single stray write (yt-dlp's own
+# stdout logger, a C extension, a third-party lib calling print())
+# injects a non-JSON line and desyncs the client's LineSplitter for the
+# WHOLE session — every later frame is then mis-parsed.
+#
+# Mitigation: replace the public `sys.stdout` with a shim that forwards
+# stray writes to stderr. Installed by main() (NOT at import time) so
+# test runners that capture stdout keep working.
+#
+# The real stdout is NEVER cached in a module global: the protocol
+# writer resolves it dynamically through _out_stream(), so a runner that
+# swaps sys.stdout between tests (pytest capture) is always honoured
+# and a stale closed stream can never swallow frames.
+
+
+class _StdoutFirewall:
+    """`sys.stdout` replacement that can never corrupt protocol framing.
+
+    Every write is forwarded to stderr. The real stdout stays reachable
+    only through the module-level protocol writer.
+    """
+
+    def __init__(self, real_stdout, real_stderr):
+        self._real = real_stdout
+        self._err = real_stderr
+
+    # -- text layer -------------------------------------------------
+    def write(self, data):
+        try:
+            return self._err.write(data)
+        except Exception:
+            return len(data) if isinstance(data, (str, bytes)) else 0
+
+    def writelines(self, lines):
+        for line in lines:
+            self.write(line)
+
+    def flush(self):
+        try:
+            self._err.flush()
+        except Exception:
+            pass
+
+    # -- binary layer ------------------------------------------------
+    # `sys.stdout.buffer` must not hand out a real stdout fd: a raw
+    # byte write there would inject garbage into the frame stream.
+    @property
+    def buffer(self):
+        return _StderrBuffer(self._err)
+
+    # -- introspection ----------------------------------------------
+    def isatty(self):
+        return False
+
+    def fileno(self):
+        try:
+            return self._real.fileno()
+        except Exception:
+            return 1
+
+    @property
+    def encoding(self):
+        return getattr(self._real, "encoding", "utf-8")
+
+    @property
+    def errors(self):
+        return getattr(self._real, "errors", None)
+
+    @property
+    def closed(self):
+        return False
+
+    def writable(self):
+        return True
+
+    def readable(self):
+        return False
+
+    def seekable(self):
+        return False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _StderrBuffer:
+    """Binary shim for `sys.stdout.buffer` — writes go to stderr."""
+
+    def __init__(self, real_stderr):
+        self._err = real_stderr
+
+    def write(self, data):
+        try:
+            return self._err.buffer.write(data)
+        except Exception:
+            try:
+                return self._err.write(
+                    data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
+                )
+            except Exception:
+                return 0
+
+    def flush(self):
+        try:
+            self._err.buffer.flush()
+        except Exception:
+            pass
+
+    def writable(self):
+        return True
+
+    def readable(self):
+        return False
+
+    def seekable(self):
+        return False
+
+
+def install_stdout_firewall() -> bool:
+    """Redirect stray stdout writes to stderr.
+
+    Returns True when the firewall is active afterwards. After this
+    call the ONLY way to emit a protocol frame is _write_stdout_line().
+    Re-entrant: calling it again re-wraps the *current* real stdout
+    (never a previously captured, possibly closed, stream).
+    """
+    try:
+        current = sys.stdout
+        if isinstance(current, _StdoutFirewall):
+            current = current._real
+        sys.stdout = _StdoutFirewall(current, sys.stderr)
+        return True
+    except Exception:
+        return False
+
+
+def restore_stdout() -> None:
+    """Undo install_stdout_firewall() (tests + graceful shutdown)."""
+    try:
+        if isinstance(sys.stdout, _StdoutFirewall):
+            sys.stdout = sys.stdout._real
+    except Exception:
+        pass
+
+
+def _out_stream():
+    """The stream that protocol frames are written to.
+
+    Resolved dynamically: when the firewall is installed this is the
+    real stdout behind it; otherwise it is whatever `sys.stdout` is
+    right now (pytest capture, a redirected file, ...).
+    """
+    stream = sys.stdout
+    if isinstance(stream, _StdoutFirewall):
+        return stream._real
+    return stream
 
 
 def _write_stdout_line(line_str: str) -> None:
@@ -62,8 +237,9 @@ def _write_stdout_line(line_str: str) -> None:
     if not line_str.endswith("\n"):
         line_str += "\n"
     with _stdout_lock:
-        sys.stdout.write(line_str)
-        sys.stdout.flush()
+        stream = _out_stream()
+        stream.write(line_str)
+        stream.flush()
 
 
 def poll_queues():
@@ -318,6 +494,23 @@ def _execute_parsed_request(req_id, method, params):
         _write_stdout_line(json.dumps(err_res))
 
 
+def _busy_envelope(req_id, method) -> dict:
+    """Explicit, retryable load-shed envelope (never a silent hang)."""
+    return {
+        "id": req_id,
+        "error": {
+            "success": False,
+            "error_type": "ERROR_BUSY",
+            "error_message": (
+                f"Engine is busy ({_MAX_IPC_INFLIGHT} requests in flight); "
+                "retry shortly"
+            ),
+            "recoverable": True,
+            "retryable": True,
+        },
+    }
+
+
 def main():
     if len(sys.argv) > 1:
         command = sys.argv[1]
@@ -329,7 +522,26 @@ def main():
             _write_stdout_line(f"Unknown CLI command: {command}")
         return
 
+    # Framing firewall first: from here on, only _write_stdout_line() can
+    # put bytes on the real stdout, so a stray print() from any library
+    # can no longer desync the client's JSON line parser.
+    install_stdout_firewall()
+
     threading.Thread(target=poll_queues, daemon=True).start()
+
+    # In-flight budget for the slow lane. Acquired before a request is
+    # accepted and released when its response has been written, so the
+    # bound covers "running + queued" work, not just running work.
+    inflight = threading.BoundedSemaphore(_MAX_IPC_INFLIGHT)
+
+    def _run_guarded(req_id, method, params):
+        try:
+            _execute_parsed_request(req_id, method, params)
+        finally:
+            try:
+                inflight.release()
+            except Exception:
+                pass
 
     with _futures.ThreadPoolExecutor(
         max_workers=_MAX_IPC_WORKERS, thread_name_prefix="ipc"
@@ -344,6 +556,10 @@ def main():
             method = "<unparsed>"
             params = {}
             try:
+                if len(line) > _MAX_IPC_LINE_BYTES:
+                    raise ValueError(
+                        f"IPC line exceeds {_MAX_IPC_LINE_BYTES} bytes"
+                    )
                 req = json.loads(line)
                 req_id = req.get("id")
                 method = req.get("method")
@@ -375,8 +591,32 @@ def main():
             # paths/set is also inline (serialized global init, no network).
             if method in _FAST_IPC_METHODS or method == "paths/set":
                 _execute_parsed_request(req_id, method, params)
-            else:
-                _pool.submit(_execute_parsed_request, req_id, method, params)
+                continue
+
+            # Slow lane: bounded admission. Over budget → shed with an
+            # explicit ERROR_BUSY so the client can retry, instead of
+            # growing an unbounded queue (the old behaviour, which had no
+            # back-pressure at all).
+            if not inflight.acquire(blocking=False):
+                try:
+                    log.warn(
+                        f"IPC load shed: {method} rejected, "
+                        f"{_MAX_IPC_INFLIGHT} requests already in flight"
+                    )
+                except Exception:
+                    pass
+                _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+                continue
+            try:
+                _pool.submit(_run_guarded, req_id, method, params)
+            except Exception:
+                # Pool saturated/closed: release the slot and shed loudly
+                # rather than dropping the request silently.
+                try:
+                    inflight.release()
+                except Exception:
+                    pass
+                _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
         # Exiting `with` drains in-flight workers so every accepted request
         # gets its envelope before EOF shutdown (keeps _run_lines-style
         # harnesses deterministic).
