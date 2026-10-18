@@ -839,6 +839,13 @@ def shutdown_downloads(timeout: float = 5.0) -> dict:
     # Stop the cleanup loop
     _cleanup_stop_event.set()
 
+    # Stop the watchdog pool: a pending watchdog job would otherwise keep
+    # a daemon thread alive past interpreter exit.
+    try:
+        stop_watchdog_pool()
+    except Exception:
+        pass
+
     with _downloads_lock:
         for e in list(_pending_queue.values()):
             _index_remove(
@@ -1923,6 +1930,25 @@ def cancel_download(download_id: str) -> dict:
 # drain via _cleanup_loop's 30s failsafe). Monkeypatchable in tests.
 _CANCEL_WATCHDOG_SECONDS = 120.0
 
+# The watchdog used to spawn ONE THREAD PER CANCELLED DOWNLOAD, and each
+# of those threads lived for up to _CANCEL_WATCHDOG_SECONDS. A user who
+# cancelled 200 downloads therefore had 200 live threads, each blocked in
+# `join()` — an unbounded thread-per-event leak, and a real memory/fd
+# cost on a phone.
+#
+# The watchdog is now a FIXED POOL of daemon workers fed by a queue. Each
+# job carries the deadline stamped at CANCEL time (not at dequeue time),
+# so a job that waits in the queue cannot extend the user's window.
+_WATCHDOG_POOL_SIZE = 4
+_watchdog_queue: _queue.Queue = _queue.Queue()
+_watchdog_active_ids: set[str] = set()
+_watchdog_pool_lock = threading.Lock()
+_watchdog_pool_started = False
+_watchdog_generation = 0
+# Captured at import: the test suite swaps `threading.Thread` globally,
+# and the pool must still be able to start real workers.
+_real_thread = threading.Thread
+
 
 def _worker_thread_alive(info) -> bool:
     """True only for a provably-live worker thread.
@@ -1943,78 +1969,166 @@ def _worker_thread_alive(info) -> bool:
         return False
 
 
-def _start_cancel_watchdog(download_id: str, worker_thread) -> None:
-    """Daemon watchdog: presumed-stopped terminal + slot release on a wedge."""
-    def _watch():
+def _watchdog_worker(generation: int) -> None:
+    """Pool worker: run watchdog jobs until the pool is stopped.
+
+    The generation counter retires the worker: when the pool is stopped
+    (or restarted) the generation moves on and every worker exits at its
+    next loop check. A stop EVENT alone would not do — a worker that has
+    not yet observed the event would keep running after a restart and the
+    pool would grow without bound.
+    """
+    while generation == _watchdog_generation:
         try:
-            join = getattr(worker_thread, "join", None)
-            if callable(join):
-                try:
-                    join(timeout=_CANCEL_WATCHDOG_SECONDS)
-                except Exception:
-                    pass
-            try:
-                if not bool(worker_thread.is_alive()):
-                    return  # worker exited; its own terminal stands
-            except Exception:
-                return
+            job = _watchdog_queue.get(timeout=0.5)
+        except _queue.Empty:
+            continue
+        try:
+            _run_watchdog_job(job)
         except Exception:
-            return
-        presumed_message = (
-            "Download cancelled by user "
-            f"(worker did not stop within {int(_CANCEL_WATCHDOG_SECONDS)}s; "
-            "presumed stopped)"
-        )
-        with _downloads_lock:
-            info = _active_downloads.get(download_id)
-            if info is None:
-                return
-            if info.get("finished_at"):
-                return  # worker terminal won the race
-            if info.get("thread") is not worker_thread:
-                return  # slot reused under the same id; not ours to close
-            slot_token = info.get("slot_token")
-            cb = info.get("event_callback")
-            res_q = info.get("result_queue")
-        # Token-aware idempotent close: a late worker finally after us is
-        # a no-op, so the slot can never double-pump into over-admission.
-        if not _close_own_slot(download_id, slot_token):
-            return
-        terminal = json.dumps({
-            "type": "event",
-            "event": "cancelled",
-            "download_id": download_id,
-            "error_type": "ERROR_CANCELLED",
-            "error_message": presumed_message,
-        })
-        if cb is not None:
+            pass
+        finally:
             try:
-                _emit_event(cb, terminal)
+                _watchdog_queue.task_done()
             except Exception:
                 pass
-        elif res_q is not None:
-            try:
-                res_q.put({
-                    "success": False,
-                    "download_id": download_id,
-                    "error_type": "ERROR_CANCELLED",
-                    "error_message": presumed_message,
-                })
-            except Exception:
-                pass
-        # A wedged worker never reaches its finally-block, so promote the
-        # next queued entry here (same call the finally-block makes).
+            download_id = (job or {}).get("download_id")
+            if download_id:
+                with _watchdog_pool_lock:
+                    _watchdog_active_ids.discard(download_id)
+
+
+def _ensure_watchdog_pool() -> None:
+    """Start the fixed watchdog pool if it is not running."""
+    global _watchdog_pool_started, _watchdog_generation
+    with _watchdog_pool_lock:
+        if _watchdog_pool_started:
+            return
+        _watchdog_pool_started = True
+        _watchdog_generation += 1
+        generation = _watchdog_generation
+    for i in range(_WATCHDOG_POOL_SIZE):
         try:
-            _pump_queue()
+            t = _real_thread(
+                target=_watchdog_worker, args=(generation,), daemon=True,
+                name=f"cancel-watchdog-{i}",
+            )
+            t.start()
         except Exception:
             pass
 
+
+def stop_watchdog_pool() -> None:
+    """Stop the watchdog pool. Called from `shutdown_downloads`."""
+    global _watchdog_pool_started, _watchdog_generation
+    with _watchdog_pool_lock:
+        if not _watchdog_pool_started:
+            return
+        _watchdog_pool_started = False
+        # Retire the workers: each one exits at its next loop check.
+        _watchdog_generation += 1
+    with _watchdog_pool_lock:
+        _watchdog_active_ids.clear()
+
+
+def _run_watchdog_job(job: dict) -> None:
+    """Wait out the watchdog window for one cancelled download.
+
+    If the worker is still alive when the deadline passes, the download is
+    presumed stopped: the slot is released and a terminal is emitted.
+    """
+    download_id = job.get("download_id")
+    worker_thread = job.get("thread")
+    deadline = job.get("deadline")
     try:
-        t = threading.Thread(target=_watch, daemon=True,
-                             name=f"cancel-watchdog-{download_id}")
-        t.start()
+        remaining = max(0.0, float(deadline) - time.monotonic())
+    except Exception:
+        remaining = 0.0
+    join = getattr(worker_thread, "join", None)
+    if callable(join):
+        try:
+            join(timeout=remaining)
+        except Exception:
+            pass
+    try:
+        if not bool(worker_thread.is_alive()):
+            return  # worker exited; its own terminal stands
+    except Exception:
+        return
+    presumed_message = (
+        "Download cancelled by user "
+        f"(worker did not stop within {int(_CANCEL_WATCHDOG_SECONDS)}s; "
+        "presumed stopped)"
+    )
+    with _downloads_lock:
+        info = _active_downloads.get(download_id)
+        if info is None:
+            return
+        if info.get("finished_at"):
+            return  # worker terminal won the race
+        if info.get("thread") is not worker_thread:
+            return  # slot reused under the same id; not ours to close
+        slot_token = info.get("slot_token")
+        cb = info.get("event_callback")
+        res_q = info.get("result_queue")
+    # Token-aware idempotent close: a late worker finally after us is
+    # a no-op, so the slot can never double-pump into over-admission.
+    if not _close_own_slot(download_id, slot_token):
+        return
+    terminal = json.dumps({
+        "type": "event",
+        "event": "cancelled",
+        "download_id": download_id,
+        "error_type": "ERROR_CANCELLED",
+        "error_message": presumed_message,
+    })
+    if cb is not None:
+        try:
+            _emit_event(cb, terminal)
+        except Exception:
+            pass
+    elif res_q is not None:
+        try:
+            res_q.put({
+                "success": False,
+                "download_id": download_id,
+                "error_type": "ERROR_CANCELLED",
+                "error_message": presumed_message,
+            })
+        except Exception:
+            pass
+    # A wedged worker never reaches its finally-block, so promote the
+    # next queued entry here (same call the finally-block makes).
+    try:
+        _pump_queue()
     except Exception:
         pass
+
+
+def _start_cancel_watchdog(download_id: str, worker_thread) -> None:
+    """Queue a bounded watchdog job for a cancelled download.
+
+    One job per download id: a second cancel of the same id must not
+    create a second watchdog, because the first one already owns the
+    slot. The deadline is stamped NOW — at cancel time — so the job's
+    wait window is measured from the user's action, not from when a
+    pool worker happens to pick the job up.
+    """
+    _ensure_watchdog_pool()
+    with _watchdog_pool_lock:
+        if download_id in _watchdog_active_ids:
+            return
+        _watchdog_active_ids.add(download_id)
+    job = {
+        "download_id": download_id,
+        "thread": worker_thread,
+        "deadline": time.monotonic() + _CANCEL_WATCHDOG_SECONDS,
+    }
+    try:
+        _watchdog_queue.put_nowait(job)
+    except Exception:
+        with _watchdog_pool_lock:
+            _watchdog_active_ids.discard(download_id)
 
 
 def clear_download_archive(archive_path: str | None = None) -> dict:
