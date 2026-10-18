@@ -40,7 +40,24 @@ _max_concurrent = _DEFAULT_MAX_CONCURRENT
 _MAX_PENDING_QUEUE = 500
 # FIFO of parked entries: each holds download_id/url/config/network_type/
 # progress_queue/result_queue/cancel_event/event_callback/queued_at.
-_pending_queue: list[dict] = []
+#
+# ONE dict, keyed by download_id. Not a list, and not a list + a parallel
+# set of ids: every operation the queue needs is O(1) on a dict
+# (membership `did in _pending_queue`, removal `del _pending_queue[did]`,
+# FIFO pop of the first key), and because insertion order is preserved the
+# first key is always the oldest entry. The old list+set pair could drift
+# apart — a queue entry present in one but not the other — and that drift
+# silently broke cancellation and dedup.
+_pending_queue: dict[str, dict] = {}
+# O(1) live-URL dedup index. `_find_live_url_holder` used to scan the
+# whole active map AND the whole pending queue on every admission
+# (O(n+m) per new download — 1500 items at 500 queued / 1000 history).
+# This maps (url, audio_only) -> {download_id} for every LIVE download.
+_live_url_index: dict[tuple, set] = {}
+# Hard cap on the active map. Terminal entries are reaped by the cleanup
+# loop (result drained OR 30s old), but a client that never reads the
+# result queue could otherwise grow the map without bound.
+_MAX_ACTIVE_ENTRIES = 2000
 
 # ── FFmpeg post-processing serializer ────────────────────────────────────
 # Multiple concurrent downloads downloading over network is fine, but when
@@ -364,7 +381,79 @@ def _close_own_slot(download_id: str, slot_token) -> bool:
         if info.get("finished_at"):
             return False
         info["finished_at"] = datetime.now(timezone.utc)
+        # The entry is no longer LIVE — drop it from the dedup index so a
+        # new download of the same URL is not rejected as a duplicate.
+        _index_remove(download_id, info.get("url"), info.get("audio_only"))
         return True
+
+
+# ── Live-URL dedup index ───────────────────────────────────────────────
+# The index maps (url, audio_only) -> {download_id} for every download
+# that is still LIVE (active and not terminal, or parked in the pending
+# queue). It is maintained incrementally at every admission / promotion /
+# terminal / cleanup transition, and `_live_url_index_matches_bruteforce`
+# proves it agrees with a full scan.
+
+
+def _pending_pop_first() -> dict | None:
+    """Remove and return the OLDEST parked entry (FIFO). O(1).
+
+    Dicts preserve insertion order, so the first key is the oldest
+    entry. Caller holds `_downloads_lock`.
+    """
+    for did in _pending_queue:
+        return _pending_queue.pop(did)
+    return None
+
+
+def _index_key(url, audio_only) -> tuple:
+    return (url, bool(audio_only))
+
+
+def _index_add(download_id: str, url, audio_only) -> None:
+    """Register a live download in the dedup index. Caller holds the lock."""
+    if not download_id or not isinstance(url, str):
+        return
+    _live_url_index.setdefault(_index_key(url, audio_only), set()).add(download_id)
+
+
+def _index_remove(download_id: str, url, audio_only) -> None:
+    """Deregister a download from the dedup index. Caller holds the lock."""
+    if not download_id or not isinstance(url, str):
+        return
+    key = _index_key(url, audio_only)
+    holders = _live_url_index.get(key)
+    if not holders:
+        return
+    holders.discard(download_id)
+    if not holders:
+        _live_url_index.pop(key, None)
+
+
+def _live_url_index_matches_bruteforce() -> bool:
+    """True when the incremental index agrees with a full scan.
+
+    Test/debug helper — O(n+m) by construction, never used on the hot
+    path.
+    """
+    expected: dict[tuple, set] = {}
+    # LOCK-FREE on purpose: every caller already holds `_downloads_lock`
+    # and a plain `threading.Lock` is not re-entrant — taking it here
+    # would deadlock the caller.
+    for did, info in list(_active_downloads.items()):
+        if info.get("finished_at"):
+            continue
+        expected.setdefault(
+            _index_key(info.get("url"), info.get("audio_only")), set()
+        ).add(did)
+    for e in list(_pending_queue.values()):
+        did = e.get("download_id")
+        if not did:
+            continue
+        expected.setdefault(
+            _index_key(e.get("url"), _is_audio_mode(e.get("config"))), set()
+        ).add(did)
+    return expected == _live_url_index
 
 
 def _running_count() -> int:
@@ -388,16 +477,33 @@ def _is_audio_mode(config) -> bool:
 
 def _find_live_url_holder(url: str, audio_only: bool):
     """ID of a live (non-terminal) active-or-queued download for the same
-    (url, audio-mode), or None. Caller must hold _downloads_lock. T1-5."""
-    for did, info in _active_downloads.items():
-        if info.get("finished_at"):
-            continue
-        if info.get("url") == url and bool(info.get("audio_only", False)) == audio_only:
-            return did
-    for e in _pending_queue:
-        if e.get("url") == url and _is_audio_mode(e.get("config")) == audio_only:
-            return e.get("download_id")
-    return None
+    (url, audio-mode), or None. Caller must hold _downloads_lock. T1-5.
+
+    O(1): the candidate set comes from the incremental dedup index, so
+    this no longer walks the whole active map and the whole pending
+    queue on every admission.
+    """
+    holders = _live_url_index.get(_index_key(url, audio_only))
+    if not holders:
+        return None
+    live: list[str] = []
+    stale: list[str] = []
+    # Deterministic order so the duplicate error always names the same id.
+    for did in sorted(holders):
+        info = _active_downloads.get(did)
+        if info is not None and not info.get("finished_at"):
+            live.append(did)
+        elif did in _pending_queue:
+            live.append(did)
+        else:
+            # Neither active nor parked: the entry is gone (or terminal).
+            # Prune it so the index cannot grow without bound.
+            stale.append(did)
+    for did in stale:
+        holders.discard(did)
+    if not holders:
+        _live_url_index.pop(_index_key(url, audio_only), None)
+    return live[0] if live else None
 
 
 def get_queue_status() -> dict:
@@ -406,7 +512,7 @@ def get_queue_status() -> dict:
             "success": True,
             "active": [did for did, info in _active_downloads.items()
                        if not info.get("finished_at")],
-            "queued": [e["download_id"] for e in _pending_queue],
+            "queued": list(_pending_queue.keys()),
             "max_concurrent": _max_concurrent,
         }
 
@@ -470,6 +576,14 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
         else:
             if "event_callback" not in _active_downloads[download_id] and entry.get("event_callback") is not None:
                 _active_downloads[download_id]["event_callback"] = entry.get("event_callback")
+        # Defensive: the entry is live for the whole time it is in the
+        # active map without a finished_at stamp, so it must be reachable
+        # through the O(1) dedup index.
+        _index_add(
+            download_id,
+            entry["url"],
+            _is_audio_mode(entry.get("config")),
+        )
         # BRUTAL-2a: generation identity is fixed at registration (before
         # start) so the worker's finally-block can prove ownership even if
         # the entry is replaced under the same id mid-flight.
@@ -533,10 +647,17 @@ def _pump_queue() -> None:
         with _downloads_lock:
             if _running_count() >= _max_concurrent or not _pending_queue:
                 return
-            entry = _pending_queue.pop(0)
+            entry = _pending_pop_first()
+            if entry is None:
+                return
             did = entry["download_id"]
             if did in _active_downloads and not _active_downloads[did].get("finished_at"):
                 # Superseded (cancelled/replaced) while parked — skip.
+                _index_remove(
+                    did,
+                    _active_downloads[did].get("url"),
+                    _active_downloads[did].get("audio_only"),
+                )
                 continue
             # T1-2 fix: Atomically move from _pending_queue into _active_downloads
             # under the exact same lock so there is no window where the ID is in neither.
@@ -670,7 +791,31 @@ def _cleanup_loop():
                             to_remove.append(did)
 
                 for did in to_remove:
-                    _active_downloads.pop(did, None)
+                    info = _active_downloads.pop(did, None)
+                    if isinstance(info, dict):
+                        # Defensive: a reaped entry is never live again.
+                        _index_remove(
+                            did, info.get("url"), info.get("audio_only"),
+                        )
+                # Hard cap: a client that never drains the result queue
+                # could otherwise grow the active map without bound. Drop
+                # the OLDEST terminal entries first (live ones are never
+                # evicted — that would orphan a running download).
+                overflow = len(_active_downloads) - _MAX_ACTIVE_ENTRIES
+                if overflow > 0:
+                    terminal = sorted(
+                        (
+                            (info.get("finished_at"), did)
+                            for did, info in _active_downloads.items()
+                            if info.get("finished_at")
+                        )
+                    )
+                    for _, did in terminal[:overflow]:
+                        info = _active_downloads.pop(did, None)
+                        if isinstance(info, dict):
+                            _index_remove(
+                                did, info.get("url"), info.get("audio_only"),
+                            )
         except Exception:
             pass
         _cleanup_stop_event.wait(1.0)
@@ -695,6 +840,11 @@ def shutdown_downloads(timeout: float = 5.0) -> dict:
     _cleanup_stop_event.set()
 
     with _downloads_lock:
+        for e in list(_pending_queue.values()):
+            _index_remove(
+                e.get("download_id"), e.get("url"),
+                _is_audio_mode(e.get("config")),
+            )
         _pending_queue.clear()
         active = [
             (did, info) for did, info in list(_active_downloads.items())
@@ -1521,14 +1671,13 @@ def start_download(
             # Terminal entry still awaiting cleanup — drop it so the retry
             # starts clean under the same id (history row key stability).
             _active_downloads.pop(download_id, None)
-        for i, e in enumerate(_pending_queue):
-            if e["download_id"] == download_id:
-                return {
-                    "success": False,
-                    "download_id": download_id,
-                    "error_type": "ERROR_ALREADY_ACTIVE",
-                    "error_message": "Download already queued for this ID",
-                }
+        if download_id in _pending_queue:
+            return {
+                "success": False,
+                "download_id": download_id,
+                "error_type": "ERROR_ALREADY_ACTIVE",
+                "error_message": "Download already queued for this ID",
+            }
         # T1-5: same URL under a different ID must not download twice.
         # Keyed on (url, audio-mode) so explicit "extract audio" re-fetches
         # (different artifact) still pass; terminal entries never block.
@@ -1567,7 +1716,8 @@ def start_download(
                 "event_callback": event_callback,
                 "queued_at": datetime.now(timezone.utc),
             }
-            _pending_queue.append(entry)
+            _pending_queue[download_id] = entry
+            _index_add(download_id, url, audio_only)
             position = len(_pending_queue)
         else:
             progress_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
@@ -1585,6 +1735,7 @@ def start_download(
                 "slot_token": _new_slot_token(),
                 "event_callback": event_callback,
             }
+            _index_add(download_id, url, audio_only)
 
     if event_callback is not None:
         try:
@@ -1641,10 +1792,13 @@ def cancel_download(download_id: str) -> dict:
     active_slot_token = None
     active_info = None
     with _downloads_lock:
-        for i, e in enumerate(_pending_queue):
-            if e["download_id"] == download_id:
-                queued_entry = _pending_queue.pop(i)
-                break
+        parked = _pending_queue.pop(download_id, None)
+        if parked is not None:
+            _index_remove(
+                download_id, parked.get("url"),
+                _is_audio_mode(parked.get("config")),
+            )
+            queued_entry = parked
         info = _active_downloads.get(download_id)
         if queued_entry is None and not info:
             return {
