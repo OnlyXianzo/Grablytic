@@ -1,4 +1,6 @@
 import re
+from urllib.parse import urlparse
+
 from yt_dlp import YoutubeDL
 
 from grablytic_engine.paths import get_paths
@@ -9,19 +11,55 @@ from grablytic_engine.logger import get_logger
 
 log = get_logger("grablytic_engine.playlist")
 
+# A real PLAYLIST: a `list=` parameter, or a /playlist / /sets path.
 _PLAYLIST_PATTERNS = [
     r"list=",
     r"/playlist",
     r"/sets/",
     r"playlist\?",
-    r"channel/",
-    r"/c/",
-    r"/@",
-    r"user/",
 ]
+
+# YouTube channel / user / handle path prefixes.
+_CHANNEL_PREFIXES = ("channel", "c", "u", "user")
+
+# Hard cap on the entries reported for one playlist. The cap is
+# REPORTED (`truncated` / `max_entries`) — a silently cut list looks
+# like "that is the whole playlist".
+_MAX_PLAYLIST_ENTRIES = 500
+
+
+def detect_channel(url: str) -> bool:
+    """True for a CHANNEL / user / @handle URL (never a playlist).
+
+    A channel is a stream of every video the channel has ever posted.
+    Treating it as a playlist made the engine expand a busy channel
+    into thousands of items.
+    """
+    if not isinstance(url, str) or not url:
+        return False
+    try:
+        parts = urlparse(url)
+    except Exception:
+        return False
+    path = parts.path or ""
+    if path.startswith("/@") or "/@" in path:
+        return True
+    segments = [s for s in path.split("/") if s]
+    if len(segments) >= 2 and segments[0] in _CHANNEL_PREFIXES:
+        return True
+    return False
 
 
 def detect_playlist(url: str) -> bool:
+    """True only for a real PLAYLIST URL.
+
+    A channel, user or @handle is NOT a playlist — see
+    :func:`detect_channel`.
+    """
+    if not isinstance(url, str) or not url:
+        return False
+    if detect_channel(url):
+        return False
     return any(re.search(p, url) for p in _PLAYLIST_PATTERNS)
 
 
@@ -120,13 +158,19 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not fetch playlist"}
 
         entries_val = data.get("entries") if "entries" in data and data.get("entries") is not None else [data]
+        truncated = False
         if entries_val is not None:
             if not isinstance(entries_val, list):
                 try:
                     import itertools
-                    entries_val = list(itertools.islice(entries_val, 500))
+                    # One extra element so "there were more" is detectable.
+                    entries_val = list(itertools.islice(
+                        entries_val, _MAX_PLAYLIST_ENTRIES + 1))
                 except Exception:
                     entries_val = []
+            if isinstance(entries_val, list) and len(entries_val) > _MAX_PLAYLIST_ENTRIES:
+                entries_val = entries_val[:_MAX_PLAYLIST_ENTRIES]
+                truncated = True
         entries_raw = entries_val or []
         entries = []
         idx = 1
@@ -197,6 +241,10 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             "count": len(entries),
             "estimated_total_bytes": None,
             "entries": entries,
+            # A truncated list must say so: a silent cut looks like
+            # "that is the whole playlist".
+            "truncated": truncated,
+            "max_entries": _MAX_PLAYLIST_ENTRIES,
         }
 
     except Exception as exc:

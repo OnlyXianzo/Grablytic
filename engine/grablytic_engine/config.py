@@ -134,6 +134,9 @@ DEFAULT_CFG = {
     "sleep_interval": "0",
     # ── Playlist ────────────────────────────────────────────────────────
     "no_playlist": False,
+    # A channel URL downloads ONE video by default. Expanding a channel
+    # means downloading every video it has ever posted — opt-in only.
+    "expand_channel": False,
     "playlist_items": "",
     "playlist_rev": False,
     "playlist_rand": False,

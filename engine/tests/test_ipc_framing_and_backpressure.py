@@ -79,7 +79,6 @@ def test_stdout_firewall_is_idempotent_and_restorable(monkeypatch):
     monkeypatch.setattr(sys, "stderr", real_err)
 
     assert mod.install_stdout_firewall() is True
-    first = sys.stdout
     assert mod.install_stdout_firewall() is True
     assert isinstance(sys.stdout, mod._StdoutFirewall)
     assert sys.stdout._real is real_out

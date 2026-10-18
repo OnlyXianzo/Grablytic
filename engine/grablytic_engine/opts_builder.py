@@ -519,6 +519,16 @@ def build_ydl_opts(
 
     if cfg.get("no_playlist"):
         opts["noplaylist"] = True
+    # A CHANNEL is not a playlist. yt-dlp expands a channel into every
+    # video it has ever posted, so unless the user explicitly asked to
+    # expand it, a channel URL downloads ONE video.
+    if url and not cfg.get("expand_channel"):
+        try:
+            from grablytic_engine.playlist import detect_channel
+            if detect_channel(url):
+                opts["noplaylist"] = True
+        except Exception:
+            pass
 
     playlist_items = sanitize_playlist_items(cfg.get("playlist_items"))
     if playlist_items:

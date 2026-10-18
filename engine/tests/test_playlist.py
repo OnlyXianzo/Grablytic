@@ -1,4 +1,4 @@
-from grablytic_engine.playlist import detect_playlist
+from grablytic_engine.playlist import detect_channel, detect_playlist
 
 
 class TestDetectPlaylist:
@@ -9,16 +9,22 @@ class TestDetectPlaylist:
         assert detect_playlist("https://youtube.com/playlist?list=PLxyz") is True
 
     def test_youtube_channel(self):
-        assert detect_playlist("https://youtube.com/channel/UCxyz") is True
+        # A channel is NOT a playlist: it is a stream of every video the
+        # channel has ever posted.
+        assert detect_playlist("https://youtube.com/channel/UCxyz") is False
+        assert detect_channel("https://youtube.com/channel/UCxyz") is True
 
     def test_youtube_custom_url(self):
-        assert detect_playlist("https://youtube.com/c/ChannelName") is True
+        assert detect_playlist("https://youtube.com/c/ChannelName") is False
+        assert detect_channel("https://youtube.com/c/ChannelName") is True
 
     def test_youtube_handle(self):
-        assert detect_playlist("https://youtube.com/@ChannelName") is True
+        assert detect_playlist("https://youtube.com/@ChannelName") is False
+        assert detect_channel("https://youtube.com/@ChannelName") is True
 
     def test_youtube_user(self):
-        assert detect_playlist("https://youtube.com/user/username") is True
+        assert detect_playlist("https://youtube.com/user/username") is False
+        assert detect_channel("https://youtube.com/user/username") is True
 
     def test_single_video_not_playlist(self):
         assert detect_playlist("https://youtube.com/watch?v=dQw4w9WgXcQ") is False
