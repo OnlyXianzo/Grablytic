@@ -33,6 +33,54 @@ def is_safe_format_id(value) -> bool:
     return True
 
 
+# A raw yt-dlp format expression is a mini-language: `all` and `mergeall`
+# select EVERY format separately — one HTTP fetch and one file per format.
+# A remote site profile that says `format_code: "all"` therefore turns one
+# "download" into an unbounded set of downloads, on a metered phone.
+_MAX_FORMAT_EXPRESSION_CHARS = 512
+# Filter groups `[...]` are removed before the atom scan: a filter VALUE may
+# legitimately contain the word "all" (e.g. `[format_id!=all]`), but the
+# SELECTOR keyword may not.
+_FILTER_GROUP_RE = re.compile(r"\[[^\]]*\]")
+# `all`, `allvideo`, `allformats`, `all*` ... and `mergeall`.
+_AMPLIFYING_ATOMS = frozenset({"all", "mergeall"})
+
+
+def _selector_atoms(expression: str):
+    """Yield the selector atoms of a format expression (filters removed)."""
+    stripped = _FILTER_GROUP_RE.sub("", expression)
+    for part in re.split(r"[/,+]", stripped):
+        part = part.strip().lower()
+        if part:
+            yield part
+
+
+def _is_amplifying_atom(atom: str) -> bool:
+    """True for an atom that selects many formats at once."""
+    return atom in _AMPLIFYING_ATOMS or atom.startswith("all")
+
+
+def is_safe_format_expression(value) -> bool:
+    """True iff a raw yt-dlp format expression is safe to execute.
+
+    Rejects (fails closed):
+      * anything that is not a non-empty string;
+      * expressions longer than 512 characters;
+      * expressions containing control characters;
+      * any amplifying atom (`all`, `allvideo`, `all*`, `mergeall`).
+    """
+    if not isinstance(value, str):
+        return False
+    if not value or len(value) > _MAX_FORMAT_EXPRESSION_CHARS:
+        return False
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        return False
+    for atom in _selector_atoms(value):
+        if _is_amplifying_atom(atom):
+            return False
+    return True
+
+
 def build_format_string(cfg: dict) -> str:
     raw_vid = cfg.get("explicit_format_id")
     raw_aid = cfg.get("explicit_audio_format_id")

@@ -3,6 +3,34 @@
 import json
 
 
+# Containers yt-dlp can actually produce. A container name that is not on
+# this list is rejected, because it reaches ffmpeg/yt-dlp as a file
+# extension and (in the merge path) as part of an output filename.
+SAFE_CONTAINERS = frozenset({
+    # video
+    "mp4", "mkv", "webm", "mov",
+    # audio
+    "m4a", "mp3", "opus", "flac", "aac", "ogg", "wav", "vorbis",
+})
+
+
+def is_safe_container(value) -> bool:
+    """True iff `value` names a container yt-dlp can produce."""
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower().lstrip(".") in SAFE_CONTAINERS
+
+
+def sanitize_container(value, default: str = "mkv") -> str:
+    """Return a safe container name, or `default` when the value is not
+    on the allowlist. Never raises."""
+    if isinstance(value, str):
+        candidate = value.strip().lower().lstrip(".")
+        if candidate in SAFE_CONTAINERS:
+            return candidate
+    return default
+
+
 def coerce_config(config) -> dict:
     """Normalize an IPC-supplied config into a plain dict (never raises).
 

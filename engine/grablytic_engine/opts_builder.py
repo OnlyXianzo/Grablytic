@@ -1,7 +1,12 @@
 import os
 import re
 
-from grablytic_engine.config import DEFAULT_CFG, coerce_config, sanitize_config
+from grablytic_engine.config import (
+    DEFAULT_CFG,
+    coerce_config,
+    sanitize_config,
+    sanitize_container,
+)
 from grablytic_engine.paths import get_paths
 from grablytic_engine.format_selector import build_format_string
 from grablytic_engine.hooks import build_progress_hook, build_postprocessor_hook
@@ -382,7 +387,12 @@ def build_ydl_opts(
         _tmpl_log.warn("Ignoring unsafe explicit format ID, using auto ladder")
     has_audio_only_explicit = bool(explicit_aid) and not bool(explicit_vid)
     is_audio = override_audio if override_audio is not None else (bool(cfg.get("audio_only")) or has_audio_only_explicit)
-    container = override_container or cfg["container"]
+    # The container name reaches yt-dlp (and ffmpeg) verbatim, so it
+    # must come from the allowlist. Fail closed to the default.
+    container = sanitize_container(
+        override_container or cfg.get("container"),
+        default=DEFAULT_CFG["container"],
+    )
     # Resolved audio codec when is_audio (None for video). Read by the
     # thumbnail block below for the m4a cover-art rule.
     audio_codec: str | None = None
