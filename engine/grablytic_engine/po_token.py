@@ -52,6 +52,21 @@ APPROVED_JS_HASHES = {
     hashlib.sha256(DENO_STUB_SCRIPT.encode("utf-8")).hexdigest(),
 }
 
+# Deno's default-deny flag set, mirroring yt-dlp's own invocation
+# (yt_dlp/extractor/youtube/jsc/_builtin/deno.py `_DENO_BASE_OPTIONS`).
+# `--no-remote` blocks remote module imports, `--no-config` ignores
+# deno.json, `--no-prompt` keeps the runtime non-interactive, and
+# `--node-modules-dir=none` stops it from touching node_modules.
+_DENO_RUN_FLAGS = (
+    "--ext=js",
+    "--no-code-cache",
+    "--no-prompt",
+    "--no-remote",
+    "--no-lock",
+    "--node-modules-dir=none",
+    "--no-config",
+)
+
 # Item 4 (phantom PO-token) gate: both allowlisted stubs above are inert by
 # design — they can only ever yield None. Spawning `deno eval` (a full
 # subprocess, up to 10s timeout) on every YouTube download to compute a
@@ -152,12 +167,17 @@ def _generate_with_deno(url: str) -> str | None:
     # a future real solver (see PO_TOKEN_SOLVER_ENABLED).
     if not PO_TOKEN_SOLVER_ENABLED:
         return None
-    # NOTE: intentionally plain `deno eval` with no permission flags.
-    # `--no-read/--no-write/--no-env` are not valid Deno flags (negation is
-    # `--deny-*`, and `deno eval` runs with implicit full permissions by
-    # design) — passing them would only break flag parsing. yt-dlp itself
-    # invokes `deno run -`, never `deno eval`; this harness executes our own
-    # allowlisted stub only.
+    # `deno eval` runs with ALL permissions enabled by default
+    # (docs.deno.com -> runtime/manual/tools/eval). The old comment
+    # claimed the opposite, so the harness would have handed a solver
+    # script full file / network / env access.
+    #
+    # `deno run` is DEFAULT-DENY: the script starts with no permissions at
+    # all, so no allow-list is needed and a permission bug in Deno's
+    # `--deny-*` handling (CVE-2025-48888: a contradictory global allow+deny
+    # can let the allow win) cannot help us — we never allow anything.
+    # The flag set mirrors yt-dlp's own Deno invocation
+    # (yt_dlp/extractor/youtube/jsc/_builtin/deno.py).
     from grablytic_engine.paths import get_paths
     deno_path = (
         get_paths().get("deno_path")
@@ -170,7 +190,10 @@ def _generate_with_deno(url: str) -> str | None:
         import subprocess, json
         verify_js_code(DENO_STUB_SCRIPT)
         res = subprocess.run(
-            [deno_path, "eval", DENO_STUB_SCRIPT, "--", url],
+            # The script is piped on stdin; `--` separates Deno's own
+            # flags from the script's arguments.
+            [deno_path, "run", *_DENO_RUN_FLAGS, "-", "--", url],
+            input=DENO_STUB_SCRIPT,
             capture_output=True, text=True, timeout=10,
         )
         if res.returncode == 0 and res.stdout.strip():
