@@ -12,6 +12,7 @@ import tempfile
 import threading
 import subprocess
 
+from grablytic_engine.contract import contract_info
 from grablytic_engine.paths import get_paths, is_initialized
 from grablytic_engine.logger import get_logger
 
@@ -997,7 +998,9 @@ def bootstrap() -> dict:
         # → thermal throttling → Android LMK). Surfaced so the condition is
         # observable instead of a silent, log-only warning.
         "ffmpeg_serialization": _ffmpeg_serialization_status(),
-        "contract_version": "1.0",
+        # The contract this engine speaks. The host compares it with
+        # its own and refuses to continue on a MAJOR mismatch.
+        **contract_info(),
     }
 
 

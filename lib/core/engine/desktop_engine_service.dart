@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
 import '../utils/trust_boundary.dart';
 import 'engine_codec.dart';
+import 'engine_contract.dart';
 import 'engine_service.dart';
 
 const _uuid = Uuid();
@@ -508,7 +509,13 @@ class DesktopEngineService implements EngineService {
     final request = EngineEnvelope.encodeRequest(
       id: id,
       method: method,
-      params: params,
+      params: {
+        ...params,
+        // Every request states which contract it speaks. The engine
+        // refuses a mismatched MAJOR version instead of half-understanding
+        // the request.
+        'contract_version': EngineContract.version,
+      },
     );
 
     Future<void> writeRequest() async {
@@ -572,7 +579,9 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> bootstrap() async {
-    return _sendRequest(EngineMethods.bootstrap, {});
+    final result = await _sendRequest(EngineMethods.bootstrap, {});
+    EngineContract.assertCompatible(result);
+    return result;
   }
 
   @override
@@ -896,3 +905,5 @@ class DesktopEngineService implements EngineService {
     required String message,
   }) async {}
 }
+
+

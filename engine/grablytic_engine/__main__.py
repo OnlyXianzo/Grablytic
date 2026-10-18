@@ -1,3 +1,4 @@
+from grablytic_engine import contract
 import sys
 import json
 import concurrent.futures as _futures
@@ -342,59 +343,187 @@ def poll_queues():
         time.sleep(0.1)
 
 
-def _dispatch_method(method, params):
-    """Pure method dispatch (BRUTAL-1 ids frozen). Thread-safe: all targets
-    are themselves thread-safe (network extractions, lock-guarded queue)."""
-    if method == "engine/bootstrap":
-        return bootstrap()
-    elif method == "download/start":
-        return start_download(
-            url=params["url"],
-            download_id=params["download_id"],
-            config=params.get("config"),
-            network_type=params.get("network_type", "wifi")
-        )
-    elif method == "download/cancel":
-        return cancel_download(params["download_id"])
-    elif method == "download/queue_status":
-        return get_queue_status()
-    elif method == "download/set_concurrency":
-        return set_max_concurrent(params.get("max_concurrent", 2))
-    elif method == "download/clear_archive":
-        return clear_download_archive(params.get("archive_path"))
-    elif method == "formats/get":
-        return get_formats(params["url"], params.get("config"))
-    elif method == "playlist/info":
-        return get_playlist_info(params["url"], params.get("config"))
-    elif method == "search/query":
-        return search_query(
-            query=params.get("query", ""),
-            site=params.get("site", "youtube"),
-            limit=params.get("limit", 20),
-            config=params.get("config"),
-        )
-    elif method == "resume/scan":
-        return scan_resume_candidates(
-            params["cache_dir"],
-            limit=params.get("limit", 50),
-            recursive=params.get("recursive", True),
-            max_attempts=params.get("max_attempts", 3),
-        )
-    elif method == "resume/report":
-        return report_resume_attempt(
-            params["cache_dir"],
-            params["filepath"],
-            params.get("success", False),
-        )
-    elif method == "engine/update_check":
-        return update_check()
-    elif method == "engine/set_update_channel":
-        return set_update_channel(params["channel"])
-    else:
+class _InvalidParam(Exception):
+    """A required IPC parameter is missing or null."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _req(params, key):
+    """Fetch a REQUIRED parameter, or raise a typed error.
+
+    The old dispatch chain read `params["url"]` directly, so a host
+    that omitted a field got a KeyError: no envelope came back, the
+    client waited for a response that would never arrive, and the
+    download hung.
+    """
+    try:
+        value = params[key]
+    except (KeyError, TypeError):
+        raise _InvalidParam(f"Missing required parameter: {key}")
+    if value is None:
+        raise _InvalidParam(f"Missing required parameter: {key}")
+    return value
+
+
+def _negotiate_contract(params):
+    """Check the request's contract version.
+
+    Returns None when the request is acceptable, or an error envelope.
+
+    A request WITHOUT a version is accepted — a host that predates the
+    contract still works. A request with a DIFFERENT MAJOR version is
+    refused: a major bump means the method set or the field names
+    changed, and guessing would produce a half-understood request.
+    """
+    raw = (params or {}).get("contract_version")
+    if raw is None:
+        return None
+    parsed = contract.parse_version(raw)
+    if parsed is None:
         return {
             "success": False,
-            "error_type": "ERROR_UNKNOWN_METHOD",
-            "error_message": f"Method {method} not found"
+            "error_type": contract.ERROR_CONTRACT_MISMATCH,
+            "error_message": f"Invalid contract version: {raw!r}",
+            "expected_contract_version": contract.CONTRACT_VERSION,
+        }
+    major, _minor = parsed
+    if major != contract.CONTRACT_MAJOR:
+        return {
+            "success": False,
+            "error_type": contract.ERROR_CONTRACT_MISMATCH,
+            "error_message": (
+                f"Engine speaks contract {contract.CONTRACT_VERSION_STRING}, "
+                f"the request speaks {major}.x — refusing."
+            ),
+            "expected_contract_version": contract.CONTRACT_VERSION,
+        }
+    return None
+
+
+def _h_engine_bootstrap(params):
+    return bootstrap()
+
+
+def _h_engine_contract(params):
+    return contract.contract_info()
+
+
+def _h_download_start(params):
+    return start_download(
+        url=_req(params, "url"),
+        download_id=_req(params, "download_id"),
+        config=params.get("config"),
+        network_type=params.get("network_type", "wifi"),
+    )
+
+
+def _h_download_cancel(params):
+    return cancel_download(_req(params, "download_id"))
+
+
+def _h_download_queue_status(params):
+    return get_queue_status()
+
+
+def _h_download_set_concurrency(params):
+    return set_max_concurrent(params.get("max_concurrent", 2))
+
+
+def _h_download_clear_archive(params):
+    return clear_download_archive(params.get("archive_path"))
+
+
+def _h_formats_get(params):
+    return get_formats(_req(params, "url"), params.get("config"))
+
+
+def _h_playlist_info(params):
+    return get_playlist_info(_req(params, "url"), params.get("config"))
+
+
+def _h_search_query(params):
+    return search_query(
+        query=params.get("query", ""),
+        site=params.get("site", "youtube"),
+        limit=params.get("limit", 20),
+        config=params.get("config"),
+    )
+
+
+def _h_resume_scan(params):
+    return scan_resume_candidates(
+        _req(params, "cache_dir"),
+        limit=params.get("limit", 50),
+        recursive=params.get("recursive", True),
+        max_attempts=params.get("max_attempts", 3),
+    )
+
+
+def _h_resume_report(params):
+    return report_resume_attempt(
+        _req(params, "cache_dir"),
+        _req(params, "filepath"),
+        params.get("success", False),
+    )
+
+
+def _h_update_check(params):
+    return update_check()
+
+
+def _h_set_update_channel(params):
+    return set_update_channel(_req(params, "channel"))
+
+
+# The dispatch registry. Method ids are frozen (BRUTAL-1) — the
+# registry exists so the chain is data, not control flow, and so the
+# contract can assert that it and the contract agree.
+_METHOD_HANDLERS = {
+    "engine/bootstrap": _h_engine_bootstrap,
+    "engine/contract": _h_engine_contract,
+    "download/start": _h_download_start,
+    "download/cancel": _h_download_cancel,
+    "download/queue_status": _h_download_queue_status,
+    "download/set_concurrency": _h_download_set_concurrency,
+    "download/clear_archive": _h_download_clear_archive,
+    "formats/get": _h_formats_get,
+    "playlist/info": _h_playlist_info,
+    "search/query": _h_search_query,
+    "resume/scan": _h_resume_scan,
+    "resume/report": _h_resume_report,
+    "engine/update_check": _h_update_check,
+    "engine/set_update_channel": _h_set_update_channel,
+}
+
+if set(_METHOD_HANDLERS) != set(contract.METHODS):
+    # The contract and the registry are two views of the same list; a
+    # drift means a host would call a method the contract does not
+    # advertise (or the other way round).
+    raise RuntimeError(
+        "IPC contract drift: registry=%s contract=%s" % (
+            sorted(_METHOD_HANDLERS), sorted(contract.METHODS)))
+
+
+def _dispatch_method(method, params):
+    """Pure method dispatch. Thread-safe: all targets are themselves
+    thread-safe (network extractions, lock-guarded queue)."""
+    handler = _METHOD_HANDLERS.get(method)
+    if handler is None:
+        return {
+            "success": False,
+            "error_type": contract.ERROR_UNKNOWN_METHOD,
+            "error_message": f"Method {method} not found",
+        }
+    try:
+        return handler(params or {})
+    except _InvalidParam as exc:
+        return {
+            "success": False,
+            "error_type": contract.ERROR_INVALID_PARAM,
+            "error_message": exc.message,
         }
 
 
@@ -424,7 +553,12 @@ def _execute_parsed_request(req_id, method, params):
             pass
 
         res = None
-        if method == "paths/set":
+        # Contract negotiation first: a mismatched MAJOR version is
+        # refused before anything is dispatched.
+        _mismatch = _negotiate_contract(params)
+        if _mismatch is not None:
+            res = _mismatch
+        elif method == "paths/set":
             # T0-2: forward set_paths' verdict — it fails closed on
             # non-absolute roots / untrusted binaries. The old code
             # always answered success, hiding rejections from the UI.

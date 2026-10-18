@@ -28,13 +28,13 @@ const List<String> _channelPrefixes = ['channel', 'c', 'u', 'user'];
 /// items. Mirrors the engine's `detect_channel`.
 bool isChannelUrl(String url) {
   if (url.isEmpty) return false;
-  Uri? parsed;
+  Uri parsed;
   try {
     parsed = Uri.parse(url);
   } on FormatException {
     return false;
   }
-  final String path = parsed?.path ?? '';
+  final String path = parsed.path;
   if (path.startsWith('/@') || path.contains('/@')) return true;
   final segments = path
       .split('/')
