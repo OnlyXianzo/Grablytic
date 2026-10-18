@@ -39,6 +39,14 @@ _ERROR_MAP = {
     "confirm you're not a bot": ("ERROR_FORBIDDEN", True),
     "sign in to confirm": ("ERROR_FORBIDDEN", True),
     "this video is private": ("ERROR_PRIVATE", True),
+    # The exact phrasings yt-dlp uses. Without them a private video
+    # fell through to ERROR_UNKNOWN and the UI offered a VPN for a
+    # permission problem.
+    "private video": ("ERROR_PRIVATE", True),
+    "sign in if you've been granted access": ("ERROR_PRIVATE", True),
+    "this video has been removed": ("ERROR_UNAVAILABLE", False),
+    "has been terminated": ("ERROR_UNAVAILABLE", False),
+    "this live event will begin": ("ERROR_UNAVAILABLE", False),
     "video unavailable": ("ERROR_UNAVAILABLE", False),
     "HTTP Error 429": ("ERROR_RATE_LIMITED", True),
     "HTTP Error 403": ("ERROR_FORBIDDEN", True),

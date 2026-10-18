@@ -199,6 +199,42 @@ def sanitize_subtitleslangs(val: list | tuple | str | None) -> list[str]:
 
 
 
+# Output-template fields that are unique per media item. Without one of
+# these, two items with the same title overwrite each other: yt-dlp
+# REPLACES an existing video file by default (`overwrites` defaults to
+# None, which means "overwrite only non-video files" — a video file is
+# replaced). `%(id)s` is the canonical unique field; `%(playlist_index)s`
+# is unique within one playlist and `%(autonumber)s` always increments.
+_UNIQUE_TMPL_FIELDS = ("id", "playlist_index", "autonumber")
+
+_collision_warned = False
+
+
+def _outtmpl_is_collision_safe(tmpl) -> bool:
+    """True iff the template contains a field that is unique per item."""
+    if not isinstance(tmpl, str) or not tmpl:
+        return False
+    return any(f"%({field})" in tmpl for field in _UNIQUE_TMPL_FIELDS)
+
+
+def _warn_collision_unsafe_tmpl(tmpl) -> None:
+    """Warn ONCE that the template can overwrite existing downloads."""
+    global _collision_warned
+    if _collision_warned:
+        return
+    _collision_warned = True
+    try:
+        from grablytic_engine.logger import get_logger
+        get_logger("grablytic_engine.opts_builder").warn(
+            "Output template has no per-item unique field "
+            "(%(id)s / %(playlist_index)s / %(autonumber)s): two items with "
+            "the same name will overwrite each other. See "
+            "docs/output_templates.md."
+        )
+    except Exception:
+        pass
+
+
 def _is_safe_outtmpl(tmpl) -> bool:
     """True iff an output template cannot escape the output directory."""
     if not isinstance(tmpl, str) or not tmpl or len(tmpl) > 256:
@@ -373,6 +409,10 @@ def build_ydl_opts(
     if not _is_safe_outtmpl(tmpl):
         _tmpl_log.warn(f"Rejecting unsafe output template, using default: {tmpl!r:.80}")
         tmpl = DEFAULT_CFG["output_tmpl"]
+    # A template without a per-item unique field silently overwrites an
+    # existing download. Warn (the user may have a good reason).
+    if not _outtmpl_is_collision_safe(tmpl):
+        _warn_collision_unsafe_tmpl(tmpl)
 
     fmt = override_format or build_format_string(cfg)
     # T0-3: an explicit audio ID must be a VALIDATED single ID before it may

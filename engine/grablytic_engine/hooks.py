@@ -61,9 +61,19 @@ def _emit_event(event_callback, event_json: str) -> None:
         if not _callback_failed_once:
             _callback_failed_once = True
             try:
+                # A hook failure is CLASSIFIED, not reported as an opaque
+                # exception: the callback is a Chaquopy bridge, so the
+                # real cause (a bad payload, a dead bridge) is invisible
+                # in the raw traceback.
+                try:
+                    from grablytic_engine.errors import classify_error
+                    err = classify_error(exc)
+                    detail = f"{err.error_type}: {err.message}"
+                except Exception:
+                    detail = f"{type(exc).__name__}: {exc}"
                 _log.warn(
-                    f"Engine event callback failing ({type(exc).__name__}: "
-                    f"{exc}); progress UI will stall while downloads continue"
+                    f"Engine event callback failing ({detail}); "
+                    "progress UI will stall while downloads continue"
                 )
             except Exception:
                 pass

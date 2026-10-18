@@ -34,6 +34,20 @@ def _deterministic_dns_for_tests():
 
 
 @pytest.fixture(autouse=True)
+def _reset_logger_context():
+    """The logger's download_id lives in a ContextVar.
+
+    A test that sets it and does not reset it leaks the value into the
+    next test in the same context, which then sees a `download_id` it
+    never asked for. Clear it around every test.
+    """
+    from grablytic_engine.logger import set_current_download_id
+    set_current_download_id(None)
+    yield
+    set_current_download_id(None)
+
+
+@pytest.fixture(autouse=True)
 def _auto_reset_downloader_shutdown():
     """Ensure every test starts and ends with a clean shutdown state."""
     if hasattr(dl_mod, "reset_shutdown_for_tests"):

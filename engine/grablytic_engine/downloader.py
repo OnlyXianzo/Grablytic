@@ -365,6 +365,23 @@ def set_max_concurrent(n) -> dict:
     return {"success": True, "max_concurrent": _max_concurrent}
 
 
+def _apply_verbosity(opts: dict, config: dict) -> None:
+    """Let the USER's verbose setting decide.
+
+    The engine used to set `opts["verbose"] = True` unconditionally, so
+    yt-dlp's verbose output flooded the log on every download and the
+    setting in the UI did nothing.
+    """
+    try:
+        verbose = bool((config or {}).get("verbose"))
+    except Exception:
+        verbose = False
+    if verbose:
+        opts["verbose"] = True
+    else:
+        opts.pop("verbose", None)
+
+
 def _new_slot_token() -> str:
     """Unique generation identity for one slot admission (BRUTAL-2a)."""
     return uuid.uuid4().hex
@@ -1008,6 +1025,15 @@ class YDLogger:
         self.errors: deque[str] = deque(maxlen=self.MAX_ERRORS)
         self.output_files: list[str] = []
         self._output_seen: set[str] = set()
+        # yt-dlp logs from several threads (extractor + post-processor).
+        # `output_files` is a list and `_output_seen` a set: both were
+        # mutated concurrently, so the tail could be read mid-update.
+        self._lock = threading.Lock()
+
+    def last_error(self) -> str | None:
+        """The most recent error line, or None. Safe from any thread."""
+        with self._lock:
+            return self.errors[-1] if self.errors else None
 
     def _extract_path(self, msg):
         if not isinstance(msg, str):
@@ -1016,11 +1042,14 @@ class YDLogger:
             m = pat.search(msg)
             if m:
                 candidate = m.group(1).strip().strip('"').strip("'")
-                if candidate and candidate not in self._output_seen:
-                    self._output_seen.add(candidate)
-                    if len(self.output_files) >= self.MAX_OUTPUT_FILES:
-                        self.output_files.pop(0)
-                    self.output_files.append(candidate)
+                if not candidate:
+                    break
+                with self._lock:
+                    if candidate not in self._output_seen:
+                        self._output_seen.add(candidate)
+                        if len(self.output_files) >= self.MAX_OUTPUT_FILES:
+                            self.output_files.pop(0)
+                        self.output_files.append(candidate)
                 break
 
     def debug(self, msg):
@@ -1421,7 +1450,10 @@ def download_thread(
                 # into app-internal cache subject to Android OS silent eviction.
                 opts["cachedir"] = get_paths()["cache_dir"]
 
-            opts["verbose"] = True
+            # The user's verbose setting decides. The engine used to
+            # force `verbose = True`, so yt-dlp's verbose output flooded
+            # the log on EVERY download and the setting was ignored.
+            _apply_verbosity(opts, config)
             # One-line effective config: future "it just sat there" reports can
             # be triaged from this alone (wrong format? no aria2c? no JS?).
             try:

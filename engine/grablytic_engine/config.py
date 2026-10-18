@@ -164,7 +164,12 @@ DEFAULT_CFG = {
     "write_info_json": True,
     "compat_options": "",
     "verbose": False,
-    "output_tmpl": "%(uploader)s - %(title)s.%(ext)s",
+    # Collision-safe by default: `%(id)s` is unique per media item, and
+    # yt-dlp REPLACES an existing video file (overwrites defaults to
+    # None, which means "overwrite non-video files" — a video file is
+    # replaced). Without a unique field two uploads with the same title
+    # silently overwrite each other.
+    "output_tmpl": "%(uploader)s - %(title)s [%(id)s].%(ext)s",
     # ── Explicit override (Format Picker) ───────────────────────────────
     "explicit_format_id": None,
     "explicit_audio_format_id": None,
