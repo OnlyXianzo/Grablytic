@@ -30,7 +30,7 @@ The HTTP body is read with a `256 KiB + 1` bound; an oversized body is rejected 
 
 ### 6. Are redirects checked, or is only the initial profile URL checked?
 
-Both. The initial URL is checked, and `_SafeProfileRedirectHandler` validates each new destination before urllib follows it. On an unsafe target it raises `urllib.error.HTTPError`, the documented way to stop other redirect handlers from processing that redirect. `test_profile_redirect_to_unsafe_target_is_rejected` covers this behavior.
+Both. The profile fetch uses a proxy-free pinned opener. It bounds URL length, resolves and validates the initial host, and connects only to the vetted socket addresses within one total connection-time budget. `_SafeProfileRedirectHandler` resolves, validates, and pins every new destination before following it. Unsafe targets raise `urllib.error.HTTPError`. HTTPS retains the original hostname for the Host header, TLS SNI, and certificate verification. `test_profile_redirect_to_private_address_is_rejected` and the pinned-socket tests cover this behavior.
 
 ### 7. What is the DNS-failure policy for profile-fetch URLs?
 
@@ -46,7 +46,7 @@ Only HTTP(S) URLs without embedded username/password are eligible, and the URL t
 
 ### 10. Does the DNS precheck eliminate DNS rebinding?
 
-No. It checks DNS answers and re-checks redirect hops, but urllib resolves again when it makes the socket connection; the validated IP is not pinned to that connection. A DNS-rebinding/time-of-check-to-time-of-use race remains. Stronger assurance requires a pinning transport or network egress controls. This residual is explicitly recorded in the research report and must not be described as fully eliminated.
+For remote profile fetches, yes: the custom opener validates every answer and connects to that exact vetted socket address; redirects take the same path, proxies are disabled, and HTTPS still verifies the original hostname. A local-server regression test confirms the connection uses the single validated resolution. For user-selected media, no: Grablytic performs a preflight check and rejects every known private answer, but yt-dlp owns later DNS lookups and requests, so that path is not pinned. DNS rebinding remains a narrower residual for the yt-dlp media network path; fail-open on a DNS outage is an explicit availability trade-off, not evidence that the destination is safe.
 
 ### 11. Can `format_code: "all"` bypass the profile filter through direct config or IPC?
 
@@ -126,7 +126,7 @@ The local PO-token stub is inert and the solver remains disabled by default. If 
 
 ### 30. What is proven locally, what is only configured in CI, and what is still open?
 
-Local proof on 2026-10-19: **718 engine tests passed in 51.90s with 79.71% coverage** (`--cov-fail-under=75`, Python 3.13); **3 coverage-tool tests passed**; the corrected contract assertions pass in the full engine suite. `ruff check --select F --ignore F401 engine/`, Python compilation, relative-doc-link checks (18 files), workflow YAML parsing (6 jobs in `verify.yml`), and `git diff --check` passed. The Flutter SDK snapshot in this workspace is incomplete (no runnable Dart cache and no Git checkout), and Gradle/Kotlin/Android build tools are absent, so Flutter analysis/tests and Android compilation/device behavior are not locally verified. `pubspec.lock` now contains the secure-storage and integration-test entries, cross-checked against pub.dev package metadata, but local `flutter pub get` could not run; CI's resolver is the final lockfile check. No local `coverage/lcov.info` exists; the LCOV parser unit tests pass. The API 35 emulator and Flutter coverage gates are configured but have not run remotely. DNS rebinding remains the explicit security residual from Answer 10; Android behavior and the GitHub Actions run await external verification.
+Local proof on 2026-10-19: **726 engine tests passed in 52.28s with 79.65% coverage** (`--cov-fail-under=75`, Python 3.13.16); **3 coverage-tool tests passed**; the URL/profile hardening focus set passed **58 tests**. `ruff check --select F --ignore F401 engine/`, Python compilation, relative-doc-link checks (18 files), workflow YAML parsing (6 files), and `git diff --check` passed. Flutter, Dart, and Gradle executables are unavailable in this workspace, so Flutter analysis/tests and Android compilation/device behavior are not locally verified. `pubspec.lock` contains the secure-storage and integration-test entries, cross-checked against pub.dev package metadata, but local `flutter pub get` could not run; CI's resolver is the final lockfile check. No local `coverage/lcov.info` exists; the LCOV parser unit tests pass. The API 35 emulator and Flutter coverage gates are configured but have not run remotely. DNS rebinding remains a residual for yt-dlp's later media requests (Answer 10). No PR, remote review, or CI run has occurred yet; those checks must pass before merge.
 
 ## Code/test map
 

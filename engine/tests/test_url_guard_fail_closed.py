@@ -1,11 +1,8 @@
-"""The SSRF guard must fail CLOSED and must not hang.
-
-The guard used to return "not blocked" on any resolver failure, which
-is exactly the window a DNS-rebinding attacker needs. DNS resolution is
-now bounded by a deadline and a failed lookup BLOCKS the URL.
-"""
+"""Profile-control fetches fail closed on DNS errors; media keeps the documented availability policy."""
 
 import socket
+import threading
+import urllib.error
 
 import pytest
 
@@ -23,19 +20,22 @@ def test_dns_failure_fails_closed(monkeypatch):
         raise socket.gaierror("mocked DNS outage")
 
     monkeypatch.setattr(socket, "getaddrinfo", _raise)
-    # We could not prove the host is public -> block.
-    assert ug.is_safe_media_url("https://example.com/video") is False
+    # Control-plane profile retrieval must not continue when DNS is unknown.
+    assert ug.is_safe_profile_url("https://example.com/profiles.json") is False
+    # Media is user-selected; preserve availability when DNS has no answer.
+    assert ug.is_safe_media_url("https://example.com/video") is True
 
 
 @pytest.mark.unit
-def test_empty_dns_answer_fails_closed(monkeypatch):
+def test_empty_dns_answer_policy_is_sink_specific(monkeypatch):
     ug = _ug()
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [])
-    assert ug.is_safe_media_url("https://example.com/video") is False
+    assert ug.is_safe_profile_url("https://example.com/profiles.json") is False
+    assert ug.is_safe_media_url("https://example.com/video") is True
 
 
 @pytest.mark.unit
-def test_dns_timeout_fails_closed(monkeypatch):
+def test_dns_timeout_policy_is_sink_specific(monkeypatch):
     ug = _ug()
 
     def _hang(host, port, *args, **kwargs):
@@ -44,7 +44,8 @@ def test_dns_timeout_fails_closed(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", _hang)
     monkeypatch.setattr(ug, "_DNS_TIMEOUT_S", 0.2)
-    assert ug.is_safe_media_url("https://example.com/video") is False
+    assert ug.is_safe_profile_url("https://example.com/profiles.json") is False
+    assert ug.is_safe_media_url("https://example.com/video") is True
 
 
 @pytest.mark.unit
@@ -85,6 +86,52 @@ def test_resolver_returns_empty_on_error(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", _raise)
     assert ug._resolve_host("example.com") == []
+
+
+@pytest.mark.unit
+def test_profile_url_length_is_bounded_before_dns(monkeypatch):
+    ug = _ug()
+    lookups = []
+    monkeypatch.setattr(
+        ug, "_resolve_address_records",
+        lambda host, port: lookups.append((host, port)) or [],
+    )
+
+    with pytest.raises(urllib.error.URLError, match="Unsafe or unresolved profile destination"):
+        ug.pinned_urlopen("https://example.com/" + "a" * 2048)
+
+    assert lookups == []
+
+
+@pytest.mark.unit
+def test_hung_dns_lookups_cannot_create_unbounded_resolver_threads(monkeypatch):
+    ug = _ug()
+    slots = threading.BoundedSemaphore(1)
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    calls = []
+
+    def _hang(host, port, *args, **kwargs):
+        calls.append(host)
+        entered.set()
+        release.wait(timeout=2)
+        finished.set()
+        return []
+
+    monkeypatch.setattr(ug, "_dns_resolution_slots", slots)
+    monkeypatch.setattr(ug, "_DNS_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(socket, "getaddrinfo", _hang)
+    try:
+        assert ug._resolve_address_records("first.example", 80) == []
+        assert entered.wait(timeout=1)
+        # The first resolver is still blocked, so a second lookup is refused
+        # rather than creating another thread.
+        assert ug._resolve_address_records("second.example", 80) == []
+        assert calls == ["first.example"]
+    finally:
+        release.set()
+        assert finished.wait(timeout=1)
 
 
 @pytest.mark.unit

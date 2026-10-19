@@ -2,10 +2,13 @@ import json
 import os
 import tempfile
 import threading
-from urllib.request import urlopen, Request
+from urllib.request import Request
 from urllib.error import URLError
 
 from grablytic_engine.paths import get_paths
+from grablytic_engine.url_guard import pinned_urlopen as urlopen
+
+_MAX_PROFILE_BYTES = 256 * 1024
 
 
 _DEFAULT_PROFILES = {
@@ -109,12 +112,12 @@ def load_site_profiles_from_url(url: str) -> dict:
     the cache — otherwise the broken payload would be served forever."""
     global _SITE_PROFILES_CACHE
     try:
-        from grablytic_engine.url_guard import is_safe_profile_url
-        if not is_safe_profile_url(url):
-            return load_site_profiles()
         req = Request(url, headers={"User-Agent": "Grablytic/1.0"})
         with urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
+            payload = resp.read(_MAX_PROFILE_BYTES + 1)
+        if len(payload) > _MAX_PROFILE_BYTES:
+            raise ValueError("remote profile response exceeds size limit")
+        data = json.loads(payload.decode("utf-8"))
         safe = sanitize_profiles(data)
         if not safe:
             # Empty or fully-rejected payload: keep the previous cache.

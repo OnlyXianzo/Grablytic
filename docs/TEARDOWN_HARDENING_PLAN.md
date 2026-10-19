@@ -42,8 +42,12 @@ disagreed (none materially), noted inline.
    and never cache a failed/empty payload. (Findings 6, 8, 18, 25)
 6. **Auto-report** — redact secrets from free-text exception strings and log tails
    before they leave the device; make the target repo configurable per build. (Finding 5)
-7. **SSRF** — DNS failure must fail *closed* for profile URLs (a control-plane
-   fetch) while staying fail-open for media URLs (user content). (Finding 29)
+7. **SSRF** — fail closed for remote profile control-plane requests; pin each
+   validated DNS answer to the socket, revalidate redirects, disable ambient
+   proxies, and cap response bytes. Keep the documented fail-open-on-no-answer
+   policy for user-selected media while rejecting all known private answers.
+   yt-dlp's later network requests remain outside the pinned transport, so the
+   DNS-rebinding residual applies to that media path only. (Finding 29)
 8. **Deno** — run the PO-Token solver with an explicit deny-all permission set.
    (Finding 30)
 9. **Secrets at rest** — proxy credentials must not sit in plaintext
@@ -94,7 +98,7 @@ disagreed (none materially), noted inline.
 31. `ci: raise the Flutter coverage floor`
 32. `docs: answer the 30 hard questions and record residuals`
 
-Previously published small commits are on `fix/architectural-teardown-hardening`; the latest known remote tip is `893fb3b1b1bf`. Follow-up changes are being committed separately on top of that tip. Push only after confirming a fast-forward; never force-push.
+The published topic branch points at `c68db36e92b7be7d7d46f11cb07085ae188477d3` (main base: `306877eea144ec088f98e73c1c5f68c8215d6245`). A fresh-clone audit found that the documented profile-response cap, redirect validation, and DNS-failure policy were not fully implemented. The current worktree corrects those mismatches with a pinned profile transport, bounded body reads and resolver/connect work, and the sink-specific media policy. Local verification now passes: 726 engine tests at 79.65% coverage, 3 tool tests, Ruff, compilation, doc links, workflow YAML, and diff checks. The fixes are still uncommitted and no PR or remote checks exist; Android/Dart toolchains remain unavailable locally.
 
 ## Phase 3 — Blast radius (per change, checked before editing)
 
@@ -117,4 +121,4 @@ Previously published small commits are on `fix/architectural-teardown-hardening`
 * `ruff check --select F --ignore F401 engine/` clean.
 * `python3 tool/check_doc_links.py` clean.
 * `PYTHONPATH=. pytest tool/tests -q` green; LCOV parser tests pass; parse all workflow YAML and verify the Android bridge job is present.
-* Do not claim Flutter Pub resolution or Android/Kotlin/device behavior unless the SDK/emulator run completes. Keep the DNS-rebinding TOCTOU residual explicit.
+* Do not claim Flutter Pub resolution or Android/Kotlin/device behavior unless the SDK/emulator run completes. Keep the DNS-rebinding TOCTOU residual explicit for the yt-dlp media request path; remote profile fetches use the pinned, redirect-validated transport.

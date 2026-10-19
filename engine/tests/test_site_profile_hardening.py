@@ -7,8 +7,12 @@ allowlist, an unsafe entry is dropped WHOLE, and a failed fetch never
 poisons the cache.
 """
 
+import http.server
 import json
 import os
+import socket
+import threading
+import urllib.error
 
 import pytest
 
@@ -34,6 +38,180 @@ def _reset_cache():
     sp.reset_site_profiles_cache()
     yield
     sp.reset_site_profiles_cache()
+
+
+@pytest.mark.unit
+def test_pinned_profile_connection_uses_the_validated_address(monkeypatch):
+    from grablytic_engine import url_guard as ug
+
+    received_hosts = []
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            received_hosts.append(self.headers.get("Host"))
+            body = b'{"Good":{"format_code":"best","container":"mp4"}}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    lookups = []
+    record = (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", port))
+    original_blocked = ug._ip_is_blocked
+
+    def _resolve(host, requested_port):
+        lookups.append((host, requested_port))
+        return [record]
+
+    monkeypatch.setattr(ug, "_resolve_address_records", _resolve)
+    monkeypatch.setattr(
+        ug, "_ip_is_blocked",
+        lambda ip: False if ip.is_loopback else original_blocked(ip),
+    )
+    try:
+        with ug.pinned_urlopen(f"http://profiles.example:{port}/profiles.json", timeout=2) as response:
+            assert response.read(1024).startswith(b'{"Good"')
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert lookups == [("profiles.example", port)]
+    assert received_hosts == [f"profiles.example:{port}"]
+
+
+@pytest.mark.unit
+def test_pinned_connection_shares_one_total_connect_timeout(monkeypatch):
+    from grablytic_engine import url_guard as ug
+
+    now = [100.0]
+    timeouts = []
+
+    class _Socket:
+        def settimeout(self, value):
+            timeouts.append(value)
+
+        def connect(self, _address):
+            now[0] += 0.6
+            raise socket.timeout("mocked connect timeout")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(ug.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(ug.socket, "socket", lambda *_args: _Socket())
+    addresses = (
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443)),
+    )
+
+    with pytest.raises(socket.timeout, match="mocked connect timeout"):
+        ug._connect_vetted_addresses(addresses, 1.0)
+
+    assert timeouts == pytest.approx([1.0, 0.4])
+
+
+@pytest.mark.unit
+def test_pinned_https_handler_keeps_certificate_validation_enabled():
+    import ssl
+
+    from grablytic_engine import url_guard as ug
+
+    context = ug._PinnedHTTPSHandler()._context
+    assert context.check_hostname is True
+    assert context.verify_mode == ssl.CERT_REQUIRED
+
+
+@pytest.mark.unit
+def test_https_connection_keeps_original_hostname_for_tls(monkeypatch):
+    from grablytic_engine import url_guard as ug
+
+    seen = {}
+
+    class _Socket:
+        def close(self):
+            pass
+
+    class _Context:
+        def wrap_socket(self, raw_socket, *, server_hostname):
+            seen["socket"] = raw_socket
+            seen["server_hostname"] = server_hostname
+            return raw_socket
+
+    raw_socket = _Socket()
+    monkeypatch.setattr(ug, "_connect_vetted_addresses", lambda *args: raw_socket)
+    connection = ug._PinnedHTTPSConnection(
+        "profiles.example", ((socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),),
+        context=_Context(),
+    )
+    connection.connect()
+    connection.close()
+
+    assert seen == {"socket": raw_socket, "server_hostname": "profiles.example"}
+
+
+@pytest.mark.unit
+def test_profile_redirect_to_private_address_is_rejected(monkeypatch):
+    from grablytic_engine import url_guard as ug
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", "http://10.0.0.1/private")
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    record = (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", port))
+    original_blocked = ug._ip_is_blocked
+    monkeypatch.setattr(ug, "_resolve_address_records", lambda *_args: [record])
+    monkeypatch.setattr(
+        ug, "_ip_is_blocked",
+        lambda ip: False if ip.is_loopback else original_blocked(ip),
+    )
+    try:
+        with pytest.raises(urllib.error.HTTPError, match="Unsafe or unresolved profile redirect"):
+            ug.pinned_urlopen(f"http://profiles.example:{port}/redirect", timeout=2)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.unit
+def test_oversized_profile_response_keeps_the_existing_cache(monkeypatch):
+    sp = _sp()
+    good = {"Good": {"format_code": "best", "container": "mp4"}}
+    sp._SITE_PROFILES_CACHE = good
+    requested_sizes = []
+
+    class _Resp:
+        def read(self, size=-1):
+            requested_sizes.append(size)
+            return b" " * size
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(sp, "urlopen", lambda *a, **k: _Resp())
+    assert sp.load_site_profiles_from_url("https://example.com/profiles.json") == good
+    assert sp._SITE_PROFILES_CACHE == good
+    assert requested_sizes == [sp._MAX_PROFILE_BYTES + 1]
 
 
 # ─────────────────────────────────────────────────── format expression gate
@@ -172,7 +350,7 @@ def test_empty_remote_payload_keeps_the_previous_cache(monkeypatch):
     sp._SITE_PROFILES_CACHE = good
 
     class _Resp:
-        def read(self):
+        def read(self, size=-1):
             return b"{}"
 
         def __enter__(self):
@@ -194,8 +372,8 @@ def test_unsafe_remote_payload_is_not_cached(monkeypatch):
     payload = json.dumps({"Evil": {"format_code": "all"}}).encode()
 
     class _Resp:
-        def read(self):
-            return payload
+        def read(self, size=-1):
+            return payload[:size] if size >= 0 else payload
 
         def __enter__(self):
             return self
