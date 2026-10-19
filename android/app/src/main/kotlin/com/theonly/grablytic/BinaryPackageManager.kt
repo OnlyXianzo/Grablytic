@@ -181,64 +181,104 @@ object BinaryPackageManager {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         val rootPath = root.canonicalFile.path
         val rootPrefix = root.absolutePath.trimEnd(File.separatorChar) + File.separator
-        fun field(value: String) {
-            val bytes = value.toByteArray(Charsets.UTF_8)
-            digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.size).array())
-            digest.update(bytes)
-        }
-        fun visit(directory: File) {
-            val children = directory.listFiles()
-                ?: throw IllegalStateException("Cannot list package directory: ${directory.absolutePath}")
-            for (entry in children.sortedBy { it.name }) {
-                if (directory.canonicalFile.path == rootPath && entry.name == ZIP_STAMP_FILE) continue
-                val stat = android.system.Os.lstat(entry.absolutePath)
-                val absolutePath = entry.absolutePath
-                check(absolutePath.startsWith(rootPrefix)) {
-                    "Package tree entry escaped root: $absolutePath"
-                }
-                val relative = absolutePath.removePrefix(rootPrefix)
-                check(relative.isNotBlank()) { "Package tree entry escaped root: $absolutePath" }
-                val executableMask = android.system.OsConstants.S_IXUSR or
-                    android.system.OsConstants.S_IXGRP or android.system.OsConstants.S_IXOTH
-                val executable = (stat.st_mode and executableMask) != 0
-                field(relative)
-                when {
-                    android.system.OsConstants.S_ISDIR(stat.st_mode) -> {
-                        field("directory")
-                        field(if (executable) "x" else "-")
-                        visit(entry)
-                    }
-                    android.system.OsConstants.S_ISLNK(stat.st_mode) -> {
-                        field("symlink")
-                        field("")
-                        field(android.system.Os.readlink(entry.absolutePath))
-                    }
-                    android.system.OsConstants.S_ISREG(stat.st_mode) -> {
-                        field("file")
-                        field(if (executable) "x" else "-")
-                        field(stat.st_size.toString())
-                        entry.inputStream().use { input ->
-                            val buffer = ByteArray(65536)
-                            var total = 0L
-                            while (true) {
-                                val count = input.read(buffer)
-                                if (count < 0) break
-                                digest.update(buffer, 0, count)
-                                total += count
-                            }
-                            check(total == stat.st_size) { "Package file changed while hashing: $absolutePath" }
-                        }
-                    }
-                    else -> throw IllegalStateException("Unsupported package entry type: $absolutePath")
-                }
-            }
-        }
-        val rootStat = android.system.Os.lstat(root.absolutePath)
-        check(android.system.OsConstants.S_ISDIR(rootStat.st_mode)) {
+        verifyPackageRoot(root)
+        hashPackageDirectory(root, rootPath, rootPrefix, digest)
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    private fun verifyPackageRoot(root: File) {
+        val stat = android.system.Os.lstat(root.absolutePath)
+        check(android.system.OsConstants.S_ISDIR(stat.st_mode)) {
             "Package root is not a real directory: ${root.absolutePath}"
         }
-        visit(root)
-        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    private fun hashPackageDirectory(
+        directory: File,
+        rootPath: String,
+        rootPrefix: String,
+        digest: java.security.MessageDigest,
+    ) {
+        val children = directory.listFiles()
+            ?: throw IllegalStateException(
+                "Cannot list package directory: ${directory.absolutePath}",
+            )
+        for (entry in children.sortedBy { it.name }) {
+            val isRootStamp = directory.canonicalFile.path == rootPath &&
+                entry.name == ZIP_STAMP_FILE
+            if (!isRootStamp) hashPackageEntry(entry, rootPath, rootPrefix, digest)
+        }
+    }
+
+    private fun hashPackageEntry(
+        entry: File,
+        rootPath: String,
+        rootPrefix: String,
+        digest: java.security.MessageDigest,
+    ) {
+        val stat = android.system.Os.lstat(entry.absolutePath)
+        val relative = packageTreeRelativePath(entry, rootPrefix)
+        val executableMask = android.system.OsConstants.S_IXUSR or
+            android.system.OsConstants.S_IXGRP or android.system.OsConstants.S_IXOTH
+        val executable = (stat.st_mode and executableMask) != 0
+        updateTreeHashField(digest, relative)
+        when {
+            android.system.OsConstants.S_ISDIR(stat.st_mode) -> {
+                updateTreeHashField(digest, "directory")
+                updateTreeHashField(digest, if (executable) "x" else "-")
+                hashPackageDirectory(entry, rootPath, rootPrefix, digest)
+            }
+            android.system.OsConstants.S_ISLNK(stat.st_mode) -> {
+                updateTreeHashField(digest, "symlink")
+                updateTreeHashField(digest, "")
+                updateTreeHashField(digest, android.system.Os.readlink(entry.absolutePath))
+            }
+            android.system.OsConstants.S_ISREG(stat.st_mode) -> {
+                updateTreeHashField(digest, "file")
+                updateTreeHashField(digest, if (executable) "x" else "-")
+                updateTreeHashField(digest, stat.st_size.toString())
+                updateRegularFileHash(entry, stat.st_size, digest)
+            }
+            else -> throw IllegalStateException(
+                "Unsupported package entry type: ${entry.absolutePath}",
+            )
+        }
+    }
+
+    private fun packageTreeRelativePath(entry: File, rootPrefix: String): String {
+        val absolutePath = entry.absolutePath
+        check(absolutePath.startsWith(rootPrefix)) {
+            "Package tree entry escaped root: $absolutePath"
+        }
+        val relative = absolutePath.removePrefix(rootPrefix)
+        check(relative.isNotBlank()) { "Package tree entry escaped root: $absolutePath" }
+        return relative
+    }
+
+    private fun updateTreeHashField(digest: java.security.MessageDigest, value: String) {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.size).array())
+        digest.update(bytes)
+    }
+
+    private fun updateRegularFileHash(
+        entry: File,
+        expectedLength: Long,
+        digest: java.security.MessageDigest,
+    ) {
+        entry.inputStream().use { input ->
+            val buffer = ByteArray(65536)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+                total += count
+            }
+            check(total == expectedLength) {
+                "Package file changed while hashing: ${entry.absolutePath}"
+            }
+        }
     }
 
     private fun deleteEntryNoFollow(file: File) {
@@ -320,36 +360,13 @@ object BinaryPackageManager {
 
         val marker = File(target, ZIP_STAMP_FILE)
         val currentStamp = readStamp(marker)
-
         val zipLength = zipSo.length()
         val zipMtime = zipSo.lastModified()
-
         // Metadata is only a quick reject hint, never the integrity proof.
-        if (target.isDirectory && currentStamp != null) {
-            val actualArchiveSha256 = computeSha256(zipSo)
-            val actualTreeSha256 = computeTreeSha256(target)
-            if (currentStamp.length == zipLength &&
-                currentStamp.archiveSha256 == actualArchiveSha256 &&
-                currentStamp.treeSha256 == actualTreeSha256
-            ) {
-                if (currentStamp.mtime != zipMtime) writeStamp(marker, currentStamp.copy(mtime = zipMtime))
-                return
-            }
-        }
+        if (isCurrentExtraction(zipSo, target, marker, currentStamp, zipLength, zipMtime)) return
 
-        // Three-way atomic swap: extract into tmp, swap target -> backup, tmp -> target, delete backup.
-        if (!packagesDir.isDirectory && !packagesDir.mkdirs()) {
-            throw IllegalStateException("Cannot create package directory: ${packagesDir.absolutePath}")
-        }
-        val tmp = File(packagesDir, "${target.name}.tmp")
-        val backup = File(packagesDir, "${target.name}.bak")
-        deleteEntryNoFollow(tmp)
-        deleteEntryNoFollow(backup)
-        check(tmp.mkdir()) { "Cannot create clean staging directory: ${tmp.absolutePath}" }
-        check(android.system.OsConstants.S_ISDIR(android.system.Os.lstat(tmp.absolutePath).st_mode)) {
-            "Staging path is not a real directory: ${tmp.absolutePath}"
-        }
-
+        // Extract to a clean staging directory so the current package remains available until swap.
+        val (tmp, backup) = createStagingDirectories(packagesDir, target)
         val archiveSha256 = try {
             extractZipTo(zipSo, tmp)
         } catch (e: Exception) {
@@ -362,23 +379,7 @@ object BinaryPackageManager {
         val newStamp = Stamp(zipLength, zipMtime, archiveSha256, treeSha256)
         writeStamp(File(tmp, ZIP_STAMP_FILE), newStamp)
 
-        if (target.exists()) {
-            if (!target.renameTo(backup)) {
-                deleteQuietly(tmp)
-                Log.w(TAG, "${target.name}: rename to backup failed; aborting swap")
-                return
-            }
-        }
-
-        if (!tmp.renameTo(target)) {
-            Log.e(TAG, "${target.name}: atomic swap failed; rolling back from backup")
-            if (backup.exists() && !backup.renameTo(target)) {
-                Log.e(TAG, "${target.name}: rollback from backup also failed!")
-            }
-            deleteQuietly(tmp)
-            return
-        }
-
+        if (!swapStagedTree(tmp, target, backup)) return
         deleteQuietly(backup)
 
         Log.i(
@@ -386,6 +387,60 @@ object BinaryPackageManager {
             "extracted ${zipSo.name} -> ${target.absolutePath} " +
                 "(archive SHA-256: $archiveSha256, tree SHA-256: $treeSha256)",
         )
+    }
+
+    private fun isCurrentExtraction(
+        zipSo: File,
+        target: File,
+        marker: File,
+        currentStamp: Stamp?,
+        zipLength: Long,
+        zipMtime: Long,
+    ): Boolean {
+        if (!target.isDirectory || currentStamp == null) return false
+        val actualArchiveSha256 = computeSha256(zipSo)
+        val actualTreeSha256 = computeTreeSha256(target)
+        if (currentStamp.length != zipLength ||
+            currentStamp.archiveSha256 != actualArchiveSha256 ||
+            currentStamp.treeSha256 != actualTreeSha256
+        ) {
+            return false
+        }
+        if (currentStamp.mtime != zipMtime) writeStamp(marker, currentStamp.copy(mtime = zipMtime))
+        return true
+    }
+
+    private fun createStagingDirectories(packagesDir: File, target: File): Pair<File, File> {
+        if (!packagesDir.isDirectory && !packagesDir.mkdirs()) {
+            throw IllegalStateException("Cannot create package directory: ${packagesDir.absolutePath}")
+        }
+        val tmp = File(packagesDir, "${target.name}.tmp")
+        val backup = File(packagesDir, "${target.name}.bak")
+        deleteEntryNoFollow(tmp)
+        deleteEntryNoFollow(backup)
+        check(tmp.mkdir()) { "Cannot create clean staging directory: ${tmp.absolutePath}" }
+        check(android.system.OsConstants.S_ISDIR(android.system.Os.lstat(tmp.absolutePath).st_mode)) {
+            "Staging path is not a real directory: ${tmp.absolutePath}"
+        }
+        return tmp to backup
+    }
+
+    private fun swapStagedTree(tmp: File, target: File, backup: File): Boolean {
+        // Keep a backup until the staged tree is promoted, allowing rollback if rename fails.
+        if (target.exists() && !target.renameTo(backup)) {
+            deleteQuietly(tmp)
+            Log.w(TAG, "${target.name}: rename to backup failed; aborting swap")
+            return false
+        }
+        if (!tmp.renameTo(target)) {
+            Log.e(TAG, "${target.name}: atomic swap failed; rolling back from backup")
+            if (backup.exists() && !backup.renameTo(target)) {
+                Log.e(TAG, "${target.name}: rollback from backup also failed!")
+            }
+            deleteQuietly(tmp)
+            return false
+        }
+        return true
     }
 
     private fun validateZipEntries(
@@ -396,118 +451,224 @@ object BinaryPackageManager {
         val byPath = linkedMapOf<String, ValidatedZipEntry>()
         val validated = ArrayList<ValidatedZipEntry>(entries.size)
         for (entry in entries) {
-            val raw = entry.name
-            check(raw.length <= MAX_ZIP_PATH_CHARS) { "Zip entry path is too long" }
-            check(raw.isNotBlank() && '\u0000' !in raw && '\\' !in raw && ':' !in raw) {
-                "Invalid zip entry path: $raw"
+            val record = validateZipEntry(entry, target, rootPath)
+            check(byPath.put(record.output.path, record) == null) {
+                "Duplicate or colliding zip entry path: ${entry.name}"
             }
-            check(!raw.startsWith("/") && !raw.matches(Regex("^[A-Za-z]:.*"))) {
-                "Absolute zip entry path forbidden: $raw"
-            }
-            val pathName = if (entry.isDirectory) raw.removeSuffix("/") else raw
-            check(pathName.isNotBlank()) { "Zip entry may not name package root" }
-            val segments = pathName.split('/')
-            check(segments.none { it.isEmpty() || it == "." || it == ".." }) {
-                "Unsafe zip entry path: $raw"
-            }
-            check(segments.first() != ZIP_STAMP_FILE) { "Reserved package metadata path: $raw" }
-            val output = File(target, pathName).canonicalFile
-            check(output.path.startsWith(rootPath + File.separator) && output.path != rootPath) {
-                "Zip entry escapes package directory: $raw"
-            }
-            val kind = when {
-                entry.isUnixSymlink -> ZipEntryKind.SYMLINK
-                entry.isDirectory -> ZipEntryKind.DIRECTORY
-                else -> ZipEntryKind.FILE
-            }
-            val record = ValidatedZipEntry(entry, output, kind)
-            check(byPath.put(output.path, record) == null) { "Duplicate or colliding zip entry path: $raw" }
             validated.add(record)
         }
-        for (record in validated) {
-            var parent = record.output.parentFile?.canonicalFile
-            while (parent != null && parent.path != rootPath) {
-                check(parent.path.startsWith(rootPath + File.separator)) {
-                    "Zip entry parent escapes package directory: ${record.entry.name}"
-                }
-                val ancestor = byPath[parent.path]
-                if (ancestor != null) {
-                    check(ancestor.kind == ZipEntryKind.DIRECTORY) {
-                        "Non-directory zip entry is an ancestor of ${record.entry.name}: ${ancestor.entry.name}"
-                    }
-                }
-                parent = parent.parentFile
-            }
-        }
+        validateZipEntryAncestors(validated, byPath, rootPath)
         return validated
     }
 
+    private fun validateZipEntry(
+        entry: org.apache.commons.compress.archivers.zip.ZipArchiveEntry,
+        target: File,
+        rootPath: String,
+    ): ValidatedZipEntry {
+        val raw = entry.name
+        val pathName = validateZipEntryName(raw, entry.isDirectory)
+        val output = resolveZipEntryPath(target, pathName, raw, rootPath)
+        val kind = zipEntryKind(entry)
+        return ValidatedZipEntry(entry, output, kind)
+    }
+
+    private fun validateZipEntryName(raw: String, isDirectory: Boolean): String {
+        check(raw.length <= MAX_ZIP_PATH_CHARS) { "Zip entry path is too long" }
+        check(raw.isNotBlank() && '\u0000' !in raw && '\\' !in raw && ':' !in raw) {
+            "Invalid zip entry path: $raw"
+        }
+        check(!raw.startsWith("/") && !raw.matches(Regex("^[A-Za-z]:.*"))) {
+            "Absolute zip entry path forbidden: $raw"
+        }
+        val pathName = if (isDirectory) raw.removeSuffix("/") else raw
+        check(pathName.isNotBlank()) { "Zip entry may not name package root" }
+        validateZipEntrySegments(pathName, raw)
+        return pathName
+    }
+
+    private fun validateZipEntrySegments(pathName: String, raw: String) {
+        val segments = pathName.split('/')
+        check(segments.none { it.isEmpty() || it == "." || it == ".." }) {
+            "Unsafe zip entry path: $raw"
+        }
+        check(segments.first() != ZIP_STAMP_FILE) { "Reserved package metadata path: $raw" }
+    }
+
+    private fun resolveZipEntryPath(
+        target: File,
+        pathName: String,
+        raw: String,
+        rootPath: String,
+    ): File {
+        val output = File(target, pathName).canonicalFile
+        check(output.path.startsWith(rootPath + File.separator) && output.path != rootPath) {
+            "Zip entry escapes package directory: $raw"
+        }
+        return output
+    }
+
+    private fun zipEntryKind(
+        entry: org.apache.commons.compress.archivers.zip.ZipArchiveEntry,
+    ): ZipEntryKind = when {
+        entry.isUnixSymlink -> ZipEntryKind.SYMLINK
+        entry.isDirectory -> ZipEntryKind.DIRECTORY
+        else -> ZipEntryKind.FILE
+    }
+
+    private fun validateZipEntryAncestors(
+        entries: List<ValidatedZipEntry>,
+        byPath: Map<String, ValidatedZipEntry>,
+        rootPath: String,
+    ) {
+        for (record in entries) {
+            var parent = record.output.parentFile?.canonicalFile
+            while (parent != null && parent.path != rootPath) {
+                validateZipAncestorPath(parent, record, byPath, rootPath)
+                parent = parent.parentFile
+            }
+        }
+    }
+
+    private fun validateZipAncestorPath(
+        parent: File,
+        record: ValidatedZipEntry,
+        byPath: Map<String, ValidatedZipEntry>,
+        rootPath: String,
+    ) {
+        check(parent.path.startsWith(rootPath + File.separator)) {
+            "Zip entry parent escapes package directory: ${record.entry.name}"
+        }
+        val ancestor = byPath[parent.path] ?: return
+        check(ancestor.kind == ZipEntryKind.DIRECTORY) {
+            "Non-directory zip entry is an ancestor of ${record.entry.name}: ${ancestor.entry.name}"
+        }
+    }
+
     private fun extractZipTo(zipSo: File, target: File): String {
-        val buf = ByteArray(65536)
+        val buffer = ByteArray(65536)
         org.apache.commons.compress.archivers.zip.ZipFile(zipSo).use { zip ->
-            val archiveEntries = mutableListOf<org.apache.commons.compress.archivers.zip.ZipArchiveEntry>()
-            val iterator = zip.entries
-            while (iterator.hasMoreElements()) archiveEntries.add(iterator.nextElement())
-            val validated = validateZipEntries(archiveEntries, target)
-            for (record in validated) {
-                val entry = record.entry
-                val out = record.output
-                when (record.kind) {
-                    ZipEntryKind.DIRECTORY -> check(out.isDirectory || out.mkdirs()) {
-                        "Could not create directory for zip entry: ${entry.name}"
+            val validated = validateZipEntries(readZipEntries(zip), target)
+            for (record in validated) extractZipEntry(zip, record, target, buffer)
+        }
+        return computeSha256(zipSo)
+    }
+
+    private fun readZipEntries(
+        zip: org.apache.commons.compress.archivers.zip.ZipFile,
+    ): List<org.apache.commons.compress.archivers.zip.ZipArchiveEntry> {
+        val entries = mutableListOf<org.apache.commons.compress.archivers.zip.ZipArchiveEntry>()
+        val iterator = zip.entries
+        while (iterator.hasMoreElements()) entries.add(iterator.nextElement())
+        return entries
+    }
+
+    private fun extractZipEntry(
+        zip: org.apache.commons.compress.archivers.zip.ZipFile,
+        record: ValidatedZipEntry,
+        target: File,
+        buffer: ByteArray,
+    ) {
+        when (record.kind) {
+            ZipEntryKind.DIRECTORY -> createZipDirectory(record)
+            ZipEntryKind.SYMLINK -> extractZipSymlink(zip, record, target)
+            ZipEntryKind.FILE -> extractZipFile(zip, record, buffer)
+        }
+    }
+
+    private fun createZipDirectory(record: ValidatedZipEntry) {
+        check(record.output.isDirectory || record.output.mkdirs()) {
+            "Could not create directory for zip entry: ${record.entry.name}"
+        }
+    }
+
+    private fun extractZipSymlink(
+        zip: org.apache.commons.compress.archivers.zip.ZipFile,
+        record: ValidatedZipEntry,
+        target: File,
+    ) {
+        val output = record.output
+        output.parentFile?.mkdirs()
+        val linkTarget = readZipSymlinkTarget(zip, record.entry)
+        validateZipSymlinkTarget(record.entry.name, linkTarget, output, target)
+        safeDeleteEntry(output)
+        android.system.Os.symlink(linkTarget, output.absolutePath)
+    }
+
+    private fun readZipSymlinkTarget(
+        zip: org.apache.commons.compress.archivers.zip.ZipFile,
+        entry: org.apache.commons.compress.archivers.zip.ZipArchiveEntry,
+    ): String {
+        val linkBytes = java.io.ByteArrayOutputStream().use { sink ->
+            zip.getInputStream(entry).use { input ->
+                val targetBuffer = ByteArray(512)
+                var total = 0
+                while (true) {
+                    val count = input.read(targetBuffer)
+                    if (count < 0) break
+                    total += count
+                    check(total <= MAX_SYMLINK_TARGET_BYTES) {
+                        "Symlink target is too long in ${entry.name}"
                     }
-                    ZipEntryKind.SYMLINK -> {
-                        out.parentFile?.mkdirs()
-                        val linkBytes = java.io.ByteArrayOutputStream().use { sink ->
-                            zip.getInputStream(entry).use { input ->
-                                val targetBuffer = ByteArray(512)
-                                var total = 0
-                                while (true) {
-                                    val count = input.read(targetBuffer)
-                                    if (count < 0) break
-                                    total += count
-                                    check(total <= MAX_SYMLINK_TARGET_BYTES) {
-                                        "Symlink target is too long in ${entry.name}"
-                                    }
-                                    sink.write(targetBuffer, 0, count)
-                                }
-                            }
-                            sink.toByteArray()
-                        }
-                        val linkTarget = String(linkBytes, Charsets.UTF_8).trim()
-                        check(linkTarget.isNotEmpty()) { "Empty symlink target in ${entry.name}" }
-                        check(
-                            !linkTarget.startsWith("/") && '\\' !in linkTarget &&
-                                '\u0000' !in linkTarget && ':' !in linkTarget,
-                        ) { "Absolute or invalid symlink target forbidden: ${entry.name} -> $linkTarget" }
-                        val resolvedTarget = File(out.parentFile, linkTarget).canonicalPath
-                        check(resolvedTarget.startsWith(target.canonicalPath + File.separator)) {
-                            "Symlink target escapes package directory: ${entry.name} -> $linkTarget"
-                        }
-                        safeDeleteEntry(out)
-                        android.system.Os.symlink(linkTarget, out.absolutePath)
-                    }
-                    ZipEntryKind.FILE -> {
-                        out.parentFile?.mkdirs()
-                        safeDeleteEntry(out)
-                        zip.getInputStream(entry).use { input ->
-                            out.outputStream().use { output ->
-                                var n: Int
-                                while (input.read(buf).also { n = it } != -1) output.write(buf, 0, n)
-                            }
-                        }
-                    }
+                    sink.write(targetBuffer, 0, count)
+                }
+            }
+            sink.toByteArray()
+        }
+        val linkTarget = String(linkBytes, Charsets.UTF_8).trim()
+        check(linkTarget.isNotEmpty()) { "Empty symlink target in ${entry.name}" }
+        return linkTarget
+    }
+
+    private fun validateZipSymlinkTarget(
+        entryName: String,
+        linkTarget: String,
+        output: File,
+        target: File,
+    ) {
+        check(
+            !linkTarget.startsWith("/") && '\\' !in linkTarget &&
+                '\u0000' !in linkTarget && ':' !in linkTarget,
+        ) { "Absolute or invalid symlink target forbidden: $entryName -> $linkTarget" }
+        val resolvedTarget = File(output.parentFile, linkTarget).canonicalPath
+        check(resolvedTarget.startsWith(target.canonicalPath + File.separator)) {
+            "Symlink target escapes package directory: $entryName -> $linkTarget"
+        }
+    }
+
+    private fun extractZipFile(
+        zip: org.apache.commons.compress.archivers.zip.ZipFile,
+        record: ValidatedZipEntry,
+        buffer: ByteArray,
+    ) {
+        val outputFile = record.output
+        outputFile.parentFile?.mkdirs()
+        safeDeleteEntry(outputFile)
+        zip.getInputStream(record.entry).use { input ->
+            outputFile.outputStream().use { output ->
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
                 }
             }
         }
-        return computeSha256(zipSo)
     }
 
     private fun deleteQuietly(file: File) {
         try {
             deleteEntryNoFollow(file)
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to remove ${file.absolutePath}: ${e.message}")
+        } catch (e: android.system.ErrnoException) {
+            logDeleteFailure(file, e)
+        } catch (e: IllegalStateException) {
+            logDeleteFailure(file, e)
+        } catch (e: SecurityException) {
+            logDeleteFailure(file, e)
         }
     }
+
+    private fun logDeleteFailure(file: File, error: Throwable) {
+        Log.w(TAG, "Failed to remove ${file.absolutePath}: ${error.message}")
+    }
+
 }
