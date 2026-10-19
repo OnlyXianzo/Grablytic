@@ -13,6 +13,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.chaquo.python.Python
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Keeps the process alive while downloads run (screen locked, activity dead).
@@ -65,53 +68,61 @@ class DownloadService : Service() {
         var totalBytes: Long = 0,
     )
 
-    private val active = linkedMapOf<String, String>() // downloadId -> title
-    private val prog = linkedMapOf<String, Prog>() // downloadId -> progress
-    private val alertPrefs = linkedMapOf<String, Boolean>() // downloadId -> show terminal alert
+    // Guard mutable download state as power management reads it off-main.
+    private val stateLock = Any()
+    private val active = linkedMapOf<String, String>()
+    private val prog = linkedMapOf<String, Prog>()
+    private val alertPrefs = linkedMapOf<String, Boolean>()
     private var lastShownId: String? = null
     private var lastPromoteMs: Long = 0
 
-    // T2-1: single-owner power holders. Non-counted + isHeld() guards so N
-    // concurrent downloads share one logical "held while active non-empty"
-    // state — never per-download acquire/release pairing (under-lock crash).
+    // One background owner for all WakeLock/WifiLock system calls.
+    private val powerLockExecutor = ScheduledThreadPoolExecutor(1) { task ->
+        Thread(task, "GrablyticPowerLocks").apply { isDaemon = true }
+    }
+    private val powerScheduleLock = Any()
+    @Volatile private var powerRenewal: ScheduledFuture<*>? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private var wakeAcquiredAtMs: Long = 0
-
     private val lockRenewalHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val lockRenewalRunnable = object : Runnable {
-        override fun run() {
-            if (active.isNotEmpty()) {
-                renewWakeLock()
-                lockRenewalHandler.postDelayed(this, WAKE_RENEW_MS)
-            }
-        }
+
+    private fun activeSnapshot(): Map<String, String> = synchronized(stateLock) {
+        LinkedHashMap(active)
     }
 
-    private fun renewWakeLock() {
+    private fun renewWakeLockOnExecutor() {
+        if (activeSnapshot().isEmpty()) return
+        ensureLocks()
         val now = android.os.SystemClock.elapsedRealtime()
         try {
             val wl = wakeLock
-            if (wl != null) {
-                try { if (wl.isHeld) wl.release() } catch (_: Exception) {}
+            if (wl != null && (!wl.isHeld || now - wakeAcquiredAtMs >= WAKE_RENEW_MS)) {
+                if (wl.isHeld) try { wl.release() } catch (_: Exception) {}
                 wl.acquire(WAKE_TIMEOUT_MS)
                 wakeAcquiredAtMs = now
             }
         } catch (_: Exception) {}
+        try {
+            val fl = wifiLock
+            if (fl != null && !fl.isHeld) fl.acquire()
+        } catch (_: Exception) {}
     }
 
     private val idleStopRunnable = Runnable {
-        if (active.isEmpty()) {
-            lastShownId = null
+        if (activeSnapshot().isEmpty()) {
+            synchronized(stateLock) { lastShownId = null }
             releaseLocks()
             stopSelf()
         }
     }
 
     private fun checkIdleStop() {
-        if (active.isEmpty()) {
-            lastShownId = null
-            // 30-second grace period for subsequent queued downloads to arrive without losing FGS
+        val idle = synchronized(stateLock) {
+            if (active.isEmpty()) lastShownId = null
+            active.isEmpty()
+        }
+        if (idle) {
             lockRenewalHandler.removeCallbacks(idleStopRunnable)
             lockRenewalHandler.postDelayed(idleStopRunnable, 30_000L)
         } else {
@@ -122,75 +133,55 @@ class DownloadService : Service() {
 
     fun handleStart(id: String, title: String, showAlert: Boolean) {
         lockRenewalHandler.removeCallbacks(idleStopRunnable)
-        active[id] = title
-        alertPrefs[id] = showAlert
+        synchronized(stateLock) { active[id] = title; alertPrefs[id] = showAlert }
         promote()
         updateLocks()
     }
 
-    fun handleUpdate(
-        id: String,
-        percent: Int,
-        stage: String?,
-        speedBps: Long,
-        downloadedBytes: Long,
-        totalBytes: Long,
-    ) {
-        if (active.containsKey(id)) {
-            val p = prog.getOrPut(id) { Prog() }
-            if (percent in 0..100) {
-                p.percent = percent
-            }
-            if (stage != null) {
-                p.stage = stage
-            } else if (p.percent in 0..99) {
-                p.stage = null
-            }
-            if (speedBps > 0) p.speedBps = speedBps
-            if (downloadedBytes > 0) p.downloadedBytes = downloadedBytes
-            if (totalBytes > 0) p.totalBytes = totalBytes
-            lastShownId = id
-            val now = android.os.SystemClock.elapsedRealtime()
-            val force = stage != null || p.percent >= 99 || p.percent < 0
-            if (force || now - lastPromoteMs >= 500) {
-                lastPromoteMs = now
-                promote()
+    fun handleUpdate(id: String, percent: Int, stage: String?, speedBps: Long,
+                     downloadedBytes: Long, totalBytes: Long) {
+        val shouldPromote = synchronized(stateLock) {
+            if (!active.containsKey(id)) false else {
+                val p = prog.getOrPut(id) { Prog() }
+                if (percent in 0..100) p.percent = percent
+                if (stage != null) p.stage = stage else if (p.percent in 0..99) p.stage = null
+                if (speedBps > 0) p.speedBps = speedBps
+                if (downloadedBytes > 0) p.downloadedBytes = downloadedBytes
+                if (totalBytes > 0) p.totalBytes = totalBytes
+                lastShownId = id
+                val now = android.os.SystemClock.elapsedRealtime()
+                val force = stage != null || p.percent >= 99 || p.percent < 0
+                val should = force || now - lastPromoteMs >= 500
+                if (should) lastPromoteMs = now
+                should
             }
         }
+        if (shouldPromote) promote()
     }
 
     fun handleFinished(id: String) {
-        val title = active[id] ?: id
-        val showAlert = alertPrefs[id] ?: true
-        active.remove(id)
-        prog.remove(id)
-        alertPrefs.remove(id)
-        if (showAlert) {
-            postTerminalAlert(id, title, succeeded = true, detail = null)
+        val (title, showAlert) = synchronized(stateLock) {
+            val result = (active[id] ?: id) to (alertPrefs[id] ?: true)
+            active.remove(id); prog.remove(id); alertPrefs.remove(id)
+            result
         }
-        updateLocks()
-        checkIdleStop()
+        if (showAlert) postTerminalAlert(id, title, succeeded = true, detail = null)
+        updateLocks(); checkIdleStop()
     }
 
     fun handleFailed(id: String, detail: String?) {
-        val title = active[id] ?: id
-        val showAlert = alertPrefs[id] ?: true
-        active.remove(id)
-        prog.remove(id)
-        alertPrefs.remove(id)
-        if (showAlert) {
-            postTerminalAlert(id, title, succeeded = false, detail = detail)
+        val (title, showAlert) = synchronized(stateLock) {
+            val result = (active[id] ?: id) to (alertPrefs[id] ?: true)
+            active.remove(id); prog.remove(id); alertPrefs.remove(id)
+            result
         }
-        updateLocks()
-        checkIdleStop()
+        if (showAlert) postTerminalAlert(id, title, succeeded = false, detail = detail)
+        updateLocks(); checkIdleStop()
     }
 
     fun handleDone(id: String) {
-        active.remove(id)
-        prog.remove(id)
-        alertPrefs.remove(id)
-        updateLocks()
-        checkIdleStop()
+        synchronized(stateLock) { active.remove(id); prog.remove(id); alertPrefs.remove(id) }
+        updateLocks(); checkIdleStop()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -232,9 +223,9 @@ class DownloadService : Service() {
             }
             ACTION_STOP -> {
                 lockRenewalHandler.removeCallbacks(idleStopRunnable)
-                active.clear()
-                prog.clear()
-                alertPrefs.clear()
+                synchronized(stateLock) {
+                    active.clear(); prog.clear(); alertPrefs.clear(); lastShownId = null
+                }
                 releaseLocks()
                 stopSelf()
             }
@@ -249,9 +240,11 @@ class DownloadService : Service() {
             // Without this the Chaquopy/Python threads keep downloading with
             // no service until SIGKILL, corrupting .part files. Best-effort:
             // a failing cancel must never block the timeout path.
-            cancelActiveDownloads(active.keys.toList())
-            for ((id, title) in active.entries) {
-                val showAlert = alertPrefs[id] ?: true
+            val snapshot = synchronized(stateLock) {
+                active.map { (id, title) -> Triple(id, title, alertPrefs[id] ?: true) }
+            }
+            cancelActiveDownloads(snapshot.map { it.first })
+            for ((id, title, showAlert) in snapshot) {
                 if (showAlert) {
                     postTerminalAlert(
                         id,
@@ -273,6 +266,7 @@ class DownloadService : Service() {
     override fun onDestroy() {
         if (instance === this) instance = null
         releaseLocks()
+        powerLockExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -307,7 +301,7 @@ class DownloadService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Don't linger when the user swipes the app away with nothing active.
-        if (active.isEmpty()) stopSelf()
+        if (activeSnapshot().isEmpty()) stopSelf()
     }
 
     /**
@@ -317,32 +311,17 @@ class DownloadService : Service() {
      * stopSelf sites + death; death itself is binder-cleaned by the OS).
      */
     private fun updateLocks() {
-        if (active.isEmpty()) {
-            releaseLocks()
-            return
-        }
-        ensureLocks()
-        val now = android.os.SystemClock.elapsedRealtime()
-        try {
-            val wl = wakeLock
-            if (wl != null && !wl.isHeld) {
-                wl.acquire(WAKE_TIMEOUT_MS)
-                wakeAcquiredAtMs = now
-            } else if (wl != null && wl.isHeld && now - wakeAcquiredAtMs >= WAKE_RENEW_MS) {
-                // Renew the backstop without dropping the hold, so a
-                // legitimate multi-hour download is never cut mid-transfer.
-                try { wl.release() } catch (_: Exception) {}
-                wl.acquire(WAKE_TIMEOUT_MS)
-                wakeAcquiredAtMs = now
+        if (activeSnapshot().isEmpty()) { releaseLocks(); return }
+        try { powerLockExecutor.execute { renewWakeLockOnExecutor() } } catch (_: Exception) {}
+        synchronized(powerScheduleLock) {
+            if (powerRenewal == null || powerRenewal?.isCancelled == true) {
+                try {
+                    powerRenewal = powerLockExecutor.scheduleAtFixedRate(
+                        { renewWakeLockOnExecutor() }, WAKE_RENEW_MS, WAKE_RENEW_MS, TimeUnit.MILLISECONDS,
+                    )
+                } catch (_: Exception) {}
             }
-        } catch (_: Exception) { /* keep-alive must never crash downloads */ }
-        try {
-            val fl = wifiLock
-            if (fl != null && !fl.isHeld) fl.acquire()
-        } catch (_: Exception) { /* keep-alive must never crash downloads */ }
-
-        lockRenewalHandler.removeCallbacks(lockRenewalRunnable)
-        lockRenewalHandler.postDelayed(lockRenewalRunnable, WAKE_RENEW_MS)
+        }
     }
 
     private fun ensureLocks() {
@@ -370,15 +349,15 @@ class DownloadService : Service() {
     }
 
     private fun releaseLocks() {
-        lockRenewalHandler.removeCallbacks(lockRenewalRunnable)
+        synchronized(powerScheduleLock) { powerRenewal?.cancel(false); powerRenewal = null }
         try {
-            val wl = wakeLock
-            if (wl != null && wl.isHeld) wl.release()
+            if (!powerLockExecutor.isShutdown) powerLockExecutor.execute { releaseLocksOnExecutor() }
         } catch (_: Exception) {}
-        try {
-            val fl = wifiLock
-            if (fl != null && fl.isHeld) fl.release()
-        } catch (_: Exception) {}
+    }
+
+    private fun releaseLocksOnExecutor() {
+        try { wakeLock?.let { if (it.isHeld) it.release() } } catch (_: Exception) {}
+        try { wifiLock?.let { if (it.isHeld) it.release() } } catch (_: Exception) {}
         wakeAcquiredAtMs = 0
     }
 
@@ -396,14 +375,14 @@ class DownloadService : Service() {
                 // Couldn't foreground (background-start restriction etc.) —
                 // never crash the app over the keep-alive mechanism.
                 android.util.Log.w("DownloadService", "startForeground failed: ${e.message}")
-                if (active.isEmpty()) stopSelf()
+                if (activeSnapshot().isEmpty()) stopSelf()
             }
         } catch (e: Exception) {
             // buildNotification itself must never crash onStartCommand
             // (e.g. null launch intent). Log loudly — a logging/notify path
             // must never break downloads, but the FIRST failure warns.
             android.util.Log.w("DownloadService", "buildNotification failed: ${e.message}")
-            if (active.isEmpty()) stopSelf()
+            if (activeSnapshot().isEmpty()) stopSelf()
         }
     }
 
@@ -473,10 +452,16 @@ class DownloadService : Service() {
         )
         // Show the most recently updated download; title collapses under
         // concurrency (unchanged behavior).
-        val shownId = lastShownId?.takeIf { active.containsKey(it) }
-            ?: active.keys.lastOrNull()
-        val title = if (active.size == 1) active.values.first() else "${active.size} downloads"
-        val p = shownId?.let { prog[it] }
+        val snapshot = synchronized(stateLock) {
+            val activeCopy = LinkedHashMap(active)
+            val progressCopy = prog.mapValues { it.value.copy() }
+            val shown = lastShownId?.takeIf { activeCopy.containsKey(it) } ?: activeCopy.keys.lastOrNull()
+            Triple(activeCopy, progressCopy, shown)
+        }
+        val activeCopy = snapshot.first
+        val shownId = snapshot.third
+        val title = if (activeCopy.size == 1) activeCopy.values.first() else "${activeCopy.size} downloads"
+        val p = shownId?.let { snapshot.second[it] }
         val pct = p?.percent ?: -1
         val contentText = when {
             p?.stage != null -> p.stage
