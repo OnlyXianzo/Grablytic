@@ -532,13 +532,37 @@ taken on trust from the commit log.
 * `ruff check --select F engine/` → *All checks passed* (F401 included).
 * `dart format --output=none` on every changed Dart file → no syntax
   errors.
-* Differential `kotlinc` type-check of all six Kotlin files against
-  real `kotlinx-coroutines-core-jvm`, `org.json` and
-  `androidx.annotation` jars: the patched tree produces **no error
-  class** that the unpatched tree did not already produce, and the
-  total error count drops (the remainder are all `unresolved
-  reference` for the Android/Flutter classes the sandbox lacks). This
-  check caught two real defects during the work — a `replyError`
+* **Full Kotlin type-check against the real Android and Flutter
+  APIs** (the eight `com/theonly/grablytic/*.kt` files, compiled with
+  **Kotlin 2.2.20** — the exact version pinned in
+  `android/settings.gradle.kts` — against):
+  * a genuine **API 35 `android.jar`**
+    (`org.robolectric:android-all:15-robolectric-12650502`);
+  * the genuine **Flutter embedding** for **Flutter 3.41.4**, the
+    version this repository pins
+    (`io.flutter:flutter_embedding_release:1.0.0-e4b8dca3…`);
+  * `androidx.core` / `core-ktx` / `work-runtime` / `room-runtime` /
+    `sqlite` / `lifecycle-common` / `activity` / `fragment` /
+    `savedstate` / `annotation`, `kotlinx-coroutines-core-jvm:1.8.1`,
+    `org.json:20231013` and `commons-compress:1.26.2`.
+
+  Result: the unpatched base commit `c7a1a8a` and the patched tip
+  produce the **identical error multiset** (40 errors each, all of
+  them `com.chaquo.python` — Chaquopy is not published to a public
+  Maven repository — plus one `iterator() is ambiguous` cascade from
+  the same missing Chaquopy types). **No new error class, no
+  regression, and no unresolved `android.*` or `io.flutter.*`
+  symbol anywhere in the tree.** Every Android, Flutter and androidx
+  reference in the changed code resolves.
+
+  This is the evidence for finding **#4**: `javap` over the real
+  API-35 `android.app.Service` shows both `public void onTimeout(int)`
+  and `public void onTimeout(int, int)`, and the patched
+  `DownloadService` overrides *both* overloads, so the API-35
+  `onTimeout(startId, fgsType)` contract is genuinely implemented
+  rather than merely assumed.
+
+  The check caught two real defects during the work — a `replyError`
   signature that did not accept the `details` argument, and
   `Dispatchers.NonCancellable + Dispatchers.Main`, which resolves to
   `CoroutineScope.plus` and therefore does not type-check; the
@@ -552,10 +576,12 @@ taken on trust from the commit log.
   `test/providers/cookie_secret_storage_test.dart`,
   `test/core/database/download_record_copywith_test.dart` — are written
   against the documented behaviour and have **not** been executed.
-* The Gradle build and the Android lint job (no Android SDK). Enabling
-  `abortOnError` may surface pre-existing lint findings on the first CI
-  run; that is the intended visibility, and it is in a separate job
-  from the release artifact.
+* The Gradle build and the Android lint job (no Android SDK). The
+  Kotlin sources have nevertheless been type-checked against the real
+  API-35 and Flutter 3.41.4 APIs as described above, which covers the
+  compile-time half of that job. Enabling `abortOnError` may surface
+  pre-existing lint findings on the first CI run; that is the intended
+  visibility, and it is in a separate job from the release artifact.
 
 ---
 

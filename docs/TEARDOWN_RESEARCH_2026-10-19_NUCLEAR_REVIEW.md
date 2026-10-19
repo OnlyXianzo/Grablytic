@@ -83,13 +83,18 @@ Confidence: High — this is the repository itself.
   `~/.cache/sandbox-tools/dart-sdk`), which parses the file and reports
   syntax errors. Formatting was **not** applied (the repository has
   deliberate legacy formatting churn).
-* **No Android SDK / Gradle.** Kotlin files were type-checked with
-  `kotlinc` 2.1.0 against real `kotlinx-coroutines-core-jvm`,
-  `org.json` and `androidx.annotation` jars downloaded from Maven
-  Central / Google Maven. The Android and Flutter classes stay
-  unresolved, so the check is a **differential** one: the error
-  signature of the patched tree is compared against the unpatched tree
-  and must not gain any new class of error. It did not.
+* **No Android SDK / Gradle.** Kotlin files are type-checked with
+  `kotlinc` **2.2.20** (the version pinned in
+  `android/settings.gradle.kts`) against a real **API 35 `android.jar`**
+  (`org.robolectric:android-all:15-robolectric-12650502`), the real
+  **Flutter 3.41.4 embedding** (the version this repository pins),
+  and the androidx / coroutines / json / commons-compress jars the
+  project actually depends on. Only `com.chaquo.python` stays
+  unresolved, because Chaquopy is not published to a public Maven
+  repository. The check is therefore still **differential** — the
+  error signature of the patched tree is compared against the
+  unpatched tree and must not gain any new class of error — but it now
+  exercises the genuine Android and Flutter APIs rather than stubs.
 * **Python** is fully available: the engine suite runs in a venv
   (`/home/user/repo/.venv`, Python 3.13.16, yt-dlp 2026.08.19).
 
@@ -187,11 +192,12 @@ Every changed behaviour was traced to its consumers before editing.
 * **Ruff:** `ruff check --select F engine/` → *All checks passed*,
   including F401, which the CI gate had disabled.
 * **Dart:** every changed file parses (`dart format --output=none`).
-* **Kotlin:** differential `kotlinc` check — the patched tree produces
-  no error class that the unpatched tree did not already produce, and
-  the total error count drops (the remaining errors are all
-  `unresolved reference` for the Android/Flutter classes that the
-  sandbox does not have).
+* **Kotlin:** differential `kotlinc` 2.2.20 check against the real API 35
+  `android.jar` and the real Flutter 3.41.4 embedding — the patched
+  tree produces **no error class** that the unpatched tree did not
+  already produce (identical 40-error multiset; every one of them a
+  `com.chaquo.python` symbol), and no `android.*` or `io.flutter.*`
+  reference is left unresolved.
 * **Manifest / workflow YAML:** parsed successfully after the edits.
 
 ---
@@ -205,6 +211,8 @@ Every changed behaviour was traced to its consumers before editing.
    `test/core/database/download_record_copywith_test.dart`) are written
    against the documented behaviour and must be run by CI.
 2. The Kotlin changes are **not** compiled by Gradle here. The
-   differential `kotlinc` check is the strongest signal available
-   without the Android SDK.
+   differential `kotlinc` check against the real API 35 and Flutter
+   3.41.4 APIs is the strongest signal available without the Android
+   SDK; it covers the compile-time surface, not the runtime behaviour
+   of a packaged APK.
 3. The lint gate may surface pre-existing findings on the first CI run.
