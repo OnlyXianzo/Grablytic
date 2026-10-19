@@ -100,8 +100,19 @@ jobs:
       # Lint on the release variant. `lint { abortOnError = true }` in
       # android/app/build.gradle.kts used to be disabled, so nothing
       # checked a release build before it shipped.
+      #
+      # `android/gradlew` is git-ignored: the Flutter tool injects the
+      # Gradle wrapper into android/ the first time it runs a Gradle
+      # task. Copy the very same wrapper template the tool uses so the
+      # lint gate can call Gradle directly.
       - name: Android lint (release variant)
-        run: ./gradlew :app:lintRelease --console=plain
+        working-directory: android
+        run: |
+          if [ ! -x ./gradlew ]; then
+            cp -R "$FLUTTER_ROOT/bin/cache/artifacts/gradle_wrapper/." ./
+            chmod +x ./gradlew
+          fi
+          ./gradlew :app:lintRelease --console=plain
 
       - name: Run end-to-end Android integration test
         uses: reactivecircus/android-emulator-runner@v2

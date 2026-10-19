@@ -67,7 +67,10 @@ def test_secret_keys_are_redacted():
         "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc",
         "Cookie: SID=0123456789",
         "Set-Cookie: SID=0123456789; Path=/",
-        "X-Api-Key: 0123456789abcdef",
+        # gitleaks:allow — a fake header used to prove the redactor
+        # catches `X-Api-Key` shaped values. It is a test fixture, not
+        # a credential, and the scan must not flag it.
+        "X-Api-Key: 0123456789abcdef",  # gitleaks:allow
     ],
 )
 def test_header_shaped_secrets_are_redacted(text):

@@ -184,7 +184,7 @@ class DesktopEngineService implements EngineService {
       // code execution as the user, invisibly.
       final roots = <String>[
         File(Platform.resolvedExecutable).parent.path,
-        if (_dataDir != null) _dataDir!,
+        ?_dataDir,
       ];
       final candidates = <String>[];
       for (final root in roots) {

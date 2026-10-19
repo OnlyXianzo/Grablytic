@@ -100,10 +100,24 @@ android {
                 // debug-signed artifact with no warning.
                 //
                 // A local build that only asks for a debug variant is
-                // unaffected; a RELEASE task without a keystore fails
-                // loudly.
-                val buildingRelease = gradle.startParameter.taskNames.any {
-                    it.contains("Release", ignoreCase = true)
+                // unaffected; a task that actually PRODUCES a signed
+                // release artifact fails loudly.
+                //
+                // Only the artifact-producing tasks count. A release
+                // *variant* task that never signs anything (lintRelease,
+                // compileReleaseKotlin, testReleaseUnitTest) must keep
+                // working without a keystore — otherwise the CI lint
+                // gate could never run, because CI has no keystore.
+                val releaseArtifactTasks = setOf(
+                    "assemblerelease",
+                    "bundlerelease",
+                    "packagerelease",
+                    "signrelease",
+                    "installrelease",
+                )
+                val buildingRelease = gradle.startParameter.taskNames.any { raw ->
+                    val task = raw.substringAfterLast(':').lowercase()
+                    task in releaseArtifactTasks
                 }
                 if (buildingRelease) {
                     throw org.gradle.api.GradleException(
