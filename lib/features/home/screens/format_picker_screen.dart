@@ -843,7 +843,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       // P1: forward user settings under exact engine contract keys
       // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
-      ...settingsDownloadConfig(settings),
+      ...(await secureSettingsDownloadConfig(ref.read(settingsProvider.notifier))),
       'quality_ceiling': _qualityCeiling,
       // Picker overrides for description/thumbnail per Phase 1.
       'write_description': _saveDescription,

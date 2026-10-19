@@ -56,8 +56,8 @@ void main() {
   group('template proxy validation', () {
     test('valid proxy applied, garbage ignored', () {
       final ok = parseTemplateConfig('--proxy http://proxy.test:8080');
-      expect(ok.config['proxy'], 'http://proxy.test:8080');
-      expect(ok.ignored, isEmpty);
+      expect(ok.config.containsKey('proxy'), isFalse);
+      expect(ok.ignored, contains('--proxy [use the secure Proxy setting]'));
       final bad = parseTemplateConfig('--proxy not_a_url');
       expect(bad.config.containsKey('proxy'), isFalse);
       expect(bad.ignored, isNotEmpty);

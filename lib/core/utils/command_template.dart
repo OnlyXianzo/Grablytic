@@ -7,7 +7,8 @@
 /// the UI always win — templates never touch them.
 library;
 
-import 'trust_boundary.dart';
+import 'dart:convert';
+
 
 class ParsedTemplate {
   final Map<String, dynamic> config;
@@ -41,6 +42,28 @@ List<String> _tokenize(String args) {
   }
   if (buf.isNotEmpty) tokens.add(buf.toString());
   return tokens;
+}
+
+String stripProxyOptionsFromTemplateArgs(String args) {
+  final tokens = _tokenize(args); final safe = <String>[]; var i = 0;
+  while (i < tokens.length) {
+    final t = tokens[i];
+    if (t == '--proxy') { if (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) i++; }
+    else if (!t.startsWith('--proxy=')) safe.add(t);
+    i++;
+  }
+  return safe.join(' ');
+}
+
+String? sanitizeCustomTemplateRecord(String serialized) {
+  try {
+    final decoded = jsonDecode(serialized);
+    if (decoded is! Map) return null;
+    final record = Map<String, dynamic>.from(decoded);
+    if (record['args'] is String) record['args'] = stripProxyOptionsFromTemplateArgs(record['args'] as String);
+    record.removeWhere((k, _) => {'proxy','proxy_url','proxy_password','proxy_username'}.contains(k.toString().toLowerCase().replaceAll('-', '_')));
+    return jsonEncode(record);
+  } catch (_) { return null; }
 }
 
 ParsedTemplate parseTemplateConfig(String args) {
@@ -123,13 +146,8 @@ ParsedTemplate parseTemplateConfig(String args) {
         ignored.add(t);
       }
     } else if (t == '--proxy' || t.startsWith('--proxy=')) {
-      final v = splitFlag(t, '--proxy');
-      final clean = sanitizeProxy(v);
-      if (clean != null) {
-        config['proxy'] = clean;
-      } else {
-        ignored.add(t);
-      }
+      if (t == '--proxy') takeValue(t);
+      ignored.add('--proxy [use the secure Proxy setting]');
     } else if (t == '--limit-rate' || t == '--rate-limit' ||
         t.startsWith('--limit-rate=') || t.startsWith('--rate-limit=')) {
       final flag = t.startsWith('--limit-rate') ? '--limit-rate' : '--rate-limit';

@@ -218,7 +218,7 @@ class _PlaylistSelectionScreenState
       'container': activePreset.preferredContainer,
       'quality_ceiling': batchCeiling,
       'audio_only': activePreset.audioOnly,
-      ...settingsDownloadConfig(settings),
+      ...(await secureSettingsDownloadConfig(ref.read(settingsProvider.notifier))),
       ...playlistDownloadConfig(
         selectedIndices: ordered,
         reverse: _reverse,

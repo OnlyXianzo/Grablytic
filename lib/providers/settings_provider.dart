@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/storage/proxy_secret_store.dart';
+import '../core/utils/trust_boundary.dart';
+import '../core/utils/command_template.dart';
 
 /// Migration-aware download-folder resolution (TrueStream → Grablytic).
 ///
@@ -201,7 +204,7 @@ class AppSettings {
     bool? hasSeenBatteryPrompt,
     String? qualityCeiling,
     bool? audioOnly,
-    String? proxy,
+    Object? proxy = _sentinel,
     bool? verbose,
     bool? autoStartDownloadOnShare,
     String? shareBehavior,
@@ -252,7 +255,7 @@ class AppSettings {
       hasSeenBatteryPrompt: hasSeenBatteryPrompt ?? this.hasSeenBatteryPrompt,
       qualityCeiling: qualityCeiling ?? this.qualityCeiling,
       audioOnly: audioOnly ?? this.audioOnly,
-      proxy: proxy ?? this.proxy,
+      proxy: identical(proxy, _sentinel) ? this.proxy : proxy as String?,
       verbose: verbose ?? this.verbose,
       autoStartDownloadOnShare:
           autoStartDownloadOnShare ?? this.autoStartDownloadOnShare,
@@ -311,9 +314,40 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
 
 class SettingsNotifier extends StateNotifier<AppSettings> {
   final SharedPreferences _prefs;
+  final ProxySecretStore _proxySecretStore;
+  bool _proxyUnavailable = false;
+  late final Future<void> proxyReady;
 
-  SettingsNotifier(this._prefs) : super(const AppSettings()) {
+  SettingsNotifier(this._prefs, {ProxySecretStore? proxySecretStore})
+      : _proxySecretStore = proxySecretStore ?? FlutterSecureProxySecretStore(),
+        super(const AppSettings()) {
     _loadSettings();
+    proxyReady = _initializeProxy();
+  }
+
+  Future<void> _initializeProxy() async {
+    final legacy = _prefs.getString('proxy');
+    try {
+      var secure = await _proxySecretStore.readProxy();
+      if ((secure == null || secure.isEmpty) && legacy != null && legacy.isNotEmpty) {
+        await _proxySecretStore.writeProxy(legacy);
+        secure = await _proxySecretStore.readProxy();
+        if (secure == null || secure.isEmpty) throw StateError('Proxy migration verification failed');
+      }
+      if (legacy != null) await _prefs.remove('proxy');
+      _proxyUnavailable = false;
+      if (mounted) state = state.copyWith(proxy: secure == null || secure.isEmpty ? null : secure);
+    } catch (_) {
+      if (legacy != null) { try { await _prefs.remove('proxy'); } catch (_) {} }
+      _proxyUnavailable = legacy != null && legacy.isNotEmpty;
+      if (mounted) state = state.copyWith(proxy: null);
+    }
+  }
+
+  Future<String?> proxyForDownload() async {
+    await proxyReady;
+    if (_proxyUnavailable) throw StateError('Proxy credentials unavailable in secure storage');
+    return state.proxy;
   }
 
   void _loadSettings() {
@@ -331,7 +365,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         _prefs.getBool('hasSeenBatteryPrompt') ?? false;
     final qualityCeiling = _prefs.getString('qualityCeiling') ?? '4k';
     final audioOnly = _prefs.getBool('audioOnly') ?? false;
-    final proxy = _prefs.getString('proxy');
     final verbose = _prefs.getBool('verbose') ?? false;
     final autoStartDownloadOnShare =
         _prefs.getBool('autoStartDownloadOnShare') ?? false;
@@ -360,9 +393,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final aria2cMaxSpeed = _prefs.getString('aria2cMaxSpeed');
     final useGridView = _prefs.getBool('useGridView') ?? false;
     final customTemplatesJson = _prefs.getString('customTemplates');
-    final customTemplates = customTemplatesJson != null
+    final rawTemplates = customTemplatesJson != null
         ? List<String>.from(jsonDecode(customTemplatesJson) as List)
         : <String>[];
+    final customTemplates = rawTemplates.map(sanitizeCustomTemplateRecord).whereType<String>().toList();
+    if (customTemplatesJson != null && jsonEncode(customTemplates) != customTemplatesJson) {
+      _prefs.setString('customTemplates', jsonEncode(customTemplates));
+    }
     final observedSourcesJson = _prefs.getString('observedSources');
     final observedSources = observedSourcesJson != null
         ? List<Map<String, dynamic>>.from(
@@ -415,7 +452,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       hasSeenBatteryPrompt: hasSeenBatteryPrompt,
       qualityCeiling: qualityCeiling,
       audioOnly: audioOnly,
-      proxy: proxy,
       verbose: verbose,
       autoStartDownloadOnShare: autoStartDownloadOnShare,
       shareBehavior: shareBehavior,
@@ -528,13 +564,19 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(audioOnly: newValue);
   }
 
-  void setProxy(String? value) {
-    if (value == null || value.isEmpty) {
-      _prefs.remove('proxy');
-    } else {
-      _prefs.setString('proxy', value);
+  Future<void> setProxy(String? value) async {
+    await proxyReady;
+    final clean = sanitizeProxy(value);
+    try {
+      await _proxySecretStore.writeProxy(clean);
+      _proxyUnavailable = false;
+      if (mounted) state = state.copyWith(proxy: clean);
+    } catch (_) {
+      _proxyUnavailable = true;
+      try { await _prefs.remove('proxy'); } catch (_) {}
+      if (mounted) state = state.copyWith(proxy: null);
+      throw StateError('Unable to store proxy securely');
     }
-    state = state.copyWith(proxy: value);
   }
 
   void toggleVerbose() {
@@ -799,8 +841,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   Future<void> setCustomTemplates(List<String> templates) async {
-    await _prefs.setString('customTemplates', jsonEncode(templates));
-    state = state.copyWith(customTemplates: templates);
+    final safe = templates.map(sanitizeCustomTemplateRecord).whereType<String>().toList();
+    await _prefs.setString('customTemplates', jsonEncode(safe));
+    state = state.copyWith(customTemplates: safe);
   }
 
   void addObservedSource(Map<String, dynamic> source) {
@@ -861,11 +904,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 }
 
-final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
-  ref,
-) {
+final proxySecretStoreProvider = Provider<ProxySecretStore>(
+  (ref) => FlutterSecureProxySecretStore(),
+);
+
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);
-  return SettingsNotifier(prefs);
+  return SettingsNotifier(prefs, proxySecretStore: ref.watch(proxySecretStoreProvider));
 });
 
 /// SEC-04: custom yt-dlp argument templates are user-typed CLI fragments.

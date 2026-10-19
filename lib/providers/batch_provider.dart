@@ -1,7 +1,10 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../core/database/download_history_db.dart';
 import '../core/engine/engine_provider.dart';
+import '../core/engine/engine_service.dart';
 import '../core/utils/download_config.dart';
 import '../core/utils/history_guard.dart';
 import '../core/utils/schedule_guard.dart';
@@ -293,64 +296,55 @@ class BatchNotifier extends StateNotifier<BatchState> {
     final engine = _ref.read(engineProvider);
     final downloadId = _uuid.v4();
     final activePreset = _ref.read(presetsProvider).activePreset;
-    // Batch snapshot wins over the live preset so a mid-queue preset
-    // change cannot split the batch across two qualities.
     final ceiling = state.qualityCeiling ?? activePreset.qualityCeiling;
-
-    final config = <String, dynamic>{
+    final baseConfig = <String, dynamic>{
       'container': activePreset.preferredContainer,
       'quality_ceiling': ceiling,
       'audio_only': activePreset.audioOnly,
-      ...settingsDownloadConfig(_ref.read(settingsProvider)),
     };
+    unawaited(_dispatchBatchItem(
+      engine: engine, downloadId: downloadId, item: item,
+      index: pendingIndex, generation: _generation, baseConfig: baseConfig,
+    ));
+  }
 
-    engine
-        .startDownload(
-      url: item.url,
-      downloadId: downloadId,
-      config: config,
-      networkType: 'wifi',
-    )
-        .then((result) {
-      if (result['success'] == true) {
-        _ref.read(downloadProvider.notifier).addDownload(
-              DownloadItem(
-                id: downloadId,
-                title: item.title,
-                url: item.url,
-                status: result['queued'] == true ? 'queued' : 'downloading',
-                thumbnailUrl: item.thumbnailUrl,
-              ),
-            );
-
-        if (state.playlistId != null) {
-          _ref
-              .read(playlistProvider.notifier)
-              .addDownloadToPlaylist(state.playlistId!, downloadId);
-        }
-
-        _updateItem(
-          pendingIndex,
-          status: BatchItemStatus.completed,
-          progress: 1.0,
-        );
-      } else {
-        _updateItem(
-          pendingIndex,
-          status: BatchItemStatus.failed,
-          lastErrorType: result['error_type'] as String?,
-          lastErrorMessage: result['error_message'] as String?,
-        );
-      }
-      processNext();
-    }).catchError((Object err) {
-      _updateItem(
-        pendingIndex,
-        status: BatchItemStatus.failed,
-        lastErrorMessage: '$err',
+  Future<void> _dispatchBatchItem({
+    required EngineService engine,
+    required String downloadId,
+    required BatchItem item,
+    required int index,
+    required int generation,
+    required Map<String, dynamic> baseConfig,
+  }) async {
+    try {
+      final settingsConfig = await secureSettingsDownloadConfig(_ref.read(settingsProvider.notifier));
+      if (!mounted || generation != _generation) return;
+      final config = <String, dynamic>{...baseConfig, ...settingsConfig};
+      final result = await engine.startDownload(
+        url: item.url, downloadId: downloadId, config: config, networkType: 'wifi',
       );
-      processNext();
-    });
+      if (!mounted || generation != _generation) return;
+      if (result['success'] == true) {
+        _ref.read(downloadProvider.notifier).addDownload(DownloadItem(
+          id: downloadId, title: item.title, url: item.url,
+          status: result['queued'] == true ? 'queued' : 'downloading',
+          thumbnailUrl: item.thumbnailUrl, config: config,
+        ));
+        final playlistId = state.playlistId;
+        if (playlistId != null) {
+          _ref.read(playlistProvider.notifier).addDownloadToPlaylist(playlistId, downloadId);
+        }
+        _updateItem(index, status: BatchItemStatus.completed, progress: 1.0);
+      } else {
+        _updateItem(index, status: BatchItemStatus.failed,
+          lastErrorType: result['error_type'] as String?,
+          lastErrorMessage: result['error_message'] as String?);
+      }
+    } catch (error) {
+      if (!mounted || generation != _generation) return;
+      _updateItem(index, status: BatchItemStatus.failed, lastErrorMessage: '$error');
+    }
+    if (mounted && generation == _generation) processNext();
   }
 
   void _updateItem(

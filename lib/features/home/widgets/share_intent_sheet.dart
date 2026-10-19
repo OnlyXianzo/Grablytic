@@ -244,7 +244,7 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
       final downloadId = const Uuid().v4();
       final config = <String, dynamic>{
         'container': preset.preferredContainer,
-        ...settingsDownloadConfig(settings),
+        ...(await secureSettingsDownloadConfig(ref.read(settingsProvider.notifier))),
         'quality_ceiling': preset.qualityCeiling,
         if (preset.audioOnly) 'audio_only': true,
       };

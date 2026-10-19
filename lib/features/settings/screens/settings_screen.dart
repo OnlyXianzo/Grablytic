@@ -696,9 +696,13 @@ class NetworkSettingsScreen extends ConsumerWidget {
                     ),
                   );
                   if (picked != null && context.mounted) {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setProxy(picked.isEmpty ? null : picked);
+                    try {
+                      await ref.read(settingsProvider.notifier).setProxy(picked.isEmpty ? null : picked);
+                    } catch (_) {
+                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Could not store proxy securely.')),
+                      );
+                    }
                   }
                 },
               ),
