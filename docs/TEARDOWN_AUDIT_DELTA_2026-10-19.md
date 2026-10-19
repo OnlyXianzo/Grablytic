@@ -9,7 +9,7 @@
 | **Base of this work** | `c7a1a8a` (2026-10-19) — 54 commits newer than the audit |
 | **Branch** | `fix/nuclear-review-2026-10-19` |
 | **Findings in the report** | 61 = 6 Critical, 17 High, 31 Medium, 7 Low |
-| **Outcome** | 44 fixed here · 1 fixed here (upstream partial) · 15 already fixed upstream · 1 completed here (upstream partial) — every finding accounted for |
+| **Outcome** | **35** fixed outright here · **9** finished here (a partial upstream fix completed: #6, #22, #25, #46, #47, #50, #52, #55, #61) · **16** already fixed upstream · **1** already fixed upstream and hardened here (#2) — **61 of 61 accounted for** |
 
 The audit targets a commit that is **54 commits behind** `HEAD`. Every
 finding was therefore re-checked against the current source at line
