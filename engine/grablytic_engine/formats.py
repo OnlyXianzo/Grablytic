@@ -16,6 +16,7 @@ def _safe_url(url: str) -> str:
 
 def get_formats(url: str, config: dict | None = None) -> dict:
     from grablytic_engine.url_guard import is_safe_media_url, sanitized_proxy
+
     if not is_safe_media_url(url):
         return {
             "success": False,
@@ -33,6 +34,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
     }
 
     from grablytic_engine.opts_builder import _configure_js_runtime
+
     _configure_js_runtime(opts, paths)
 
     if "youtube.com" in url or "youtu.be" in url:
@@ -41,12 +43,16 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
 
         from grablytic_engine.po_token import generate_po_token
+
         po_token = generate_po_token(url) or paths.get("po_token")
         if po_token:
             opts["extractor_args"]["youtube"]["po_token"] = [po_token]
 
     from grablytic_engine.opts_builder import sanitize_cookiefile
-    cookiefile = sanitize_cookiefile(cfg.get("cookies_path") or paths.get("cookies_path"))
+
+    cookiefile = sanitize_cookiefile(
+        cfg.get("cookies_path") or paths.get("cookies_path")
+    )
     if cookiefile:
         opts["cookiefile"] = cookiefile
     proxy = sanitized_proxy(cfg.get("proxy"))
@@ -59,7 +65,11 @@ def get_formats(url: str, config: dict | None = None) -> dict:
 
         if info is None:
             log.warn(f"No info extracted for {url}")
-            return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not extract info"}
+            return {
+                "success": False,
+                "error_type": "ERROR_UNAVAILABLE",
+                "error_message": "Could not extract info",
+            }
 
         is_playlist = info.get("_type") == "playlist" or "entries" in info
         formats_raw = info.get("formats", [])
@@ -69,11 +79,16 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 if not isinstance(entries_val, list):
                     try:
                         import itertools
+
                         entries_val = list(itertools.islice(entries_val, 500))
                     except Exception:
                         entries_val = []
                     info["entries"] = entries_val
-                first = entries_val[0] if entries_val and isinstance(entries_val[0], dict) else None
+                first = (
+                    entries_val[0]
+                    if entries_val and isinstance(entries_val[0], dict)
+                    else None
+                )
                 if first:
                     formats_raw = first.get("formats", [])
 
@@ -96,39 +111,47 @@ def get_formats(url: str, config: dict | None = None) -> dict:
 
             size = f.get("filesize") or f.get("filesize_approx")
 
-            parsed.append({
-                "format_id": f.get("format_id", ""),
-                "ext": f.get("ext", ""),
-                "vcodec": vcodec,
-                "acodec": acodec,
-                "height": f.get("height"),
-                "width": f.get("width"),
-                "fps": f.get("fps"),
-                "tbr": f.get("tbr"),
-                "abr": f.get("abr"),
-                "vbr": f.get("vbr"),
-                "filesize": size,
-                "filesize_is_estimate": f.get("filesize") is None,
-                "is_hdr": "hdr" in str(f.get("dynamic_range", "")).lower(),
-                "dynamic_range": f.get("dynamic_range", "SDR"),
-                "stream_type": stream_type,
-                "format_note": f.get("format_note", ""),
-                "protocol": f.get("protocol", ""),
-                "url": f.get("url") or f.get("webpage_url") or "",
-            })
+            parsed.append(
+                {
+                    "format_id": f.get("format_id", ""),
+                    "ext": f.get("ext", ""),
+                    "vcodec": vcodec,
+                    "acodec": acodec,
+                    "height": f.get("height"),
+                    "width": f.get("width"),
+                    "fps": f.get("fps"),
+                    "tbr": f.get("tbr"),
+                    "abr": f.get("abr"),
+                    "vbr": f.get("vbr"),
+                    "filesize": size,
+                    "filesize_is_estimate": f.get("filesize") is None,
+                    "is_hdr": "hdr" in str(f.get("dynamic_range", "")).lower(),
+                    "dynamic_range": f.get("dynamic_range", "SDR"),
+                    "stream_type": stream_type,
+                    "format_note": f.get("format_note", ""),
+                    "protocol": f.get("protocol", ""),
+                    "url": f.get("url") or f.get("webpage_url") or "",
+                }
+            )
 
         best_video = None
         best_audio = None
         best_muxed = None
         for f in parsed:
             if f["stream_type"] == "video":
-                if best_video is None or (f.get("height") or 0) > (best_video.get("height") or 0):
+                if best_video is None or (f.get("height") or 0) > (
+                    best_video.get("height") or 0
+                ):
                     best_video = f
             elif f["stream_type"] == "audio":
-                if best_audio is None or (f.get("abr") or 0) > (best_audio.get("abr") or 0):
+                if best_audio is None or (f.get("abr") or 0) > (
+                    best_audio.get("abr") or 0
+                ):
                     best_audio = f
             elif f["stream_type"] == "muxed":
-                if best_muxed is None or (f.get("height") or 0) > (best_muxed.get("height") or 0):
+                if best_muxed is None or (f.get("height") or 0) > (
+                    best_muxed.get("height") or 0
+                ):
                     best_muxed = f
 
         # Keep previews to one progressive muxed MP4 stream at or below 480p.
@@ -146,7 +169,11 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             if proto.startswith("m3u8") or proto.startswith("http_dash"):
                 continue
             stream_url = f.get("url") or ""
-            if not stream_url or stream_url.endswith(".m3u8") or stream_url.endswith(".mpd"):
+            if (
+                not stream_url
+                or stream_url.endswith(".m3u8")
+                or stream_url.endswith(".mpd")
+            ):
                 continue
             height = f.get("height")
             width = f.get("width")
@@ -163,7 +190,11 @@ def get_formats(url: str, config: dict | None = None) -> dict:
 
         if preview_candidates:
             preview_candidates.sort(
-                key=lambda x: (x.get("height") or 0, x.get("tbr") or 0, x.get("width") or 0),
+                key=lambda x: (
+                    x.get("height") or 0,
+                    x.get("tbr") or 0,
+                    x.get("width") or 0,
+                ),
                 reverse=True,
             )
             candidate = preview_candidates[0]
@@ -190,17 +221,24 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 "ext": candidate.get("ext", "mp4"),
             }
 
-        log.info(f"Found {len(parsed)} formats for {url} (preview: {preview_stream is not None})")
+        log.info(
+            f"Found {len(parsed)} formats for {url} (preview: {preview_stream is not None})"
+        )
         thumb = info.get("thumbnail")
         if not thumb and info.get("thumbnails"):
             thumbs = info.get("thumbnails")
-            if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+            if (
+                isinstance(thumbs, list)
+                and len(thumbs) > 0
+                and isinstance(thumbs[-1], dict)
+            ):
                 thumb = thumbs[-1].get("url")
         if not thumb and is_playlist:
             entries_val = info.get("entries")
             if entries_val is not None and not isinstance(entries_val, list):
                 try:
                     import itertools
+
                     entries_val = list(itertools.islice(entries_val, 500))
                     info["entries"] = entries_val
                 except Exception:
@@ -211,7 +249,11 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                         t = entry.get("thumbnail")
                         if not t and entry.get("thumbnails"):
                             entry_thumbs = entry.get("thumbnails")
-                            if isinstance(entry_thumbs, list) and len(entry_thumbs) > 0 and isinstance(entry_thumbs[-1], dict):
+                            if (
+                                isinstance(entry_thumbs, list)
+                                and len(entry_thumbs) > 0
+                                and isinstance(entry_thumbs[-1], dict)
+                            ):
                                 t = entry_thumbs[-1].get("url")
                         if t:
                             thumb = t
@@ -227,9 +269,15 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             "extractor": info.get("extractor_key") or info.get("extractor", ""),
             "webpage_url": info.get("webpage_url", url),
             "formats": parsed,
-            "recommended_video_format_id": best_video["format_id"] if best_video else None,
-            "recommended_audio_format_id": best_audio["format_id"] if best_audio else None,
-            "recommended_muxed_format_id": best_muxed["format_id"] if best_muxed else None,
+            "recommended_video_format_id": best_video["format_id"]
+            if best_video
+            else None,
+            "recommended_audio_format_id": best_audio["format_id"]
+            if best_audio
+            else None,
+            "recommended_muxed_format_id": best_muxed["format_id"]
+            if best_muxed
+            else None,
             "preview_stream": preview_stream,
         }
 

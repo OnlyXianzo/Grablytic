@@ -42,6 +42,7 @@ def _reset_logger_context():
     never asked for. Clear it around every test.
     """
     from grablytic_engine.logger import set_current_download_id
+
     set_current_download_id(None)
     yield
     set_current_download_id(None)

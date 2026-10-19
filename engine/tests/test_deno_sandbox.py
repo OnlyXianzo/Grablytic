@@ -13,6 +13,7 @@ import pytest
 
 def _pt():
     import grablytic_engine.po_token as pt
+
     return pt
 
 

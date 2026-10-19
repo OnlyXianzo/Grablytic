@@ -15,6 +15,7 @@ import pytest
 
 def _dl():
     import grablytic_engine.downloader as dl_mod
+
     return dl_mod
 
 
@@ -163,9 +164,7 @@ def test_index_matches_bruteforce_after_shutdown():
     dl_mod.set_max_concurrent(1)
     try:
         for i in range(3):
-            dl_mod.start_download(
-                url=f"https://example.com/s{i}", download_id=f"s{i}"
-            )
+            dl_mod.start_download(url=f"https://example.com/s{i}", download_id=f"s{i}")
     finally:
         dl_mod.set_max_concurrent(2)
     dl_mod.shutdown_downloads(timeout=0.2)
@@ -175,12 +174,8 @@ def test_index_matches_bruteforce_after_shutdown():
 @pytest.mark.unit
 def test_duplicate_url_is_rejected_via_the_index():
     dl_mod = _dl()
-    dl_mod.start_download(
-        url="https://example.com/dup", download_id="first"
-    )
-    res = dl_mod.start_download(
-        url="https://example.com/dup", download_id="second"
-    )
+    dl_mod.start_download(url="https://example.com/dup", download_id="first")
+    res = dl_mod.start_download(url="https://example.com/dup", download_id="second")
     assert res.get("success") is False
     assert res.get("error_type") == "ERROR_DUPLICATE_URL"
     assert res.get("existing_download_id") == "first"
@@ -190,15 +185,11 @@ def test_duplicate_url_is_rejected_via_the_index():
 def test_duplicate_url_is_allowed_after_the_first_finishes():
     """A terminal download must not block the same URL forever."""
     dl_mod = _dl()
-    dl_mod.start_download(
-        url="https://example.com/dup2", download_id="first"
-    )
+    dl_mod.start_download(url="https://example.com/dup2", download_id="first")
     with dl_mod._downloads_lock:
         token = dl_mod._active_downloads["first"].get("slot_token")
     assert dl_mod._close_own_slot("first", token) is True
-    res = dl_mod.start_download(
-        url="https://example.com/dup2", download_id="second"
-    )
+    res = dl_mod.start_download(url="https://example.com/dup2", download_id="second")
     assert res.get("success") is not False, res
 
 
@@ -223,9 +214,9 @@ def test_lookup_is_constant_time_with_many_entries():
         }
         dl_mod._index_add("live", "https://example.com/target", False)
         # The lookup must not touch the 300 historical entries.
-        assert dl_mod._find_live_url_holder(
-            "https://example.com/target", False
-        ) == "live"
+        assert (
+            dl_mod._find_live_url_holder("https://example.com/target", False) == "live"
+        )
         assert dl_mod._live_url_index_matches_bruteforce() is True
 
 

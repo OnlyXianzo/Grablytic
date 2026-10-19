@@ -2,6 +2,7 @@ from grablytic_engine.paths import set_paths, get_paths, is_initialized
 import pytest
 import os
 
+
 @pytest.fixture(autouse=True)
 def mock_isfile(monkeypatch):
     # Admission now gates on isfile AND X_OK. The fixture simulates
@@ -11,14 +12,17 @@ def mock_isfile(monkeypatch):
     monkeypatch.setattr(
         os.path,
         "isfile",
-        lambda path: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_isfile(path)
+        lambda path: True
+        if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c")
+        else original_isfile(path),
     )
     monkeypatch.setattr(
         os,
         "access",
-        lambda path, mode: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_access(path, mode)
+        lambda path, mode: True
+        if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c")
+        else original_access(path, mode),
     )
-
 
 
 def test_set_paths_returns_success():
@@ -47,8 +51,10 @@ def test_get_paths_returns_what_was_set():
 
 def test_get_paths_optional_fields_default_none(monkeypatch):
     import shutil
+
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     from grablytic_engine.paths import _paths
+
     _paths["aria2c_path"] = None
     _paths["deno_path"] = None
     set_paths(
@@ -59,6 +65,7 @@ def test_get_paths_optional_fields_default_none(monkeypatch):
     )
     paths = get_paths()
     import os
+
     ext = ".exe" if os.name == "nt" else ""
     assert paths["cookies_path"] is None
     assert paths["aria2c_path"] == f"/tmp/data/bin/aria2c{ext}"
@@ -85,6 +92,7 @@ def test_set_paths_with_optional_fields():
 
 def test_is_initialized_false_before_set():
     from grablytic_engine.paths import _paths
+
     _paths["data_dir"] = None
     assert is_initialized() is False
 

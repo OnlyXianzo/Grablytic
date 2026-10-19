@@ -95,9 +95,22 @@ def redact_context(context) -> dict:
         return {}
     for k, v in items:
         lk = str(k).lower()
-        if any(s in lk for s in ("cookie", "token", "password", "passwd",
-                                 "secret", "auth", "proxy", "api_key",
-                                 "apikey", "session", "po_token")):
+        if any(
+            s in lk
+            for s in (
+                "cookie",
+                "token",
+                "password",
+                "passwd",
+                "secret",
+                "auth",
+                "proxy",
+                "api_key",
+                "apikey",
+                "session",
+                "po_token",
+            )
+        ):
             out[k] = _REDACTED
             continue
         if _sanitize is not None:
@@ -115,8 +128,12 @@ def target_repo(explicit: str | None = None) -> str:
     Read at CALL time (not import time) so a build can point the
     notifier at its own fork without patching the source.
     """
-    for candidate in (explicit, os.environ.get(REPORT_REPO_ENV),
-                      os.environ.get(GENERIC_REPO_ENV), DEFAULT_REPO):
+    for candidate in (
+        explicit,
+        os.environ.get(REPORT_REPO_ENV),
+        os.environ.get(GENERIC_REPO_ENV),
+        DEFAULT_REPO,
+    ):
         if candidate and str(candidate).strip():
             return str(candidate).strip()
     return DEFAULT_REPO
@@ -125,7 +142,11 @@ def target_repo(explicit: str | None = None) -> str:
 def log_tail_enabled() -> bool:
     """The log tail is included by default and dropped on request."""
     return os.environ.get(LOG_TAIL_ENV, "1").strip().lower() not in (
-        "0", "false", "no", "off")
+        "0",
+        "false",
+        "no",
+        "off",
+    )
 
 
 def _warn_unreachable_repo(repo: str) -> None:
@@ -136,6 +157,7 @@ def _warn_unreachable_repo(repo: str) -> None:
     _warned_unreachable_repo = True
     try:
         from grablytic_engine.logger import get_logger
+
         get_logger("grablytic_engine.github_notifier").warn(
             f"Cannot reach the report repository {repo!r}; reports will be "
             "dropped. Set GRABLYTIC_REPORT_REPO to a repository this build "
@@ -156,9 +178,9 @@ def fingerprint(title: str, first_frame: str = "") -> str:
     return digest[:12]
 
 
-def _api_request(method: str, url: str, token: str,
-                 payload: dict | None = None,
-                 timeout: int = 15) -> tuple[int, Any]:
+def _api_request(
+    method: str, url: str, token: str, payload: dict | None = None, timeout: int = 15
+) -> tuple[int, Any]:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Accept", "application/vnd.github+json")
@@ -184,8 +206,9 @@ def _api_request(method: str, url: str, token: str,
         return -1, {"_transport_error": repr(e)}
 
 
-def find_duplicate(fp: str, repo: str | None = None,
-                   token: str | None = None) -> str | None:
+def find_duplicate(
+    fp: str, repo: str | None = None, token: str | None = None
+) -> str | None:
     """Return the html_url of an open issue already carrying *fp*, else None."""
     tok = _token(token)
     if not tok:
@@ -208,9 +231,13 @@ def find_duplicate(fp: str, repo: str | None = None,
         return None
 
 
-def create_issue(title: str, body: str, repo: str | None = None,
-                 token: str | None = None,
-                 labels: list[str] | None = None) -> str | None:
+def create_issue(
+    title: str,
+    body: str,
+    repo: str | None = None,
+    token: str | None = None,
+    labels: list[str] | None = None,
+) -> str | None:
     """POST a new issue. Returns html_url on 201, else None."""
     tok = _token(token)
     if not tok:
@@ -220,9 +247,14 @@ def create_issue(title: str, body: str, repo: str | None = None,
         )
     repo = target_repo(repo)
     status, data = _api_request(
-        "POST", f"{API_BASE}/repos/{repo}/issues", tok,
-        {"title": redact_text(title), "body": body,
-         "labels": labels or ["bug", "auto-report"]},
+        "POST",
+        f"{API_BASE}/repos/{repo}/issues",
+        tok,
+        {
+            "title": redact_text(title),
+            "body": body,
+            "labels": labels or ["bug", "auto-report"],
+        },
         timeout=20,
     )
     if status == 201 and isinstance(data, dict):
@@ -235,6 +267,7 @@ def create_issue(title: str, body: str, repo: str | None = None,
 def env_specs() -> dict[str, str]:
     try:
         import yt_dlp  # type: ignore
+
         ytdlp_v = getattr(yt_dlp, "version", "?")
     except Exception:
         ytdlp_v = "not-installed"
@@ -245,10 +278,18 @@ def env_specs() -> dict[str, str]:
     }
 
 
-def build_body(summary: str, *, repro: str = "", expected: str = "",
-               actual: str = "", fp: str = "", log_tail: str = "",
-               stack: str = "", context: dict | None = None,
-               app_version: str = "0.0.1-beta+1") -> str:
+def build_body(
+    summary: str,
+    *,
+    repro: str = "",
+    expected: str = "",
+    actual: str = "",
+    fp: str = "",
+    log_tail: str = "",
+    stack: str = "",
+    context: dict | None = None,
+    app_version: str = "0.0.1-beta+1",
+) -> str:
     # EVERY free-text field is redacted HERE, at the single point all
     # payloads pass through. A new caller cannot forget to redact.
     specs = env_specs()
@@ -259,26 +300,26 @@ def build_body(summary: str, *, repro: str = "", expected: str = "",
     stack = redact_text(stack)
     log_tail = redact_text(log_tail)
     safe_ctx = redact_context(context)
-    ctx_lines = "\n".join(f"- `{k}`: `{v}`"
-                           for k, v in safe_ctx.items()) or "_None._"
+    ctx_lines = "\n".join(f"- `{k}`: `{v}`" for k, v in safe_ctx.items()) or "_None._"
     stack_block = f"```\n{stack[:6000]}\n```" if stack else "_None captured._"
-    tail_block = (f"```text\n{log_tail[:15000]}\n```"
-                  if log_tail else "_Log tail disabled._")
+    tail_block = (
+        f"```text\n{log_tail[:15000]}\n```" if log_tail else "_Log tail disabled._"
+    )
     return f"""### Summary
 {summary}
 
 ### Steps to reproduce
-{repro or '_Auto-captured — see stack trace and logs below._'}
+{repro or "_Auto-captured — see stack trace and logs below._"}
 
 ### Expected behavior
-{expected or 'Engine should not raise.'}
+{expected or "Engine should not raise."}
 
 ### Actual behavior
-{actual or 'Unhandled engine exception.'}
+{actual or "Unhandled engine exception."}
 
 ### Platform
-- OS: {specs['os']}
-- Python: {specs['python']} · yt-dlp: {specs['yt_dlp']}
+- OS: {specs["os"]}
+- Python: {specs["python"]} · yt-dlp: {specs["yt_dlp"]}
 - App version: {app_version}
 
 ### Additional context
@@ -295,11 +336,15 @@ def build_body(summary: str, *, repro: str = "", expected: str = "",
 """
 
 
-def notify_exception(exc: BaseException, *, context: dict | None = None,
-                     repo: str | None = None,
-                     token: str | None = None,
-                     summary: str = "",
-                     auto_only: bool = True) -> dict[str, Any]:
+def notify_exception(
+    exc: BaseException,
+    *,
+    context: dict | None = None,
+    repo: str | None = None,
+    token: str | None = None,
+    summary: str = "",
+    auto_only: bool = True,
+) -> dict[str, Any]:
     """Full pipeline: flush → tail → dedup → file.
 
     Returns ``{"status": ..., "url": ..., "fingerprint": ..., "title": ...}``
@@ -308,7 +353,10 @@ def notify_exception(exc: BaseException, *, context: dict | None = None,
     ``GRABLYTIC_AUTO_REPORT=1``; otherwise returns ``skipped`` after logging.
     """
     from grablytic_engine.persistent import (
-        flush_now, read_log_tail, sanitize, format_traceback,
+        flush_now,
+        read_log_tail,
+        sanitize,
+        format_traceback,
     )
 
     try:
@@ -327,8 +375,13 @@ def notify_exception(exc: BaseException, *, context: dict | None = None,
     try:
         tb_full = format_traceback(exc)
         first_frame = next(
-            (ln.strip() for ln in tb_full.splitlines()
-             if ln.strip().startswith("File ")), "")
+            (
+                ln.strip()
+                for ln in tb_full.splitlines()
+                if ln.strip().startswith("File ")
+            ),
+            "",
+        )
     except Exception:
         tb_full, first_frame = repr(exc), ""
 
@@ -337,38 +390,67 @@ def notify_exception(exc: BaseException, *, context: dict | None = None,
     short = short if len(short) <= 120 else short[:120] + "…"
     fp = fingerprint(short, first_frame)
     title = f"[Auto-report {fp}] {short}"
-    body = build_body(summary or "Automated engine crash report.",
-                      actual=f"```\n{err_str}\n{first_frame}\n```",
-                      fp=fp, log_tail=log_tail, stack=tb_full,
-                      context=context)
+    body = build_body(
+        summary or "Automated engine crash report.",
+        actual=f"```\n{err_str}\n{first_frame}\n```",
+        fp=fp,
+        log_tail=log_tail,
+        stack=tb_full,
+        context=context,
+    )
 
     tok = _token(token)
     if auto_only and os.environ.get(AUTO_REPORT_ENV, "") != "1" and token is None:
-        return {"status": "skipped", "reason": "auto-report disabled",
-                "fingerprint": fp, "title": title, "body": body}
+        return {
+            "status": "skipped",
+            "reason": "auto-report disabled",
+            "fingerprint": fp,
+            "title": title,
+            "body": body,
+        }
     if not tok:
-        return {"status": "manual_needed", "fingerprint": fp,
-                "title": title, "body": body}
+        return {
+            "status": "manual_needed",
+            "fingerprint": fp,
+            "title": title,
+            "body": body,
+        }
 
     dup = find_duplicate(fp, repo=repo, token=tok)
     if dup:
-        return {"status": "duplicate", "url": dup,
-                "fingerprint": fp, "title": title, "body": body}
+        return {
+            "status": "duplicate",
+            "url": dup,
+            "fingerprint": fp,
+            "title": title,
+            "body": body,
+        }
     url = None
     try:
         url = create_issue(title, body, repo=repo, token=tok)
     except RuntimeError as e:
-        return {"status": "manual_needed", "reason": str(e),
-                "fingerprint": fp, "title": title, "body": body}
+        return {
+            "status": "manual_needed",
+            "reason": str(e),
+            "fingerprint": fp,
+            "title": title,
+            "body": body,
+        }
     if url:
-        return {"status": "created", "url": url,
-                "fingerprint": fp, "title": title, "body": body}
+        return {
+            "status": "created",
+            "url": url,
+            "fingerprint": fp,
+            "title": title,
+            "body": body,
+        }
     return {"status": "failed", "fingerprint": fp, "title": title, "body": body}
 
 
 def main(argv: list[str]) -> int:
     """Manual trigger: ``python -m grablytic_engine.github_notifier --title "…"``."""
     import argparse
+
     ap = argparse.ArgumentParser(description="File a Grablytic issue from server logs.")
     ap.add_argument("--title", required=True)
     ap.add_argument("--summary", default="")
@@ -376,12 +458,14 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
     try:
         from grablytic_engine.persistent import read_log_tail, sanitize
+
         tail = str(sanitize(read_log_tail()))[:15000]
     except Exception as e:
         tail = f"<unavailable: {e}>"
     fp = fingerprint(args.title)
-    body = build_body(args.summary or args.title, fp=fp,
-                      log_tail=tail if log_tail_enabled() else "")
+    body = build_body(
+        args.summary or args.title, fp=fp, log_tail=tail if log_tail_enabled() else ""
+    )
     tok = _token()
     if not tok:
         print(body)
@@ -391,8 +475,7 @@ def main(argv: list[str]) -> int:
     if dup:
         print(f"Duplicate open issue: {dup}")
         return 0
-    url = create_issue(args.title, body, repo=target_repo(args.repo),
-                       token=tok)
+    url = create_issue(args.title, body, repo=target_repo(args.repo), token=tok)
     if url:
         print(f"Issue created: {url}")
         return 0

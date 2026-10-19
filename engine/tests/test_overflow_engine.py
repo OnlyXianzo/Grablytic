@@ -40,8 +40,7 @@ def test_default_is_resume_capable(_env):
 
 
 def test_ignore_archive_bypasses_download_archive(_env):
-    opts = build_ydl_opts(
-        config={"use_archive": True, "ignore_archive": True})
+    opts = build_ydl_opts(config={"use_archive": True, "ignore_archive": True})
     assert "download_archive" not in opts
     opts2 = build_ydl_opts(config={"use_archive": True})
     assert "download_archive" in opts2
@@ -147,4 +146,3 @@ def test_clear_archive_rejects_symlink_escape(_env):
     finally:
         link.unlink(missing_ok=True)
         outside.unlink(missing_ok=True)
-

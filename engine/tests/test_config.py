@@ -17,8 +17,7 @@ def test_default_config_values():
     assert DEFAULT_CFG["fragment_retries"] == 10
     # Collision-safe: `%(id)s` is unique per media item, and yt-dlp
     # replaces an existing video file.
-    assert DEFAULT_CFG["output_tmpl"] == \
-        "%(uploader)s - %(title)s [%(id)s].%(ext)s"
+    assert DEFAULT_CFG["output_tmpl"] == "%(uploader)s - %(title)s [%(id)s].%(ext)s"
 
 
 def test_default_config_explicit_overrides_are_none():

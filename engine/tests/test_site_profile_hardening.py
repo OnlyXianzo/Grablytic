@@ -19,16 +19,19 @@ import pytest
 
 def _sp():
     import grablytic_engine.site_profiles as sp_mod
+
     return sp_mod
 
 
 def _fs():
     import grablytic_engine.format_selector as fs_mod
+
     return fs_mod
 
 
 def _cfg():
     import grablytic_engine.config as cfg_mod
+
     return cfg_mod
 
 
@@ -63,7 +66,13 @@ def test_pinned_profile_connection_uses_the_validated_address(monkeypatch):
     thread.start()
     port = server.server_address[1]
     lookups = []
-    record = (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", port))
+    record = (
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+        socket.IPPROTO_TCP,
+        "",
+        ("127.0.0.1", port),
+    )
     original_blocked = ug._ip_is_blocked
 
     def _resolve(host, requested_port):
@@ -72,11 +81,14 @@ def test_pinned_profile_connection_uses_the_validated_address(monkeypatch):
 
     monkeypatch.setattr(ug, "_resolve_address_records", _resolve)
     monkeypatch.setattr(
-        ug, "_ip_is_blocked",
+        ug,
+        "_ip_is_blocked",
         lambda ip: False if ip.is_loopback else original_blocked(ip),
     )
     try:
-        with ug.pinned_urlopen(f"http://profiles.example:{port}/profiles.json", timeout=2) as response:
+        with ug.pinned_urlopen(
+            f"http://profiles.example:{port}/profiles.json", timeout=2
+        ) as response:
             assert response.read(1024).startswith(b'{"Good"')
     finally:
         server.shutdown()
@@ -153,7 +165,8 @@ def test_https_connection_keeps_original_hostname_for_tls(monkeypatch):
     raw_socket = _Socket()
     monkeypatch.setattr(ug, "_connect_vetted_addresses", lambda *args: raw_socket)
     connection = ug._PinnedHTTPSConnection(
-        "profiles.example", ((socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),),
+        "profiles.example",
+        ((socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),),
         context=_Context(),
     )
     connection.connect()
@@ -179,15 +192,24 @@ def test_profile_redirect_to_private_address_is_rejected(monkeypatch):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
-    record = (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", port))
+    record = (
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+        socket.IPPROTO_TCP,
+        "",
+        ("127.0.0.1", port),
+    )
     original_blocked = ug._ip_is_blocked
     monkeypatch.setattr(ug, "_resolve_address_records", lambda *_args: [record])
     monkeypatch.setattr(
-        ug, "_ip_is_blocked",
+        ug,
+        "_ip_is_blocked",
         lambda ip: False if ip.is_loopback else original_blocked(ip),
     )
     try:
-        with pytest.raises(urllib.error.HTTPError, match="Unsafe or unresolved profile redirect"):
+        with pytest.raises(
+            urllib.error.HTTPError, match="Unsafe or unresolved profile redirect"
+        ):
             ug.pinned_urlopen(f"http://profiles.example:{port}/redirect", timeout=2)
     finally:
         server.shutdown()
@@ -221,31 +243,38 @@ def test_oversized_profile_response_keeps_the_existing_cache(monkeypatch):
 
 # ─────────────────────────────────────────────────── format expression gate
 
+
 @pytest.mark.unit
-@pytest.mark.parametrize("expr", [
-    "all",
-    "allvideo",
-    "allformats",
-    "all*",
-    "mergeall",
-    "bestvideo+all",
-    "best/all",
-    "bestaudio[ext=m4a]/all",
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "all",
+        "allvideo",
+        "allformats",
+        "all*",
+        "mergeall",
+        "bestvideo+all",
+        "best/all",
+        "bestaudio[ext=m4a]/all",
+    ],
+)
 def test_amplifying_format_expressions_are_rejected(expr):
     """`all`/`mergeall` select every format separately — one file each."""
     assert _fs().is_safe_format_expression(expr) is False
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("expr", [
-    "best",
-    "251",
-    "bestvideo[height<=1080]+bestaudio",
-    "bestvideo*[height<=1080][aspect_ratio>=1]+bestaudio[ext=m4a]/best",
-    "bestaudio[ext=m4a]/bestaudio",
-    "18+m140",
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "best",
+        "251",
+        "bestvideo[height<=1080]+bestaudio",
+        "bestvideo*[height<=1080][aspect_ratio>=1]+bestaudio[ext=m4a]/best",
+        "bestaudio[ext=m4a]/bestaudio",
+        "18+m140",
+    ],
+)
 def test_ordinary_format_expressions_are_accepted(expr):
     assert _fs().is_safe_format_expression(expr) is True
 
@@ -275,6 +304,7 @@ def test_empty_format_expression_is_rejected():
 
 # ─────────────────────────────────────────────────────── container allowlist
 
+
 @pytest.mark.unit
 def test_container_allowlist():
     cfg = _cfg()
@@ -296,6 +326,7 @@ def test_sanitize_container_fails_closed():
 
 
 # ────────────────────────────────────────────────────────── profile filter
+
 
 @pytest.mark.unit
 def test_sanitize_profiles_drops_unsafe_entries_wholesale():
@@ -331,6 +362,7 @@ def test_builtin_profiles_are_all_safe():
 
 
 # ─────────────────────────────────────────────────────────────── cache state
+
 
 @pytest.mark.unit
 def test_failed_fetch_does_not_poison_the_cache(monkeypatch):
@@ -406,6 +438,7 @@ def test_site_profiles_status_and_reset():
 
 
 # ─────────────────────────────────────────────────────────── disk persistence
+
 
 @pytest.mark.unit
 def test_save_profiles_is_atomic_and_round_trips(tmp_path):

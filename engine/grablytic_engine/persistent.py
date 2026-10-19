@@ -30,8 +30,17 @@ DEFAULT_BACKUP_COUNT = 5
 FLUSH_INTERVAL_S = 30.0
 
 _SENSITIVE_SUBSTRINGS = (
-    "cookie", "token", "password", "passwd", "secret", "auth",
-    "proxy", "api_key", "apikey", "session", "po_token",
+    "cookie",
+    "token",
+    "password",
+    "passwd",
+    "secret",
+    "auth",
+    "proxy",
+    "api_key",
+    "apikey",
+    "session",
+    "po_token",
 )
 
 _lock = threading.RLock()
@@ -75,12 +84,14 @@ def sanitize(obj: Any, _seen: set[int] | None = None) -> Any:
     if isinstance(obj, str) and len(obj) > 8:
         # Mask token= / sig= / key= query params, keep names for debugging.
         import re
+
         masked = re.sub(
             r"((?:token|sig|key|auth)[=:][\"']?)([^\"'&\s,}]+)",
             r"\1***REDACTED***",
             obj,
             flags=re.IGNORECASE,
         )
+
         # Mask user:password@host userinfo (proxy creds in URLs).
         # Greedy to the last @ before / or whitespace, so passwords
         # containing @ are fully masked; user-only form stays untouched.
@@ -164,14 +175,18 @@ def init_persistent_logging(
             _handler = None
 
         _handler = logging.handlers.RotatingFileHandler(
-            path, maxBytes=max_bytes, backupCount=backup_count,
+            path,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
             encoding="utf-8",
         )
         _handler.setLevel(level)
-        _handler.setFormatter(logging.Formatter(
-            "%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        ))
+        _handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
         logger.addHandler(_handler)
 
         _configured_dir = log_dir
@@ -276,7 +291,7 @@ def read_log_tail(max_bytes: int = 100 * 1024) -> str:
                 text = raw.decode("utf-8", errors="replace")
                 nl = text.find("\n")
                 if 0 <= nl < 4096:
-                    text = text[nl + 1:]
+                    text = text[nl + 1 :]
                 return f"... [TRUNCATED — last {max_bytes // 1024}KB of {size // 1024}KB] ...\n{text}"
             return f.read().decode("utf-8", errors="replace")
     except Exception as exc:
@@ -313,8 +328,7 @@ def traced_request(
     log.debug("%s>> %s params=%s", prefix, method, safe_params)
     if engine_log is not None:
         try:
-            engine_log.debug(f"{prefix}>> {method}",
-                             extra={"params": safe_params})
+            engine_log.debug(f"{prefix}>> {method}", extra={"params": safe_params})
         except Exception:
             pass
     try:
@@ -322,8 +336,7 @@ def traced_request(
     except Exception as exc:
         latency_ms = int((time.time() - start) * 1000)
         tb = format_traceback(exc)
-        log.error("%s!! %s FAILED in %dms: %r\n%s",
-                  prefix, method, latency_ms, exc, tb)
+        log.error("%s!! %s FAILED in %dms: %r\n%s", prefix, method, latency_ms, exc, tb)
         if engine_log is not None:
             try:
                 engine_log.log_exception(exc, f"{prefix}{method} FAILED")
@@ -336,6 +349,5 @@ def traced_request(
         safe_preview = str(sanitize(result))[:500]
     except Exception:
         safe_preview = "<unserializable>"
-    log.debug("%s<< %s OK in %dms preview=%s",
-              prefix, method, latency_ms, safe_preview)
+    log.debug("%s<< %s OK in %dms preview=%s", prefix, method, latency_ms, safe_preview)
     return result

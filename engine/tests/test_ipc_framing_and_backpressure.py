@@ -14,6 +14,7 @@ import pytest
 
 def _main_mod():
     import importlib
+
     return importlib.import_module("grablytic_engine.__main__")
 
 
@@ -124,10 +125,20 @@ def test_ipc_slow_lane_sheds_load_with_error_busy(monkeypatch, tmp_path):
     """Over-budget slow-lane requests get ERROR_BUSY, never a silent hang."""
     mod = _main_mod()
     monkeypatch.setattr(sys, "argv", ["grablytic_engine"])
-    monkeypatch.setattr(sys, "stdin", io.StringIO(
-        json.dumps({"id": "busy1", "method": "formats/get",
-                    "params": {"url": "https://example.com/v"}}) + "\n"
-    ))
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "id": "busy1",
+                    "method": "formats/get",
+                    "params": {"url": "https://example.com/v"},
+                }
+            )
+            + "\n"
+        ),
+    )
 
     # Saturate the in-flight budget BEFORE main() runs by patching the
     # module constant to 0: every slow-lane request is then over budget.
@@ -147,10 +158,14 @@ def test_ipc_fast_lane_is_never_shed(monkeypatch):
     """cancel must always be answered, even at full slow-lane capacity."""
     mod = _main_mod()
     monkeypatch.setattr(sys, "argv", ["grablytic_engine"])
-    monkeypatch.setattr(sys, "stdin", io.StringIO(
-        json.dumps({"id": "c1", "method": "download/queue_status",
-                    "params": {}}) + "\n"
-    ))
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps({"id": "c1", "method": "download/queue_status", "params": {}})
+            + "\n"
+        ),
+    )
     monkeypatch.setattr(mod, "_MAX_IPC_INFLIGHT", 0)
 
     out = io.StringIO()
@@ -158,9 +173,7 @@ def test_ipc_fast_lane_is_never_shed(monkeypatch):
     mod.main()
     lines = [json.loads(ln) for ln in out.getvalue().splitlines() if ln.strip()]
     assert any(r.get("id") == "c1" for r in lines)
-    assert not any(
-        r.get("error", {}).get("error_type") == "ERROR_BUSY" for r in lines
-    )
+    assert not any(r.get("error", {}).get("error_type") == "ERROR_BUSY" for r in lines)
 
 
 @pytest.mark.unit
@@ -169,10 +182,16 @@ def test_oversized_ipc_line_is_rejected_not_parsed(monkeypatch):
     mod = _main_mod()
     monkeypatch.setattr(mod, "_MAX_IPC_LINE_BYTES", 32)
     monkeypatch.setattr(sys, "argv", ["grablytic_engine"])
-    monkeypatch.setattr(sys, "stdin", io.StringIO(
-        json.dumps({"id": "big", "method": "formats/get",
-                    "params": {"url": "x" * 5000}}) + "\n"
-    ))
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps(
+                {"id": "big", "method": "formats/get", "params": {"url": "x" * 5000}}
+            )
+            + "\n"
+        ),
+    )
     out = io.StringIO()
     monkeypatch.setattr(sys, "stdout", out)
     mod.main()

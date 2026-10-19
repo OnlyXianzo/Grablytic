@@ -11,6 +11,7 @@ import pytest
 
 def _gn():
     import grablytic_engine.github_notifier as gn
+
     return gn
 
 
@@ -60,16 +61,21 @@ def test_build_body_redacts_every_free_text_field():
         context={"note": "cookie=sessionvalue123"},
         fp="abc123",
     )
-    for secret in ("abcdef123456", "hunter2", "deadbeef99", "cafebabe12",
-                   "letmein123", "sessionvalue123"):
+    for secret in (
+        "abcdef123456",
+        "hunter2",
+        "deadbeef99",
+        "cafebabe12",
+        "letmein123",
+        "sessionvalue123",
+    ):
         assert secret not in body, body
 
 
 @pytest.mark.unit
 def test_build_body_redacts_sensitive_context_keys():
     gn = _gn()
-    body = gn.build_body("s", context={"api_key": "abcdef123456",
-                                       "normal": "visible"})
+    body = gn.build_body("s", context={"api_key": "abcdef123456", "normal": "visible"})
     assert "abcdef123456" not in body
     assert "visible" in body
 

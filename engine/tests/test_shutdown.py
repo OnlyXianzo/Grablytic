@@ -88,10 +88,14 @@ def test_shutdown_signals_cancel_and_clears_queue():
         assert res["success"] is True
         # Both active cancel events must have been set
         for cev in active_cancel_events:
-            assert cev.is_set(), "Active download cancel_event was not signalled on shutdown!"
+            assert cev.is_set(), (
+                "Active download cancel_event was not signalled on shutdown!"
+            )
 
         # Pending queue must be drained
-        assert len(dl_mod._pending_queue) == 0, "Pending queue was not cleared on shutdown!"
+        assert len(dl_mod._pending_queue) == 0, (
+            "Pending queue was not cleared on shutdown!"
+        )
 
         # Active worker threads must have been joined cleanly
         for did in ("shut-active-0", "shut-active-1"):

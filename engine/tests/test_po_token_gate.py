@@ -29,14 +29,22 @@ def _no_runtime(monkeypatch):
     import shutil
     import grablytic_engine.po_token as pot
     from grablytic_engine.paths import _paths
+
     monkeypatch.delitem(sys.modules, "java.android", raising=False)
     monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
     monkeypatch.setattr(
-        pot, "detect_js_runtime", lambda: {"name": "none", "version": None})
+        pot, "detect_js_runtime", lambda: {"name": "none", "version": None}
+    )
     saved = dict(_paths)
-    _paths.update({"deno_path": None, "nodejs_path": None,
-                   "po_token": None, "ffmpeg_path": None,
-                   "aria2c_path": None})
+    _paths.update(
+        {
+            "deno_path": None,
+            "nodejs_path": None,
+            "po_token": None,
+            "ffmpeg_path": None,
+            "aria2c_path": None,
+        }
+    )
     try:
         yield
     finally:
@@ -46,6 +54,7 @@ def _no_runtime(monkeypatch):
 
 def test_no_runtime_no_remote_components(_no_runtime):
     from grablytic_engine.opts_builder import build_ydl_opts
+
     opts = build_ydl_opts()
     assert "js_runtimes" not in opts
     # Fail closed: without a runtime there is nothing that could execute a
@@ -87,7 +96,8 @@ def test_inert_stub_spawns_no_subprocess(monkeypatch):
 
     # Force the production spawn path: runtime available + binary present.
     monkeypatch.setattr(
-        pot, "detect_js_runtime", lambda: {"name": "deno", "version": "9.9.9"})
+        pot, "detect_js_runtime", lambda: {"name": "deno", "version": "9.9.9"}
+    )
     saved = dict(_paths)
     _paths.update({"deno_path": "/fake/deno"})
     monkeypatch.setattr(os.path, "isfile", lambda p: True)
@@ -108,13 +118,17 @@ def test_inert_stub_spawns_no_subprocess(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", _record)
     try:
-        assert pot.generate_po_token(
-            "https://www.youtube.com/watch?v=abc123xyz_-") is None
-        assert pot._generate_with_deno(
-            "https://www.youtube.com/watch?v=abc123xyz_-") is None
+        assert (
+            pot.generate_po_token("https://www.youtube.com/watch?v=abc123xyz_-") is None
+        )
+        assert (
+            pot._generate_with_deno("https://www.youtube.com/watch?v=abc123xyz_-")
+            is None
+        )
         assert calls == [], (
             "phantom PO-token spawn: inert stub ran `deno eval` "
-            f"{len(calls)}x for a guaranteed-None token")
+            f"{len(calls)}x for a guaranteed-None token"
+        )
     finally:
         _paths.clear()
         _paths.update(saved)
@@ -131,7 +145,8 @@ def test_real_solver_path_still_spawns_when_enabled(monkeypatch):
 
     monkeypatch.setattr(pot, "PO_TOKEN_SOLVER_ENABLED", True, raising=False)
     monkeypatch.setattr(
-        pot, "detect_js_runtime", lambda: {"name": "deno", "version": "9.9.9"})
+        pot, "detect_js_runtime", lambda: {"name": "deno", "version": "9.9.9"}
+    )
     saved = dict(_paths)
     _paths.update({"deno_path": "/fake/deno"})
     monkeypatch.setattr(os.path, "isfile", lambda p: True)
@@ -148,8 +163,10 @@ def test_real_solver_path_still_spawns_when_enabled(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
     try:
-        assert pot.generate_po_token(
-            "https://www.youtube.com/watch?v=abc123xyz_-") == "REAL123"
+        assert (
+            pot.generate_po_token("https://www.youtube.com/watch?v=abc123xyz_-")
+            == "REAL123"
+        )
         assert calls, "enabled solver must restore the deno eval spawn"
     finally:
         _paths.clear()

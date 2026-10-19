@@ -14,6 +14,7 @@ import pytest
 
 def _main_mod():
     import importlib
+
     return importlib.import_module("grablytic_engine.__main__")
 
 
@@ -32,13 +33,23 @@ def _by_id(responses, req_id):
 
 @pytest.mark.unit
 def test_paths_set_envelope(tmp_path, monkeypatch, capsys):
-    resps = _run_lines(monkeypatch, capsys, [json.dumps({
-        "id": "p1", "method": "paths/set",
-        "params": {
-            "data_dir": str(tmp_path), "output_dir": str(tmp_path),
-            "cache_dir": str(tmp_path),
-        },
-    })])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "p1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": str(tmp_path),
+                        "output_dir": str(tmp_path),
+                        "cache_dir": str(tmp_path),
+                    },
+                }
+            )
+        ],
+    )
     assert _by_id(resps, "p1") == {"id": "p1", "result": {"success": True}}
 
 
@@ -46,18 +57,29 @@ def test_paths_set_envelope(tmp_path, monkeypatch, capsys):
 def test_paths_set_forwards_nodejs_path(tmp_path, monkeypatch, capsys):
     """Regression test for paths/set must forward nodejs_path."""
     from grablytic_engine.paths import get_paths
+
     node_bin = tmp_path / "node"
     node_bin.touch()
     node_bin.chmod(0o755)
 
-    resps = _run_lines(monkeypatch, capsys, [json.dumps({
-        "id": "p_node", "method": "paths/set",
-        "params": {
-            "data_dir": str(tmp_path), "output_dir": str(tmp_path),
-            "cache_dir": str(tmp_path),
-            "nodejs_path": str(node_bin),
-        },
-    })])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "p_node",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": str(tmp_path),
+                        "output_dir": str(tmp_path),
+                        "cache_dir": str(tmp_path),
+                        "nodejs_path": str(node_bin),
+                    },
+                }
+            )
+        ],
+    )
     assert _by_id(resps, "p_node") == {"id": "p_node", "result": {"success": True}}
     assert get_paths()["nodejs_path"] == str(node_bin.resolve())
 
@@ -65,12 +87,26 @@ def test_paths_set_forwards_nodejs_path(tmp_path, monkeypatch, capsys):
 @pytest.mark.unit
 def test_download_queue_status_ipc_envelope(tmp_path, monkeypatch, capsys):
     """Regression test for download/queue_status returns success envelope."""
-    resps = _run_lines(monkeypatch, capsys, [
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": str(tmp_path), "output_dir": str(tmp_path),
-            "cache_dir": str(tmp_path)}}),
-        json.dumps({"id": "q_stat", "method": "download/queue_status", "params": {}}),
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": str(tmp_path),
+                        "output_dir": str(tmp_path),
+                        "cache_dir": str(tmp_path),
+                    },
+                }
+            ),
+            json.dumps(
+                {"id": "q_stat", "method": "download/queue_status", "params": {}}
+            ),
+        ],
+    )
     result = _by_id(resps, "q_stat")["result"]
     assert result["success"] is True
     assert "active" in result and isinstance(result["active"], list)
@@ -80,12 +116,24 @@ def test_download_queue_status_ipc_envelope(tmp_path, monkeypatch, capsys):
 
 @pytest.mark.unit
 def test_unknown_method_error_envelope(monkeypatch, capsys):
-    resps = _run_lines(monkeypatch, capsys, [
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
-            "cache_dir": "/tmp/x"}}),
-        json.dumps({"id": "u9", "method": "frobnicate/do", "params": {}}),
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": "/tmp/x",
+                        "output_dir": "/tmp/x",
+                        "cache_dir": "/tmp/x",
+                    },
+                }
+            ),
+            json.dumps({"id": "u9", "method": "frobnicate/do", "params": {}}),
+        ],
+    )
     err = _by_id(resps, "u9")
     assert err["error"]["success"] is False
     assert err["error"]["error_type"] == "ERROR_UNKNOWN_METHOD"
@@ -101,13 +149,30 @@ def test_dispatch_calls_module_function(monkeypatch, capsys):
         return {"success": True, "formats": []}
 
     monkeypatch.setattr(mod, "get_formats", fake_get_formats)
-    resps = _run_lines(monkeypatch, capsys, [
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
-            "cache_dir": "/tmp/x"}}),
-        json.dumps({"id": "f1", "method": "formats/get",
-                    "params": {"url": "https://x.test/v"}}),
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": "/tmp/x",
+                        "output_dir": "/tmp/x",
+                        "cache_dir": "/tmp/x",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "id": "f1",
+                    "method": "formats/get",
+                    "params": {"url": "https://x.test/v"},
+                }
+            ),
+        ],
+    )
     assert seen["url"] == "https://x.test/v"
     assert _by_id(resps, "f1")["result"] == {"success": True, "formats": []}
 
@@ -121,16 +186,38 @@ def test_dispatch_calls_search(monkeypatch, capsys):
         called["query"] = query
         called["site"] = site
         called["limit"] = limit
-        return {"success": True, "query": query, "count": 1, "entries": [{"title": "Test"}]}
+        return {
+            "success": True,
+            "query": query,
+            "count": 1,
+            "entries": [{"title": "Test"}],
+        }
 
     monkeypatch.setattr(mod, "search_query", fake_search)
-    resps = _run_lines(monkeypatch, capsys, [
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
-            "cache_dir": "/tmp/x"}}),
-        json.dumps({"id": "q1", "method": "search/query",
-                    "params": {"query": "rick astley", "site": "youtube", "limit": 10}}),
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": "/tmp/x",
+                        "output_dir": "/tmp/x",
+                        "cache_dir": "/tmp/x",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "id": "q1",
+                    "method": "search/query",
+                    "params": {"query": "rick astley", "site": "youtube", "limit": 10},
+                }
+            ),
+        ],
+    )
     assert called == {"query": "rick astley", "site": "youtube", "limit": 10}
     assert _by_id(resps, "q1")["result"]["count"] == 1
 
@@ -148,13 +235,30 @@ def test_search_dispatch_wiring_is_callable_without_mock(monkeypatch, capsys):
     """
     mod = _main_mod()
     assert callable(getattr(mod, "search_query", None))
-    resps = _run_lines(monkeypatch, capsys, [
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
-            "cache_dir": "/tmp/x"}}),
-        json.dumps({"id": "q2", "method": "search/query",
-                    "params": {"query": "", "site": "youtube", "limit": 10}}),
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": "/tmp/x",
+                        "output_dir": "/tmp/x",
+                        "cache_dir": "/tmp/x",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "id": "q2",
+                    "method": "search/query",
+                    "params": {"query": "", "site": "youtube", "limit": 10},
+                }
+            ),
+        ],
+    )
     resp = _by_id(resps, "q2")
     assert "result" in resp or "error" in resp
     payload = resp.get("result", resp.get("error"))
@@ -163,12 +267,24 @@ def test_search_dispatch_wiring_is_callable_without_mock(monkeypatch, capsys):
 
 @pytest.mark.unit
 def test_malformed_line_does_not_kill_loop(monkeypatch, capsys):
-    resps = _run_lines(monkeypatch, capsys, [
-        "this is not json {{{",
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
-            "cache_dir": "/tmp/x"}}),
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            "this is not json {{{",
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": "/tmp/x",
+                        "output_dir": "/tmp/x",
+                        "cache_dir": "/tmp/x",
+                    },
+                }
+            ),
+        ],
+    )
     assert _by_id(resps, "s1")["result"] == {"success": True}
 
 
@@ -177,9 +293,13 @@ def test_malformed_line_error_keeps_null_id(monkeypatch, capsys):
     """even an unparseable line must produce an error envelope that
     keeps its (null) request ID — the client correlates every error by id,
     never a bare id-less failure."""
-    resps = _run_lines(monkeypatch, capsys, [
-        "this is not json {{{",
-    ])
+    resps = _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            "this is not json {{{",
+        ],
+    )
     assert len(resps) == 1
     assert resps[0]["id"] is None
     assert resps[0]["error"]["success"] is False
@@ -195,6 +315,7 @@ def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
     import queue as _q
     import threading
     import time
+
     mod = _main_mod()
 
     assert hasattr(mod, "_stdout_lock"), "Missing _stdout_lock in __main__.py!"
@@ -215,6 +336,7 @@ def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
 
     # Setup 5 concurrent active downloads in downloader
     from grablytic_engine.downloader import _active_downloads, _downloads_lock
+
     _active_downloads.clear()
 
     download_ids = [f"dl-concurrent-{i}" for i in range(5)]
@@ -239,13 +361,16 @@ def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
         for seq in range(count):
             if stop_event.is_set():
                 break
-            payload = json.dumps({
-                "type": "event",
-                "event": "downloading",
-                "download_id": did,
-                "sequence": seq,
-                "payload": "X" * 100,  # Long payload increases interleaving probability
-            })
+            payload = json.dumps(
+                {
+                    "type": "event",
+                    "event": "downloading",
+                    "download_id": did,
+                    "sequence": seq,
+                    "payload": "X"
+                    * 100,  # Long payload increases interleaving probability
+                }
+            )
             prog_q.put(payload)
 
     # 1 thread simultaneously emitting responses via _write_stdout_line
@@ -253,10 +378,12 @@ def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
         for seq in range(count):
             if stop_event.is_set():
                 break
-            res = json.dumps({
-                "id": f"req-{seq}",
-                "result": {"status": "ok", "padding": "Y" * 120},
-            })
+            res = json.dumps(
+                {
+                    "id": f"req-{seq}",
+                    "result": {"status": "ok", "padding": "Y" * 120},
+                }
+            )
             mod._write_stdout_line(res)
 
     # 1 thread draining queues via mod._write_stdout_line (simulating poll_queues loop)
@@ -321,7 +448,6 @@ def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
             )
 
 
-
 @pytest.mark.unit
 def test_method_log_params_sanitized(monkeypatch, capsys):
     """Engine request log must not carry raw proxy/token secrets (Batch 2).
@@ -347,15 +473,36 @@ def test_method_log_params_sanitized(monkeypatch, capsys):
 
     monkeypatch.setattr(mod, "log", FakeLog())
     monkeypatch.setattr(mod, "get_formats", fake_get_formats)
-    _run_lines(monkeypatch, capsys, [
-        json.dumps({"id": "s1", "method": "paths/set", "params": {
-            "data_dir": "/tmp/x", "output_dir": "/tmp/x",
-            "cache_dir": "/tmp/x"}}),
-        json.dumps({"id": "f1", "method": "formats/get", "params": {
-            "url": "https://vid.test/watch?v=1&sig=S3CR3T",
-            "config": {"proxy": "http://user:p4ssw0rd@proxy.test:8080",
-                       "po_token": "POSECRET"}}}),
-    ])
+    _run_lines(
+        monkeypatch,
+        capsys,
+        [
+            json.dumps(
+                {
+                    "id": "s1",
+                    "method": "paths/set",
+                    "params": {
+                        "data_dir": "/tmp/x",
+                        "output_dir": "/tmp/x",
+                        "cache_dir": "/tmp/x",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "id": "f1",
+                    "method": "formats/get",
+                    "params": {
+                        "url": "https://vid.test/watch?v=1&sig=S3CR3T",
+                        "config": {
+                            "proxy": "http://user:p4ssw0rd@proxy.test:8080",
+                            "po_token": "POSECRET",
+                        },
+                    },
+                }
+            ),
+        ],
+    )
     blob = json.dumps(seen.get("infos", []))
     assert "S3CR3T" not in blob
     assert "p4ssw0rd" not in blob

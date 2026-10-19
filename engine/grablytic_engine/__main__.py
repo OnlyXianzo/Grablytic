@@ -53,12 +53,14 @@ _MAX_IPC_INFLIGHT = 24
 # Fast local-only methods bypass the pool entirely and run inline in the
 # reader thread: a 30s extraction must never delay cancel/queue-status.
 # All are in-memory + lock-guarded (no network), so inline is safe.
-_FAST_IPC_METHODS = frozenset({
-    "download/cancel",
-    "download/queue_status",
-    "download/set_concurrency",
-    "download/clear_archive",
-})
+_FAST_IPC_METHODS = frozenset(
+    {
+        "download/cancel",
+        "download/queue_status",
+        "download/set_concurrency",
+        "download/clear_archive",
+    }
+)
 # A single IPC line longer than this is refused instead of being read
 # into memory. Legit envelopes (a 200-format preview) are far smaller;
 # a runaway writer must not be able to OOM the engine.
@@ -167,7 +169,9 @@ class _StderrBuffer:
         except Exception:
             try:
                 return self._err.write(
-                    data.decode("utf-8", "replace") if isinstance(data, bytes) else str(data)
+                    data.decode("utf-8", "replace")
+                    if isinstance(data, bytes)
+                    else str(data)
                 )
             except Exception:
                 return 0
@@ -279,7 +283,9 @@ def poll_queues():
                         break
                     except Exception as exc:
                         try:
-                            log.warn(f"Dropping malformed progress event: {type(exc).__name__}")
+                            log.warn(
+                                f"Dropping malformed progress event: {type(exc).__name__}"
+                            )
                         except Exception:
                             pass
                         break
@@ -308,7 +314,9 @@ def poll_queues():
                                 "event": "cancelled",
                                 "download_id": download_id,
                                 "error_type": "ERROR_CANCELLED",
-                                "error_message": res.get("error_message", "Download cancelled by user"),
+                                "error_message": res.get(
+                                    "error_message", "Download cancelled by user"
+                                ),
                             }
                         else:
                             event = {
@@ -316,7 +324,9 @@ def poll_queues():
                                 "event": "error",
                                 "download_id": download_id,
                                 "error_type": res.get("error_type", "ERROR_UNKNOWN"),
-                                "error_message": res.get("error_message", "Unknown error"),
+                                "error_message": res.get(
+                                    "error_message", "Unknown error"
+                                ),
                                 "recoverable": res.get("recoverable", True),
                                 "suggests_vpn": res.get("suggests_vpn", False),
                             }
@@ -325,7 +335,9 @@ def poll_queues():
                         break
                     except Exception as exc:
                         try:
-                            log.warn(f"Dropping malformed result event: {type(exc).__name__}")
+                            log.warn(
+                                f"Dropping malformed result event: {type(exc).__name__}"
+                            )
                         except Exception:
                             pass
                         break
@@ -336,6 +348,7 @@ def poll_queues():
                             from grablytic_engine.downloader import (
                                 _mark_result_delivered,
                             )
+
                             _mark_result_delivered(download_id)
                         except Exception:
                             pass
@@ -503,8 +516,9 @@ if set(_METHOD_HANDLERS) != set(contract.METHODS):
     # drift means a host would call a method the contract does not
     # advertise (or the other way round).
     raise RuntimeError(
-        "IPC contract drift: registry=%s contract=%s" % (
-            sorted(_METHOD_HANDLERS), sorted(contract.METHODS)))
+        "IPC contract drift: registry=%s contract=%s"
+        % (sorted(_METHOD_HANDLERS), sorted(contract.METHODS))
+    )
 
 
 def _dispatch_method(method, params):
@@ -539,6 +553,7 @@ def _execute_parsed_request(req_id, method, params):
         # creds, po_token, signed-URL sigs ride in params/config).
         try:
             from grablytic_engine.persistent import sanitize as _sanitize
+
             _safe_params = _sanitize(params)
         except Exception:
             _safe_params = {}
@@ -547,8 +562,8 @@ def _execute_parsed_request(req_id, method, params):
         # Sanitized copy for the rotating handler (never raw secrets).
         try:
             from grablytic_engine.persistent import sanitize as _sanitize
-            get_std_logger().debug(">> %s params=%s",
-                                   method, _sanitize(params))
+
+            get_std_logger().debug(">> %s params=%s", method, _sanitize(params))
         except Exception:
             pass
 
@@ -602,8 +617,11 @@ def _execute_parsed_request(req_id, method, params):
             except Exception:
                 std_log = None  # type: ignore[assignment]
             res = traced_request(
-                str(method), params if isinstance(params, dict) else {},
-                _dispatch, logger=std_log, engine_log=log,
+                str(method),
+                params if isinstance(params, dict) else {},
+                _dispatch,
+                logger=std_log,
+                engine_log=log,
             )
 
         response = {"id": req_id}
@@ -624,6 +642,7 @@ def _execute_parsed_request(req_id, method, params):
         # inside notify_exception; never blocks the error response.
         try:
             from grablytic_engine.github_notifier import notify_exception
+
             notify_exception(e, context={"method": str(method)})
         except Exception:
             pass
@@ -632,8 +651,8 @@ def _execute_parsed_request(req_id, method, params):
             "error": {
                 "success": False,
                 "error_type": "ERROR_INTERNAL",
-                "error_message": str(e)
-            }
+                "error_message": str(e),
+            },
         }
         _write_stdout_line(json.dumps(err_res))
 
@@ -701,9 +720,7 @@ def main():
             params = {}
             try:
                 if len(line) > _MAX_IPC_LINE_BYTES:
-                    raise ValueError(
-                        f"IPC line exceeds {_MAX_IPC_LINE_BYTES} bytes"
-                    )
+                    raise ValueError(f"IPC line exceeds {_MAX_IPC_LINE_BYTES} bytes")
                 req = json.loads(line)
                 req_id = req.get("id")
                 method = req.get("method")
@@ -717,17 +734,22 @@ def main():
                     pass
                 try:
                     from grablytic_engine.github_notifier import notify_exception
+
                     notify_exception(e, context={"method": str(method)})
                 except Exception:
                     pass
-                _write_stdout_line(json.dumps({
-                    "id": req_id,
-                    "error": {
-                        "success": False,
-                        "error_type": "ERROR_INTERNAL",
-                        "error_message": str(e)
-                    }
-                }))
+                _write_stdout_line(
+                    json.dumps(
+                        {
+                            "id": req_id,
+                            "error": {
+                                "success": False,
+                                "error_type": "ERROR_INTERNAL",
+                                "error_message": str(e),
+                            },
+                        }
+                    )
+                )
                 continue
 
             # Fast lane: local-only cancel/status (and sibling setters) run

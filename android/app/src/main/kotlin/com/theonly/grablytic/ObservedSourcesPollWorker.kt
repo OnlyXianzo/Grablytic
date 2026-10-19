@@ -51,6 +51,7 @@ class ObservedSourcesPollWorker(
     companion object {
         const val TAG = "ObservedSourcesWorker"
         const val WORK_NAME = "observed-sources-poll"
+
         // Must match DownloadService.CHANNEL_COMPLETE ("Download complete",
         // HIGH): the old private id "grablytic_downloads_complete" was never
         // created anywhere, so API 26+ silently dropped every background
@@ -105,8 +106,11 @@ class ObservedSourcesPollWorker(
 
             val constraints = androidx.work.Constraints.Builder()
                 .setRequiredNetworkType(
-                    if (wifiOnly) androidx.work.NetworkType.UNMETERED
-                    else androidx.work.NetworkType.CONNECTED
+                    if (wifiOnly) {
+                        androidx.work.NetworkType.UNMETERED
+                    } else {
+                        androidx.work.NetworkType.CONNECTED
+                    },
                 )
                 .setRequiresBatteryNotLow(true)
                 .setRequiresStorageNotLow(true)
@@ -114,8 +118,10 @@ class ObservedSourcesPollWorker(
                 .build()
 
             val request = androidx.work.PeriodicWorkRequestBuilder<ObservedSourcesPollWorker>(
-                intervalMinutes.coerceAtLeast(15L), java.util.concurrent.TimeUnit.MINUTES,
-                15L, java.util.concurrent.TimeUnit.MINUTES,
+                intervalMinutes.coerceAtLeast(15L),
+                java.util.concurrent.TimeUnit.MINUTES,
+                15L,
+                java.util.concurrent.TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)
                 .setBackoffCriteria(
@@ -639,7 +645,7 @@ class ObservedSourcesPollWorker(
                 // that is API 26+ and minSdk here is 24.)
                 val sourceTag = sourceUrl.hashCode().toString().replace('-', 'n')
                 val safeVideoId = entry.id.replace(Regex("[^A-Za-z0-9_-]"), "_")
-                val downloadId = "obs_${sourceTag}_${safeVideoId}"
+                val downloadId = "obs_${sourceTag}_$safeVideoId"
                 val config = JSONObject().apply {
                     put("source", "observed")
                     put("quality", quality)
@@ -675,7 +681,8 @@ class ObservedSourcesPollWorker(
         try {
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return
             val mgr = applicationContext.getSystemService(
-                android.app.NotificationManager::class.java) ?: return
+                android.app.NotificationManager::class.java,
+            ) ?: return
             if (mgr.getNotificationChannel(NOTIF_CHANNEL_COMPLETE) == null) {
                 mgr.createNotificationChannel(
                     android.app.NotificationChannel(

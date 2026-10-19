@@ -1,4 +1,4 @@
-""" HEAD-OF-LINE blocking regression (RED-first).
+"""HEAD-OF-LINE blocking regression (RED-first).
 
 A single slow `formats/get` (or playlist extraction) must not hold
 `download/cancel` / `download/queue_status` hostage until Dart's 30s
@@ -15,6 +15,7 @@ import time
 
 def _main_mod():
     import importlib
+
     return importlib.import_module("grablytic_engine.__main__")
 
 
@@ -31,6 +32,7 @@ def test_slow_formats_does_not_head_of_line_block_cancel(monkeypatch, capsys):
     request is still in flight, preserving both request ids.
     """
     import pytest
+
     pytest.importorskip("pytest")
     mod = _main_mod()
 
@@ -60,18 +62,32 @@ def test_slow_formats_does_not_head_of_line_block_cancel(monkeypatch, capsys):
     monkeypatch.setattr(mod, "_write_stdout_line", timed_write)
 
     monkeypatch.setattr(
-        sys, "argv", ["grablytic_engine"],
+        sys,
+        "argv",
+        ["grablytic_engine"],
     )
     monkeypatch.setattr(
         sys,
         "stdin",
         io.StringIO(
-            "\n".join([
-                json.dumps({"id": "slow1", "method": "formats/get",
-                            "params": {"url": "https://x.test/v"}}),
-                json.dumps({"id": "cancel1", "method": "download/cancel",
-                            "params": {"download_id": "dl1"}}),
-            ])
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "id": "slow1",
+                            "method": "formats/get",
+                            "params": {"url": "https://x.test/v"},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "id": "cancel1",
+                            "method": "download/cancel",
+                            "params": {"download_id": "dl1"},
+                        }
+                    ),
+                ]
+            )
             + "\n"
         ),
     )

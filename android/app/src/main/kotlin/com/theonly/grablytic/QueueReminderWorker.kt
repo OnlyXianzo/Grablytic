@@ -68,8 +68,10 @@ class QueueReminderWorker(
                 .build()
 
             val request = PeriodicWorkRequestBuilder<QueueReminderWorker>(
-                intervalMinutes.coerceAtLeast(15L), TimeUnit.MINUTES,
-                15L, TimeUnit.MINUTES,
+                intervalMinutes.coerceAtLeast(15L),
+                TimeUnit.MINUTES,
+                15L,
+                TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)
                 .build()

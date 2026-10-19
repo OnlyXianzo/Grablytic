@@ -15,6 +15,7 @@ import pytest
 
 def _dl():
     import grablytic_engine.downloader as dl_mod
+
     return dl_mod
 
 
@@ -30,9 +31,7 @@ def test_gate_is_installed_on_the_real_yt_dlp_class():
 
     dl_mod = _dl()
     dl_mod._ensure_ffmpeg_serialized()
-    seam = getattr(
-        yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", None
-    )
+    seam = getattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", None)
     assert seam is not None, (
         "yt-dlp removed FFmpegPostProcessor.real_run_ffmpeg — the gate "
         "seam moved; update the installer"
@@ -56,14 +55,13 @@ def test_status_reports_failure_when_no_seam_is_available(monkeypatch):
     dl_mod = _dl()
     monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
     monkeypatch.setattr(
-        dl_mod, "_ffmpeg_patch_state",
+        dl_mod,
+        "_ffmpeg_patch_state",
         {"installed": False, "seam": None, "error": None},
         raising=True,
     )
     # Make the primary seam disappear (simulated yt-dlp rename).
-    monkeypatch.delattr(
-        yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True
-    )
+    monkeypatch.delattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True)
     # ... and the fallback seam too.
     monkeypatch.setattr(Popen, "run", object(), raising=True)
 
@@ -83,13 +81,12 @@ def test_fallback_seam_installs_when_primary_seam_is_gone(monkeypatch):
     dl_mod = _dl()
     monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
     monkeypatch.setattr(
-        dl_mod, "_ffmpeg_patch_state",
+        dl_mod,
+        "_ffmpeg_patch_state",
         {"installed": False, "seam": None, "error": None},
         raising=True,
     )
-    monkeypatch.delattr(
-        yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True
-    )
+    monkeypatch.delattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True)
 
     assert dl_mod._ensure_ffmpeg_serialized() is True
     status = dl_mod.ffmpeg_serialization_status()
@@ -115,14 +112,13 @@ def test_fallback_seam_serializes_ffmpeg_process_spawns(monkeypatch):
         return ("", "", 0)
 
     # Remove the primary seam so the fallback is the one under test.
-    monkeypatch.delattr(
-        yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True
-    )
+    monkeypatch.delattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True)
     monkeypatch.setattr(Popen, "run", classmethod(fake_inner), raising=True)
     monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
 
     monkeypatch.setattr(
-        dl_mod, "_ffmpeg_patch_state",
+        dl_mod,
+        "_ffmpeg_patch_state",
         {"installed": False, "seam": None, "error": None},
         raising=True,
     )

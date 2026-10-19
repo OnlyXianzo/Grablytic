@@ -110,13 +110,16 @@ def build_playlist_items(selected: list) -> str:
 
 def get_playlist_info(url: str, config: dict | None = None) -> dict:
     from grablytic_engine.url_guard import is_safe_media_url, sanitized_proxy
+
     if not is_safe_media_url(url):
         return {
             "success": False,
             "error_type": "ERROR_INVALID_PARAM",
             "error_message": "URL must be a public http(s) address",
         }
-    log.info(f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}")
+    log.info(
+        f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}"
+    )
 
     paths = get_paths()
     cfg = coerce_config(config)
@@ -129,6 +132,7 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
     }
 
     from grablytic_engine.opts_builder import _configure_js_runtime
+
     _configure_js_runtime(opts, paths)
 
     if "youtube.com" in url or "youtu.be" in url:
@@ -137,12 +141,16 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
         opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
 
         from grablytic_engine.po_token import generate_po_token
+
         po_token = generate_po_token(url) or paths.get("po_token")
         if po_token:
             opts["extractor_args"]["youtube"]["po_token"] = [po_token]
 
     from grablytic_engine.opts_builder import sanitize_cookiefile
-    cookiefile = sanitize_cookiefile(cfg.get("cookies_path") or paths.get("cookies_path"))
+
+    cookiefile = sanitize_cookiefile(
+        cfg.get("cookies_path") or paths.get("cookies_path")
+    )
     if cookiefile:
         opts["cookiefile"] = cookiefile
     proxy = sanitized_proxy(cfg.get("proxy"))
@@ -155,20 +163,33 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
 
         if data is None:
             log.warn(f"No data returned for playlist {url}")
-            return {"success": False, "error_type": "ERROR_UNAVAILABLE", "error_message": "Could not fetch playlist"}
+            return {
+                "success": False,
+                "error_type": "ERROR_UNAVAILABLE",
+                "error_message": "Could not fetch playlist",
+            }
 
-        entries_val = data.get("entries") if "entries" in data and data.get("entries") is not None else [data]
+        entries_val = (
+            data.get("entries")
+            if "entries" in data and data.get("entries") is not None
+            else [data]
+        )
         truncated = False
         if entries_val is not None:
             if not isinstance(entries_val, list):
                 try:
                     import itertools
+
                     # One extra element so "there were more" is detectable.
-                    entries_val = list(itertools.islice(
-                        entries_val, _MAX_PLAYLIST_ENTRIES + 1))
+                    entries_val = list(
+                        itertools.islice(entries_val, _MAX_PLAYLIST_ENTRIES + 1)
+                    )
                 except Exception:
                     entries_val = []
-            if isinstance(entries_val, list) and len(entries_val) > _MAX_PLAYLIST_ENTRIES:
+            if (
+                isinstance(entries_val, list)
+                and len(entries_val) > _MAX_PLAYLIST_ENTRIES
+            ):
                 entries_val = entries_val[:_MAX_PLAYLIST_ENTRIES]
                 truncated = True
         entries_raw = entries_val or []
@@ -182,7 +203,11 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             if not title or title == "[Deleted video]":
                 title = "[Deleted video]"
             raw_url = e.get("url") or e.get("webpage_url") or ""
-            if raw_url and not raw_url.startswith("http") and not raw_url.startswith("/"):
+            if (
+                raw_url
+                and not raw_url.startswith("http")
+                and not raw_url.startswith("/")
+            ):
                 # Plain YouTube 11-char video ID from flat extraction
                 if re.match(r"^[a-zA-Z0-9_-]{11}$", raw_url):
                     raw_url = f"https://www.youtube.com/watch?v={raw_url}"
@@ -190,34 +215,44 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             thumb = e.get("thumbnail")
             if not thumb and e.get("thumbnails"):
                 thumbs = e.get("thumbnails")
-                if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+                if (
+                    isinstance(thumbs, list)
+                    and len(thumbs) > 0
+                    and isinstance(thumbs[-1], dict)
+                ):
                     thumb = thumbs[-1].get("url")
 
             item_index = e.get("playlist_index") or idx
 
-            entries.append({
-                "index": item_index,
-                "title": title,
-                "url": raw_url,
-                "duration_seconds": e.get("duration"),
-                "thumbnail_url": thumb,
-                "uploader": e.get("uploader"),
-                # Flat extraction reports removed entries as title=None or a
-                # "[Deleted video]"/"[Private video]" placeholder with no
-                # playable URL — all three mean "cannot be downloaded".
-                "is_available": (
-                    e.get("title") is not None
-                    and e.get("title") not in _UNAVAILABLE_TITLES
-                    and e.get("availability") != "private"
-                ),
-            })
+            entries.append(
+                {
+                    "index": item_index,
+                    "title": title,
+                    "url": raw_url,
+                    "duration_seconds": e.get("duration"),
+                    "thumbnail_url": thumb,
+                    "uploader": e.get("uploader"),
+                    # Flat extraction reports removed entries as title=None or a
+                    # "[Deleted video]"/"[Private video]" placeholder with no
+                    # playable URL — all three mean "cannot be downloaded".
+                    "is_available": (
+                        e.get("title") is not None
+                        and e.get("title") not in _UNAVAILABLE_TITLES
+                        and e.get("availability") != "private"
+                    ),
+                }
+            )
             idx += 1
 
         playlist_title = data.get("title", "Unknown Playlist")
         playlist_thumb = data.get("thumbnail")
         if not playlist_thumb and data.get("thumbnails"):
             thumbs = data.get("thumbnails")
-            if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+            if (
+                isinstance(thumbs, list)
+                and len(thumbs) > 0
+                and isinstance(thumbs[-1], dict)
+            ):
                 playlist_thumb = thumbs[-1].get("url")
         if not playlist_thumb:
             for e in entries:
@@ -229,7 +264,9 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
                 u = e.get("url") or ""
                 m = re.search(r"(?:v=|/v/|youtu\.be/|/embed/)([a-zA-Z0-9_-]{11})", u)
                 if m:
-                    playlist_thumb = f"https://i.ytimg.com/vi/{m.group(1)}/hqdefault.jpg"
+                    playlist_thumb = (
+                        f"https://i.ytimg.com/vi/{m.group(1)}/hqdefault.jpg"
+                    )
                     break
 
         log.info(f"Playlist '{playlist_title}' has {len(entries)} entries")

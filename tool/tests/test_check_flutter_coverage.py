@@ -5,7 +5,9 @@ import pytest
 from tool.check_flutter_coverage import parse_lcov
 
 
-def test_parse_lcov_counts_project_lines_and_ignores_external_sources(tmp_path: Path) -> None:
+def test_parse_lcov_counts_project_lines_and_ignores_external_sources(
+    tmp_path: Path,
+) -> None:
     report = tmp_path / "coverage.info"
     report.write_text(
         """TN:

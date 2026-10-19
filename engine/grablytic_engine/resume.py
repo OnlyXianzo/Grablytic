@@ -30,6 +30,7 @@ _MAX_SCAN_FILES = 2000
 def _attempts_path(cache_dir: str) -> str:
     try:
         from grablytic_engine.paths import get_paths
+
         data_dir = get_paths().get("data_dir")
         if data_dir and os.path.isdir(data_dir):
             return os.path.join(data_dir, _ATTEMPTS_FILENAME)
@@ -82,6 +83,7 @@ def _contained_path(cache_dir: str, filepath: str) -> str | None:
     allowed_roots = [cache_dir]
     try:
         from grablytic_engine.paths import get_paths
+
         p = get_paths()
         for k in ("output_dir", "data_dir", "cache_dir"):
             v = p.get(k)
@@ -108,8 +110,15 @@ def report_resume_attempt(cache_dir: str, filepath: str, success) -> dict:
         real = _contained_path(cache_dir, filepath)
         if real is None:
             return {"success": False, "error_message": "Path escapes cache dir"}
-        ok = bool(success) if not isinstance(success, str) else success.strip().lower() in (
-            "1", "true", "yes",
+        ok = (
+            bool(success)
+            if not isinstance(success, str)
+            else success.strip().lower()
+            in (
+                "1",
+                "true",
+                "yes",
+            )
         )
         with _attempts_lock:
             attempts = _load_attempts(cache_dir)
@@ -222,6 +231,7 @@ def scan_resume_candidates(
         if not os.path.exists(info_path):
             # Split stream tag e.g. <title>.f137.mp4 -> <title>.info.json
             import re
+
             base_no_fmt = re.sub(r"\.f[a-zA-Z0-9_-]+(?=\.[^.]+$|$)", "", clean_stem)
             info_path = base_no_fmt + ".info.json"
             if not os.path.exists(info_path):
@@ -247,16 +257,18 @@ def scan_resume_candidates(
             real = filepath
         rec = strikes.get(real)
         attempts = rec.get("attempts", 0) if isinstance(rec, dict) else 0
-        candidates.append({
-            "filename": entry,
-            "filepath": filepath,
-            "size_bytes": stat.st_size,
-            "age_seconds": int(age),
-            "likely_url": likely_url,
-            "expired": age > max_age,
-            "attempts": attempts,
-            "exhausted": attempts >= max_attempts,
-        })
+        candidates.append(
+            {
+                "filename": entry,
+                "filepath": filepath,
+                "size_bytes": stat.st_size,
+                "age_seconds": int(age),
+                "likely_url": likely_url,
+                "expired": age > max_age,
+                "attempts": attempts,
+                "exhausted": attempts >= max_attempts,
+            }
+        )
 
     # Freshest first so a cap drops the stalest, never the newest. Expired
     # rows stay in the payload (flagged) while they fit — the UI decides.

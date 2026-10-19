@@ -6,13 +6,15 @@ import re
 
 log = get_logger("grablytic_engine.errors")
 
-_VPN_TYPES = frozenset({
-    "ERROR_GEO_BLOCKED",
-    "ERROR_AGE_RESTRICTED",
-    "ERROR_FORBIDDEN",
-    "ERROR_RATE_LIMITED",
-    "ERROR_SSL_BLOCKED",
-})
+_VPN_TYPES = frozenset(
+    {
+        "ERROR_GEO_BLOCKED",
+        "ERROR_AGE_RESTRICTED",
+        "ERROR_FORBIDDEN",
+        "ERROR_RATE_LIMITED",
+        "ERROR_SSL_BLOCKED",
+    }
+)
 
 
 class GrablyticError(Exception):
@@ -72,16 +74,25 @@ _ERROR_MAP_TAIL = {
 # Genuine TLS failures only. Timeouts/DNS/refused/reset are
 # congestion, not censorship — they used to map to ERROR_SSL_BLOCKED and
 # trigger a bogus VPN upsell (SSL_BLOCKED ∈ _VPN_TYPES).
-_SSL_KEYWORDS = frozenset({
-    "ssl", "handshake", "certificate",
-})
+_SSL_KEYWORDS = frozenset(
+    {
+        "ssl",
+        "handshake",
+        "certificate",
+    }
+)
 
-_NETWORK_TRANSIENT = frozenset({
-    "timeout", "timed out",
-    "name or service not known", "dns",
-    "connection refused", "connection reset",
-    "temporary failure",
-})
+_NETWORK_TRANSIENT = frozenset(
+    {
+        "timeout",
+        "timed out",
+        "name or service not known",
+        "dns",
+        "connection refused",
+        "connection reset",
+        "temporary failure",
+    }
+)
 
 _MAX_MESSAGE = 500
 

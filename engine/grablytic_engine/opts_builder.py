@@ -15,28 +15,32 @@ from grablytic_engine.hooks import build_progress_hook, build_postprocessor_hook
 _PLAYLIST_SEGMENT_RE = re.compile(r"^(\d+)(?:([-:])(\d+))?$")
 _SUBTITLE_LANG_RE = re.compile(r"^-?(?:all|[a-zA-Z0-9_-]{1,32})$")
 
-SAFE_COMPAT_OPTIONS = frozenset({
-    "no-live-chat",
-    "no-youtube-channel-redirect",
-    "no-youtube-unavailable-videos",
-    "no-youtube-prefer-utc-upload-date",
-    "prefer-vp9-sort",
-    "format-sort",
-    "format-spec",
-    "multistreams",
-    "no-playlist-metafiles",
-    "no-attach-info-json",
-    "embed-metadata",
-    "seperate-video-versions",
-    "no-clean-infojson",
-    "no-keep-subs",
-    "mtime-by-default",
-    "manifest-filesize-approx",
-    "abort-on-error",
-})
+SAFE_COMPAT_OPTIONS = frozenset(
+    {
+        "no-live-chat",
+        "no-youtube-channel-redirect",
+        "no-youtube-unavailable-videos",
+        "no-youtube-prefer-utc-upload-date",
+        "prefer-vp9-sort",
+        "format-sort",
+        "format-spec",
+        "multistreams",
+        "no-playlist-metafiles",
+        "no-attach-info-json",
+        "embed-metadata",
+        "seperate-video-versions",
+        "no-clean-infojson",
+        "no-keep-subs",
+        "mtime-by-default",
+        "manifest-filesize-approx",
+        "abort-on-error",
+    }
+)
 
 
-def sanitize_playlist_items(val: str | list | tuple | None, max_items: int = 500, max_index: int = 10000) -> str | None:
+def sanitize_playlist_items(
+    val: str | list | tuple | None, max_items: int = 500, max_index: int = 10000
+) -> str | None:
     """Sanitize and validate playlist_items specification.
 
     Prevents flat-fetch DoS attacks and unhandled parser ValueError exceptions.
@@ -115,13 +119,20 @@ def sanitize_ratelimit(val) -> int | None:
         s = val.strip().upper()
         if not s:
             return None
-        units = {"K": 1024, "KB": 1024, "M": 1024**2, "MB": 1024**2, "G": 1024**3, "GB": 1024**3}
+        units = {
+            "K": 1024,
+            "KB": 1024,
+            "M": 1024**2,
+            "MB": 1024**2,
+            "G": 1024**3,
+            "GB": 1024**3,
+        }
         multiplier = 1
         num_str = s
         for unit, mult in sorted(units.items(), key=lambda x: -len(x[0])):
             if s.endswith(unit):
                 multiplier = mult
-                num_str = s[:-len(unit)].strip()
+                num_str = s[: -len(unit)].strip()
                 break
         try:
             num = int(float(num_str) * multiplier)
@@ -198,7 +209,6 @@ def sanitize_subtitleslangs(val: list | tuple | str | None) -> list[str]:
     return valid if valid else ["en"]
 
 
-
 # Output-template fields that are unique per media item. Without one of
 # these, two items with the same title overwrite each other: yt-dlp
 # REPLACES an existing video file by default (`overwrites` defaults to
@@ -225,6 +235,7 @@ def _warn_collision_unsafe_tmpl(tmpl) -> None:
     _collision_warned = True
     try:
         from grablytic_engine.logger import get_logger
+
         get_logger("grablytic_engine.opts_builder").warn(
             "Output template has no per-item unique field "
             "(%(id)s / %(playlist_index)s / %(autonumber)s): two items with "
@@ -258,6 +269,7 @@ def _clamped_int(config, key: str, default: int, lo: int, hi: int) -> int:
     a warning. An unguarded int() turned garbage into a dead thread and
     absurd values into eternal hangs."""
     from grablytic_engine.logger import get_logger
+
     log = get_logger("grablytic_engine.opts_builder")
     try:
         val = int(config.get(key, default))
@@ -280,6 +292,7 @@ def _parse_section_ranges(specs: list) -> list[tuple[float, float]]:
     """
     from yt_dlp.utils import parse_duration
     from grablytic_engine.logger import get_logger
+
     log = get_logger("grablytic_engine.opts_builder")
     ranges: list[tuple[float, float]] = []
     for spec in specs:
@@ -288,12 +301,18 @@ def _parse_section_ranges(specs: list) -> list[tuple[float, float]]:
             if text.startswith("*"):
                 text = text[1:]
             if "-" not in text:
-                log.warn(f"Ignoring malformed download section (want START-END): {spec!r}")
+                log.warn(
+                    f"Ignoring malformed download section (want START-END): {spec!r}"
+                )
                 continue
             start_s, end_s = text.split("-", 1)
             start = parse_duration(start_s.strip())
             end_text = end_s.strip().lower()
-            end = float("inf") if end_text in ("inf", "", "none") else parse_duration(end_text)
+            end = (
+                float("inf")
+                if end_text in ("inf", "", "none")
+                else parse_duration(end_text)
+            )
             if start is None or end is None:
                 log.warn(f"Ignoring unparseable download section: {spec!r}")
                 continue
@@ -311,14 +330,13 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     import re
     from grablytic_engine.logger import get_logger
     from grablytic_engine.paths import get_paths
+
     log = get_logger("grablytic_engine.opts_builder")
     aria_path = get_paths().get("aria2c_path")
     # use_aria2 is the legacy alias — honor either flag.
     aria_on = config.get("aria2c_enabled") or config.get("use_aria2")
     if aria_on and not (
-        aria_path
-        and os.path.isfile(aria_path)
-        and os.access(aria_path, os.X_OK)
+        aria_path and os.path.isfile(aria_path) and os.access(aria_path, os.X_OK)
     ):
         # Silent fallback is undebuggable (user sees aria2c=no with the
         # toggle on and no reason). Name the cause so the Download config
@@ -336,8 +354,12 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     # Re-validate at the exec site (admission in set_paths is not the
     # last word — _paths can hold placeholders or legacy values). isfile +
     # X_OK, same bar as yt-dlp's own _find_exe (F_OK|X_OK).
-    if (aria_on and aria_path and os.path.isfile(aria_path)
-            and os.access(aria_path, os.X_OK)):
+    if (
+        aria_on
+        and aria_path
+        and os.path.isfile(aria_path)
+        and os.access(aria_path, os.X_OK)
+    ):
         # Defense in depth: external_downloader_args is passed verbatim to
         # the child argv (no shell involved), so clamp/validate config values
         # instead of trusting them blindly.
@@ -345,8 +367,7 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
             chunks = max(1, min(16, int(config.get("aria2c_chunks", 5))))
         except (ValueError, TypeError):
             log.warn(
-                f"Ignoring invalid aria2c_chunks value: "
-                f"{config.get('aria2c_chunks')!r}"
+                f"Ignoring invalid aria2c_chunks value: {config.get('aria2c_chunks')!r}"
             )
             chunks = 5
         args = [f"-x{chunks}", "-k1M", "--min-split-size=1M"]
@@ -356,15 +377,11 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
                 # A zero limit throttles the download to nothing —
                 # reject it like any other invalid value.
                 if int(max_speed.rstrip("KkMmGg")) == 0:
-                    log.warn(
-                        f"Ignoring zero aria2c_max_speed value: {max_speed!r}"
-                    )
+                    log.warn(f"Ignoring zero aria2c_max_speed value: {max_speed!r}")
                 else:
                     args.append(f"--max-download-limit={max_speed}")
             else:
-                log.warn(
-                    f"Ignoring invalid aria2c_max_speed value: {max_speed!r}"
-                )
+                log.warn(f"Ignoring invalid aria2c_max_speed value: {max_speed!r}")
         # CVE-2026-50574: Avoid using aria2c for DASH/HLS fragmented manifests
         # Pin the ABSOLUTE validated binary, not the bare name "aria2c".
         # Verified against installed yt-dlp (downloader/__init__.py +
@@ -404,6 +421,7 @@ def build_ydl_opts(
     # output dir. Reject: absolute paths (posix + drive/UNC), `..`
     # segments, NUL bytes, overlong strings. Fail closed to the default.
     from grablytic_engine.logger import get_logger as _get_tmpl_logger
+
     _tmpl_log = _get_tmpl_logger("grablytic_engine.opts_builder")
     tmpl = cfg.get("output_tmpl") or DEFAULT_CFG["output_tmpl"]
     if not _is_safe_outtmpl(tmpl):
@@ -419,6 +437,7 @@ def build_ydl_opts(
     # influence mode selection — otherwise `explicit_audio_format_id: "all"`
     # would both inject the selector and flip the download into extract-audio.
     from grablytic_engine.format_selector import is_safe_format_id as _safe_fmt_id
+
     _raw_vid = cfg.get("explicit_format_id")
     _raw_aid = cfg.get("explicit_audio_format_id")
     explicit_vid = _raw_vid if _safe_fmt_id(_raw_vid) else None
@@ -426,7 +445,11 @@ def build_ydl_opts(
     if (_raw_vid and not explicit_vid) or (_raw_aid and not explicit_aid):
         _tmpl_log.warn("Ignoring unsafe explicit format ID, using auto ladder")
     has_audio_only_explicit = bool(explicit_aid) and not bool(explicit_vid)
-    is_audio = override_audio if override_audio is not None else (bool(cfg.get("audio_only")) or has_audio_only_explicit)
+    is_audio = (
+        override_audio
+        if override_audio is not None
+        else (bool(cfg.get("audio_only")) or has_audio_only_explicit)
+    )
     # The container name reaches yt-dlp (and ffmpeg) verbatim, so it
     # must come from the allowlist. Fail closed to the default.
     container = sanitize_container(
@@ -491,6 +514,7 @@ def build_ydl_opts(
     _ffmpeg = paths.get("ffmpeg_path")
     if _ffmpeg:
         import os as _os
+
         if _os.path.isfile(_ffmpeg) and _os.access(_ffmpeg, _os.X_OK):
             opts["ffmpeg_location"] = _ffmpeg
 
@@ -504,15 +528,18 @@ def build_ydl_opts(
 
     if cfg.get("proxy"):
         from grablytic_engine.url_guard import sanitized_proxy as _sanitized_proxy
+
         _proxy = _sanitized_proxy(cfg.get("proxy"))
         if _proxy:
             opts["proxy"] = _proxy
         else:
             try:
                 from grablytic_engine.logger import get_logger as _get_logger
+
                 _get_logger("grablytic_engine.opts").warn(
                     "Ignoring malformed proxy setting (expected "
-                    "http/https/socks URL with host)")
+                    "http/https/socks URL with host)"
+                )
             except Exception:
                 pass
 
@@ -536,7 +563,11 @@ def build_ydl_opts(
         # (clear_download_archive's delete) keeps strict data_dir
         # containment; yt-dlp's write path here just records video IDs.
         try:
-            _norm = _os.path.abspath(requested) if isinstance(requested, str) and requested.strip() else ""
+            _norm = (
+                _os.path.abspath(requested)
+                if isinstance(requested, str) and requested.strip()
+                else ""
+            )
         except Exception:
             _norm = ""
         if _norm and not _os.path.isdir(_norm):
@@ -545,8 +576,10 @@ def build_ydl_opts(
             opts["download_archive"] = default_archive
             try:
                 from grablytic_engine.logger import get_logger as _get_logger
+
                 _get_logger("grablytic_engine.opts").warn(
-                    "Ignoring invalid archive_path; using default")
+                    "Ignoring invalid archive_path; using default"
+                )
             except Exception:
                 pass
 
@@ -565,6 +598,7 @@ def build_ydl_opts(
     if url and not cfg.get("expand_channel"):
         try:
             from grablytic_engine.playlist import detect_channel
+
             if detect_channel(url):
                 opts["noplaylist"] = True
         except Exception:
@@ -586,6 +620,7 @@ def build_ydl_opts(
     section_ranges = _parse_section_ranges(cfg.get("download_sections") or [])
     if section_ranges:
         from yt_dlp.utils import download_range_func
+
         opts["download_ranges"] = download_range_func(None, section_ranges)
         if cfg.get("force_keyframes_at_cuts"):
             opts["force_keyframes_at_cuts"] = True
@@ -615,6 +650,7 @@ def build_ydl_opts(
         opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
 
         from grablytic_engine.po_token import generate_po_token
+
         po_token = generate_po_token(url) or paths.get("po_token")
         if po_token:
             opts["extractor_args"]["youtube"]["po_token"] = [po_token]
@@ -658,7 +694,13 @@ def build_ydl_opts(
                     "(mjpeg cannot embed in the ipod container)"
                 )
             opts["writethumbnail"] = True
-            pp.append({"key": "FFmpegThumbnailsConvertor", "format": thumb_fmt, "when": "before_dl"})
+            pp.append(
+                {
+                    "key": "FFmpegThumbnailsConvertor",
+                    "format": thumb_fmt,
+                    "when": "before_dl",
+                }
+            )
 
         meta_pp: list[str] = []
         if cfg.get("addmetadata"):
@@ -670,7 +712,9 @@ def build_ydl_opts(
         # -> Metadata -> EmbedThumbnail. Subtitles must be in the container
         # before chapters are cut, and chapter edits must land before tags
         # and cover art are written.
-        subs_enabled = cfg.get("writesubtitles", False) or cfg.get("writeautomaticsub", False)
+        subs_enabled = cfg.get("writesubtitles", False) or cfg.get(
+            "writeautomaticsub", False
+        )
         if subs_enabled:
             # Sidecar download is independent of embedding: a user who
             # wants .srt/.vtt files without embedding still needs these
@@ -684,29 +728,35 @@ def build_ydl_opts(
             # The CLI maps --embed-subs to the FFmpegEmbedSubtitle PP, so we
             # append it explicitly. already_have_subtitle keeps the sidecar
             # file when the user also asked to write subtitles.
-            pp.append({
-                "key": "FFmpegEmbedSubtitle",
-                "already_have_subtitle": bool(cfg.get("writesubtitles", False)),
-            })
+            pp.append(
+                {
+                    "key": "FFmpegEmbedSubtitle",
+                    "already_have_subtitle": bool(cfg.get("writesubtitles", False)),
+                }
+            )
 
         if sponsor_cats:
-            pp.append({
-                "key": "ModifyChapters",
-                "remove_sponsor_segments": list(sponsor_cats),
-            })
+            pp.append(
+                {
+                    "key": "ModifyChapters",
+                    "remove_sponsor_segments": list(sponsor_cats),
+                }
+            )
 
         if meta_pp:
-            pp.append({
-                "key": "FFmpegMetadata",
-                "add_metadata": cfg.get("addmetadata", True),
-                "add_chapters": True,
-                # Iteration 1: yt-dlp's FFmpegMetadataPP defaults
-                # add_infojson='if_exists' (truthy), which would attach the
-                # newly default-ON info.json sidecars into mkv/mka outputs.
-                # Pin off so output bytes stay stable (verified against
-                # installed yt-dlp postprocessor/ffmpeg.py __init__).
-                "add_infojson": False,
-            })
+            pp.append(
+                {
+                    "key": "FFmpegMetadata",
+                    "add_metadata": cfg.get("addmetadata", True),
+                    "add_chapters": True,
+                    # Iteration 1: yt-dlp's FFmpegMetadataPP defaults
+                    # add_infojson='if_exists' (truthy), which would attach the
+                    # newly default-ON info.json sidecars into mkv/mka outputs.
+                    # Pin off so output bytes stay stable (verified against
+                    # installed yt-dlp postprocessor/ffmpeg.py __init__).
+                    "add_infojson": False,
+                }
+            )
 
         if cfg.get("embedthumbnail"):
             # already_have_thumbnail=True keeps the sidecar thumbnail file on
@@ -716,10 +766,12 @@ def build_ydl_opts(
             # lets Library render thumbnails offline/privacy-first and lets
             # downloader.py report a local thumbnail_path (verified against
             # installed yt-dlp postprocessor/embedthumbnail.py).
-            pp.append({
-                "key": "EmbedThumbnail",
-                "already_have_thumbnail": True,
-            })
+            pp.append(
+                {
+                    "key": "EmbedThumbnail",
+                    "already_have_thumbnail": True,
+                }
+            )
 
         if cfg.get("split_chapters"):
             pp.append({"key": "FFmpegSplitChapters"})
@@ -748,8 +800,12 @@ def build_ydl_opts(
         opts["compat_opts"] = compat
 
     if progress_queue is not None:
-        opts["progress_hooks"] = [build_progress_hook(progress_queue, download_id or "", event_callback)]
-        opts["postprocessor_hooks"] = [build_postprocessor_hook(progress_queue, download_id or "", event_callback)]
+        opts["progress_hooks"] = [
+            build_progress_hook(progress_queue, download_id or "", event_callback)
+        ]
+        opts["postprocessor_hooks"] = [
+            build_postprocessor_hook(progress_queue, download_id or "", event_callback)
+        ]
 
     # force_overwrite (completed-download redownload): --force-overwrites
     # semantics per yt-dlp manpage — implies --no-continue so an intact
@@ -766,6 +822,7 @@ def build_ydl_opts(
     # YoutubeDL params: concurrent_fragment_downloads [CLI -N] and
     # socket_timeout). Clamp defensively, same style as aria2c above.
     from grablytic_engine.logger import get_logger as _get_logger
+
     _log = _get_logger("grablytic_engine.opts_builder")
     try:
         frags = max(1, min(16, int(cfg.get("concurrent_fragments", 2))))
@@ -787,8 +844,7 @@ def build_ydl_opts(
             )
     except (ValueError, TypeError):
         _log.warn(
-            f"Ignoring invalid socket_timeout value: "
-            f"{cfg.get('socket_timeout')!r}"
+            f"Ignoring invalid socket_timeout value: {cfg.get('socket_timeout')!r}"
         )
 
     _configure_js_runtime(opts, paths)
@@ -805,6 +861,7 @@ def _is_android_app() -> bool:
     """
     try:
         from java.android import context  # type: ignore[import-not-found]
+
         return context is not None
     except Exception:
         return False
@@ -825,14 +882,20 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
     # libsqlite3.so; Node links cleanly on Bionic). Desktop keeps the
     # yt-dlp-recommended Deno-first order.
     if _is_android_app():
-        node_path = paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
+        node_path = (
+            paths.get("nodejs_path")
+            or os.environ.get("NODE_PATH")
+            or shutil_which("node")
+        )
         if _is_exec(node_path):
             opts["js_runtimes"] = {"node": {"path": node_path}}
             opts["remote_components"] = ["ejs:github"]
             return
 
     # Prioritize explicit deno_path first (e.g. bundled libdeno.so on Android)
-    deno_path = paths.get("deno_path") or os.environ.get("DENO_PATH") or shutil_which("deno")
+    deno_path = (
+        paths.get("deno_path") or os.environ.get("DENO_PATH") or shutil_which("deno")
+    )
     if _is_exec(deno_path):
         opts["js_runtimes"] = {"deno": {"path": deno_path}}
         opts["remote_components"] = ["ejs:github"]
@@ -853,7 +916,9 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
             opts["remote_components"] = ["ejs:github"]
             return
 
-    node_path = paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
+    node_path = (
+        paths.get("nodejs_path") or os.environ.get("NODE_PATH") or shutil_which("node")
+    )
     if _is_exec(node_path):
         opts["js_runtimes"] = {"node": {"path": node_path}}
         opts["remote_components"] = ["ejs:github"]
@@ -868,4 +933,5 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
 
 def shutil_which(cmd):
     import shutil
+
     return shutil.which(cmd)

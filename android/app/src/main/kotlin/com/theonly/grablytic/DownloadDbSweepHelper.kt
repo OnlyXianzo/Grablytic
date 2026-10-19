@@ -155,7 +155,8 @@ object DownloadDbSweepHelper {
         return try {
             withGrablyticDb(dbFile) { db ->
                 val hasTable = db.rawQuery(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='downloads'", null,
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='downloads'",
+                    null,
                 ).use { it.moveToFirst() }
                 if (!hasTable) {
                     Log.i(TAG, "downloads table absent; nothing to sweep")

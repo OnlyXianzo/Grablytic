@@ -4,6 +4,7 @@ import shutil as _shutil
 def _is_abs(path) -> bool:
     """Non-empty absolute-path string (never trust cwd-relative IPC values)."""
     import os as _os
+
     return isinstance(path, str) and bool(path) and _os.path.isabs(path)
 
 
@@ -18,6 +19,7 @@ def _is_executable_file(path) -> bool:
     — only fd-pinning/O_NOFOLLOW would close it, out of scope here).
     """
     import os as _os
+
     return bool(path) and _os.path.isfile(path) and _os.access(path, _os.X_OK)
 
 
@@ -29,6 +31,7 @@ def _is_contained(child, parent) -> bool:
     of `/data/bin` but not the path). Strict: equal-to-parent is False.
     """
     import os as _os
+
     try:
         real_child = _os.path.realpath(child)
         real_parent = _os.path.realpath(parent)
@@ -55,6 +58,7 @@ def _accept_explicit_binary(explicit) -> str | None:
     search order of every other binary).
     """
     import os as _os
+
     if not _is_abs(explicit):
         return None
     resolved = _os.path.realpath(explicit)
@@ -71,6 +75,7 @@ def _resolve_bin(explicit, bin_dir: str, name: str, log=None) -> str:
     for bootstrap, never executed directly (use sites re-check X_OK).
     """
     import os as _os
+
     accepted = _accept_explicit_binary(explicit)
     if accepted:
         return accepted
@@ -85,6 +90,7 @@ def _resolve_bin(explicit, bin_dir: str, name: str, log=None) -> str:
     if system:
         return system
     return bundled
+
 
 _paths = {
     "data_dir": None,
@@ -115,8 +121,10 @@ def set_paths(
 ) -> dict:
     import os
     import sys
+
     try:
         from grablytic_engine.logger import get_logger as _get_logger
+
         _log = _get_logger("grablytic_engine.paths")
     except Exception:
         _log = None
@@ -132,8 +140,11 @@ def set_paths(
     # (bin_dir construction, site-packages containment). A non-absolute
     # root makes every derived path cwd-relative — NLTK #3642 shape — so
     # fail closed BEFORE mutating any process-global state.
-    for _label, _root in (("data_dir", data_dir), ("output_dir", output_dir),
-                          ("cache_dir", cache_dir)):
+    for _label, _root in (
+        ("data_dir", data_dir),
+        ("output_dir", output_dir),
+        ("cache_dir", cache_dir),
+    ):
         if not _is_abs(_root):
             _warn(f"Rejecting paths/set: {_label} is not absolute: {_root!r:.80}")
             return {"success": False, "error": f"{_label} must be an absolute path"}
@@ -143,7 +154,10 @@ def set_paths(
     _paths["cache_dir"] = cache_dir
 
     bin_dir = os.path.join(data_dir, "bin")
-    is_windows = os.name == "nt" or (isinstance(os.environ.get("OS"), str) and "windows" in os.environ.get("OS").lower())
+    is_windows = os.name == "nt" or (
+        isinstance(os.environ.get("OS"), str)
+        and "windows" in os.environ.get("OS").lower()
+    )
     ext = ".exe" if is_windows else ""
 
     # Resolve ffmpeg/aria2c/deno/node: explicit → bundled → system →
@@ -178,8 +192,8 @@ def set_paths(
                 existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
                 parts = existing_ld.split(os.pathsep) if existing_ld else []
                 if d not in parts:
-                    os.environ["LD_LIBRARY_PATH"] = (
-                        d + (os.pathsep + existing_ld if existing_ld else "")
+                    os.environ["LD_LIBRARY_PATH"] = d + (
+                        os.pathsep + existing_ld if existing_ld else ""
                     )
 
     # PATH carries ONLY our own constructed bin_dir — never the
@@ -194,8 +208,11 @@ def set_paths(
     # exec'd directly), so nothing legitimate needs explicit dirs on PATH.
     # Membership is per-component (split on pathsep, normalized) — never a
     # substring search on the joined string (CWE-426).
-    if bin_dir not in [os.path.normcase(os.path.normpath(p)) for p in
-                       os.environ.get("PATH", "").split(os.pathsep) if p]:
+    if bin_dir not in [
+        os.path.normcase(os.path.normpath(p))
+        for p in os.environ.get("PATH", "").split(os.pathsep)
+        if p
+    ]:
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 
     # Prepends site-packages to sys.path to load dynamically updated yt-dlp
@@ -207,11 +224,13 @@ def set_paths(
     # update precedence; shadowing stdlib from here requires write access to
     # app-private data_dir, which is the platform sandbox's job to prevent.
     site_packages = os.path.join(data_dir, "site-packages")
-    if (_is_contained(site_packages, data_dir)
-            and os.path.isdir(os.path.realpath(site_packages))
-            and os.path.realpath(site_packages) not in
-            [os.path.realpath(p) for p in sys.path if p and os.path.isdir(p)]
-            and site_packages not in sys.path):
+    if (
+        _is_contained(site_packages, data_dir)
+        and os.path.isdir(os.path.realpath(site_packages))
+        and os.path.realpath(site_packages)
+        not in [os.path.realpath(p) for p in sys.path if p and os.path.isdir(p)]
+        and site_packages not in sys.path
+    ):
         sys.path.insert(0, site_packages)
 
     # Engine file logging must work on every platform — including Android,
@@ -220,11 +239,13 @@ def set_paths(
     # logging failure can never break path configuration.
     try:
         from grablytic_engine.logger import set_global_log_dir
+
         set_global_log_dir(os.path.join(data_dir, "logs"))
     except Exception:
         pass
     try:
         from grablytic_engine.persistent import init_persistent_logging
+
         init_persistent_logging(os.path.join(data_dir, "logs"))
     except Exception:
         pass

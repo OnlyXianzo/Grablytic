@@ -3,16 +3,15 @@ package com.theonly.grablytic
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import com.chaquo.python.PyObject
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
-import com.chaquo.python.PyObject
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.*
 import java.io.File
 
@@ -35,6 +34,7 @@ open class MainActivity : FlutterActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var methodChannel: MethodChannel? = null
+
     // FIFO of share URLs (was a single nullable var — two rapid
     // shares overwrote, the second silently lost). Bounded: overflow evicts
     // the oldest. Thread-safe for onNewIntent vs method-channel threads.
@@ -50,13 +50,16 @@ open class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 4101
+
         // Backlog bound for rapid shares (mirrors Dart _maxPendingShares).
         private const val MAX_QUEUED_SHARES = 50
+
         // Terminals missed per detach gap (mirrors the engine queue vocabulary).
         private const val MAX_UNDELIVERED_TERMINALS = 50
         private val TERMINAL_EVENTS = setOf("finished", "error", "cancelled")
 
         val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
         @Volatile
         var eventSink: EventChannel.EventSink? = null
         private val terminalLock = Any()
@@ -148,7 +151,10 @@ open class MainActivity : FlutterActivity() {
                 files.forEach { f ->
                     try {
                         android.media.MediaScannerConnection.scanFile(
-                            ctx, arrayOf(f.absolutePath), null, null,
+                            ctx,
+                            arrayOf(f.absolutePath),
+                            null,
+                            null,
                         )
                     } catch (_: Exception) {
                     }
@@ -186,7 +192,10 @@ open class MainActivity : FlutterActivity() {
                 if (!f.isFile) return
                 if (f.extension.lowercase() !in MEDIA_EXTS) return
                 android.media.MediaScannerConnection.scanFile(
-                    ctx, arrayOf(f.absolutePath), null, null,
+                    ctx,
+                    arrayOf(f.absolutePath),
+                    null,
+                    null,
                 )
             } catch (_: Exception) {
             }
@@ -355,7 +364,9 @@ open class MainActivity : FlutterActivity() {
                 val o = org.json.JSONObject(eventJson)
                 if (o.optString("type") == "event" && o.optString("event") in TERMINAL_EVENTS) {
                     o.optString("download_id").takeIf { it.isNotEmpty() }
-                } else null
+                } else {
+                    null
+                }
             } catch (_: Exception) { null }
 
             try {
@@ -450,7 +461,7 @@ open class MainActivity : FlutterActivity() {
                                             "download_complete",
                                             "Download complete",
                                             android.app.NotificationManager.IMPORTANCE_HIGH,
-                                        ).apply { description = "Alerts when a download finishes" }
+                                        ).apply { description = "Alerts when a download finishes" },
                                     )
                                 }
                             }
@@ -458,7 +469,9 @@ open class MainActivity : FlutterActivity() {
                                 val launch = packageManager.getLaunchIntentForPackage(packageName)
                                 val target = launch ?: android.content.Intent(this, MainActivity::class.java)
                                 android.app.PendingIntent.getActivity(
-                                    this, 0, target,
+                                    this,
+                                    0,
+                                    target,
                                     android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
                                 )
                             } catch (_: Exception) { null }
@@ -844,7 +857,11 @@ open class MainActivity : FlutterActivity() {
                             val python = py ?: return@launch
                             val engine = python.getModule("grablytic_engine")
                             val reportResult = engine.callAttr(
-                                "report_resume_attempt", cacheDir, filepath, success)
+                                "report_resume_attempt",
+                                cacheDir,
+                                filepath,
+                                success,
+                            )
                             val jsonStr = pyJson(reportResult)
                             withContext(Dispatchers.Main) { result.success(jsonStr) }
                         } catch (e: Exception) {
@@ -1041,7 +1058,7 @@ open class MainActivity : FlutterActivity() {
                             "system" to main,
                             "light" to light,
                             "dark" to dark,
-                            "legacy" to legacy
+                            "legacy" to legacy,
                         )
                         val target = all[variant] ?: main
                         // Enable target first, then disable others (DONT_KILL_APP to avoid process kill)
@@ -1064,7 +1081,7 @@ open class MainActivity : FlutterActivity() {
                             "system" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
                             "light" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")),
                             "dark" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")),
-                            "legacy" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy"))
+                            "legacy" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")),
                         )
                         val enabled = states.entries.firstOrNull { it.value == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }?.key
                             ?: if (states["system"] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) "system" else "system"
@@ -1093,7 +1110,7 @@ open class MainActivity : FlutterActivity() {
                     }
                     this.events = null
                 }
-            }
+            },
         )
     }
 
@@ -1161,6 +1178,7 @@ open class MainActivity : FlutterActivity() {
         if (!safeName.endsWith(".log", ignoreCase = true)) safeName += ".log"
         val maxBytes = 5 * 1024 * 1024L
         val srcLen = try { src.length() } catch (_: Exception) { 0L }
+
         // Tail-export large files (ytdlnis truncates match-filter noise for
         // the same reason: the newest bytes are the actionable ones).
         // Returns null when the whole file fits, else (header, offset).

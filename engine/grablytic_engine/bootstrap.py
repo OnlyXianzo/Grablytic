@@ -68,6 +68,7 @@ def _is_android_app() -> bool:
     """
     try:
         from java.android import context  # type: ignore[import-not-found]
+
         return context is not None
     except Exception:
         return False
@@ -228,6 +229,7 @@ def _verify_binary_against_manifest(cache_dir: str, dest_path: str) -> bool:
 def _get_yt_dlp_version() -> str:
     try:
         from yt_dlp import version as yt_dlp_version
+
         return yt_dlp_version.__version__
     except (ImportError, AttributeError):
         return "unknown"
@@ -300,7 +302,7 @@ def _parse_sha256_file(content: str) -> dict[str, str]:
 def _extract_version_from_tag(tag: str) -> str:
     v = tag.lstrip("v")
     if v.startswith("release-"):
-        v = v[len("release-"):]
+        v = v[len("release-") :]
     return v
 
 
@@ -310,6 +312,7 @@ def _is_version_below(have: str | None, floor: str) -> bool:
     Non-parseable values ("unknown", dates, suffixed builds) return False —
     an advisory must never brick on a version string it cannot read.
     """
+
     def _parts(v: str) -> list[int] | None:
         try:
             chunks = []
@@ -401,9 +404,7 @@ def _safe_extract_tar(archive_path: str, extract_dir: str) -> None:
             if clean is None or not _is_within_directory(
                 extract_dir, os.path.join(extract_dir, clean)
             ):
-                raise ValueError(
-                    f"Security Violation: Tar Slip detected in {m.name!r}"
-                )
+                raise ValueError(f"Security Violation: Tar Slip detected in {m.name!r}")
         if hasattr(tarfile, "data_filter"):
             t.extractall(extract_dir, filter="data")
         else:
@@ -426,9 +427,10 @@ def _download_and_extract_binary(
             os.chmod(tmpdir, 0o700)
         archive_path = os.path.join(tmpdir, "downloaded_asset")
 
-        with urllib.request.urlopen(req, timeout=15) as response, open(
-            archive_path, "wb"
-        ) as out_file:
+        with (
+            urllib.request.urlopen(req, timeout=15) as response,
+            open(archive_path, "wb") as out_file,
+        ):
             shutil.copyfileobj(response, out_file)
 
         sha256_actual = _calculate_sha256(archive_path)
@@ -489,16 +491,21 @@ def _probe_report(bin_path: str, timeout: int = 8) -> dict:
     when a bundled binary refuses to run on-device (linker errors,
     permission denials) — version alone ("None") says nothing. Never raises.
     """
-    report: dict = {"ok": False, "version": None, "returncode": None,
-                    "output": ""}
+    report: dict = {"ok": False, "version": None, "returncode": None, "output": ""}
     try:
         bin_name = os.path.basename(bin_path).lower()
         # FFmpeg and FFprobe CLI syntax requires '-version' (single hyphen).
         # Passing GNU-style '--version' causes unrecognized option and exit code 8.
-        version_arg = "-version" if ("ffmpeg" in bin_name or "ffprobe" in bin_name) else "--version"
+        version_arg = (
+            "-version"
+            if ("ffmpeg" in bin_name or "ffprobe" in bin_name)
+            else "--version"
+        )
         proc = subprocess.run(
             [bin_path, version_arg],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         report["returncode"] = proc.returncode
         out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
@@ -592,9 +599,7 @@ def _bootstrap_github_binary(
         if not expected_sha:
             raise ValueError(f"No expected SHA-256 checksum found for {archive_name}")
 
-        _download_and_extract_binary(
-            download_url, expected_sha, dest_path, cache_dir
-        )
+        _download_and_extract_binary(download_url, expected_sha, dest_path, cache_dir)
 
         if os.path.isfile(dest_path):
             # Record the extracted binary's SHA in the manifest so
@@ -647,7 +652,9 @@ def _install_yt_dlp_via_uv(uv_bin: str, data_dir: str) -> bool:
     engine_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     req_path = os.path.join(engine_dir, "requirements.txt")
     if not os.path.isfile(req_path):
-        req_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+        req_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "requirements.txt"
+        )
     if not os.path.isfile(req_path):
         return False
     try:
@@ -664,6 +671,7 @@ def _install_yt_dlp_via_uv(uv_bin: str, data_dir: str) -> bool:
 
 def _detect_js_runtime() -> dict:
     from grablytic_engine.po_token import detect_js_runtime as _pot_detect
+
     return _pot_detect()
 
 
@@ -752,9 +760,7 @@ def bootstrap() -> dict:
     lock = threading.Lock()
 
     def _worker(name, repo, substring, dest):
-        ok, ver = _bootstrap_github_binary(
-            name, repo, substring, dest, cache_dir
-        )
+        ok, ver = _bootstrap_github_binary(name, repo, substring, dest, cache_dir)
         with lock:
             binary_results[name] = (ok, ver)
 
@@ -822,9 +828,7 @@ def bootstrap() -> dict:
     deno_ok, deno_version = _eval_binary(
         "deno", paths.get("deno_path"), deno_ok, deno_version
     )
-    node_ok, node_version = _eval_binary(
-        "node", paths.get("nodejs_path"), False, None
-    )
+    node_ok, node_version = _eval_binary("node", paths.get("nodejs_path"), False, None)
 
     # One line proving the child-process environment yt-dlp will inherit.
     # If a bundled .so later fails to spawn, compare: missing/wrong
@@ -835,8 +839,11 @@ def bootstrap() -> dict:
     )
     # Disk snapshot: ENOSPC is a top-3 download failure cause and is
     # otherwise invisible until a write fails mid-transfer.
-    for label, d in (("data", data_dir), ("cache", cache_dir),
-                     ("output", paths.get("output_dir") or data_dir)):
+    for label, d in (
+        ("data", data_dir),
+        ("cache", cache_dir),
+        ("output", paths.get("output_dir") or data_dir),
+    ):
         try:
             usage = shutil.disk_usage(d)
             log.info(
@@ -852,6 +859,7 @@ def bootstrap() -> dict:
     if is_android:
         try:
             import quickjs  # type: ignore[import-untyped]
+
             quickjs_ok = True
         except ImportError:
             pass
@@ -903,8 +911,7 @@ def bootstrap() -> dict:
         """Path plus failed-probe diagnostics (the on-device exec verdict)."""
         rep = probe_reports.get(name)
         if rep is not None and not rep["ok"]:
-            return (f"{path} :: probe rc={rep['returncode']}: "
-                    f"{rep['output'][:160]}")
+            return f"{path} :: probe rc={rep['returncode']}: {rep['output'][:160]}"
         return path
 
     binaries = [
@@ -942,8 +949,11 @@ def bootstrap() -> dict:
             "detail": (
                 "python-quickjs binding"
                 if quickjs_ok
-                else ("No Chaquopy wheel on Android; Deno is primary"
-                      if is_android else "pip install python-quickjs")
+                else (
+                    "No Chaquopy wheel on Android; Deno is primary"
+                    if is_android
+                    else "pip install python-quickjs"
+                )
             ),
         },
         {
@@ -1008,6 +1018,7 @@ def _ffmpeg_serialization_status() -> dict:
     """FFmpeg gate health, tolerant of an engine module that lacks it."""
     try:
         from grablytic_engine.downloader import ffmpeg_serialization_status
+
         return ffmpeg_serialization_status()
     except Exception as exc:  # pragma: no cover - defensive
         return {"installed": False, "seam": None, "error": str(exc)[:200]}
@@ -1030,14 +1041,22 @@ def update_check() -> dict:
     updates_queued = []
 
     check_targets = [
-        ("ffmpeg", GITHUB_REPOS["ffmpeg"],
-         _get_asset_substring("ffmpeg", platform_key),
-         paths.get("ffmpeg_path")),
+        (
+            "ffmpeg",
+            GITHUB_REPOS["ffmpeg"],
+            _get_asset_substring("ffmpeg", platform_key),
+            paths.get("ffmpeg_path"),
+        ),
     ]
     if not is_android:
-        check_targets.append(("deno", GITHUB_REPOS["deno"],
-                              _get_asset_substring("deno", platform_key),
-                              paths.get("deno_path")))
+        check_targets.append(
+            (
+                "deno",
+                GITHUB_REPOS["deno"],
+                _get_asset_substring("deno", platform_key),
+                paths.get("deno_path"),
+            )
+        )
 
     for name, repo, asset_sub, bin_path in check_targets:
         current_sha = ""
@@ -1056,14 +1075,18 @@ def update_check() -> dict:
                 if sha_url:
                     req = urllib.request.Request(
                         sha_url,
-                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                        },
                     )
                     with urllib.request.urlopen(req, timeout=10) as resp:
                         sha_content = resp.read().decode("utf-8")
                     sha_map = _parse_sha256_file(sha_content)
-                    latest_sha = sha_map.get(archive_name, "") or sha_map.get(
-                        f"./{archive_name}", ""
-                    ) or sha_map.get(f"*{archive_name}", "")
+                    latest_sha = (
+                        sha_map.get(archive_name, "")
+                        or sha_map.get(f"./{archive_name}", "")
+                        or sha_map.get(f"*{archive_name}", "")
+                    )
         except Exception:
             pass
 
@@ -1074,13 +1097,15 @@ def update_check() -> dict:
         if installed_sha and latest_sha and installed_sha != latest_sha:
             update_available = True
 
-        binaries_status.append({
-            "name": name,
-            "current_sha256": current_sha,
-            "manifest_sha256": latest_sha,
-            "installed_archive_sha256": installed_sha,
-            "update_available": update_available,
-        })
+        binaries_status.append(
+            {
+                "name": name,
+                "current_sha256": current_sha,
+                "manifest_sha256": latest_sha,
+                "installed_archive_sha256": installed_sha,
+                "update_available": update_available,
+            }
+        )
         if update_available:
             updates_queued.append(name)
 

@@ -18,6 +18,7 @@ import pytest
 
 def _dl():
     import grablytic_engine.downloader as dl_mod
+
     return dl_mod
 
 
@@ -133,11 +134,13 @@ def test_job_presumes_stopped_and_releases_the_slot(_clean_pool):
         "event_callback": None,
         "result_queue": None,
     }
-    dl._run_watchdog_job({
-        "download_id": "wedged",
-        "thread": dl._active_downloads["wedged"]["thread"],
-        "deadline": time.monotonic() - 1,  # already expired
-    })
+    dl._run_watchdog_job(
+        {
+            "download_id": "wedged",
+            "thread": dl._active_downloads["wedged"]["thread"],
+            "deadline": time.monotonic() - 1,  # already expired
+        }
+    )
     assert dl._active_downloads["wedged"].get("finished_at") is not None
     dl._active_downloads.pop("wedged", None)
 
@@ -155,11 +158,13 @@ def test_exited_worker_leaves_the_slot_alone(_clean_pool):
         "event_callback": None,
         "result_queue": None,
     }
-    dl._run_watchdog_job({
-        "download_id": "exited",
-        "thread": dl._active_downloads["exited"]["thread"],
-        "deadline": time.monotonic() - 1,
-    })
+    dl._run_watchdog_job(
+        {
+            "download_id": "exited",
+            "thread": dl._active_downloads["exited"]["thread"],
+            "deadline": time.monotonic() - 1,
+        }
+    )
     assert dl._active_downloads["exited"].get("finished_at") is None
     dl._active_downloads.pop("exited", None)
 
@@ -174,15 +179,15 @@ def test_stopping_the_pool_retires_its_workers(_clean_pool):
     deadline = time.monotonic() + 3.0
     while time.monotonic() < deadline:
         alive = [
-            t for t in threading.enumerate()
+            t
+            for t in threading.enumerate()
             if "cancel-watchdog" in t.name and t.is_alive()
         ]
         if not alive:
             break
         time.sleep(0.1)
     alive = [
-        t for t in threading.enumerate()
-        if "cancel-watchdog" in t.name and t.is_alive()
+        t for t in threading.enumerate() if "cancel-watchdog" in t.name and t.is_alive()
     ]
     assert alive == []
     _drain(dl)

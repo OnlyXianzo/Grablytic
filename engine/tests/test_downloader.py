@@ -20,10 +20,13 @@ def _fake_ffmpeg(tmp_path):
 @pytest.fixture()
 def _env(tmp_path, monkeypatch):
     import grablytic_engine.paths as paths_mod
+
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
     set_paths(
-        data_dir=str(tmp_path), output_dir=str(tmp_path),
-        ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+        data_dir=str(tmp_path),
+        output_dir=str(tmp_path),
+        ffmpeg_path=_fake_ffmpeg(tmp_path),
+        cache_dir=str(tmp_path),
     )
     yield
     dl_mod._active_downloads.clear()
@@ -39,7 +42,8 @@ class TestAwareTimestamps:
         monkeypatch.setattr(dl_mod, "YoutubeDL", _boom)
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url="https://x.test/v", download_id="aware1",
+            url="https://x.test/v",
+            download_id="aware1",
             result_queue=res_q,
         )
         res = res_q.get(timeout=10)
@@ -55,7 +59,8 @@ class TestAwareTimestamps:
         monkeypatch.setattr(dl_mod, "YoutubeDL", _boom)
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url="https://x.test/v", download_id="vpn1",
+            url="https://x.test/v",
+            download_id="vpn1",
             result_queue=res_q,
         )
         res = res_q.get(timeout=10)
@@ -74,7 +79,9 @@ class TestYDLoggerAndCompletion:
         assert "/path/to/merged.mkv" in logger.output_files
 
     @pytest.mark.unit
-    def test_already_downloaded_file_reports_disk_filesize_and_path(self, _env, tmp_path, monkeypatch):
+    def test_already_downloaded_file_reports_disk_filesize_and_path(
+        self, _env, tmp_path, monkeypatch
+    ):
         # Create a pre-existing target file on disk
         target_file = tmp_path / "existing_video.mkv"
         target_file.write_bytes(b"A" * 10240)  # 10 KB file
@@ -91,14 +98,17 @@ class TestYDLoggerAndCompletion:
             def download(self, urls):
                 # Simulate yt-dlp skipping download because file already exists
                 if self.logger:
-                    self.logger.debug(f"[download] {target_file} has already been downloaded")
+                    self.logger.debug(
+                        f"[download] {target_file} has already been downloaded"
+                    )
                     self.logger.info(f'[Metadata] Adding metadata to "{target_file}"')
                 return 0
 
         monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYoutubeDL)
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url="https://x.test/v", download_id="existing1",
+            url="https://x.test/v",
+            download_id="existing1",
             result_queue=res_q,
         )
         res = res_q.get(timeout=10)
@@ -158,20 +168,28 @@ class TestFindThumbnailPath:
 
             def download(self, urls):
                 if self.logger:
-                    self.logger.debug(f"[download] {target_file} has already been downloaded")
+                    self.logger.debug(
+                        f"[download] {target_file} has already been downloaded"
+                    )
                 return 0
 
         monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYoutubeDL)
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url="https://x.test/v", download_id="thumb1",
+            url="https://x.test/v",
+            download_id="thumb1",
             result_queue=res_q,
-            event_callback=type("CB", (), {
-                "onEvent": lambda self, s: seen_events.append(s),
-            })(),
+            event_callback=type(
+                "CB",
+                (),
+                {
+                    "onEvent": lambda self, s: seen_events.append(s),
+                },
+            )(),
         )
         import json as _json
-        finished = [ _json.loads(s) for s in seen_events if '"finished"' in s]
+
+        finished = [_json.loads(s) for s in seen_events if '"finished"' in s]
         assert finished, "expected a terminal finished callback event"
         assert finished[0]["thumbnail_path"] == str(sidecar)
         assert finished[0]["file_path"] == str(target_file)
@@ -191,7 +209,8 @@ class TestSafeUrlScoping:
 
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url=_SplitBoom("https://x.test/v"), download_id="safeurl1",
+            url=_SplitBoom("https://x.test/v"),
+            download_id="safeurl1",
             result_queue=res_q,
         )
         res = res_q.get(timeout=10)
@@ -236,10 +255,14 @@ class TestPublicQueueScan:
         q = _PublicOnlyQueue()
         assert not hasattr(q, "mutex") and not hasattr(q, "queue")
         for i, name in enumerate(["a.mkv", "b.mkv", "c.mkv"]):
-            q.put(_json.dumps({
-                "filesize_bytes": (i + 1) * 1000,
-                "filename": f"/tmp/{name}",
-            }))
+            q.put(
+                _json.dumps(
+                    {
+                        "filesize_bytes": (i + 1) * 1000,
+                        "filename": f"/tmp/{name}",
+                    }
+                )
+            )
         size, path = dl_mod._last_known_file_info(q)
         assert size == 3000
         assert path == "/tmp/c.mkv"
@@ -269,13 +292,15 @@ class TestErrorTaxonomy:
 
             def download(self, urls):
                 self.logger.error(
-                    "[soundcloud] 159813448: Requested format is not available")
+                    "[soundcloud] 159813448: Requested format is not available"
+                )
                 return 0
 
         monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYDL)
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url="https://soundcloud.com/x/y", download_id="tax1",
+            url="https://soundcloud.com/x/y",
+            download_id="tax1",
             result_queue=res_q,
         )
         res = res_q.get(timeout=10)
@@ -306,7 +331,8 @@ class TestDownloadPathsAndFFmpegSafety:
         monkeypatch.setattr(dl_mod, "YoutubeDL", FakeYDL)
         res_q: queue.Queue = queue.Queue()
         dl_mod.download_thread(
-            url="https://x.test/safe_paths", download_id="safe_paths_1",
+            url="https://x.test/safe_paths",
+            download_id="safe_paths_1",
             result_queue=res_q,
         )
         res = res_q.get(timeout=10)
@@ -320,6 +346,7 @@ class TestDownloadPathsAndFFmpegSafety:
         """Verify that _ensure_ffmpeg_serialized wraps real_run_ffmpeg
         with a mutual exclusion semaphore."""
         import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
+
         dl_mod._ensure_ffmpeg_serialized()
         assert dl_mod._ffmpeg_patched is True
         assert hasattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg")

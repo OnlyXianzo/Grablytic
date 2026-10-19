@@ -123,6 +123,7 @@ def load_site_profiles_from_url(url: str) -> dict:
             # Empty or fully-rejected payload: keep the previous cache.
             try:
                 from grablytic_engine.logger import get_logger
+
                 get_logger("grablytic_engine.site_profiles").warn(
                     "Remote site profiles were empty or unsafe; keeping the "
                     "previous profiles"
@@ -182,8 +183,9 @@ def save_profiles_to_disk(profiles: dict, path: str) -> bool:
     try:
         directory = os.path.dirname(os.path.abspath(path)) or "."
         os.makedirs(directory, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".profiles-",
-                                        suffix=".tmp")
+        fd, tmp_path = tempfile.mkstemp(
+            dir=directory, prefix=".profiles-", suffix=".tmp"
+        )
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(profiles, f, indent=2)
             f.flush()

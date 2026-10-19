@@ -81,6 +81,7 @@ class DownloadService : Service() {
         Thread(task, "GrablyticPowerLocks").apply { isDaemon = true }
     }
     private val powerScheduleLock = Any()
+
     @Volatile private var powerRenewal: ScheduledFuture<*>? = null
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
@@ -133,15 +134,26 @@ class DownloadService : Service() {
 
     fun handleStart(id: String, title: String, showAlert: Boolean) {
         lockRenewalHandler.removeCallbacks(idleStopRunnable)
-        synchronized(stateLock) { active[id] = title; alertPrefs[id] = showAlert }
+        synchronized(stateLock) {
+            active[id] = title
+            alertPrefs[id] = showAlert
+        }
         promote()
         updateLocks()
     }
 
-    fun handleUpdate(id: String, percent: Int, stage: String?, speedBps: Long,
-                     downloadedBytes: Long, totalBytes: Long) {
+    fun handleUpdate(
+        id: String,
+        percent: Int,
+        stage: String?,
+        speedBps: Long,
+        downloadedBytes: Long,
+        totalBytes: Long,
+    ) {
         val shouldPromote = synchronized(stateLock) {
-            if (!active.containsKey(id)) false else {
+            if (!active.containsKey(id)) {
+                false
+            } else {
                 val p = prog.getOrPut(id) { Prog() }
                 if (percent in 0..100) p.percent = percent
                 if (stage != null) p.stage = stage else if (p.percent in 0..99) p.stage = null
@@ -162,26 +174,37 @@ class DownloadService : Service() {
     fun handleFinished(id: String) {
         val (title, showAlert) = synchronized(stateLock) {
             val result = (active[id] ?: id) to (alertPrefs[id] ?: true)
-            active.remove(id); prog.remove(id); alertPrefs.remove(id)
+            active.remove(id)
+            prog.remove(id)
+            alertPrefs.remove(id)
             result
         }
         if (showAlert) postTerminalAlert(id, title, succeeded = true, detail = null)
-        updateLocks(); checkIdleStop()
+        updateLocks()
+        checkIdleStop()
     }
 
     fun handleFailed(id: String, detail: String?) {
         val (title, showAlert) = synchronized(stateLock) {
             val result = (active[id] ?: id) to (alertPrefs[id] ?: true)
-            active.remove(id); prog.remove(id); alertPrefs.remove(id)
+            active.remove(id)
+            prog.remove(id)
+            alertPrefs.remove(id)
             result
         }
         if (showAlert) postTerminalAlert(id, title, succeeded = false, detail = detail)
-        updateLocks(); checkIdleStop()
+        updateLocks()
+        checkIdleStop()
     }
 
     fun handleDone(id: String) {
-        synchronized(stateLock) { active.remove(id); prog.remove(id); alertPrefs.remove(id) }
-        updateLocks(); checkIdleStop()
+        synchronized(stateLock) {
+            active.remove(id)
+            prog.remove(id)
+            alertPrefs.remove(id)
+        }
+        updateLocks()
+        checkIdleStop()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -224,7 +247,10 @@ class DownloadService : Service() {
             ACTION_STOP -> {
                 lockRenewalHandler.removeCallbacks(idleStopRunnable)
                 synchronized(stateLock) {
-                    active.clear(); prog.clear(); alertPrefs.clear(); lastShownId = null
+                    active.clear()
+                    prog.clear()
+                    alertPrefs.clear()
+                    lastShownId = null
                 }
                 releaseLocks()
                 stopSelf()
@@ -250,7 +276,7 @@ class DownloadService : Service() {
                         id,
                         title,
                         succeeded = false,
-                        detail = "Download paused: system background limit reached (re-open app to resume)"
+                        detail = "Download paused: system background limit reached (re-open app to resume)",
                     )
                 }
             }
@@ -311,7 +337,10 @@ class DownloadService : Service() {
      * stopSelf sites + death; death itself is binder-cleaned by the OS).
      */
     private fun updateLocks() {
-        if (activeSnapshot().isEmpty()) { releaseLocks(); return }
+        if (activeSnapshot().isEmpty()) {
+            releaseLocks()
+            return
+        }
         try { powerLockExecutor.execute { renewWakeLockOnExecutor() } } catch (_: Exception) {}
         synchronized(powerScheduleLock) {
             if (powerRenewal == null || powerRenewal?.isCancelled == true) {
@@ -338,10 +367,11 @@ class DownloadService : Service() {
                     as? android.net.wifi.WifiManager ?: return
                 // FULL is non-functional since API 29; HIGH_PERF is remapped
                 // on API 34+, so branch explicitly instead of relying on it.
-                val mode = if (Build.VERSION.SDK_INT >= 34)
+                val mode = if (Build.VERSION.SDK_INT >= 34) {
                     android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                else
+                } else {
                     android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
                 wifiLock = wm.createWifiLock(mode, WIFI_TAG)
                 wifiLock?.setReferenceCounted(false)
             } catch (_: Exception) { wifiLock = null }
@@ -349,7 +379,10 @@ class DownloadService : Service() {
     }
 
     private fun releaseLocks() {
-        synchronized(powerScheduleLock) { powerRenewal?.cancel(false); powerRenewal = null }
+        synchronized(powerScheduleLock) {
+            powerRenewal?.cancel(false)
+            powerRenewal = null
+        }
         try {
             if (!powerLockExecutor.isShutdown) powerLockExecutor.execute { releaseLocksOnExecutor() }
         } catch (_: Exception) {}
@@ -394,7 +427,9 @@ class DownloadService : Service() {
         }
         val target = launch ?: Intent(this, MainActivity::class.java)
         return PendingIntent.getActivity(
-            this, 0, target,
+            this,
+            0,
+            target,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -447,7 +482,9 @@ class DownloadService : Service() {
     private fun buildNotification(): Notification {
         val openApp = openAppIntent()
         val cancelAll = PendingIntent.getService(
-            this, 1, Intent(this, DownloadService::class.java).setAction(ACTION_STOP),
+            this,
+            1,
+            Intent(this, DownloadService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         // Show the most recently updated download; title collapses under
@@ -542,8 +579,10 @@ class DownloadService : Service() {
         private const val TAG = "DownloadService"
         private const val WAKE_TAG = "Grablytic:Download"
         private const val WIFI_TAG = "Grablytic:DownloadWifi"
+
         // Backstop: past the dataSync quota the service is demoted anyway.
         private const val WAKE_TIMEOUT_MS = 6L * 3600L * 1000L
+
         // Renew before expiry so a legitimate long hold is never cut.
         private const val WAKE_RENEW_MS = 5L * 3600L * 1000L
         const val ACTION_START = "com.theonly.grablytic.download.START"

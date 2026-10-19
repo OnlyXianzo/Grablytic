@@ -11,15 +11,18 @@ import pytest
 
 def _main():
     import grablytic_engine.__main__ as main_mod
+
     return main_mod
 
 
 def _contract():
     import grablytic_engine.contract as contract_mod
+
     return contract_mod
 
 
 # ──────────────────────────────────────────────────────────── the contract
+
 
 @pytest.mark.unit
 def test_contract_info_describes_the_contract():
@@ -45,22 +48,26 @@ def test_every_contract_method_has_a_handler():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("raw,expected", [
-    (1, (1, 0)),
-    ("1", (1, 0)),
-    ("1.0", (1, 0)),
-    ("2.3", (2, 3)),
-    (None, None),
-    ("", None),
-    ("x", None),
-    (True, None),
-    (1.5, None),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (1, (1, 0)),
+        ("1", (1, 0)),
+        ("1.0", (1, 0)),
+        ("2.3", (2, 3)),
+        (None, None),
+        ("", None),
+        ("x", None),
+        (True, None),
+        (1.5, None),
+    ],
+)
 def test_version_parsing(raw, expected):
     assert _contract().parse_version(raw) == expected
 
 
 # ─────────────────────────────────────────────────────────── negotiation
+
 
 @pytest.mark.unit
 def test_a_request_without_a_version_is_accepted():
@@ -97,6 +104,7 @@ def test_a_garbage_version_is_refused():
 
 # ───────────────────────────────────────────────────────── the dispatch
 
+
 @pytest.mark.unit
 def test_an_unknown_method_is_reported():
     main = _main()
@@ -119,8 +127,7 @@ def test_a_missing_required_parameter_is_reported():
 @pytest.mark.unit
 def test_a_null_required_parameter_is_reported():
     main = _main()
-    res = main._dispatch_method("download/start",
-                                {"url": None, "download_id": "x"})
+    res = main._dispatch_method("download/start", {"url": None, "download_id": "x"})
     assert res["error_type"] == "ERROR_INVALID_PARAM"
 
 

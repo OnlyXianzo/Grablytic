@@ -29,13 +29,15 @@ _LOCAL_HOSTS = {"localhost", "localhost.", "0.0.0.0", "::", "::1"}
 # Cloud metadata endpoints, blocked BY NAME before any DNS lookup. The
 # numeric address is blocked too (see _ip_is_blocked), but a hostname
 # that resolves to it must never reach the resolver at all.
-_METADATA_HOSTNAMES = frozenset({
-    "metadata",
-    "metadata.google.internal",
-    "metadata.goog",
-    "instance-data",
-    "instance-data.ec2.internal",
-})
+_METADATA_HOSTNAMES = frozenset(
+    {
+        "metadata",
+        "metadata.google.internal",
+        "metadata.goog",
+        "instance-data",
+        "instance-data.ec2.internal",
+    }
+)
 
 # `socket.getaddrinfo` has no timeout, so resolver calls run in deadline-bound
 # threads. A small semaphore limits stuck workers when the system resolver hangs.
@@ -214,7 +216,6 @@ def _host_is_blocked(host: str, *, fail_closed_dns: bool) -> bool:
     return False
 
 
-
 def _resolve_address_records(host: str, port: int):
     """Resolve once with a deadline, preserving the exact socket addresses.
 
@@ -298,7 +299,11 @@ def is_safe_profile_url(url) -> bool:
         parts = urlparse(text)
     except Exception:
         return False
-    if parts.scheme.lower() not in _ALLOWED_MEDIA_SCHEMES or parts.username or parts.password:
+    if (
+        parts.scheme.lower() not in _ALLOWED_MEDIA_SCHEMES
+        or parts.username
+        or parts.password
+    ):
         return False
     host = parts.hostname or ""
     return bool(host) and not _host_is_blocked(host, fail_closed_dns=True)
@@ -319,7 +324,12 @@ def _validated_socket_addresses(url: str):
         port = parts.port or (443 if scheme == "https" else 80)
     except Exception:
         return ()
-    if scheme not in _ALLOWED_MEDIA_SCHEMES or not host or parts.username or parts.password:
+    if (
+        scheme not in _ALLOWED_MEDIA_SCHEMES
+        or not host
+        or parts.username
+        or parts.password
+    ):
         return ()
 
     normalized = host.strip().lower().rstrip(".")
@@ -346,8 +356,24 @@ def _validated_socket_addresses(url: str):
         if _ip_is_blocked(literal):
             return ()
         if literal.version == 4:
-            return ((socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (str(literal), port)),)
-        return ((socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (str(literal), port, 0, 0)),)
+            return (
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    (str(literal), port),
+                ),
+            )
+        return (
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                (str(literal), port, 0, 0),
+            ),
+        )
 
     records = _resolve_address_records(host, port)
     if not records or len(records) > _MAX_PINNED_DNS_ANSWERS:
@@ -357,7 +383,10 @@ def _validated_socket_addresses(url: str):
     for record in records:
         try:
             family, socktype, protocol, canonical_name, sockaddr = record
-            if family not in (socket.AF_INET, socket.AF_INET6) or socktype != socket.SOCK_STREAM:
+            if (
+                family not in (socket.AF_INET, socket.AF_INET6)
+                or socktype != socket.SOCK_STREAM
+            ):
                 continue
             if not isinstance(sockaddr, tuple) or not sockaddr:
                 return ()
@@ -467,7 +496,9 @@ def _request_addresses(request):
 class _PinnedHTTPHandler(urllib.request.HTTPHandler):
     def http_open(self, request):
         addresses = _request_addresses(request)
-        connection = lambda host, **kwargs: _PinnedHTTPConnection(host, addresses, **kwargs)
+        connection = lambda host, **kwargs: _PinnedHTTPConnection(
+            host, addresses, **kwargs
+        )
         return self.do_open(connection, request)
 
 
@@ -484,7 +515,9 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 
     def https_open(self, request):
         addresses = _request_addresses(request)
-        connection = lambda host, **kwargs: _PinnedHTTPSConnection(host, addresses, **kwargs)
+        connection = lambda host, **kwargs: _PinnedHTTPSConnection(
+            host, addresses, **kwargs
+        )
         return self.do_open(connection, request, context=self._context)
 
 
@@ -499,7 +532,11 @@ class _SafeProfileRedirectHandler(urllib.request.HTTPRedirectHandler):
         addresses = _validated_socket_addresses(target)
         if not addresses:
             raise urllib.error.HTTPError(
-                target, code, "Unsafe or unresolved profile redirect target", headers, file_pointer
+                target,
+                code,
+                "Unsafe or unresolved profile redirect target",
+                headers,
+                file_pointer,
             )
         redirected = super().redirect_request(
             request, file_pointer, code, message, headers, target

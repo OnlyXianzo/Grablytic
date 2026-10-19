@@ -13,6 +13,7 @@ import pytest
 
 def _dl():
     import grablytic_engine.downloader as dl_mod
+
     return dl_mod
 
 
@@ -46,11 +47,16 @@ def test_the_cleanup_does_not_call_queue_empty():
     """The old code asked the queue whether it was empty."""
     import ast
     import inspect
+
     src = inspect.getsource(_dl())
     # No `.empty()` call anywhere in the module: the flag replaced it.
     tree = ast.parse(src)
-    calls = [n for n in ast.walk(tree)
-             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-             and n.func.attr == "empty"]
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "empty"
+    ]
     assert calls == []
     assert "result_delivered" in src

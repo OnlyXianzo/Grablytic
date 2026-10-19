@@ -161,7 +161,7 @@ object BinaryPackageManager {
         }
         file.writeText(
             "v5-sha256-tree-atomic\nlength=${stamp.length}\nmtime=${stamp.mtime}" +
-                "\narchive_sha256=${stamp.archiveSha256}\ntree_sha256=${stamp.treeSha256}\n"
+                "\narchive_sha256=${stamp.archiveSha256}\ntree_sha256=${stamp.treeSha256}\n",
         )
     }
 
@@ -203,20 +203,27 @@ object BinaryPackageManager {
                 field(relative)
                 when {
                     android.system.OsConstants.S_ISDIR(stat.st_mode) -> {
-                        field("directory"); field(if (executable) "x" else "-"); visit(entry)
+                        field("directory")
+                        field(if (executable) "x" else "-")
+                        visit(entry)
                     }
                     android.system.OsConstants.S_ISLNK(stat.st_mode) -> {
-                        field("symlink"); field(""); field(android.system.Os.readlink(entry.absolutePath))
+                        field("symlink")
+                        field("")
+                        field(android.system.Os.readlink(entry.absolutePath))
                     }
                     android.system.OsConstants.S_ISREG(stat.st_mode) -> {
-                        field("file"); field(if (executable) "x" else "-"); field(stat.st_size.toString())
+                        field("file")
+                        field(if (executable) "x" else "-")
+                        field(stat.st_size.toString())
                         entry.inputStream().use { input ->
                             val buffer = ByteArray(65536)
                             var total = 0L
                             while (true) {
                                 val count = input.read(buffer)
                                 if (count < 0) break
-                                digest.update(buffer, 0, count); total += count
+                                digest.update(buffer, 0, count)
+                                total += count
                             }
                             check(total == stat.st_size) { "Package file changed while hashing: $absolutePath" }
                         }
@@ -373,8 +380,11 @@ object BinaryPackageManager {
 
         deleteQuietly(backup)
 
-        Log.i(TAG, "extracted ${zipSo.name} -> ${target.absolutePath} " +
-            "(archive SHA-256: $archiveSha256, tree SHA-256: $treeSha256)")
+        Log.i(
+            TAG,
+            "extracted ${zipSo.name} -> ${target.absolutePath} " +
+                "(archive SHA-256: $archiveSha256, tree SHA-256: $treeSha256)",
+        )
     }
 
     private fun validateZipEntries(
@@ -463,8 +473,9 @@ object BinaryPackageManager {
                         }
                         val linkTarget = String(linkBytes, Charsets.UTF_8).trim()
                         check(linkTarget.isNotEmpty()) { "Empty symlink target in ${entry.name}" }
-                        check(!linkTarget.startsWith("/") && '\\' !in linkTarget &&
-                            '\u0000' !in linkTarget && ':' !in linkTarget
+                        check(
+                            !linkTarget.startsWith("/") && '\\' !in linkTarget &&
+                                '\u0000' !in linkTarget && ':' !in linkTarget,
                         ) { "Absolute or invalid symlink target forbidden: ${entry.name} -> $linkTarget" }
                         val resolvedTarget = File(out.parentFile, linkTarget).canonicalPath
                         check(resolvedTarget.startsWith(target.canonicalPath + File.separator)) {

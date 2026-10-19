@@ -13,46 +13,57 @@ import pytest
 
 def _ob():
     import grablytic_engine.opts_builder as ob
+
     return ob
 
 
 def _cfg():
     import grablytic_engine.config as cfg_mod
+
     return cfg_mod
 
 
 def _dl():
     import grablytic_engine.downloader as dl_mod
+
     return dl_mod
 
 
 # ─────────────────────────────────────────────────────── collision safety
 
+
 @pytest.mark.unit
 def test_the_default_template_is_collision_safe():
-    assert _cfg().DEFAULT_CFG["output_tmpl"] == \
-        "%(uploader)s - %(title)s [%(id)s].%(ext)s"
+    assert (
+        _cfg().DEFAULT_CFG["output_tmpl"] == "%(uploader)s - %(title)s [%(id)s].%(ext)s"
+    )
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("tmpl", [
-    "%(uploader)s - %(title)s [%(id)s].%(ext)s",
-    "%(id)s.%(ext)s",
-    "%(playlist_index)s - %(title)s.%(ext)s",
-    "%(autonumber)s - %(title)s.%(ext)s",
-])
+@pytest.mark.parametrize(
+    "tmpl",
+    [
+        "%(uploader)s - %(title)s [%(id)s].%(ext)s",
+        "%(id)s.%(ext)s",
+        "%(playlist_index)s - %(title)s.%(ext)s",
+        "%(autonumber)s - %(title)s.%(ext)s",
+    ],
+)
 def test_collision_safe_templates_are_recognised(tmpl):
     assert _ob()._outtmpl_is_collision_safe(tmpl) is True
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("tmpl", [
-    "%(uploader)s - %(title)s.%(ext)s",
-    "%(title)s.%(ext)s",
-    "video.%(ext)s",
-    "",
-    None,
-])
+@pytest.mark.parametrize(
+    "tmpl",
+    [
+        "%(uploader)s - %(title)s.%(ext)s",
+        "%(title)s.%(ext)s",
+        "video.%(ext)s",
+        "",
+        None,
+    ],
+)
 def test_collision_unsafe_templates_are_recognised(tmpl):
     assert _ob()._outtmpl_is_collision_safe(tmpl) is False
 
@@ -73,6 +84,7 @@ def test_the_default_template_needs_no_warning():
 
 
 # ───────────────────────────────────────────────────────────────── verbosity
+
 
 @pytest.mark.unit
 def test_verbose_is_off_unless_the_config_asks_for_it():
@@ -101,21 +113,32 @@ def test_the_engine_does_not_force_verbose():
 
 # ───────────────────────────────────────────────────── error classification
 
+
 @pytest.mark.unit
-@pytest.mark.parametrize("message,expected", [
-    ("Private video. Sign in if you've been granted access", "ERROR_PRIVATE"),
-    ("This video is private. Sign in if you've been granted access",
-     "ERROR_PRIVATE"),
-    ("This video has been removed by the uploader", "ERROR_UNAVAILABLE"),
-    ("This video is no longer available because the YouTube account "
-     "associated with it has been terminated", "ERROR_UNAVAILABLE"),
-])
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("Private video. Sign in if you've been granted access", "ERROR_PRIVATE"),
+        (
+            "This video is private. Sign in if you've been granted access",
+            "ERROR_PRIVATE",
+        ),
+        ("This video has been removed by the uploader", "ERROR_UNAVAILABLE"),
+        (
+            "This video is no longer available because the YouTube account "
+            "associated with it has been terminated",
+            "ERROR_UNAVAILABLE",
+        ),
+    ],
+)
 def test_yt_dlp_phrasings_are_classified(message, expected):
     from grablytic_engine.errors import classify_error
+
     assert classify_error(Exception(message)).error_type == expected
 
 
 # ─────────────────────────────────────────────────────── the logger tail
+
 
 @pytest.mark.unit
 def test_the_logger_tail_is_lock_protected_and_readable():

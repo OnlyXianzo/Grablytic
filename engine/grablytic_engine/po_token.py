@@ -81,7 +81,9 @@ def verify_js_code(code: str) -> None:
     """
     code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
     if code_hash not in APPROVED_JS_HASHES:
-        raise ValueError("Security Violation: Attempted evaluation of untrusted JavaScript code.")
+        raise ValueError(
+            "Security Violation: Attempted evaluation of untrusted JavaScript code."
+        )
 
 
 def detect_js_runtime() -> dict:
@@ -89,6 +91,7 @@ def detect_js_runtime() -> dict:
     # 1. QuickJS (python-quickjs binding — preferred on Android)
     try:
         import quickjs  # type: ignore[import-untyped]
+
         return {"name": "quickjs", "version": getattr(quickjs, "__version__", "0.8.0")}
     except ImportError:
         pass
@@ -97,6 +100,7 @@ def detect_js_runtime() -> dict:
     deno_path = None
     try:
         from grablytic_engine.paths import get_paths
+
         deno_path = get_paths().get("deno_path")
     except Exception:
         pass
@@ -104,6 +108,7 @@ def detect_js_runtime() -> dict:
         deno_path = os.environ.get("DENO_PATH") or shutil.which("deno")
     if deno_path:
         import subprocess
+
         try:
             res = subprocess.run(
                 [deno_path, "--version"], capture_output=True, text=True, timeout=2
@@ -147,6 +152,7 @@ def _generate_with_quickjs(url: str) -> str | None:
         return None
     try:
         import quickjs  # type: ignore[import-untyped]
+
         ctx = quickjs.Context()
         verify_js_code(QUICKJS_STUB_SCRIPT)
         result = ctx.eval(QUICKJS_STUB_SCRIPT)
@@ -174,6 +180,7 @@ def _generate_with_deno(url: str) -> str | None:
     # The flag set mirrors yt-dlp's own Deno invocation
     # (yt_dlp/extractor/youtube/jsc/_builtin/deno.py).
     from grablytic_engine.paths import get_paths
+
     deno_path = (
         get_paths().get("deno_path")
         or os.environ.get("DENO_PATH")
@@ -183,13 +190,16 @@ def _generate_with_deno(url: str) -> str | None:
         return None
     try:
         import subprocess, json
+
         verify_js_code(DENO_STUB_SCRIPT)
         res = subprocess.run(
             # The script is piped on stdin; `--` separates Deno's own
             # flags from the script's arguments.
             [deno_path, "run", *_DENO_RUN_FLAGS, "-", "--", url],
             input=DENO_STUB_SCRIPT,
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if res.returncode == 0 and res.stdout.strip():
             data = json.loads(res.stdout.strip())

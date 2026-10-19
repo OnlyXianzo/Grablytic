@@ -59,7 +59,10 @@ class TestScanResumeCandidates:
                 json.dump({"webpage_url": "https://youtube.com/watch?v=dQw4w9WgXcQ"}, f)
             result = scan_resume_candidates(tmpdir)
             assert len(result["candidates"]) == 1
-            assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=dQw4w9WgXcQ"
+            assert (
+                result["candidates"][0]["likely_url"]
+                == "https://youtube.com/watch?v=dQw4w9WgXcQ"
+            )
 
     def test_recovers_url_when_part_appears_mid_filename(self):
         # Regression: str.replace(".part", "") stripped EVERY occurrence,
@@ -72,7 +75,10 @@ class TestScanResumeCandidates:
                 json.dump({"webpage_url": "https://youtube.com/watch?v=abc123"}, f)
             result = scan_resume_candidates(tmpdir)
             assert len(result["candidates"]) == 1
-            assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=abc123"
+            assert (
+                result["candidates"][0]["likely_url"]
+                == "https://youtube.com/watch?v=abc123"
+            )
 
     def test_clamps_limit_and_bounds_scanning(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -87,13 +93,13 @@ class TestScanResumeCandidates:
 
     def test_bounds_file_traversal(self, monkeypatch):
         import grablytic_engine.resume as resume_mod
+
         monkeypatch.setattr(resume_mod, "_MAX_SCAN_FILES", 3)
         with tempfile.TemporaryDirectory() as tmpdir:
             for i in range(10):
                 open(os.path.join(tmpdir, f"v{i}.part"), "w").close()
             res = scan_resume_candidates(tmpdir, limit=50)
             assert len(res["candidates"]) == 3
-
 
     def test_recovers_url_for_fragment_style_names(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -104,10 +110,14 @@ class TestScanResumeCandidates:
                 json.dump({"url": "https://youtube.com/watch?v=frag9"}, f)
             result = scan_resume_candidates(tmpdir)
             assert len(result["candidates"]) == 1
-            assert result["candidates"][0]["likely_url"] == "https://youtube.com/watch?v=frag9"
+            assert (
+                result["candidates"][0]["likely_url"]
+                == "https://youtube.com/watch?v=frag9"
+            )
 
     def test_caps_candidates_at_limit_freshest_first(self):
         import time as _time
+
         with tempfile.TemporaryDirectory() as tmpdir:
             base = int(_time.time()) - 1000
             for i in range(55):
@@ -144,6 +154,7 @@ class TestScanResumeCandidates:
 
     def test_finds_part_files_in_subdirectories(self):
         import grablytic_engine.resume as resume_mod
+
         with tempfile.TemporaryDirectory() as tmpdir:
             nested = os.path.join(tmpdir, "frags", "session1")
             os.makedirs(nested)
@@ -156,6 +167,7 @@ class TestScanResumeCandidates:
 
     def test_recursive_walk_can_be_disabled(self):
         import grablytic_engine.resume as resume_mod
+
         with tempfile.TemporaryDirectory() as tmpdir:
             nested = os.path.join(tmpdir, "sub")
             os.makedirs(nested)
@@ -165,6 +177,7 @@ class TestScanResumeCandidates:
 
     def test_failed_attempts_mark_exhausted_at_three(self):
         import grablytic_engine.resume as resume_mod
+
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "flaky.part")
             open(path, "w").close()
@@ -181,6 +194,7 @@ class TestScanResumeCandidates:
 
     def test_successful_attempt_clears_strike_count(self):
         import grablytic_engine.resume as resume_mod
+
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "ok.part")
             open(path, "w").close()
@@ -194,6 +208,7 @@ class TestScanResumeCandidates:
 
     def test_attempt_report_rejects_paths_outside_cache(self):
         import grablytic_engine.resume as resume_mod
+
         with tempfile.TemporaryDirectory() as tmpdir:
             r = resume_mod.report_resume_attempt(tmpdir, "/etc/passwd", False)
             assert r["success"] is False
@@ -253,7 +268,8 @@ class TestBootstrap:
         bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
         # Offline proof: any network attempt fails the test.
         monkeypatch.setattr(
-            bootstrap_mod, "_resolve_latest_release",
+            bootstrap_mod,
+            "_resolve_latest_release",
             lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
         )
         monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
@@ -295,22 +311,29 @@ class TestBootstrap:
             def __init__(self, data):
                 self.data = data
                 self.read_done = False
+
             def read(self, *args, **kwargs):
                 if self.read_done:
                     return b""
                 self.read_done = True
                 return self.data
+
             def __enter__(self):
                 return self
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
 
-        monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: MockResponse(zip_bytes))
+        monkeypatch.setattr(
+            urllib.request, "urlopen", lambda req, timeout=None: MockResponse(zip_bytes)
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             dest_path = os.path.join(tmpdir, "bin", "ffmpeg")
-            _download_and_extract_binary("https://example.com/ffmpeg.zip", zip_sha, dest_path, tmpdir)
-            
+            _download_and_extract_binary(
+                "https://example.com/ffmpeg.zip", zip_sha, dest_path, tmpdir
+            )
+
             assert os.path.exists(dest_path)
             with open(dest_path, "r") as f:
                 assert f.read() == "dummy_ffmpeg_content"
@@ -335,28 +358,36 @@ class TestBootstrap:
             def __init__(self, data):
                 self.data = data
                 self.read_done = False
+
             def read(self, *args, **kwargs):
                 if self.read_done:
                     return b""
                 self.read_done = True
                 return self.data
+
             def __enter__(self):
                 return self
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
 
-        monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: MockResponse(tar_bytes))
+        monkeypatch.setattr(
+            urllib.request, "urlopen", lambda req, timeout=None: MockResponse(tar_bytes)
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             dest_path = os.path.join(tmpdir, "bin", "ffmpeg")
-            _download_and_extract_binary("https://example.com/ffmpeg.tar.gz", tar_sha, dest_path, tmpdir)
-            
+            _download_and_extract_binary(
+                "https://example.com/ffmpeg.tar.gz", tar_sha, dest_path, tmpdir
+            )
+
             assert os.path.exists(dest_path)
             with open(dest_path, "r") as f:
                 assert f.read() == "dummy_ffmpeg_tar_content"
 
     def test_set_update_channel(self):
         from grablytic_engine.paths import set_update_channel, get_paths
+
         res = set_update_channel("nightly")
         assert res == {"success": True}
         assert get_paths()["update_channel"] == "nightly"
@@ -368,7 +399,8 @@ class TestBootstrap:
 
         bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
         monkeypatch.setattr(
-            bootstrap_mod, "_resolve_latest_release",
+            bootstrap_mod,
+            "_resolve_latest_release",
             lambda repo: (_ for _ in ()).throw(AssertionError("network used!")),
         )
         set_paths(
@@ -395,15 +427,19 @@ class TestBootstrap:
         bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
 
         # Mock resolve_latest_release to return an asset but no sha256 checksum asset
-        monkeypatch.setattr(bootstrap_mod, "_resolve_latest_release", lambda repo: {
-            "tag_name": "v1.0.0",
-            "assets": [
-                {
-                    "name": "ffmpeg-linux.tar.gz",
-                    "browser_download_url": "https://example.com/ffmpeg-linux.tar.gz"
-                }
-            ]
-        })
+        monkeypatch.setattr(
+            bootstrap_mod,
+            "_resolve_latest_release",
+            lambda repo: {
+                "tag_name": "v1.0.0",
+                "assets": [
+                    {
+                        "name": "ffmpeg-linux.tar.gz",
+                        "browser_download_url": "https://example.com/ffmpeg-linux.tar.gz",
+                    }
+                ],
+            },
+        )
 
         # Ensure dest_path does not exist and is not on system path
         monkeypatch.setattr(shutil, "which", lambda name: None)
@@ -413,15 +449,13 @@ class TestBootstrap:
             os.remove(dest_path)
 
         res = _bootstrap_github_binary(
-            "ffmpeg",
-            "foo/bar",
-            "linux",
-            dest_path,
-            str(tmp_path / "cache")
+            "ffmpeg", "foo/bar", "linux", dest_path, str(tmp_path / "cache")
         )
         assert res == (False, None)
 
-    def test_bootstrap_github_binary_checksums_sha256_fallback(self, tmp_path, monkeypatch):
+    def test_bootstrap_github_binary_checksums_sha256_fallback(
+        self, tmp_path, monkeypatch
+    ):
         import shutil
         import sys
         import urllib.request
@@ -429,38 +463,51 @@ class TestBootstrap:
 
         bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
 
-        monkeypatch.setattr(bootstrap_mod, "_resolve_latest_release", lambda repo: {
-            "tag_name": "v1.0.0",
-            "assets": [
-                {
-                    "name": "ffmpeg-linux.tar.gz",
-                    "browser_download_url": "https://example.com/ffmpeg-linux.tar.gz"
-                },
-                {
-                    "name": "checksums.sha256",
-                    "browser_download_url": "https://example.com/checksums.sha256"
-                }
-            ]
-        })
+        monkeypatch.setattr(
+            bootstrap_mod,
+            "_resolve_latest_release",
+            lambda repo: {
+                "tag_name": "v1.0.0",
+                "assets": [
+                    {
+                        "name": "ffmpeg-linux.tar.gz",
+                        "browser_download_url": "https://example.com/ffmpeg-linux.tar.gz",
+                    },
+                    {
+                        "name": "checksums.sha256",
+                        "browser_download_url": "https://example.com/checksums.sha256",
+                    },
+                ],
+            },
+        )
 
         class MockResponse:
             def __init__(self, content):
                 self.content = content
+
             def read(self):
                 return self.content
+
             def __enter__(self):
                 return self
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
 
         def mock_urlopen(req, timeout=None):
             url = req.full_url if hasattr(req, "full_url") else req
             if "checksums.sha256" in url:
-                return MockResponse(b"cd28922d804b0f4285472c09c071319cc8a75015252ca40fb7e4c5277d43ebba  ffmpeg-linux.tar.gz")
+                return MockResponse(
+                    b"cd28922d804b0f4285472c09c071319cc8a75015252ca40fb7e4c5277d43ebba  ffmpeg-linux.tar.gz"
+                )
             raise ValueError(f"Unexpected url {url}")
 
         monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
-        monkeypatch.setattr(bootstrap_mod, "_download_and_extract_binary", lambda url, sha, dest, cache: open(dest, "w").close())
+        monkeypatch.setattr(
+            bootstrap_mod,
+            "_download_and_extract_binary",
+            lambda url, sha, dest, cache: open(dest, "w").close(),
+        )
         monkeypatch.setattr(shutil, "which", lambda name: None)
 
         dest_path = str(tmp_path / "test_checksum_fallback_ffmpeg")
@@ -468,11 +515,7 @@ class TestBootstrap:
             os.remove(dest_path)
 
         res = _bootstrap_github_binary(
-            "ffmpeg",
-            "foo/bar",
-            "linux",
-            dest_path,
-            str(tmp_path / "cache")
+            "ffmpeg", "foo/bar", "linux", dest_path, str(tmp_path / "cache")
         )
         assert res[0] is True
         assert res[1] == "1.0.0"
@@ -484,25 +527,28 @@ class TestBootstrap:
         import queue
         from grablytic_engine.downloader import download_thread
         import grablytic_engine.paths
-        
+
         old_ffmpeg = grablytic_engine.paths._paths.get("ffmpeg_path")
-        grablytic_engine.paths._paths["ffmpeg_path"] = "/tmp/nonexistent_ffmpeg_path_12345"
-        
+        grablytic_engine.paths._paths["ffmpeg_path"] = (
+            "/tmp/nonexistent_ffmpeg_path_12345"
+        )
+
         import shutil
+
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        
+
         res_q = queue.Queue()
         download_thread(
             url="https://youtube.com/watch?v=dQw4w9WgXcQ",
             download_id="test_guard_id",
-            result_queue=res_q
+            result_queue=res_q,
         )
-        
+
         result = res_q.get()
         assert result["success"] is False
         assert result["error_type"] == "ERROR_FFMPEG_MISSING"
         assert "FFmpeg binary is missing" in result["error_message"]
-        
+
         if old_ffmpeg:
             grablytic_engine.paths._paths["ffmpeg_path"] = old_ffmpeg
         else:

@@ -9,6 +9,7 @@ import pytest
 
 def _ug():
     import grablytic_engine.url_guard as ug
+
     return ug
 
 
@@ -40,6 +41,7 @@ def test_dns_timeout_policy_is_sink_specific(monkeypatch):
 
     def _hang(host, port, *args, **kwargs):
         import time
+
         time.sleep(5)
 
     monkeypatch.setattr(socket, "getaddrinfo", _hang)
@@ -58,8 +60,7 @@ def test_metadata_hostnames_are_blocked_by_name(monkeypatch):
         return []
 
     monkeypatch.setattr(socket, "getaddrinfo", _spy)
-    for host in ("metadata.google.internal", "metadata",
-                 "instance-data.ec2.internal"):
+    for host in ("metadata.google.internal", "metadata", "instance-data.ec2.internal"):
         assert ug.is_safe_media_url(f"http://{host}/latest/meta-data/") is False
     # Blocked BEFORE the resolver was consulted.
     assert called == []
@@ -69,7 +70,8 @@ def test_metadata_hostnames_are_blocked_by_name(monkeypatch):
 def test_resolver_returns_the_resolved_addresses(monkeypatch):
     ug = _ug()
     monkeypatch.setattr(
-        socket, "getaddrinfo",
+        socket,
+        "getaddrinfo",
         lambda host, port, *a, **k: [
             (2, 1, 6, "", ("93.184.216.34", port or 80)),
         ],
@@ -93,11 +95,14 @@ def test_profile_url_length_is_bounded_before_dns(monkeypatch):
     ug = _ug()
     lookups = []
     monkeypatch.setattr(
-        ug, "_resolve_address_records",
+        ug,
+        "_resolve_address_records",
         lambda host, port: lookups.append((host, port)) or [],
     )
 
-    with pytest.raises(urllib.error.URLError, match="Unsafe or unresolved profile destination"):
+    with pytest.raises(
+        urllib.error.URLError, match="Unsafe or unresolved profile destination"
+    ):
         ug.pinned_urlopen("https://example.com/" + "a" * 2048)
 
     assert lookups == []
@@ -138,7 +143,8 @@ def test_hung_dns_lookups_cannot_create_unbounded_resolver_threads(monkeypatch):
 def test_rebinding_to_loopback_is_still_blocked(monkeypatch):
     ug = _ug()
     monkeypatch.setattr(
-        socket, "getaddrinfo",
+        socket,
+        "getaddrinfo",
         lambda host, port, *a, **k: [
             (2, 1, 6, "", ("127.0.0.1", port or 80)),
         ],
@@ -150,7 +156,8 @@ def test_rebinding_to_loopback_is_still_blocked(monkeypatch):
 def test_public_address_is_allowed(monkeypatch):
     ug = _ug()
     monkeypatch.setattr(
-        socket, "getaddrinfo",
+        socket,
+        "getaddrinfo",
         lambda host, port, *a, **k: [
             (2, 1, 6, "", ("93.184.216.34", port or 80)),
         ],

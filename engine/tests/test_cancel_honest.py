@@ -32,16 +32,26 @@ def _engine_env(tmp_path, monkeypatch):
     ffmpeg.write_text("#!/bin/sh\nexit 0\n")
     import os as _os
     import stat as _stat
+
     _os.chmod(str(ffmpeg), _os.stat(str(ffmpeg)).st_mode | _stat.S_IXUSR)
 
     import grablytic_engine.paths as _paths_mod
+
     saved_paths = dict(_paths_mod._paths)
-    _paths_mod._paths.update({
-        "data_dir": str(tmp_path), "output_dir": str(tmp_path),
-        "cache_dir": str(tmp_path), "ffmpeg_path": str(ffmpeg),
-        "aria2c_path": None, "deno_path": None, "nodejs_path": None,
-        "po_token": None, "cookies_path": None, "ffmpeg_ld_path": None,
-    })
+    _paths_mod._paths.update(
+        {
+            "data_dir": str(tmp_path),
+            "output_dir": str(tmp_path),
+            "cache_dir": str(tmp_path),
+            "ffmpeg_path": str(ffmpeg),
+            "aria2c_path": None,
+            "deno_path": None,
+            "nodejs_path": None,
+            "po_token": None,
+            "cookies_path": None,
+            "ffmpeg_ld_path": None,
+        }
+    )
     dl_mod._active_downloads.clear()
     dl_mod._pending_queue.clear()
 
@@ -66,9 +76,14 @@ def _engine_env(tmp_path, monkeypatch):
         # into later tests (daemon threads would survive; map entries would).
         deadline = time.time() + 10
         while time.time() < deadline:
-            live = [i for i in dl_mod._active_downloads.values()
-                    if (i.get("thread") is not None
-                        and getattr(i["thread"], "is_alive", lambda: False)())]
+            live = [
+                i
+                for i in dl_mod._active_downloads.values()
+                if (
+                    i.get("thread") is not None
+                    and getattr(i["thread"], "is_alive", lambda: False)()
+                )
+            ]
             if not live:
                 break
             time.sleep(0.05)

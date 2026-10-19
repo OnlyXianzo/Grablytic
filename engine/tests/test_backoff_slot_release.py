@@ -18,6 +18,7 @@ _REAL_THREAD = threading.Thread
 
 def _dl():
     import grablytic_engine.downloader as dl_mod
+
     return dl_mod
 
 

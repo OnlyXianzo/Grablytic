@@ -7,6 +7,7 @@ from grablytic_engine.opts_builder import build_ydl_opts
 def reset_paths(monkeypatch):
     import shutil
     import os
+
     # Admission now gates on isfile AND X_OK — simulate both bits for
     # the fake system binaries (mirrors test_paths.py mock_isfile).
     original_isfile = os.path.isfile
@@ -14,12 +15,16 @@ def reset_paths(monkeypatch):
     monkeypatch.setattr(
         os.path,
         "isfile",
-        lambda path: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_isfile(path)
+        lambda path: True
+        if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c")
+        else original_isfile(path),
     )
     monkeypatch.setattr(
         os,
         "access",
-        lambda path, mode: True if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c") else original_access(path, mode)
+        lambda path, mode: True
+        if path in ("/usr/bin/ffmpeg", "/usr/bin/aria2c")
+        else original_access(path, mode),
     )
     monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     _paths["data_dir"] = None
@@ -85,11 +90,13 @@ def test_aria2c_max_speed_applied(tmp_path):
     dummy.touch()
     dummy.chmod(0o755)
     _paths["aria2c_path"] = str(dummy)
-    opts = build_ydl_opts(config={
-        "aria2c_enabled": True,
-        "aria2c_chunks": 8,
-        "aria2c_max_speed": "10M",
-    })
+    opts = build_ydl_opts(
+        config={
+            "aria2c_enabled": True,
+            "aria2c_chunks": 8,
+            "aria2c_max_speed": "10M",
+        }
+    )
     assert isinstance(opts["external_downloader"], dict)
     assert opts["external_downloader"]["default"] == str(dummy)
     assert opts["external_downloader"]["dash"] == "native"
@@ -119,7 +126,8 @@ def test_aria2c_chunks_invalid_falls_back(tmp_path):
 
 def test_aria2c_max_speed_validated(tmp_path):
     assert "--max-download-limit=500k" in _aria2c_args(
-        tmp_path, aria2c_max_speed="500k")
+        tmp_path, aria2c_max_speed="500k"
+    )
     for bad in ("10M; rm -rf", "-x9", "--dir=/", "abc", "10 MB"):
         args = _aria2c_args(tmp_path, aria2c_max_speed=bad)
         assert not any(a.startswith("--max-download-limit") for a in args), bad
@@ -203,10 +211,12 @@ def test_override_audio_forces_audio():
 
 
 def test_archive_enabled():
-    opts = build_ydl_opts(config={
-        "use_archive": True,
-        "archive_path": "/tmp/archive.txt",
-    })
+    opts = build_ydl_opts(
+        config={
+            "use_archive": True,
+            "archive_path": "/tmp/archive.txt",
+        }
+    )
     assert opts["download_archive"] == "/tmp/archive.txt"
 
 
@@ -238,12 +248,14 @@ def test_embed_thumbnail_adds_postprocessors():
 
 
 def test_embed_thumbnail_postprocessor_ordering():
-    opts = build_ydl_opts(config={
-        "embedthumbnail": True,
-        "addmetadata": True,
-        "writesubtitles": True,
-        "embedsubtitles": True,
-    })
+    opts = build_ydl_opts(
+        config={
+            "embedthumbnail": True,
+            "addmetadata": True,
+            "writesubtitles": True,
+            "embedsubtitles": True,
+        }
+    )
     pps = opts.get("postprocessors", [])
     keys = [pp.get("key") for pp in pps]
     # Canonical yt-dlp PP order: ThumbnailsConvertor -> EmbedSubtitle -> Metadata -> EmbedThumbnail
@@ -272,12 +284,14 @@ def test_embed_thumbnail_keeps_sidecar_for_offline_ui():
 
 
 def test_subtitles_embedded():
-    opts = build_ydl_opts(config={
-        "writesubtitles": True,
-        "writeautomaticsub": False,
-        "subtitleslangs": ["en"],
-        "embedsubtitles": True,
-    })
+    opts = build_ydl_opts(
+        config={
+            "writesubtitles": True,
+            "writeautomaticsub": False,
+            "subtitleslangs": ["en"],
+            "embedsubtitles": True,
+        }
+    )
     # `embedsubs` is not a real YoutubeDL param — embedding is driven by the
     # FFmpegEmbedSubtitle postprocessor (mirrors --embed-subs mapping).
     assert "embedsubs" not in opts
@@ -289,12 +303,14 @@ def test_subtitles_embedded():
 def test_subtitles_sidecar_without_embed():
     # Sidecar-only (write but don't embed) must still download .srt files:
     # writesubtitles/subtitleslangs set, no FFmpegEmbedSubtitle PP.
-    opts = build_ydl_opts(config={
-        "writesubtitles": True,
-        "writeautomaticsub": False,
-        "subtitleslangs": ["en", "hi"],
-        "embedsubtitles": False,
-    })
+    opts = build_ydl_opts(
+        config={
+            "writesubtitles": True,
+            "writeautomaticsub": False,
+            "subtitleslangs": ["en", "hi"],
+            "embedsubtitles": False,
+        }
+    )
     assert opts.get("writesubtitles") is True
     assert opts.get("subtitleslangs") == ["en", "hi"]
     keys = [pp.get("key") for pp in opts.get("postprocessors", [])]
@@ -321,10 +337,18 @@ def test_use_archive_defaults_to_data_dir():
 
 def test_thumbnail_format_png_option():
     opts = build_ydl_opts(config={"thumbnail_format": "png"})
-    conv = [pp for pp in opts.get("postprocessors", []) if pp.get("key") == "FFmpegThumbnailsConvertor"]
+    conv = [
+        pp
+        for pp in opts.get("postprocessors", [])
+        if pp.get("key") == "FFmpegThumbnailsConvertor"
+    ]
     assert conv and conv[0]["format"] == "png"
     opts2 = build_ydl_opts(config={})
-    conv2 = [pp for pp in opts2.get("postprocessors", []) if pp.get("key") == "FFmpegThumbnailsConvertor"]
+    conv2 = [
+        pp
+        for pp in opts2.get("postprocessors", [])
+        if pp.get("key") == "FFmpegThumbnailsConvertor"
+    ]
     assert conv2 and conv2[0]["format"] == "jpg"
 
 
@@ -335,6 +359,7 @@ def test_merge_output_format_mp4():
 
 def test_progress_queue_adds_hooks():
     import queue
+
     q = queue.Queue()
     opts = build_ydl_opts(progress_queue=q)
     assert "progress_hooks" in opts
@@ -344,12 +369,14 @@ def test_progress_queue_adds_hooks():
 def test_embed_subtitles_uses_real_pp_key():
     # Regression: `embedsubs` is not a YoutubeDL param (silently ignored).
     # The CLI maps --embed-subs to the FFmpegEmbedSubtitle postprocessor.
-    opts = build_ydl_opts(config={
-        "writesubtitles": True,
-        "writeautomaticsub": False,
-        "subtitleslangs": ["en"],
-        "embedsubtitles": True,
-    })
+    opts = build_ydl_opts(
+        config={
+            "writesubtitles": True,
+            "writeautomaticsub": False,
+            "subtitleslangs": ["en"],
+            "embedsubtitles": True,
+        }
+    )
     assert "embedsubs" not in opts
     pps = opts.get("postprocessors", [])
     emb = [pp for pp in pps if pp.get("key") == "FFmpegEmbedSubtitle"]
@@ -358,13 +385,15 @@ def test_embed_subtitles_uses_real_pp_key():
 
 
 def test_canonical_pp_order_embed_modify_metadata():
-    opts = build_ydl_opts(config={
-        "writesubtitles": True,
-        "embedsubtitles": True,
-        "sponsorblock_cats": ["sponsor"],
-        "addmetadata": True,
-        "embedthumbnail": False,
-    })
+    opts = build_ydl_opts(
+        config={
+            "writesubtitles": True,
+            "embedsubtitles": True,
+            "sponsorblock_cats": ["sponsor"],
+            "addmetadata": True,
+            "embedthumbnail": False,
+        }
+    )
     keys = [pp.get("key") for pp in opts.get("postprocessors", [])]
     assert keys.index("FFmpegEmbedSubtitle") < keys.index("ModifyChapters")
     assert keys.index("ModifyChapters") < keys.index("FFmpegMetadata")
@@ -382,10 +411,12 @@ def test_download_sections_build_ranges():
 
 
 def test_download_sections_open_end_and_keyframes_flag():
-    opts = build_ydl_opts(config={
-        "download_sections": ["90-inf"],
-        "force_keyframes_at_cuts": True,
-    })
+    opts = build_ydl_opts(
+        config={
+            "download_sections": ["90-inf"],
+            "force_keyframes_at_cuts": True,
+        }
+    )
     ranges = list(opts["download_ranges"]({"id": "x"}, None))
     assert ranges[0]["start_time"] == 90
     assert ranges[0]["end_time"] == float("inf")
@@ -430,22 +461,30 @@ def test_fragment_and_socket_defaults_applied():
 
 
 def test_fragment_and_socket_custom_values():
-    opts = build_ydl_opts(
-        config={"concurrent_fragments": 8, "socket_timeout": 60})
+    opts = build_ydl_opts(config={"concurrent_fragments": 8, "socket_timeout": 60})
     assert opts["concurrent_fragment_downloads"] == 8
     assert opts["socket_timeout"] == 60
 
 
 def test_fragment_clamped_to_sane_range():
-    assert build_ydl_opts(
-        config={"concurrent_fragments": 99})["concurrent_fragment_downloads"] == 16
-    assert build_ydl_opts(
-        config={"concurrent_fragments": 0})["concurrent_fragment_downloads"] == 1
+    assert (
+        build_ydl_opts(config={"concurrent_fragments": 99})[
+            "concurrent_fragment_downloads"
+        ]
+        == 16
+    )
+    assert (
+        build_ydl_opts(config={"concurrent_fragments": 0})[
+            "concurrent_fragment_downloads"
+        ]
+        == 1
+    )
 
 
 def test_fragment_and_socket_invalid_fall_back():
     opts = build_ydl_opts(
-        config={"concurrent_fragments": "lots", "socket_timeout": "soon"})
+        config={"concurrent_fragments": "lots", "socket_timeout": "soon"}
+    )
     assert opts["concurrent_fragment_downloads"] == 2
     assert "socket_timeout" not in opts
 
@@ -466,8 +505,7 @@ def test_write_flags_default_off():
 
 
 def test_write_flags_enabled():
-    opts = build_ydl_opts(
-        config={"write_description": True, "write_info_json": True})
+    opts = build_ydl_opts(config={"write_description": True, "write_info_json": True})
     assert opts["writedescription"] is True
     assert opts["writeinfojson"] is True
 
@@ -485,6 +523,7 @@ def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
     import sys
     import types
     import grablytic_engine.opts_builder as opts_mod
+
     deno_file = tmp_path / "deno"
     deno_file.touch()
     deno_file.chmod(0o755)
@@ -502,6 +541,7 @@ def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
 
 def test_desktop_keeps_deno_first(tmp_path):
     import sys
+
     sys.modules.pop("java.android", None)
     deno_file = tmp_path / "deno"
     deno_file.touch()
@@ -536,7 +576,9 @@ def test_audio_only_maps_video_container_to_audio(tmp_path):
     ffmpeg_file = tmp_path / "ffmpeg"
     ffmpeg_file.touch()
     _paths["ffmpeg_path"] = str(ffmpeg_file)
-    opts = build_ydl_opts(config={"audio_only": True, "container": "mkv", "audio_format": "none"})
+    opts = build_ydl_opts(
+        config={"audio_only": True, "container": "mkv", "audio_format": "none"}
+    )
     pps = opts.get("postprocessors", [])
     extract_pps = [p for p in pps if p.get("key") == "FFmpegExtractAudio"]
     assert len(extract_pps) == 1
@@ -547,7 +589,9 @@ def test_explicit_audio_without_video_treated_as_audio(tmp_path):
     ffmpeg_file = tmp_path / "ffmpeg"
     ffmpeg_file.touch()
     _paths["ffmpeg_path"] = str(ffmpeg_file)
-    opts = build_ydl_opts(config={"explicit_audio_format_id": "hls_aac_160k", "container": "opus"})
+    opts = build_ydl_opts(
+        config={"explicit_audio_format_id": "hls_aac_160k", "container": "opus"}
+    )
     assert opts["format"] == "hls_aac_160k"
     assert "merge_output_format" not in opts
     pps = opts.get("postprocessors", [])
@@ -580,14 +624,14 @@ class TestNumericGuards:
         assert opts["fragment_retries"] == 10
 
     def test_absurd_retries_clamped(self):
-        opts = build_ydl_opts(config={"retries": 10 ** 9, "fragment_retries": 10 ** 9})
+        opts = build_ydl_opts(config={"retries": 10**9, "fragment_retries": 10**9})
         assert 0 <= opts["retries"] <= 30
         assert 0 <= opts["fragment_retries"] <= 100
 
     def test_absurd_socket_timeout_omitted(self):
         # Out-of-range falls back to omission (yt-dlp default applies),
         # matching the established invalid-value contract above.
-        opts = build_ydl_opts(config={"socket_timeout": 10 ** 9})
+        opts = build_ydl_opts(config={"socket_timeout": 10**9})
         assert "socket_timeout" not in opts
 
     def test_zero_speed_rejected(self, tmp_path):
@@ -609,23 +653,23 @@ def test_m4a_audio_forces_png_cover_art():
     # m4a download with JPG thumbnails died at EmbedThumbnail. PNG muxes
     # cleanly — forced regardless of the toggle.
     opts = build_ydl_opts(
-        config={"audio_only": True, "audio_format": "m4a",
-                "thumbnail_format": "jpg"})
+        config={"audio_only": True, "audio_format": "m4a", "thumbnail_format": "jpg"}
+    )
     assert _thumb_convertor_format(opts) == "png"
 
 
 def test_m4a_audio_explicit_png_stays_png():
     opts = build_ydl_opts(
-        config={"audio_only": True, "audio_format": "m4a",
-                "thumbnail_format": "png"})
+        config={"audio_only": True, "audio_format": "m4a", "thumbnail_format": "png"}
+    )
     assert _thumb_convertor_format(opts) == "png"
 
 
 def test_mp3_audio_keeps_jpg_cover_art():
     # MP3 (ID3) embeds mjpeg fine — no override, toggle respected.
     opts = build_ydl_opts(
-        config={"audio_only": True, "audio_format": "mp3",
-                "thumbnail_format": "jpg"})
+        config={"audio_only": True, "audio_format": "mp3", "thumbnail_format": "jpg"}
+    )
     assert _thumb_convertor_format(opts) == "jpg"
 
 
@@ -646,9 +690,17 @@ def test_playlist_items_malicious_ranges_rejected():
     assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "abc"})
     assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "::"})
     # Valid bounded ranges are accepted
-    assert build_ydl_opts(config={"playlist_items": "1-5"}).get("playlist_items") == "1-5"
-    assert build_ydl_opts(config={"playlist_items": "1:10"}).get("playlist_items") == "1:10"
-    assert build_ydl_opts(config={"playlist_items": "1,2,3"}).get("playlist_items") == "1,2,3"
+    assert (
+        build_ydl_opts(config={"playlist_items": "1-5"}).get("playlist_items") == "1-5"
+    )
+    assert (
+        build_ydl_opts(config={"playlist_items": "1:10"}).get("playlist_items")
+        == "1:10"
+    )
+    assert (
+        build_ydl_opts(config={"playlist_items": "1,2,3"}).get("playlist_items")
+        == "1,2,3"
+    )
 
 
 def test_rate_limit_coercion_and_clamping():
@@ -689,7 +741,9 @@ def test_cookies_path_security_checks(tmp_path):
 def test_compat_opts_allowlist():
     """Dangerous compat_options must be filtered out against allowlist."""
     # Disallow unsafe flags
-    opts_bad = build_ydl_opts(config={"compat_options": "allow-unsafe-exec-expansion,no-certifi"})
+    opts_bad = build_ydl_opts(
+        config={"compat_options": "allow-unsafe-exec-expansion,no-certifi"}
+    )
     assert "compat_opts" not in opts_bad
 
     # Allow safe flags
@@ -697,26 +751,35 @@ def test_compat_opts_allowlist():
     assert opts_good.get("compat_opts") == ["no-live-chat", "format-sort"]
 
     # Filter mixed
-    opts_mixed = build_ydl_opts(config={"compat_options": "no-live-chat,allow-unsafe-exec-expansion"})
+    opts_mixed = build_ydl_opts(
+        config={"compat_options": "no-live-chat,allow-unsafe-exec-expansion"}
+    )
     assert opts_mixed.get("compat_opts") == ["no-live-chat"]
 
 
 def test_subtitleslangs_sanitization():
     """subtitleslangs must be sanitized against ReDoS and invalid tokens."""
     # Standard languages
-    assert build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": ["en", "es"]})["subtitleslangs"] == ["en", "es"]
+    assert build_ydl_opts(
+        config={"writesubtitles": True, "subtitleslangs": ["en", "es"]}
+    )["subtitleslangs"] == ["en", "es"]
 
     # Comma-separated string coerced to list
-    assert build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": "en,fr"})["subtitleslangs"] == ["en", "fr"]
+    assert build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": "en,fr"})[
+        "subtitleslangs"
+    ] == ["en", "fr"]
 
     # Metacharacters / ReDoS patterns rejected
-    opts_redos = build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": ["(a+)+$", "en"]})
+    opts_redos = build_ydl_opts(
+        config={"writesubtitles": True, "subtitleslangs": ["(a+)+$", "en"]}
+    )
     assert opts_redos["subtitleslangs"] == ["en"]
 
 
 def test_config_schema_validation():
     """sanitize_config must drop unknown keys and coerce known types."""
     from grablytic_engine.config import sanitize_config
+
     raw = {
         "evil_key": "drop_me",
         "writesubtitles": 1,
@@ -736,6 +799,7 @@ def test_aria2c_enabled_without_binary_warns_with_reason():
     'Download config: ... aria2c=no' line is explainable from logs alone."""
     import queue
     from grablytic_engine.logger import get_logger
+
     q: queue.Queue = queue.Queue()
     get_logger("grablytic_engine.opts_builder").set_queue(q)
     opts = build_ydl_opts(config={"aria2c_enabled": True})
@@ -744,8 +808,5 @@ def test_aria2c_enabled_without_binary_warns_with_reason():
     while not q.empty():
         messages.append(q.get_nowait()["message"])
     assert any(
-        "aria2c" in m and ("missing" in m or "not executable" in m)
-        for m in messages
+        "aria2c" in m and ("missing" in m or "not executable" in m) for m in messages
     ), f"expected aria2c-missing WARN, got: {messages}"
-
-
