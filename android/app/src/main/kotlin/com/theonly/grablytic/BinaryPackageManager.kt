@@ -670,5 +670,4 @@ object BinaryPackageManager {
     private fun logDeleteFailure(file: File, error: Throwable) {
         Log.w(TAG, "Failed to remove ${file.absolutePath}: ${error.message}")
     }
-
 }
