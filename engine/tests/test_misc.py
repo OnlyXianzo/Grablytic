@@ -267,7 +267,8 @@ class TestBootstrap:
         assert result["success"] is True
         assert "yt_dlp_version" in result
         assert "js_runtime" in result
-        assert result["contract_version"] == "1.0"
+        assert result["contract_version"] == 1
+        assert result["contract_version_string"] == "1.0"
         # Nothing bundled and no network: honestly reported missing.
         assert result["ffmpeg_ok"] is False
         assert "ffmpeg" in result["update_components"]

@@ -191,7 +191,8 @@ class TestBinariesList:
             ffmpeg_path=None, cache_dir=str(tmp_path),
         )
         res = boot.bootstrap()
-        assert res["contract_version"] == "1.0"
+        assert res["contract_version"] == 1
+        assert res["contract_version_string"] == "1.0"
         assert "ffmpeg_ok" in res and "quickjs_ok" in res
 
 
