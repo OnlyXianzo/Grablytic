@@ -12,16 +12,30 @@ import argparse
 import subprocess
 
 PATTERNS = [
-    ("AWS Access Key ID", re.compile(r'\b(AKIA|ASIA)[0-9A-Z]{16}\b')),
-    ("AWS Secret Access Key", re.compile(r'(?i)aws_secret_access_key\s*=\s*[A-Za-z0-9/+=]{40}')),
-    ("GitHub Personal Access Token", re.compile(r'\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b')),
-    ("GitHub Fine-Grained PAT", re.compile(r'\bgithub_pat_[A-Za-z0-9_]{82}\b')),
-    ("Slack API / Bot Token", re.compile(r'\bxox[baprs]-[0-9A-Za-z]{10,48}\b')),
-    ("Google API Key", re.compile(r'\bAIza[0-9A-Za-z_-]{35}\b')),
-    ("OpenAI API Key", re.compile(r'\bsk-[A-Za-z0-9_-]{32,}\b')),
-    ("Stripe API Secret", re.compile(r'\b(sk|rk)_(live|test)_[0-9a-zA-Z]{24,}\b')),
-    ("Private Key Block Header", re.compile(r'-----BEGIN ((RSA|EC|DSA|OPENSSH) )?PRIVATE KEY-----')),
-    ("Generic High-Entropy Secret", re.compile(r'(?i)(password|secret|api_key|access_token|auth_token)\s*[:=]\s*["\x27]([A-Za-z0-9!@#$%^&*()_+=\-]{14,})["\x27]'))
+    ("AWS Access Key ID", re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b")),
+    (
+        "AWS Secret Access Key",
+        re.compile(r"(?i)aws_secret_access_key\s*=\s*[A-Za-z0-9/+=]{40}"),
+    ),
+    (
+        "GitHub Personal Access Token",
+        re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b"),
+    ),
+    ("GitHub Fine-Grained PAT", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82}\b")),
+    ("Slack API / Bot Token", re.compile(r"\bxox[baprs]-[0-9A-Za-z]{10,48}\b")),
+    ("Google API Key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("OpenAI API Key", re.compile(r"\bsk-[A-Za-z0-9_-]{32,}\b")),
+    ("Stripe API Secret", re.compile(r"\b(sk|rk)_(live|test)_[0-9a-zA-Z]{24,}\b")),
+    (
+        "Private Key Block Header",
+        re.compile(r"-----BEGIN ((RSA|EC|DSA|OPENSSH) )?PRIVATE KEY-----"),
+    ),
+    (
+        "Generic High-Entropy Secret",
+        re.compile(
+            r'(?i)(password|secret|api_key|access_token|auth_token)\s*[:=]\s*["\x27]([A-Za-z0-9!@#$%^&*()_+=\-]{14,})["\x27]'
+        ),
+    ),
 ]
 
 # Allowlist for known benign test fixtures, synthetic mock data, or documentation examples
@@ -37,17 +51,18 @@ BENIGN_ALLOWLIST = [
     "your-real-api-key",
     "your-telegram-api-key",
     "adminpass123",
-    "mysecretpassword"
+    "mysecretpassword",
 ]
 
 BENIGN_CODE_PATTERNS = [
     "type: 'password'",
     'type="password"',
-    'obscuretext: true',
-    'hinttext',
-    'labeltext',
-    'formfield'
+    "obscuretext: true",
+    "hinttext",
+    "labeltext",
+    "formfield",
 ]
+
 
 def scan_repo(repo_path, max_commits=None):
     repo_path = os.path.abspath(repo_path)
@@ -63,7 +78,9 @@ def scan_repo(repo_path, max_commits=None):
     if max_commits:
         cmd.extend(["-n", str(max_commits)])
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace"
+    )
 
     current_commit = "UNKNOWN"
     current_author = ""
@@ -90,30 +107,38 @@ def scan_repo(repo_path, max_commits=None):
                         continue
                     if any(p in content.lower() for p in BENIGN_CODE_PATTERNS):
                         continue
-                    
+
                     finding = {
                         "type": name,
                         "commit": current_commit,
                         "author": current_author,
                         "date": current_date,
                         "file": current_file,
-                        "match": matched_str[:25] + ("..." if len(matched_str) > 25 else ""),
-                        "snippet": content[:90]
+                        "match": matched_str[:25]
+                        + ("..." if len(matched_str) > 25 else ""),
+                        "snippet": content[:90],
                     }
                     findings.append(finding)
                     print(f"[!] Finding: {name}")
-                    print(f"    Commit:  {current_commit[:10]} ({current_author}, {current_date})")
+                    print(
+                        f"    Commit:  {current_commit[:10]} ({current_author}, {current_date})"
+                    )
                     print(f"    File:    {current_file}")
                     print(f"    Snippet: {content[:80]}")
                     print("------------------------------------------")
 
     proc.wait()
     if not findings:
-        print(f"[✓] Zero secrets detected in git history for {os.path.basename(repo_path)}")
+        print(
+            f"[✓] Zero secrets detected in git history for {os.path.basename(repo_path)}"
+        )
     else:
-        print(f"[!] Total potential findings in {os.path.basename(repo_path)}: {len(findings)}")
+        print(
+            f"[!] Total potential findings in {os.path.basename(repo_path)}: {len(findings)}"
+        )
 
     return findings
+
 
 def scan_working_tree(repo_path):
     repo_path = os.path.abspath(repo_path)
@@ -134,28 +159,48 @@ def scan_working_tree(repo_path):
                             matches = pattern.finditer(fline)
                             for m in matches:
                                 matched_str = m.group(0)
-                                if any(allow in matched_str for allow in BENIGN_ALLOWLIST):
+                                if any(
+                                    allow in matched_str for allow in BENIGN_ALLOWLIST
+                                ):
                                     continue
-                                if any(p in fline.lower() for p in BENIGN_CODE_PATTERNS):
+                                if any(
+                                    p in fline.lower() for p in BENIGN_CODE_PATTERNS
+                                ):
                                     continue
-                                findings.append({
-                                    "type": name,
-                                    "file": filepath,
-                                    "line": i,
-                                    "snippet": fline.strip()[:80]
-                                })
-                                print(f"[!] Uncommitted finding: {name} in {filepath}:{i}")
+                                findings.append(
+                                    {
+                                        "type": name,
+                                        "file": filepath,
+                                        "line": i,
+                                        "snippet": fline.strip()[:80],
+                                    }
+                                )
+                                print(
+                                    f"[!] Uncommitted finding: {name} in {filepath}:{i}"
+                                )
             except Exception:
                 pass
     if not findings:
         print("[✓] Zero uncommitted secrets detected in working tree.")
     return findings
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Deep secret scanner across git commits and working trees")
-    parser.add_argument("paths", nargs="*", default=["."], help="Repositories or paths to scan")
-    parser.add_argument("--max-commits", type=int, default=None, help="Limit commit depth")
-    parser.add_argument("--include-working-tree", action="store_true", default=True, help="Scan working tree")
+    parser = argparse.ArgumentParser(
+        description="Deep secret scanner across git commits and working trees"
+    )
+    parser.add_argument(
+        "paths", nargs="*", default=["."], help="Repositories or paths to scan"
+    )
+    parser.add_argument(
+        "--max-commits", type=int, default=None, help="Limit commit depth"
+    )
+    parser.add_argument(
+        "--include-working-tree",
+        action="store_true",
+        default=True,
+        help="Scan working tree",
+    )
     args = parser.parse_args()
 
     all_findings = {}
@@ -165,10 +210,13 @@ def main():
         all_findings[p] = f_commits + f_tree
 
     total = sum(len(v) for v in all_findings.values())
-    print(f"\n>>> SCAN FINISHED: {total} total actionable finding(s) across {len(args.paths)} target(s).")
+    print(
+        f"\n>>> SCAN FINISHED: {total} total actionable finding(s) across {len(args.paths)} target(s)."
+    )
     if total > 0:
         sys.exit(1)
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
