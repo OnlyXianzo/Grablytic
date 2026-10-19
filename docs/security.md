@@ -23,8 +23,9 @@ If you discover a security vulnerability or sensitive data issue in Grablytic, p
 | Asset | Storage Location | Accessibility |
 |---|---|---|
 | Session cookies (`cookies.txt`, 0600) | App-private storage | App only (sandboxed) |
-| Auth flags, settings, presets | SharedPreferences (private) | App only |
-| Download history | App-private SQLite database | App only |
+| Non-secret settings and presets | SharedPreferences (private) | App only |
+| Proxy credentials | `flutter_secure_storage` (Android Keystore-backed) | App only; not stored in history JSON |
+| Download history | App-private SQLite database | App only; proxy fields are scrubbed |
 | Diagnostic logs (`app_logs.txt`) | App-private logs directory | App only (tokens redacted) |
 | Exported logs | User-selected folder / Downloads | User only |
 

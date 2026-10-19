@@ -1,0 +1,38 @@
+# Verified research — Python input guards and bounded workers
+
+**Run date:** 2026-10-19 (Asia/Kolkata)
+**Method:** verified-implementation — parallel source angles, local call-path audit, disagreement resolution, blast-radius review, implementation, and regression proof.
+
+## Research angles and claims
+
+| Angle | Sources (recency) | Cross-verified claim | Decision | Confidence |
+|---|---|---|---|---|
+| yt-dlp selector amplification | [yt-dlp format-selection documentation](https://github.com/yt-dlp/yt-dlp), retrieved 2026-10-19; [Debian yt-dlp manpage](https://manpages.debian.org/unstable/yt-dlp/yt-dlp.1.en.html), retrieved 2026-10-19 | `all` selects all available formats separately; `mergeall` selects/merges all formats under multistream options. A raw selector is therefore an execution policy, not an inert label. | Reject amplification atoms in both remote-profile ingestion and the direct `format_code`/IPC route; constrain expression length and container names. | High |
+| Python queue and worker semantics | [Python `queue` documentation](https://docs.python.org/3/library/queue.html), retrieved 2026-10-19; repository cleanup and event-delivery call-path audit | `Queue.empty()` cannot safely establish that a later `get()`/`put()` is race-free. The engine must record result delivery explicitly rather than infer it from queue state. A worker pool alone does not bound submitted work unless admission is also capped. | Use a `result_delivered` state bit, a bounded IPC in-flight semaphore, a fixed cancel-watchdog pool, and bounded queues. | High |
+| SSRF, DNS, and redirects | [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html), retrieved 2026-10-19; [OWASP A10 SSRF](https://owasp.org/Top10/2021/A10_2021-Server-Side_Request_Forgery_(SSRF)/), retrieved 2026-10-19; [Python `urllib.request` / `HTTPRedirectHandler`](https://docs.python.org/3/library/urllib.request.html), retrieved 2026-10-19 | Scheme/host validation alone is insufficient: redirects change destinations, and validating DNS separately from the connection leaves a DNS-rebinding/time-of-check-to-time-of-use gap. `HTTPRedirectHandler.redirect_request` is the standard interception point; Python documents raising `HTTPError` to prevent another redirect handler from taking over. | Profile URLs (control-plane fetches) fail closed on DNS errors and re-check each redirect destination before following it. User media URLs fail open only when DNS returns no answer, preserving availability; any known non-public answer is still rejected. | High for redirect/DNS behavior; Medium for the policy trade-off |
+| Deno permissions | [Deno permissions reference](https://docs.deno.com/runtime/reference/permissions/), last updated 2026-07-21; [Deno `run` CLI](https://docs.deno.com/runtime/reference/cli/run/), last updated 2026-06-19; [Deno 1.36 release notes](https://deno.com/blog/v1.36), 2023-08-03 | `deno run` defaults to a sandbox, and the explicit `--deny-read`, `--deny-write`, `--deny-net`, `--deny-env`, `--deny-run`, `--deny-sys`, `--deny-ffi`, and `--deny-import` flags exist; deny flags take precedence over allow flags. | Keep `deno eval` out of the path and pass the explicit deny-all set even though the current inert solver is disabled by default. | High |
+
+## Disagreements and limits resolved
+
+- Older descriptions of the URL guard treated every DNS failure as fail-closed. The accepted policy is sink-specific: profile fetching is control-plane work and fails closed; media URLs are explicitly user-selected content and fail open **only when resolution yields no answer**. Direct private/loopback/link-local/reserved literals and any resolved private address remain blocked for both.
+- OWASP warns that a preflight DNS check does not pin the subsequent connection. This implementation also re-validates redirect destinations, but it does **not** pin the validated IP into urllib's socket connection. A DNS-rebinding TOCTOU race therefore remains a documented residual; network egress controls or a pinning transport are still needed for a stronger guarantee.
+- The 256 KiB remote-profile and 1 MiB `.info.json` caps are local defensive policy choices, not upstream protocol limits. They are tested at the boundary and fail back without poisoning existing state.
+- yt-dlp's remote EJS bundle is not passed through Grablytic's local JavaScript stub hash allowlist. The current PO-token stub is inert and disabled by default; the Deno deny-all flags apply to the local solver path only. The yt-dlp EJS bundle has its own upstream integrity mechanism, as documented in `engine/grablytic_engine/po_token.py`.
+
+## Verified approach and blast radius
+
+1. Treat a custom format expression as executable input. Reject `all`, `allvideo`, `allformats`, `mergeall`, malformed/control-containing expressions, overlong selectors, and unsupported containers at ingestion **and** at the direct options-builder boundary.
+2. Bound remote profile bodies before JSON parsing; do not replace a good cache with empty, invalid, oversized, or failed responses. Write local profile updates through a same-directory temporary file, `fsync`, and `os.replace`.
+3. Revalidate each remote-profile redirect target before urllib opens it. Apply fail-closed DNS behavior to this control-plane request while preserving fail-open-on-DNS-error behavior for user media.
+4. Enforce bounded work at each layer: 4 MiB IPC line ceiling, 8 slow-lane workers, 24 in-flight slow requests, `ERROR_BUSY` load shedding, 4 watchdog workers with a queue capped at 500, five retry-backoff permits, and bounded progress/result queues.
+5. Do not use `Queue.empty()` to decide whether the client received a terminal result. Mark delivery only when a callback returns successfully or a result is drained; if the callback fails, fall back to the result queue. Check the slot-generation token before marking, and retain the 30-second cleanup failsafe.
+6. Install and verify one FFmpeg serialization seam (primary `real_run_ffmpeg`, fallback `Popen.run`). If neither can be verified, reject the download instead of silently running post-processing without the concurrency bound.
+7. Blast radius: `site_profiles.py`, `url_guard.py`, `format_selector.py`, `opts_builder.py`, `resume.py`, `downloader.py`, `__main__.py`, and their focused pytest modules.
+
+## Proof
+
+- `engine/tests/test_site_profile_hardening.py`: unsafe direct selectors, remote sanitation/cache behavior, 256 KiB read bound, atomic persistence, and unsafe redirect rejection.
+- `engine/tests/test_url_guard_fail_closed.py` / `test_url_guard_ssrf.py`: media/profile DNS policy split; metadata, private literals, and rebinding answers remain blocked.
+- `engine/tests/test_deno_sandbox.py`: all eight deny flags, no `eval`, no allow flags, and the default-off gate.
+- `engine/tests/test_resume_hardening.py`: oversized info sidecars do not provide a resume URL.
+- `engine/tests/test_ffmpeg_gate_verification.py`, `test_result_delivered_flag.py`, `test_terminal_delivery_fallback.py`, `test_watchdog_pool.py`, and `test_ipc_framing_and_backpressure.py`: verified gate, success/failure delivery behavior, bounded watchdog, and IPC shedding/framing.

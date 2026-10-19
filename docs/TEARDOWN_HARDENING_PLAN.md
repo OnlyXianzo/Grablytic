@@ -13,6 +13,14 @@ Method: `verified-implementation` skill (Research → Verify → Implement → P
 | R4 | `Queue.empty()` reliability | Python stdlib docs | Documented as unreliable in multi-threaded contexts. The existing comment's invariant ("worker puts terminal BEFORE stamping finished_at") is an engine-internal invariant, not an upstream yt-dlp contract. | High |
 | R5 | Deno `deny-write` bypass | CVE-2025-61785 | `Deno.utime` could bypass `--deny-write`; fixed in 2.5.3/2.2.15. Sandbox hardening must also deny env/run/sys. | Medium |
 
+## Written research reports
+
+- [Python guards and worker bounds](TEARDOWN_RESEARCH_PYTHON_GUARDS_AND_WORKER_BOUNDS.md)
+- [Dart secure storage and history search](TEARDOWN_RESEARCH_DART_STORAGE_AND_SEARCH.md)
+- [Android service concurrency and native-package integrity](TEARDOWN_RESEARCH_ANDROID_CONCURRENCY_AND_INTEGRITY.md)
+- [CI integration testing and coverage](TEARDOWN_RESEARCH_CI_TESTING_AND_COVERAGE.md)
+- [30 hard questions and implementation-scoped answers](TEARDOWN_HARD_QUESTIONS_ANSWERS.md)
+
 ## Verified approach (Phase 2 gate)
 
 Reconcile rule applied: **most recent + most authoritative + corroborated**. Where sources
@@ -42,8 +50,8 @@ disagreed (none materially), noted inline.
    `SharedPreferences` / `DownloadRecord.configJson`. (Findings 12, 21)
 10. **Android** — `DownloadService` state guarded by a lock; wake-lock renewal off
     the main thread; `BootReceiver` must not start a foreground service. (Findings 7, 17, 26)
-11. **Data integrity** — atomic profile writes, bounded `.info.json` reads, FTS5
-    search, resumable progress preservation. (Findings 13, 20, 23)
+11. **Data integrity** — atomic profile writes, bounded `.info.json` reads, FTS4
+    search with startup-index validation and parameterized LIKE fallback, resumable progress preservation. (Findings 13, 20, 23)
 12. **Correctness** — channel URLs are not playlists; collision-safe default
     output template; user `verbose` respected; hook errors classified. (Findings 14, 15, 16, 22, 24)
 13. **IPC contract** — explicit `contract_version`, negotiation, and a
@@ -74,17 +82,19 @@ disagreed (none materially), noted inline.
 19. `fix(engine): snapshot the logger error tail under a lock`
 20. `fix(ipc): version the engine contract and negotiate it`
 21. `fix(desktop): release pending completers on engine restart`
-22. `fix(db): FTS5-backed download history search`
+22. `fix(db): FTS4-backed download history search and proxy scrub`
 23. `fix(dart): preserve progress across auto-resume`
 24. `fix(android): guard DownloadService state with a lock`
 25. `fix(android): renew the wake lock off the main thread`
 26. `fix(android): BootReceiver must not start a foreground service`
-27. `fix(android): hash-verify extracted binary packages`
+27. `fix(android): SHA-256 verify package trees and guard ZIP extraction`
 28. `fix(android): keep proxy credentials out of plaintext storage`
 29. `ci: exercise the real Android→Chaquopy→Python IPC path`
-30. `ci: exclude dead code from the coverage denominator`
+30. `ci: exclude non-runnable code from the coverage denominator`
 31. `ci: raise the Flutter coverage floor`
-32. `docs: answer the 30 hard questions`
+32. `docs: answer the 30 hard questions and record residuals`
+
+Previously published small commits are on `fix/architectural-teardown-hardening`; the latest known remote tip is `893fb3b1b1bf`. Follow-up changes are being committed separately on top of that tip. Push only after confirming a fast-forward; never force-push.
 
 ## Phase 3 — Blast radius (per change, checked before editing)
 
@@ -96,7 +106,7 @@ disagreed (none materially), noted inline.
 | watchdog pool | `downloader.cancel_download`, `downloader._start_cancel_watchdog` |
 | site-profile validation | `site_profiles.load_site_profiles_from_url`, `opts_builder` (format/container consumers) |
 | contract version | `bootstrap()`, `desktop_engine_service`, `platform_channel_engine_service`, `mock_engine_service` |
-| FTS5 | `download_history_db.getAll`, schema migration, `download_provider` |
+| FTS4 | `download_history_db.getAll`, schema migration, `download_provider` |
 | DownloadService lock | `DownloadService.kt`, `MainActivity.kt`, `DownloadDbSweepHelper.kt` |
 | proxy secret storage | `settings_provider.dart`, `DownloadRecord.configJson` writers/readers |
 
@@ -106,3 +116,5 @@ disagreed (none materially), noted inline.
 * New tests per finding, in the same commit as the fix.
 * `ruff check --select F --ignore F401 engine/` clean.
 * `python3 tool/check_doc_links.py` clean.
+* `PYTHONPATH=. pytest tool/tests -q` green; LCOV parser tests pass; parse all workflow YAML and verify the Android bridge job is present.
+* Do not claim Flutter Pub resolution or Android/Kotlin/device behavior unless the SDK/emulator run completes. Keep the DNS-rebinding TOCTOU residual explicit.
