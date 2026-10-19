@@ -105,7 +105,9 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
           disable-linux-hw-accel: false
-          script: flutter test integration_test/android_engine_ipc_test.dart -d emulator-5554
+          # This smoke test does not use host-side DevTools, so skip starting
+          # a local Dart Development Service for the device-only test session.
+          script: flutter test --no-dds integration_test/android_engine_ipc_test.dart -d emulator-5554
 
   python_verify:
     name: Python Engine Tests (3.11 / 3.12)
