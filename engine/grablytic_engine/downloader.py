@@ -7,7 +7,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 
-from yt_dlp import YoutubeDL
+from grablytic_engine.ytdlp_network import GuardedYoutubeDL as YoutubeDL
 
 from grablytic_engine.opts_builder import build_ydl_opts
 from grablytic_engine.errors import classify_error, GrablyticError

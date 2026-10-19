@@ -1,5 +1,5 @@
 import re
-from yt_dlp import YoutubeDL
+from grablytic_engine.ytdlp_network import GuardedYoutubeDL as YoutubeDL
 
 from grablytic_engine.paths import get_paths
 from grablytic_engine.config import coerce_config

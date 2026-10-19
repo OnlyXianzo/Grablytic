@@ -5,7 +5,7 @@ profile override URLs) or the filesystem (download-archive path) or to
 redirect all traffic (proxy) passes through here first. stdlib only.
 Malformed values fail closed. DNS failure is sink-specific: profile fetches
 fail closed, while user-selected media keeps the documented availability
-policy. The profile transport pins validated socket addresses and redirects.
+policy. The profile and guarded yt-dlp transports pin validated direct socket addresses and revalidate redirects; explicitly configured media proxies remain a trusted egress boundary.
 """
 
 import http.client
