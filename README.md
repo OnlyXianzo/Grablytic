@@ -23,6 +23,7 @@ Built with **Flutter** + **Python (yt-dlp)** — one Dart codebase for **Android
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/OnlyXianzo/Grablytic?utm_source=oss&utm_medium=github&utm_campaign=OnlyXianzo%2FGrablytic&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://github.com/OnlyXianzo/Grablytic/pulls?q=is%3Apr+is%3Aopen)
 [![Version](https://img.shields.io/badge/version-0.0.1--beta-blue)](pubspec.yaml)
 [![Get it on Obtainium](https://img.shields.io/badge/Get_it_on-Obtainium-1e88e5?logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%7D)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/OnlyXianzo/Grablytic)
 
 [✨ Features](#-features) · [🆕 What's New](#-whats-new--september-2026) · [🚀 Quick Start](#-quick-start) · [🏗 Architecture](#-architecture) · [📚 Docs](#-documentation) · [🤝 Contributing](#-contributing)
 
@@ -124,6 +125,57 @@ Grablytic is a **privacy-first media downloader** that pulls video & audio from
 | 🧠 **Smart** | Tiered codec ladder (AV1 → VP9 → H264), per-site profiles, presets, SponsorBlock. |
 | 🛡️ **Resilient** | Classified errors with one-tap recovery, resume broken downloads, auto engine updates. |
 | 📱 **Native** | Zero-install Android binaries, foreground keep-alive, share-intent, Kotlin callbacks. |
+
+---
+
+## 🧑‍💻 How this is built
+
+Grablytic is a student hobby project, and it is vibe coded end to end. Every
+screen, the Python engine, and the Android glue were written with AI coding
+agents. What keeps it honest is the other half: a human maintainer reads the
+diff, runs the test suites, and tries the builds on real devices before a
+release.
+
+That means iteration is fast, and the project is upfront about where the code
+comes from. Treat a release like any other hobby project: read the notes, keep a
+backup, and report anything that looks wrong. Real code, not AI slop: every
+change has to compile, run, and pass the tests.
+
+The rules agents follow are in [`AGENTS.md`](AGENTS.md). The reusable skills
+are in [`skills/`](skills/README.md).
+
+---
+
+## 🔐 What it stores
+
+Nothing in the app is designed to harm your device or leak your data. No
+account, no telemetry, no ads. Here is what it actually keeps:
+
+- Settings, presets, playlists, and download history live in the app's private
+  storage.
+- Logs stay in the app's private log directory and are redacted before they are
+  written. You export them only when you choose to.
+- Cookies are optional. When enabled, they are stored in app-private storage
+  with owner-only permissions.
+- Downloads go to the folder you pick.
+- Android backup is disabled, so private app files are not uploaded to cloud
+  backup.
+- Crash reporting is off by default. If you enable it in Settings, the app
+  files a GitHub issue with the error and a redacted log tail. Nothing is sent
+  otherwise. You can also file a report manually from the diagnostics screen.
+
+The app does not request permission to install other apps. On Android, the
+media tools ship inside the APK and run from its native library directory, which
+the operating system controls. On desktop, the app downloads Deno, FFmpeg, and
+aria2c on first run, checks their SHA-256, then runs them from its own data
+folder.
+
+Uninstalling the app removes its private data. Files you downloaded stay where
+you put them until you delete them.
+
+Grablytic is a downloader. It talks to the sites you give it, and those sites
+see the request like any other client. Use it for content you have the right to
+download.
 
 ---
 
@@ -433,9 +485,8 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → fix table, log locations, FAQ |
 | [JS Runtimes (Android)](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Deno/Node/QuickJS/bgutil research + recommendation |
 | [Contributing](docs/contributing.md) | Style, commits, branches, PRs, architecture rules |
+| [Agent skills](skills/README.md) | Reusable review, verification, and design-loop skills |
 | [Changelog](docs/CHANGELOG.md) | Release notes distilled from commit history |
-| [Accessibility audit](docs/testing/ACCESSIBILITY_AUDIT.md) | WCAG 2.2 findings & remediation |
-| [Performance audit](docs/testing/PERFORMANCE_AUDIT.md) | Frame-rate methodology |
 | [DMCA / Copyright](DMCA.md) | General-purpose-tool notice, user responsibility, takedown contact |
 
 ---
@@ -449,6 +500,7 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 5. PR to `main` with motivation + verification + platforms tested.
 
 See **[docs/contributing.md](docs/contributing.md)** for the full checklist.
+Agents should also read [`AGENTS.md`](AGENTS.md).
 
 ---
 
