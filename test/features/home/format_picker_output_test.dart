@@ -8,6 +8,7 @@ import 'package:grablytic/core/utils/picker_session_state.dart';
 import 'package:grablytic/features/home/screens/format_picker_screen.dart';
 import 'package:grablytic/providers/settings_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../support/fake_proxy_secret_store.dart';
 
 class _OutputEngine extends MockEngineService {
   final configs = <Map<String, dynamic>>[];
@@ -56,6 +57,7 @@ void main() {
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
+          proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
           engineProvider.overrideWithValue(engine),
         ],
         child: const MaterialApp(

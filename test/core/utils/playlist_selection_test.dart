@@ -4,16 +4,25 @@ import 'package:grablytic/core/utils/playlist_selection.dart';
 
 void main() {
   group('isPlaylistUrl (mirrors engine detect_playlist)', () {
-    test('matches playlist / channel / sets URLs', () {
+    test('matches playlist and sets URLs', () {
       expect(isPlaylistUrl('https://youtube.com/watch?v=abc&list=PLxyz'),
           isTrue);
       expect(
           isPlaylistUrl('https://youtube.com/playlist?list=PLxyz'), isTrue);
-      expect(isPlaylistUrl('https://youtube.com/channel/UCxyz'), isTrue);
-      expect(isPlaylistUrl('https://youtube.com/c/ChannelName'), isTrue);
-      expect(isPlaylistUrl('https://youtube.com/@ChannelName'), isTrue);
-      expect(isPlaylistUrl('https://youtube.com/user/username'), isTrue);
       expect(isPlaylistUrl('https://example.com/sets/abc'), isTrue);
+    });
+
+    test('does not treat channel URLs as playlists', () {
+      const channels = [
+        'https://youtube.com/channel/UCxyz',
+        'https://youtube.com/c/ChannelName',
+        'https://youtube.com/@ChannelName',
+        'https://youtube.com/user/username',
+      ];
+      for (final url in channels) {
+        expect(isPlaylistUrl(url), isFalse);
+        expect(isChannelUrl(url), isTrue);
+      }
     });
 
     test('rejects single videos and unrelated URLs', () {

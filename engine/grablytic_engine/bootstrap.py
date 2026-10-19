@@ -4,6 +4,7 @@ import json
 import time
 import platform
 import hashlib
+import urllib.parse
 import urllib.request
 import zipfile
 import tarfile
@@ -248,6 +249,38 @@ def _write_progress(step: str, status: str):
         pass
 
 
+def _require_https_url(url: str) -> None:
+    """Reject non-HTTPS URLs and credentials before fetching release data."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Binary source URL must be an absolute HTTPS URL") from exc
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError(
+            "Binary source URL must be an absolute HTTPS URL without user info"
+        )
+
+
+class _HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Prevent HTTPS release requests from downgrading on a redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _require_https_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open_https_request(request, timeout: int):
+    url = request.full_url if isinstance(request, urllib.request.Request) else request
+    _require_https_url(url)
+    opener = urllib.request.build_opener(_HTTPSOnlyRedirectHandler())
+    return opener.open(request, timeout=timeout)
+
+
 def _github_api(url: str) -> dict:
     req = urllib.request.Request(
         url,
@@ -256,7 +289,7 @@ def _github_api(url: str) -> dict:
             "Accept": "application/vnd.github+json",
         },
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with _open_https_request(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -428,7 +461,7 @@ def _download_and_extract_binary(
         archive_path = os.path.join(tmpdir, "downloaded_asset")
 
         with (
-            urllib.request.urlopen(req, timeout=15) as response,
+            _open_https_request(req, timeout=15) as response,
             open(archive_path, "wb") as out_file,
         ):
             shutil.copyfileobj(response, out_file)
@@ -583,7 +616,7 @@ def _bootstrap_github_binary(
                     sha_url,
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
                 )
-                with urllib.request.urlopen(req, timeout=10) as resp:
+                with _open_https_request(req, timeout=10) as resp:
                     sha_content = resp.read().decode("utf-8")
                 sha_map = _parse_sha256_file(sha_content)
                 bare = archive_name.lstrip("./")
@@ -1079,7 +1112,7 @@ def update_check() -> dict:
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                         },
                     )
-                    with urllib.request.urlopen(req, timeout=10) as resp:
+                    with _open_https_request(req, timeout=10) as resp:
                         sha_content = resp.read().decode("utf-8")
                     sha_map = _parse_sha256_file(sha_content)
                     latest_sha = (

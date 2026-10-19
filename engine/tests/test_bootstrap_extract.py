@@ -110,8 +110,9 @@ class TestSafeTar:
 class TestWiredExtraction:
     @pytest.mark.unit
     def test_e2e_malicious_zip_blocked(self, tmp_path, monkeypatch):
-        import urllib.request
+        import importlib
 
+        boot = importlib.import_module("grablytic_engine.bootstrap")
         payload = _zip_bytes([("../evil.txt", b"x")])
         sha = __import__("hashlib").sha256(payload).hexdigest()
 
@@ -132,8 +133,8 @@ class TestWiredExtraction:
                 pass
 
         monkeypatch.setattr(
-            urllib.request,
-            "urlopen",
+            boot,
+            "_open_https_request",
             lambda req, timeout=None: MockResponse(),
         )
         with pytest.raises(ValueError, match="Security Violation"):
@@ -142,6 +143,43 @@ class TestWiredExtraction:
                 sha,
                 str(tmp_path / "bin" / "tool"),
                 str(tmp_path),
+            )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///etc/passwd",
+            "ftp://example.com/tool.tar.gz",
+            "http://example.com/tool.zip",
+            "https://user@example.com/tool.zip",
+        ],
+    )
+    def test_binary_download_rejects_non_https_urls(self, tmp_path, url):
+        with pytest.raises(ValueError, match="HTTPS"):
+            _download_and_extract_binary(
+                url,
+                None,
+                str(tmp_path / "bin" / "tool"),
+                str(tmp_path),
+            )
+
+    @pytest.mark.unit
+    def test_https_download_rejects_insecure_redirects(self):
+        import importlib
+        from urllib.request import Request
+
+        boot = importlib.import_module("grablytic_engine.bootstrap")
+        handler = boot._HTTPSOnlyRedirectHandler()
+        request = Request("https://github.com/example/tool.zip")
+        with pytest.raises(ValueError, match="HTTPS"):
+            handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "http://example.com/tool.zip",
             )
 
 
@@ -271,7 +309,8 @@ class TestUpdateCheckMeaningful:
             boot, "_resolve_latest_release", lambda repo: self._release()
         )
         monkeypatch.setattr(
-            "urllib.request.urlopen",
+            boot,
+            "_open_https_request",
             lambda req, timeout=10: _FakeResp(
                 f"{self.REMOTE_SHA}  {self.ARCHIVE}\n".encode()
             ),

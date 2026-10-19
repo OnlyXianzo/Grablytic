@@ -298,8 +298,10 @@ class TestBootstrap:
         import zipfile
         import hashlib
         import tempfile
-        import urllib.request
+        import sys
         from grablytic_engine.bootstrap import _download_and_extract_binary
+
+        bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
 
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as z:
@@ -325,7 +327,9 @@ class TestBootstrap:
                 pass
 
         monkeypatch.setattr(
-            urllib.request, "urlopen", lambda req, timeout=None: MockResponse(zip_bytes)
+            bootstrap_mod,
+            "_open_https_request",
+            lambda req, timeout=None: MockResponse(zip_bytes),
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -343,8 +347,10 @@ class TestBootstrap:
         import tarfile
         import hashlib
         import tempfile
-        import urllib.request
+        import sys
         from grablytic_engine.bootstrap import _download_and_extract_binary
+
+        bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
 
         tar_buffer = io.BytesIO()
         with tarfile.open(fileobj=tar_buffer, mode="w:gz") as t:
@@ -372,7 +378,9 @@ class TestBootstrap:
                 pass
 
         monkeypatch.setattr(
-            urllib.request, "urlopen", lambda req, timeout=None: MockResponse(tar_bytes)
+            bootstrap_mod,
+            "_open_https_request",
+            lambda req, timeout=None: MockResponse(tar_bytes),
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -458,7 +466,6 @@ class TestBootstrap:
     ):
         import shutil
         import sys
-        import urllib.request
         from grablytic_engine.bootstrap import _bootstrap_github_binary
 
         bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]
@@ -502,7 +509,7 @@ class TestBootstrap:
                 )
             raise ValueError(f"Unexpected url {url}")
 
-        monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+        monkeypatch.setattr(bootstrap_mod, "_open_https_request", mock_urlopen)
         monkeypatch.setattr(
             bootstrap_mod,
             "_download_and_extract_binary",

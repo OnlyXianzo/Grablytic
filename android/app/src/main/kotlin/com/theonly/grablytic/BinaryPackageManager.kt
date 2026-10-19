@@ -42,6 +42,7 @@ object BinaryPackageManager {
     private const val TAG = "BinaryPackages"
     private const val MAX_ZIP_PATH_CHARS = 4096
     private const val MAX_SYMLINK_TARGET_BYTES = 4096
+    private const val ZIP_STAMP_FILE = ".zipsize"
 
     private data class Spec(val name: String, val zipSo: String, val exeSo: String)
 
@@ -189,7 +190,7 @@ object BinaryPackageManager {
             val children = directory.listFiles()
                 ?: throw IllegalStateException("Cannot list package directory: ${directory.absolutePath}")
             for (entry in children.sortedBy { it.name }) {
-                if (directory.canonicalFile.path == rootPath && entry.name == ".zipsize") continue
+                if (directory.canonicalFile.path == rootPath && entry.name == ZIP_STAMP_FILE) continue
                 val stat = android.system.Os.lstat(entry.absolutePath)
                 val absolutePath = entry.absolutePath
                 check(absolutePath.startsWith(rootPrefix)) {
@@ -294,7 +295,7 @@ object BinaryPackageManager {
         val backup = File(packagesDir, "$name.bak")
 
         if (!target.exists()) {
-            if (tmp.exists() && File(tmp, ".zipsize").isFile) {
+            if (tmp.exists() && File(tmp, ZIP_STAMP_FILE).isFile) {
                 Log.w(TAG, "Recovering swap: promoting intact $tmp to $target")
                 if (!tmp.renameTo(target)) {
                     Log.e(TAG, "Failed to promote $tmp to $target")
@@ -317,7 +318,7 @@ object BinaryPackageManager {
 
         recoverIncompleteSwap(packagesDir, target.name)
 
-        val marker = File(target, ".zipsize")
+        val marker = File(target, ZIP_STAMP_FILE)
         val currentStamp = readStamp(marker)
 
         val zipLength = zipSo.length()
@@ -359,7 +360,7 @@ object BinaryPackageManager {
         markExecutableNoFollow(tmp)
         val treeSha256 = computeTreeSha256(tmp)
         val newStamp = Stamp(zipLength, zipMtime, archiveSha256, treeSha256)
-        writeStamp(File(tmp, ".zipsize"), newStamp)
+        writeStamp(File(tmp, ZIP_STAMP_FILE), newStamp)
 
         if (target.exists()) {
             if (!target.renameTo(backup)) {
@@ -409,7 +410,7 @@ object BinaryPackageManager {
             check(segments.none { it.isEmpty() || it == "." || it == ".." }) {
                 "Unsafe zip entry path: $raw"
             }
-            check(segments.first() != ".zipsize") { "Reserved package metadata path: $raw" }
+            check(segments.first() != ZIP_STAMP_FILE) { "Reserved package metadata path: $raw" }
             val output = File(target, pathName).canonicalFile
             check(output.path.startsWith(rootPath + File.separator) && output.path != rootPath) {
                 "Zip entry escapes package directory: $raw"
@@ -430,8 +431,10 @@ object BinaryPackageManager {
                     "Zip entry parent escapes package directory: ${record.entry.name}"
                 }
                 val ancestor = byPath[parent.path]
-                check(ancestor == null || ancestor.kind == ZipEntryKind.DIRECTORY) {
-                    "Non-directory zip entry is an ancestor of ${record.entry.name}: ${ancestor?.entry?.name}"
+                if (ancestor != null) {
+                    check(ancestor.kind == ZipEntryKind.DIRECTORY) {
+                        "Non-directory zip entry is an ancestor of ${record.entry.name}: ${ancestor.entry.name}"
+                    }
                 }
                 parent = parent.parentFile
             }

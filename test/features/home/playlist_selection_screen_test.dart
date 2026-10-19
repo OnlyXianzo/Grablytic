@@ -7,6 +7,7 @@ import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/home/screens/playlist_selection_screen.dart';
 import 'package:grablytic/providers/download_provider.dart';
 import 'package:grablytic/providers/settings_provider.dart';
+import '../../support/fake_proxy_secret_store.dart';
 
 const _playlistUrl = 'https://www.youtube.com/playlist?list=PLtest123';
 
@@ -107,6 +108,7 @@ Future<_PlaylistFakeEngine> _pump(
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
+        proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
         engineProvider.overrideWithValue(engine),
       ],
       child: const MaterialApp(
@@ -187,6 +189,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(engine),
           ],
           child: const MaterialApp(

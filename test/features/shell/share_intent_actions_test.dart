@@ -10,6 +10,7 @@ import 'package:grablytic/features/home/widgets/share_intent_sheet.dart';
 import 'package:grablytic/providers/download_provider.dart';
 import 'package:grablytic/providers/engine_status_provider.dart';
 import 'package:grablytic/providers/settings_provider.dart';
+import '../../support/fake_proxy_secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _url = 'https://example.com/video';
@@ -79,6 +80,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
+        proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
         engineProvider.overrideWithValue(engine),
         engineStatusProvider.overrideWith(
           (ref) async => EngineStatus(ready: ready),

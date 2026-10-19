@@ -452,9 +452,10 @@ def _pending_pop_first() -> dict | None:
     Dicts preserve insertion order, so the first key is the oldest
     entry. Caller holds `_downloads_lock`.
     """
-    for did in _pending_queue:
-        return _pending_queue.pop(did)
-    return None
+    if not _pending_queue:
+        return None
+    did = next(iter(_pending_queue))
+    return _pending_queue.pop(did)
 
 
 def _index_key(url, audio_only) -> tuple:
