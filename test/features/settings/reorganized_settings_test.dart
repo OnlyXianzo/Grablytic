@@ -223,10 +223,11 @@ void main() {
       await prefs.setString('qualityCeiling', '720p');
       await prefs.setBool('wifiOnly', true);
 
+      final secretStore = FakeProxySecretStore();
       final container = ProviderContainer(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
-            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
+          proxySecretStoreProvider.overrideWithValue(secretStore),
         ],
       );
       addTearDown(container.dispose);

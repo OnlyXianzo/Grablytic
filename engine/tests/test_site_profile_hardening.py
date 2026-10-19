@@ -131,6 +131,8 @@ def test_pinned_https_handler_keeps_certificate_validation_enabled():
 
 @pytest.mark.unit
 def test_https_connection_keeps_original_hostname_for_tls(monkeypatch):
+    import ssl
+
     from grablytic_engine import url_guard as ug
 
     seen = {}
@@ -140,6 +142,9 @@ def test_https_connection_keeps_original_hostname_for_tls(monkeypatch):
             pass
 
     class _Context:
+        check_hostname = True
+        verify_mode = ssl.CERT_REQUIRED
+
         def wrap_socket(self, raw_socket, *, server_hostname):
             seen["socket"] = raw_socket
             seen["server_hostname"] = server_hostname

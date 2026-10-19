@@ -5,13 +5,16 @@ profile override URLs) or the filesystem (download-archive path) or to
 redirect all traffic (proxy) passes through here first. stdlib only.
 Malformed values fail closed. DNS failure is sink-specific: profile fetches
 fail closed, while user-selected media keeps the documented availability
-policy. The profile and guarded yt-dlp transports pin validated direct socket addresses and revalidate redirects; explicitly configured media proxies remain a trusted egress boundary.
+policy. The profile and guarded yt-dlp transports pin validated direct socket
+addresses and revalidate redirects; explicitly configured media proxies remain
+a trusted egress boundary.
 """
 
 import http.client
 import ipaddress
 import os
 import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -427,6 +430,16 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, host, addresses, *args, **kwargs):
         self._vetted_addresses = addresses
+        if kwargs.get("context") is None:
+            kwargs["context"] = ssl.create_default_context()
+        context = kwargs["context"]
+        if (
+            not getattr(context, "check_hostname", False)
+            or getattr(context, "verify_mode", ssl.CERT_NONE) != ssl.CERT_REQUIRED
+        ):
+            raise ValueError(
+                "Pinned HTTPS requires certificate and hostname validation"
+            )
         super().__init__(host, *args, **kwargs)
 
     def connect(self):
@@ -459,6 +472,16 @@ class _PinnedHTTPHandler(urllib.request.HTTPHandler):
 
 
 class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, debuglevel=0, context=None, check_hostname=None):
+        if check_hostname is False:
+            raise ValueError("Pinned HTTPS requires hostname validation")
+        context = context or ssl.create_default_context()
+        if not context.check_hostname or context.verify_mode != ssl.CERT_REQUIRED:
+            raise ValueError(
+                "Pinned HTTPS requires certificate and hostname validation"
+            )
+        super().__init__(debuglevel, context, check_hostname=True)
+
     def https_open(self, request):
         addresses = _request_addresses(request)
         connection = lambda host, **kwargs: _PinnedHTTPSConnection(host, addresses, **kwargs)
