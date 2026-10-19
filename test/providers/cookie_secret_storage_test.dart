@@ -56,7 +56,7 @@ void main() {
       for (final entry in raw) {
         expect(entry, isNot(contains('legacysecret')));
       }
-      expect(store.stored['legacy-1'], contains('legacysecret'));
+      expect(store.stored['legacy-1']!.join('\n'), contains('legacysecret'));
       // The jar is still available in memory for the cookies screen.
       final profile = notifier.state.cookieProfiles.first;
       expect((profile['content'] as List).first, contains('legacysecret'));

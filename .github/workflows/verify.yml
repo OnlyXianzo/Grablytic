@@ -101,17 +101,17 @@ jobs:
       # android/app/build.gradle.kts used to be disabled, so nothing
       # checked a release build before it shipped.
       #
-      # `android/gradlew` is git-ignored: the Flutter tool injects the
-      # Gradle wrapper into android/ the first time it runs a Gradle
-      # task. Copy the very same wrapper template the tool uses so the
-      # lint gate can call Gradle directly.
+      # `flutter pub get` writes the plugin registrant with the dev-only
+      # plugins (integration_test) that the release variant does not
+      # link, so the release Java compile fails before lint even starts.
+      # A release-mode `flutter build --config-only` rewrites the
+      # registrant without them and injects the Gradle wrapper into
+      # android/ (it is git-ignored), without running a single Gradle
+      # task, so this stays a lint-only step.
       - name: Android lint (release variant)
-        working-directory: android
         run: |
-          if [ ! -x ./gradlew ]; then
-            cp -R "$FLUTTER_ROOT/bin/cache/artifacts/gradle_wrapper/." ./
-            chmod +x ./gradlew
-          fi
+          flutter build apk --release --config-only
+          cd android
           ./gradlew :app:lintRelease --console=plain
 
       - name: Run end-to-end Android integration test

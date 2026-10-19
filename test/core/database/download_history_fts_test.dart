@@ -157,6 +157,7 @@ void main() {
       search: 'legacy-token',
     );
     expect(hits.map((record) => record.id), ['pre-index']);
-    expect(await (await DownloadHistoryDb.instance.database).getVersion(), 6);
+    // v7 normalises the timestamps to UTC ISO-8601 with an offset.
+    expect(await (await DownloadHistoryDb.instance.database).getVersion(), 7);
   });
 }
