@@ -160,6 +160,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install YAML parser
+        run: python -m pip install PyYAML
+
       - name: Parse every workflow as YAML + check required keys
         run: |
           python3 - <<'EOF'
@@ -174,9 +181,13 @@ jobs:
                   print(f"::error file={path}::YAML parse error: {e}")
                   failed = True
                   continue
+              if not isinstance(doc, dict):
+                  print(f"::error file={path}::workflow document must be a mapping")
+                  failed = True
+                  continue
               # NOTE: YAML 1.1 parses the `on:` key as boolean True.
               on = doc.get("on", doc.get(True))
-              if not isinstance(doc, dict) or on is None or "jobs" not in doc:
+              if on is None or "jobs" not in doc:
                   print(f"::error file={path}::missing top-level 'on'/'jobs' keys")
                   failed = True
                   continue
