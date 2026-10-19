@@ -79,7 +79,6 @@ _MAX_ACTIVE_ENTRIES = 2000
 # bounded instead of forever.
 _FFMPEG_GATE_TIMEOUT = 600.0
 _ffmpeg_semaphore = threading.Semaphore(1)
-_ffmpeg_patched = False
 _ffmpeg_patch_lock = threading.Lock()
 # Diagnostic state for the FFmpeg gate. `installed` is only True when the
 # gate is VERIFIABLY in place (the patch was found on the class and the
@@ -135,13 +134,60 @@ def _ffmpeg_gate_release() -> None:
         pass
 
 
+
+def _cancel_event_is_set(cancel_event) -> bool:
+    if cancel_event is None:
+        return False
+    try:
+        return bool(cancel_event.is_set())
+    except Exception:
+        return False
+
+
+def _raise_ffmpeg_gate_busy() -> None:
+    message = (
+        "FFmpeg post-processing busy: another merge still "
+        f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
+        "please retry the download"
+    )
+    log.warn(message)
+    raise RuntimeError(message)
+
+
+def _run_with_ffmpeg_gate(callable_obj, args, kwargs, cancel_event=None):
+    if not _ffmpeg_gate_acquire(cancel_event):
+        if _cancel_event_is_set(cancel_event):
+            raise KeyboardInterrupt("Download cancelled by user")
+        _raise_ffmpeg_gate_busy()
+    try:
+        return callable_obj(*args, **kwargs)
+    finally:
+        _ffmpeg_gate_release()
+
+
+def _is_ffmpeg_command(args) -> bool:
+    try:
+        if not args:
+            return False
+        command = args[0]
+        if isinstance(command, (list, tuple)) and command:
+            executable = str(command[0])
+        elif isinstance(command, str):
+            executable = command
+        else:
+            return False
+        basename = os.path.basename(executable).lower()
+        if basename.endswith(".exe"):
+            basename = basename[:-4]
+        return basename in {"ffmpeg", "ffprobe", "avconv"}
+    except Exception:
+        return False
+
 def _install_ffmpeg_seam_primary() -> str:
     """Install the gate on ``FFmpegPostProcessor.real_run_ffmpeg``.
 
     Returns the seam name on success, raises on failure. The seam is
-    verified: the attribute must have existed AND the assignment must
-    have stuck (identity check) — a silent no-op used to leave the
-    engine with ZERO serialization and no CI signal.
+    verified: the attribute must have existed and the assignment must stick.
     """
     import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
 
@@ -150,48 +196,25 @@ def _install_ffmpeg_seam_primary() -> str:
         raise AttributeError(
             "yt_dlp.postprocessor.ffmpeg.FFmpegPostProcessor is missing"
         )
-    orig = getattr(pp_cls, "real_run_ffmpeg", None)
-    if orig is None or not callable(orig):
+    original = getattr(pp_cls, "real_run_ffmpeg", None)
+    if original is None or not callable(original):
         raise AttributeError(
             "FFmpegPostProcessor.real_run_ffmpeg is missing — yt-dlp "
             "renamed the seam, so the FFmpeg serialization gate cannot "
             "be installed here"
         )
-    if getattr(orig, "_grablytic_ffmpeg_gate", False):
-        # Already ours (module reloaded, or a double install).
+    if getattr(original, "grablytic_ffmpeg_gate", False):
         return "FFmpegPostProcessor.real_run_ffmpeg"
 
     def serialized_real_run_ffmpeg(self, *args, **kwargs):
-        cancel_event = _current_cancel_event()
-        acquired = _ffmpeg_gate_acquire(cancel_event)
-        if not acquired:
-            if cancel_event is not None:
-                try:
-                    if cancel_event.is_set():
-                        # Cancellation wins over the busy gate: the
-                        # download's normal cancelled path runs.
-                        raise KeyboardInterrupt("Download cancelled by user")
-                except KeyboardInterrupt:
-                    raise
-                except Exception:
-                    pass
-            # NOTE: wording avoids "timeout"/"timed out" so
-            # classify_error() does not misroute this to
-            # ERROR_NETWORK (transient list); it surfaces as
-            # ERROR_UNKNOWN (recoverable) with a Retry action.
-            msg = (
-                "FFmpeg post-processing busy: another merge still "
-                f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
-                "please retry the download"
-            )
-            log.warn(msg)
-            raise RuntimeError(msg)
-        try:
-            return orig(self, *args, **kwargs)
-        finally:
-            _ffmpeg_gate_release()
+        return _run_with_ffmpeg_gate(
+            original,
+            (self, *args),
+            kwargs,
+            cancel_event=_current_cancel_event(),
+        )
 
-    serialized_real_run_ffmpeg._grablytic_ffmpeg_gate = True
+    serialized_real_run_ffmpeg.grablytic_ffmpeg_gate = True
     pp_cls.real_run_ffmpeg = serialized_real_run_ffmpeg
     if getattr(pp_cls, "real_run_ffmpeg", None) is not serialized_real_run_ffmpeg:
         raise RuntimeError(
@@ -200,87 +223,38 @@ def _install_ffmpeg_seam_primary() -> str:
         )
     return "FFmpegPostProcessor.real_run_ffmpeg"
 
-
 def _install_ffmpeg_seam_fallback() -> str:
-    """Fallback seam: serialize every ffmpeg/ffprobe process spawn.
-
-    ``yt_dlp.utils.Popen.run`` is a core utility used by ALL
-    postprocessors, so patching it covers ffmpeg invocations that the
-    primary seam misses (e.g. a renamed PP method). Only used when the
-    primary seam is unavailable — never both, or the gate would be
-    acquired twice and deadlock.
-    """
+    """Serialize ffmpeg/ffprobe process spawns when the primary seam is absent."""
     from yt_dlp.utils import Popen
 
-    orig_descriptor = Popen.__dict__.get("run")
-    orig_run = Popen.run
-    if isinstance(orig_descriptor, classmethod) and getattr(
-        orig_descriptor.__func__, "_grablytic_ffmpeg_gate", False
+    original_descriptor = Popen.__dict__.get("run")
+    if isinstance(original_descriptor, classmethod) and getattr(
+        original_descriptor.__func__, "grablytic_ffmpeg_gate", False
     ):
-        # Already ours (module reloaded, or a double install).
         return "yt_dlp.utils.Popen.run"
-    if not isinstance(orig_descriptor, classmethod):
+    if not isinstance(original_descriptor, classmethod):
         raise AttributeError(
             "yt_dlp.utils.Popen.run is no longer a classmethod — the "
             "fallback serialization seam cannot be installed"
         )
 
-    _FFMPEG_BINARIES = ("ffmpeg", "ffprobe", "avconv")
+    def serialized_run(cls, *args, **kwargs):
+        original_run = original_descriptor.__get__(None, cls)
+        if not _is_ffmpeg_command(args):
+            return original_run(*args, **kwargs)
+        return _run_with_ffmpeg_gate(
+            original_run,
+            args,
+            kwargs,
+            cancel_event=_current_cancel_event(),
+        )
 
-    def _is_ffmpeg_cmd(args) -> bool:
-        try:
-            cmd = args[0]
-            if isinstance(cmd, (list, tuple)) and cmd:
-                exe = str(cmd[0])
-            elif isinstance(cmd, str):
-                exe = cmd
-            else:
-                return False
-            base = os.path.basename(exe).lower()
-            if base.endswith(".exe"):
-                base = base[: -len(".exe")]
-            return base in _FFMPEG_BINARIES
-        except Exception:
-            return False
-
-    def _serialized_run_impl(cls, *args, **kwargs):
-        if not _is_ffmpeg_cmd(args):
-            return orig_run(*args, **kwargs)
-        cancel_event = _current_cancel_event()
-        if not _ffmpeg_gate_acquire(cancel_event):
-            if cancel_event is not None:
-                try:
-                    if cancel_event.is_set():
-                        raise KeyboardInterrupt("Download cancelled by user")
-                except KeyboardInterrupt:
-                    raise
-                except Exception:
-                    pass
-            msg = (
-                "FFmpeg post-processing busy: another merge still "
-                f"running after {int(_FFMPEG_GATE_TIMEOUT)}s; "
-                "please retry the download"
-            )
-            log.warn(msg)
-            raise RuntimeError(msg)
-        try:
-            return orig_run(*args, **kwargs)
-        finally:
-            _ffmpeg_gate_release()
-
-    _serialized_run_impl._grablytic_ffmpeg_gate = True
-    Popen.run = classmethod(_serialized_run_impl)
-    # NOTE: `Popen.run` is a classmethod, so `getattr(Popen, "run")`
-    # returns a NEW bound method on every access — an `is` comparison
-    # would always be False. Verify through the class __dict__ instead.
+    serialized_run.grablytic_ffmpeg_gate = True
+    Popen.run = classmethod(serialized_run)
     installed = Popen.__dict__.get("run")
-    if (
-        not isinstance(installed, classmethod)
-        or installed.__func__ is not _serialized_run_impl
-    ):
+    if not isinstance(installed, classmethod) or installed.__func__ is not serialized_run:
         raise RuntimeError("Popen.run serialization assignment did not stick")
     return "yt_dlp.utils.Popen.run"
-
 
 def _ensure_ffmpeg_serialized() -> bool:
     """Install the process-wide FFmpeg serialization gate.
@@ -291,11 +265,10 @@ def _ensure_ffmpeg_serialized() -> bool:
     surfaced by :func:`ffmpeg_serialization_status` (and therefore by
     bootstrap) so the condition is visible instead of invisible.
     """
-    global _ffmpeg_patched
-    if _ffmpeg_patched and _ffmpeg_patch_state.get("installed"):
+    if _ffmpeg_patch_state.get("installed"):
         return True
     with _ffmpeg_patch_lock:
-        if _ffmpeg_patched and _ffmpeg_patch_state.get("installed"):
+        if _ffmpeg_patch_state.get("installed"):
             return True
         errors: list[str] = []
         for name, installer in (
@@ -307,7 +280,6 @@ def _ensure_ffmpeg_serialized() -> bool:
             except Exception as exc:
                 errors.append(f"{name}: {type(exc).__name__}: {exc}")
                 continue
-            _ffmpeg_patched = True
             _ffmpeg_patch_state.update(
                 installed=True,
                 seam=seam,
@@ -320,7 +292,6 @@ def _ensure_ffmpeg_serialized() -> bool:
         # CPU-oversubscription / thermal-throttling / LMK failure the gate
         # exists to prevent.
         detail = "; ".join(errors) or "unknown error"
-        _ffmpeg_patched = False
         _ffmpeg_patch_state.update(installed=False, seam=None, error=detail)
         try:
             log.error(
@@ -1353,8 +1324,6 @@ def _maybe_retry_transient(err, attempts_made: int, cancel, download_id: str) ->
         try:
             if cancel.is_set():
                 raise KeyboardInterrupt("Download cancelled by user")
-        except KeyboardInterrupt:
-            raise
         except Exception:
             pass
     return True
@@ -1401,6 +1370,429 @@ def _single_item_error(url, opts, config, ydl_logger):
         return None
 
 
+def _register_download_worker(
+    url,
+    download_id: str,
+    config,
+    progress_queue,
+    result_queue,
+    cancel_event,
+    event_callback,
+):
+    config = coerce_config(config)
+    cancel = cancel_event or threading.Event()
+    progress = progress_queue or _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+    result = result_queue or _queue.Queue(maxsize=_QUEUE_MAXSIZE)
+    with _downloads_lock:
+        existing = _active_downloads.get(download_id, {})
+        existing.update(
+            {
+                "cancel_event": cancel,
+                "progress_queue": progress,
+                "result_queue": result,
+                "url": url,
+                "audio_only": _is_audio_mode(config),
+                "started_at": datetime.now(timezone.utc),
+                "event_callback": event_callback or existing.get("event_callback"),
+            }
+        )
+        _active_downloads[download_id] = existing
+    return config, cancel, progress, result
+
+
+def _safe_url_for_log(url) -> str:
+    return url.split("?", 1)[0] if isinstance(url, str) else "<url>"
+
+
+def _log_output_disk_space(download_id: str) -> None:
+    try:
+        out_dir = get_paths().get("output_dir") or get_paths().get("data_dir") or "."
+        import shutil
+
+        free_mb = shutil.disk_usage(out_dir).free // (1024 * 1024)
+        log.info(
+            f"Disk output ({out_dir}): {free_mb}MB free",
+            extra={"download_id": download_id},
+        )
+    except Exception:
+        pass
+
+
+def _report_missing_ffmpeg(download_id: str, event_callback, result_queue) -> bool:
+    paths = get_paths()
+    ffmpeg_path = paths.get("ffmpeg_path")
+    if ffmpeg_path and os.path.isfile(ffmpeg_path) and os.access(ffmpeg_path, os.X_OK):
+        return False
+    import shutil
+
+    if shutil.which("ffmpeg"):
+        return False
+    message = "FFmpeg binary is missing or not executable. Please run bootstrap first."
+    log.error(
+        f"Cannot start download: FFmpeg binary is missing or not executable ({ffmpeg_path}). "
+        "Please run bootstrap first.",
+        extra={"download_id": download_id},
+    )
+    event = {
+        "type": "event",
+        "event": "error",
+        "download_id": download_id,
+        "error_type": "ERROR_FFMPEG_MISSING",
+        "error_message": message,
+        "recoverable": True,
+    }
+    result = {
+        "success": False,
+        "download_id": download_id,
+        "error_type": "ERROR_FFMPEG_MISSING",
+        "error_message": message,
+    }
+    _send_terminal_result(event_callback, result_queue, event, result)
+    return True
+
+
+def _send_terminal_result(event_callback, result_queue, event: dict, result: dict) -> None:
+    if event_callback is not None:
+        _emit_event(event_callback, json.dumps(event))
+    else:
+        result_queue.put(result)
+
+
+def _log_effective_download_config(opts: dict, config: dict, download_id: str) -> None:
+    try:
+        js_map = opts.get("js_runtimes")
+        js_name = next(iter(js_map), None) if isinstance(js_map, dict) else None
+        log.info(
+            f"Download config: format={opts.get('format')} "
+            f"container={opts.get('merge_output_format')} "
+            f"aria2c={'yes' if 'external_downloader' in opts else 'no'} "
+            f"js={js_name or 'none'}",
+            extra={"download_id": download_id},
+        )
+        if config.get("verbose"):
+            from grablytic_engine.persistent import sanitize
+
+            log.debug(
+                f"Effective opts: {sanitize(opts)}",
+                extra={"download_id": download_id},
+            )
+    except Exception:
+        pass
+
+
+def _build_download_options(
+    url,
+    download_id: str,
+    config: dict,
+    network_type: str,
+    progress_queue,
+    result_queue,
+    event_callback,
+):
+    if _report_missing_ffmpeg(download_id, event_callback, result_queue):
+        return None
+    opts = build_ydl_opts(
+        config=config,
+        network_type=network_type,
+        progress_queue=progress_queue,
+        download_id=download_id,
+        url=url,
+        event_callback=event_callback,
+    )
+    paths = get_paths()
+    if paths.get("cache_dir"):
+        # Keep yt-dlp's internal cache apart from partial and completed media.
+        opts["cachedir"] = paths["cache_dir"]
+    _apply_verbosity(opts, config)
+    _log_effective_download_config(opts, config, download_id)
+    return opts
+
+
+def _report_attempt_failure(
+    download_id: str,
+    event_callback,
+    result_queue,
+    error: GrablyticError,
+    attempts_made: int,
+) -> None:
+    event = {
+        "type": "event",
+        "event": "error",
+        "download_id": download_id,
+        "error_type": error.error_type,
+        "error_message": error.message,
+        "recoverable": error.recoverable,
+        "suggests_vpn": error.suggests_vpn,
+        "attempts": attempts_made,
+    }
+    result = {
+        "success": False,
+        "download_id": download_id,
+        "error_type": error.error_type,
+        "error_message": error.message,
+        "recoverable": error.recoverable,
+        "suggests_vpn": error.suggests_vpn,
+        "attempts": attempts_made,
+    }
+    _send_terminal_result(event_callback, result_queue, event, result)
+
+
+def _run_download_attempts(
+    url,
+    download_id: str,
+    config: dict,
+    opts: dict,
+    cancel,
+    result_queue,
+    event_callback,
+    safe_url: str,
+):
+    attempts_made = 0
+    while True:
+        attempts_made += 1
+        _note_attempt(download_id, attempts_made)
+        ydl_logger = YDLogger(log, download_id=download_id)
+        opts["logger"] = ydl_logger
+        try:
+            ydl = YoutubeDL(opts)
+
+            def ydl_hook(progress):
+                if cancel.is_set():
+                    raise KeyboardInterrupt("Download cancelled by user")
+                return progress
+
+            ydl.add_progress_hook(ydl_hook)
+            ydl.download([url])
+        except Exception as exc:
+            error = classify_error(exc)
+            if _maybe_retry_transient(error, attempts_made, cancel, download_id):
+                continue
+            log.log_exception(
+                exc,
+                f"Download failed: {safe_url}",
+                extra={"download_id": download_id},
+            )
+            _report_attempt_failure(
+                download_id, event_callback, result_queue, error, attempts_made
+            )
+            return None
+
+        single_error = _single_item_error(url, opts, config, ydl_logger)
+        if single_error is None:
+            return attempts_made, ydl_logger
+        if _maybe_retry_transient(single_error, attempts_made, cancel, download_id):
+            continue
+        try:
+            last_message = ydl_logger.errors[-1] if ydl_logger.errors else ""
+        except Exception:
+            last_message = ""
+        log.error(
+            f"Download failed, failing item: {last_message[:200]}",
+            extra={"download_id": download_id},
+        )
+        _report_attempt_failure(
+            download_id, event_callback, result_queue, single_error, attempts_made
+        )
+        return None
+
+
+def _send_cancelled_result(download_id: str, event_callback, result_queue) -> None:
+    event = {
+        "type": "event",
+        "event": "cancelled",
+        "download_id": download_id,
+        "error_type": "ERROR_CANCELLED",
+        "error_message": "Download cancelled by user",
+    }
+    result = {
+        "success": False,
+        "download_id": download_id,
+        "error_type": "ERROR_CANCELLED",
+        "error_message": "Download cancelled by user",
+    }
+    _send_terminal_result(event_callback, result_queue, event, result)
+
+
+def _select_output_path(ydl_logger: YDLogger, progress_file):
+    for output_path in reversed(ydl_logger.output_files):
+        if os.path.isfile(output_path):
+            return output_path
+    if progress_file and os.path.isfile(progress_file):
+        return progress_file
+    return None
+
+
+def _reconcile_output_size(final_path, final_bytes: int) -> int:
+    if not final_path:
+        return final_bytes
+    try:
+        disk_size = os.path.getsize(final_path)
+    except Exception:
+        return final_bytes
+    if disk_size > 0 and (final_bytes <= 0 or disk_size > final_bytes):
+        return disk_size
+    return final_bytes
+
+
+def _report_download_success(
+    download_id: str,
+    config: dict,
+    progress_queue,
+    result_queue,
+    event_callback,
+    ydl_logger: YDLogger,
+    attempts_made: int,
+) -> None:
+    final_bytes, progress_file = _last_known_file_info(progress_queue)
+    final_path = _select_output_path(ydl_logger, progress_file)
+    final_bytes = _reconcile_output_size(final_path, final_bytes)
+    _delete_infojson_sidecars(final_path)
+    thumbnail_path = _find_thumbnail_path(final_path, config)
+    event = {
+        "type": "event",
+        "event": "finished",
+        "download_id": download_id,
+        "filesize_bytes": final_bytes,
+        "total_bytes": final_bytes,
+        "file_path": final_path,
+        "thumbnail_path": thumbnail_path,
+        "attempts": attempts_made,
+    }
+    result = {
+        "success": True,
+        "download_id": download_id,
+        "filesize_bytes": final_bytes,
+        "file_path": final_path,
+        "thumbnail_path": thumbnail_path,
+        "attempts": attempts_made,
+    }
+    _send_terminal_result(event_callback, result_queue, event, result)
+
+
+def _execute_download(
+    url,
+    download_id: str,
+    config: dict,
+    network_type: str,
+    progress_queue,
+    result_queue,
+    cancel,
+    event_callback,
+    safe_url: str,
+) -> None:
+    log.info(f"Download started: {safe_url}", extra={"download_id": download_id})
+    _log_output_disk_space(download_id)
+    opts = _build_download_options(
+        url,
+        download_id,
+        config,
+        network_type,
+        progress_queue,
+        result_queue,
+        event_callback,
+    )
+    if opts is None:
+        return
+    outcome = _run_download_attempts(
+        url,
+        download_id,
+        config,
+        opts,
+        cancel,
+        result_queue,
+        event_callback,
+        safe_url,
+    )
+    if outcome is None:
+        return
+    attempts_made, ydl_logger = outcome
+    if cancel.is_set():
+        log.warn(f"Download cancelled: {download_id}", extra={"download_id": download_id})
+        _send_cancelled_result(download_id, event_callback, result_queue)
+        return
+    log.info("Download completed", extra={"download_id": download_id})
+    _report_download_success(
+        download_id,
+        config,
+        progress_queue,
+        result_queue,
+        event_callback,
+        ydl_logger,
+        attempts_made,
+    )
+
+
+def _report_download_exception(
+    exc: Exception, safe_url: str, download_id: str, event_callback, result_queue
+) -> None:
+    log.log_exception(
+        exc, f"Download failed: {safe_url}", extra={"download_id": download_id}
+    )
+    error = classify_error(exc)
+    event = {
+        "type": "event",
+        "event": "error",
+        "download_id": download_id,
+        "error_type": error.error_type,
+        "error_message": error.message,
+        "recoverable": error.recoverable,
+        "suggests_vpn": error.suggests_vpn,
+    }
+    result = {
+        "success": False,
+        "download_id": download_id,
+        "error_type": error.error_type,
+        "error_message": error.message,
+        "recoverable": error.recoverable,
+        "suggests_vpn": error.suggests_vpn,
+    }
+    _send_terminal_result(event_callback, result_queue, event, result)
+
+
+def _report_download_crash(exc: BaseException, download_id: str, event_callback, result_queue) -> None:
+    kind = type(exc).__name__
+    try:
+        log.error(
+            f"Download aborted ({kind}): {download_id}",
+            extra={"download_id": download_id},
+        )
+    except Exception:
+        pass
+    message = f"Downloader stopped unexpectedly ({kind})"
+    event = {
+        "type": "event",
+        "event": "error",
+        "download_id": download_id,
+        "error_type": "ERROR_DOWNLOADER_CRASH",
+        "error_message": message,
+        "recoverable": True,
+        "suggests_vpn": False,
+    }
+    result = {
+        "success": False,
+        "download_id": download_id,
+        "error_type": "ERROR_DOWNLOADER_CRASH",
+        "error_message": message,
+        "recoverable": True,
+        "suggests_vpn": False,
+    }
+    _send_terminal_result(event_callback, result_queue, event, result)
+
+
+def _finish_download_worker(download_id: str, slot_token, event_callback) -> None:
+    log.clear_context()
+    _set_current_cancel_event(None)
+    owned = _close_own_slot(download_id, slot_token)
+    if not owned:
+        return
+    if event_callback is not None:
+        _mark_result_delivered(download_id)
+    try:
+        _pump_queue()
+    except Exception:
+        pass
+
+
 def download_thread(
     url: str,
     download_id: str,
@@ -1413,473 +1805,53 @@ def download_thread(
     slot_token=None,
 ):
     with download_context(download_id):
-        # Android bridge delivers config as a JSON string (Chaquopy Maps are
-        # live HashMap proxies, not mappings). Coerce before any use.
-        config = coerce_config(config)
-        cancel = cancel_event or threading.Event()
-        # Bounded queues: _put_bounded() drop-oldest only engages when the
-        # queue has a maxsize; unbounded Queue() never raises Full so tens
-        # of thousands of progress ticks were retained until finish (OOM).
-        prog_q = progress_queue or _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-        res_q = result_queue or _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-
-        with _downloads_lock:
-            # Update in place — start_download() already registered this id with
-            # its thread handle; a full reassignment would drop "thread" and any
-            # fields added by concurrent callers (re-audit #10).
-            existing = _active_downloads.get(download_id, {})
-            existing.update(
-                {
-                    "cancel_event": cancel,
-                    "progress_queue": prog_q,
-                    "result_queue": res_q,
-                    "url": url,
-                    "audio_only": _is_audio_mode(config),
-                    "started_at": datetime.now(timezone.utc),
-                    "event_callback": event_callback or existing.get("event_callback"),
-                }
-            )
-            _active_downloads[download_id] = existing
-
+        config, cancel, progress, result = _register_download_worker(
+            url,
+            download_id,
+            config,
+            progress_queue,
+            result_queue,
+            cancel_event,
+            event_callback,
+        )
         log.set_context(download_id=download_id)
-        # Bind this thread's cancel event so the FFmpeg gate can be
-        # interrupted while it waits for the process-wide semaphore
-        # (a cancel used to be ignored for up to the 600s gate timeout).
         _set_current_cancel_event(cancel)
-        # Self-heal the FFmpeg gate: a module reload or a late yt-dlp
-        # import can invalidate the patch. Re-verify per download instead
-        # of trusting the import-time install.
         try:
             _ensure_ffmpeg_serialized()
         except Exception:
             pass
 
-        # Bound before try — the except-handler below logs safe_url,
-        # so a failure before its in-try assignment must not raise
-        # UnboundLocalError and mask the real error.
         safe_url = "<url>"
         try:
-            # Never log raw URLs: share/clipboard links routinely carry
-            # signed query params (sig/lsig). Host + path is enough to
-            # identify the item in diagnostics.
-            safe_url = url.split("?", 1)[0] if isinstance(url, str) else "<url>"
-            log.info(
-                f"Download started: {safe_url}", extra={"download_id": download_id}
+            safe_url = _safe_url_for_log(url)
+            _execute_download(
+                url,
+                download_id,
+                config,
+                network_type,
+                progress,
+                result,
+                cancel,
+                event_callback,
+                safe_url,
             )
-            try:
-                out_dir = (
-                    get_paths().get("output_dir") or get_paths().get("data_dir") or "."
-                )
-                import shutil as _shutil
-
-                free_mb = _shutil.disk_usage(out_dir).free // (1024 * 1024)
-                log.info(
-                    f"Disk output ({out_dir}): {free_mb}MB free",
-                    extra={"download_id": download_id},
-                )
-            except Exception:
-                pass
-
-            paths = get_paths()
-            ffmpeg_path = paths.get("ffmpeg_path")
-            if (
-                not ffmpeg_path
-                or not os.path.isfile(ffmpeg_path)
-                or not os.access(ffmpeg_path, os.X_OK)
-            ):
-                import shutil
-
-                if not shutil.which("ffmpeg"):
-                    log.error(
-                        f"Cannot start download: FFmpeg binary is missing or not executable ({ffmpeg_path}). "
-                        "Please run bootstrap first.",
-                        extra={"download_id": download_id},
-                    )
-                    err_event = json.dumps(
-                        {
-                            "type": "event",
-                            "event": "error",
-                            "download_id": download_id,
-                            "error_type": "ERROR_FFMPEG_MISSING",
-                            "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
-                            "recoverable": True,
-                        }
-                    )
-                    if event_callback is not None:
-                        _emit_event(event_callback, err_event)
-                    else:
-                        res_q.put(
-                            {
-                                "success": False,
-                                "download_id": download_id,
-                                "error_type": "ERROR_FFMPEG_MISSING",
-                                "error_message": "FFmpeg binary is missing or not executable. Please run bootstrap first.",
-                            }
-                        )
-                    return
-
-            opts = build_ydl_opts(
-                config=config,
-                network_type=network_type,
-                progress_queue=prog_q,
-                download_id=download_id,
-                url=url,
-                event_callback=event_callback,
-            )
-
-            if get_paths().get("cache_dir"):
-                # Use cache_dir solely for yt-dlp internal HTTP/extractor cache,
-                # NEVER for paths["temp"] which dumps partial/complete media streams
-                # into app-internal cache subject to Android OS silent eviction.
-                opts["cachedir"] = get_paths()["cache_dir"]
-
-            # The user's verbose setting decides. The engine used to
-            # force `verbose = True`, so yt-dlp's verbose output flooded
-            # the log on EVERY download and the setting was ignored.
-            _apply_verbosity(opts, config)
-            # One-line effective config: future "it just sat there" reports can
-            # be triaged from this alone (wrong format? no aria2c? no JS?).
-            try:
-                js_map = opts.get("js_runtimes")
-                js_name = next(iter(js_map), None) if isinstance(js_map, dict) else None
-                log.info(
-                    f"Download config: format={opts.get('format')} "
-                    f"container={opts.get('merge_output_format')} "
-                    f"aria2c={'yes' if 'external_downloader' in opts else 'no'} "
-                    f"js={js_name or 'none'}",
-                    extra={"download_id": download_id},
-                )
-                # Full effective opts (sanitized) at DEBUG, only when the user
-                # enabled verbose: the complete triage picture without spamming
-                # default installs.
-                if config.get("verbose"):
-                    from grablytic_engine.persistent import sanitize
-
-                    log.debug(
-                        f"Effective opts: {sanitize(opts)}",
-                        extra={"download_id": download_id},
-                    )
-            except Exception:
-                pass
-
-            # FEATURE 5: per-attempt loop for transient auto-retry. The loop
-            # runs inside the already-admitted slot (same slot_token, one
-            # terminal, one pump in finally) so retries respect the
-            # concurrency gate and admission queue instead of bypassing
-            # them. Fresh YDLogger per attempt: a previous attempt's
-            # logger.errors must not poison this attempt's outcome.
-            attempts_made = 0
-            while True:
-                attempts_made += 1
-                _note_attempt(download_id, attempts_made)
-                ydl_logger = YDLogger(log, download_id=download_id)
-                opts["logger"] = ydl_logger
-                try:
-                    ydl = YoutubeDL(opts)
-
-                    def ydl_hook(d):
-                        if cancel.is_set():
-                            raise KeyboardInterrupt("Download cancelled by user")
-                        return d
-
-                    ydl.add_progress_hook(ydl_hook)
-
-                    ydl.download([url])
-                except KeyboardInterrupt:
-                    raise
-                except Exception as exc:
-                    err = classify_error(exc)
-                    if _maybe_retry_transient(err, attempts_made, cancel, download_id):
-                        continue
-                    log.log_exception(
-                        exc,
-                        f"Download failed: {safe_url}",
-                        extra={"download_id": download_id},
-                    )
-                    terminal_event = json.dumps(
-                        {
-                            "type": "event",
-                            "event": "error",
-                            "download_id": download_id,
-                            "error_type": err.error_type,
-                            "error_message": err.message,
-                            "recoverable": err.recoverable,
-                            # Drives ErrorRecoveryCard VPN recommendations (re-audit #5).
-                            "suggests_vpn": err.suggests_vpn,
-                            "attempts": attempts_made,
-                        }
-                    )
-                    if event_callback is not None:
-                        _emit_event(event_callback, terminal_event)
-                    else:
-                        res_q.put(
-                            {
-                                "success": False,
-                                "download_id": download_id,
-                                "error_type": err.error_type,
-                                "error_message": err.message,
-                                "recoverable": err.recoverable,
-                                "suggests_vpn": err.suggests_vpn,
-                                "attempts": attempts_made,
-                            }
-                        )
-                    return
-                # ignoreerrors=True lets post-processing failures return
-                # normally — a SINGLE item's logger.error still means broken
-                # output, routed through the same transient-retry verdict.
-                single_err = _single_item_error(url, opts, config, ydl_logger)
-                if single_err is not None:
-                    if _maybe_retry_transient(
-                        single_err, attempts_made, cancel, download_id
-                    ):
-                        continue
-                    try:
-                        last_msg = ydl_logger.errors[-1] if ydl_logger.errors else ""
-                    except Exception:
-                        last_msg = ""
-                    log.error(
-                        f"Download failed, failing item: {last_msg[:200]}",
-                        extra={"download_id": download_id},
-                    )
-                    terminal_event = json.dumps(
-                        {
-                            "type": "event",
-                            "event": "error",
-                            "download_id": download_id,
-                            "error_type": single_err.error_type,
-                            "error_message": single_err.message,
-                            "recoverable": single_err.recoverable,
-                            "suggests_vpn": single_err.suggests_vpn,
-                            "attempts": attempts_made,
-                        }
-                    )
-                    if event_callback is not None:
-                        _emit_event(event_callback, terminal_event)
-                    else:
-                        res_q.put(
-                            {
-                                "success": False,
-                                "download_id": download_id,
-                                "error_type": single_err.error_type,
-                                "error_message": single_err.message,
-                                "recoverable": single_err.recoverable,
-                                "suggests_vpn": single_err.suggests_vpn,
-                                "attempts": attempts_made,
-                            }
-                        )
-                    return
-                break
-
-            if cancel.is_set():
-                log.warn(
-                    f"Download cancelled: {download_id}",
-                    extra={"download_id": download_id},
-                )
-                terminal_event = json.dumps(
-                    {
-                        "type": "event",
-                        "event": "cancelled",
-                        "download_id": download_id,
-                        "error_type": "ERROR_CANCELLED",
-                        "error_message": "Download cancelled by user",
-                    }
-                )
-                if event_callback is not None:
-                    _emit_event(event_callback, terminal_event)
-                else:
-                    res_q.put(
-                        {
-                            "success": False,
-                            "download_id": download_id,
-                            "error_type": "ERROR_CANCELLED",
-                            "error_message": "Download cancelled by user",
-                        }
-                    )
-            else:
-                # Single-item logger failures were already handled (with the
-                # same transient-retry verdict) inside the attempt loop above;
-                # reaching here means the final attempt had no item failure.
-                log.info("Download completed", extra={"download_id": download_id})
-                # Terminal finished event carries the last known byte count and file path
-                # so the UI never zeroes out sizes or file paths (filesize_bytes contract).
-                final_bytes, prog_file = _last_known_file_info(prog_q)
-
-                final_path = None
-                for p in reversed(ydl_logger.output_files):
-                    if os.path.isfile(p):
-                        final_path = p
-                        break
-                if not final_path and prog_file and os.path.isfile(prog_file):
-                    final_path = prog_file
-
-                if final_path and os.path.isfile(final_path):
-                    try:
-                        disk_size = os.path.getsize(final_path)
-                        if disk_size > 0 and (
-                            final_bytes <= 0 or disk_size > final_bytes
-                        ):
-                            final_bytes = disk_size
-                    except Exception:
-                        pass
-
-                # Local thumbnail sidecar (writethumbnail output kept via
-                # already_have_thumbnail) so Dart can render Library
-                # thumbnails offline instead of re-fetching remote URLs.
-                # Success-path only: the sidecar served resume duty during the
-                # download; on terminal success it would litter Download/.
-                # Failure/cancel paths above return before reaching here, so
-                # their sidecars survive for resume.py.
-                _delete_infojson_sidecars(final_path)
-
-                thumbnail_path = _find_thumbnail_path(final_path, config)
-
-                terminal_event = json.dumps(
-                    {
-                        "type": "event",
-                        "event": "finished",
-                        "download_id": download_id,
-                        "filesize_bytes": final_bytes,
-                        "total_bytes": final_bytes,
-                        "file_path": final_path,
-                        "thumbnail_path": thumbnail_path,
-                        "attempts": attempts_made,
-                    }
-                )
-                if event_callback is not None:
-                    _emit_event(event_callback, terminal_event)
-                else:
-                    res_q.put(
-                        {
-                            "success": True,
-                            "download_id": download_id,
-                            "filesize_bytes": final_bytes,
-                            "file_path": final_path,
-                            "thumbnail_path": thumbnail_path,
-                            "attempts": attempts_made,
-                        }
-                    )
-
         except KeyboardInterrupt:
             log.warn(
-                f"Download cancelled: {download_id}", extra={"download_id": download_id}
+                f"Download cancelled: {download_id}",
+                extra={"download_id": download_id},
             )
-            terminal_event = json.dumps(
-                {
-                    "type": "event",
-                    "event": "cancelled",
-                    "download_id": download_id,
-                    "error_type": "ERROR_CANCELLED",
-                    "error_message": "Download cancelled by user",
-                }
-            )
-            if event_callback is not None:
-                _emit_event(event_callback, terminal_event)
-            else:
-                res_q.put(
-                    {
-                        "success": False,
-                        "download_id": download_id,
-                        "error_type": "ERROR_CANCELLED",
-                        "error_message": "Download cancelled by user",
-                    }
-                )
+            _send_cancelled_result(download_id, event_callback, result)
         except Exception as exc:
-            log.log_exception(
-                exc, f"Download failed: {safe_url}", extra={"download_id": download_id}
+            _report_download_exception(
+                exc, safe_url, download_id, event_callback, result
             )
-            err = classify_error(exc)
-            terminal_event = json.dumps(
-                {
-                    "type": "event",
-                    "event": "error",
-                    "download_id": download_id,
-                    "error_type": err.error_type,
-                    "error_message": err.message,
-                    "recoverable": err.recoverable,
-                    # Drives ErrorRecoveryCard VPN recommendations (re-audit #5).
-                    "suggests_vpn": err.suggests_vpn,
-                }
-            )
-            if event_callback is not None:
-                _emit_event(event_callback, terminal_event)
-            else:
-                res_q.put(
-                    {
-                        "success": False,
-                        "download_id": download_id,
-                        "error_type": err.error_type,
-                        "error_message": err.message,
-                        "recoverable": err.recoverable,
-                        "suggests_vpn": err.suggests_vpn,
-                    }
-                )
         except BaseException as exc:
-            # SystemExit / GeneratorExit / KeyboardInterrupt-outside-cancel and
-            # friends bypass `except Exception`. Without this the item rotted as
-            # "downloading" forever with zero diagnostics (ghost downloads).
-            kind = type(exc).__name__
-            try:
-                log.error(
-                    f"Download aborted ({kind}): {download_id}",
-                    extra={"download_id": download_id},
-                )
-            except Exception:
-                pass
-            terminal_event = json.dumps(
-                {
-                    "type": "event",
-                    "event": "error",
-                    "download_id": download_id,
-                    "error_type": "ERROR_DOWNLOADER_CRASH",
-                    "error_message": f"Downloader stopped unexpectedly ({kind})",
-                    "recoverable": True,
-                    "suggests_vpn": False,
-                }
-            )
-            if event_callback is not None:
-                _emit_event(event_callback, terminal_event)
-            else:
-                res_q.put(
-                    {
-                        "success": False,
-                        "download_id": download_id,
-                        "error_type": "ERROR_DOWNLOADER_CRASH",
-                        "error_message": f"Downloader stopped unexpectedly ({kind})",
-                        "recoverable": True,
-                        "suggests_vpn": False,
-                    }
-                )
+            _report_download_crash(exc, download_id, event_callback, result)
         finally:
-            log.clear_context()
-            # Drop the thread-local cancel binding so a later FFmpeg call
-            # on this (pooled) thread never sees a stale event.
-            _set_current_cancel_event(None)
-
-            # BRUTAL-2a: stamp + promote only our own generation. A stale
-            # worker exiting after a same-id retry must not mark the fresh
-            # download terminal (cleanup would reap it mid-flight) nor
-            # over-admit via an extra pump.
-            owned = _close_own_slot(download_id, slot_token)
-            if owned:
-                if event_callback is not None:
-                    # The terminal went out through the callback, so the
-                    # client has it.
-                    _mark_result_delivered(download_id)
-                # Free the slot, then promote the next FIFO-parked entry (if any).
-                try:
-                    _pump_queue()
-                except Exception:
-                    pass
+            _finish_download_worker(download_id, slot_token, event_callback)
 
 
-def start_download(
-    url: str,
-    download_id: str,
-    config: dict | None = None,
-    network_type: str = "wifi",
-    event_callback=None,
-) -> dict:
-    # Reject admission if engine is currently shutting down
+def _start_download_preflight(download_id: str, url: str) -> dict | None:
     with _shutdown_lock:
         if _is_shutting_down:
             return {
@@ -1888,94 +1860,104 @@ def start_download(
                 "error_type": "ERROR_SHUTTING_DOWN",
                 "error_message": "Engine is shutting down",
             }
-
-    # SSRF gate: only public http(s) media URLs reach yt-dlp. Rejects
-    # file://, localhost/LAN/link-local targets, and non-string garbage
-    # before admission, queueing, or thread spawn.
     try:
         from grablytic_engine.url_guard import is_safe_media_url
 
-        _url_ok = is_safe_media_url(url)
+        safe_url = is_safe_media_url(url)
     except Exception:
-        _url_ok = False
-    if not _url_ok:
+        safe_url = False
+    if safe_url:
+        return None
+    return {
+        "success": False,
+        "download_id": download_id,
+        "error_type": "ERROR_INVALID_PARAM",
+        "error_message": "URL must be a public http(s) address",
+    }
+
+
+def _admission_conflict(download_id: str, url: str, audio_only: bool) -> dict | None:
+    existing = _active_downloads.get(download_id)
+    if existing is not None and not existing.get("finished_at"):
         return {
             "success": False,
             "download_id": download_id,
-            "error_type": "ERROR_INVALID_PARAM",
-            "error_message": "URL must be a public http(s) address",
+            "error_type": "ERROR_ALREADY_ACTIVE",
+            "error_message": "Download already in progress for this ID",
         }
+    if existing is not None:
+        _active_downloads.pop(download_id, None)
+    if download_id in _pending_queue:
+        return {
+            "success": False,
+            "download_id": download_id,
+            "error_type": "ERROR_ALREADY_ACTIVE",
+            "error_message": "Download already queued for this ID",
+        }
+    holder = _find_live_url_holder(url, audio_only)
+    if holder is None:
+        return None
+    return {
+        "success": False,
+        "download_id": download_id,
+        "error_type": "ERROR_DUPLICATE_URL",
+        "error_message": f"URL already downloading under ID {holder}",
+        "existing_download_id": holder,
+    }
 
+
+def _new_download_queues() -> tuple:
+    return (
+        _queue.Queue(maxsize=_QUEUE_MAXSIZE),
+        _queue.Queue(maxsize=_QUEUE_MAXSIZE),
+        threading.Event(),
+    )
+
+
+def _admit_download(
+    url: str,
+    download_id: str,
+    config: dict | None,
+    network_type: str,
+    event_callback,
+) -> dict:
     with _downloads_lock:
-        existing = _active_downloads.get(download_id)
-        # Same-id reuse is only safe from a terminal state (finished_at set).
-        # An active entry means redownload-while-downloading: reject instead
-        # of orphaning the previous thread (interleaved progress + double
-        # terminal events under one id).
-        if existing is not None and not existing.get("finished_at"):
-            return {
-                "success": False,
-                "download_id": download_id,
-                "error_type": "ERROR_ALREADY_ACTIVE",
-                "error_message": "Download already in progress for this ID",
-            }
-        if existing is not None and existing.get("finished_at"):
-            # Terminal entry still awaiting cleanup — drop it so the retry
-            # starts clean under the same id (history row key stability).
-            _active_downloads.pop(download_id, None)
-        if download_id in _pending_queue:
-            return {
-                "success": False,
-                "download_id": download_id,
-                "error_type": "ERROR_ALREADY_ACTIVE",
-                "error_message": "Download already queued for this ID",
-            }
-        # Same URL under a different ID must not download twice.
-        # Keyed on (url, audio-mode) so explicit "extract audio" re-fetches
-        # (different artifact) still pass; terminal entries never block.
         audio_only = _is_audio_mode(config)
-        holder = _find_live_url_holder(url, audio_only)
-        if holder is not None:
-            return {
-                "success": False,
-                "download_id": download_id,
-                "error_type": "ERROR_DUPLICATE_URL",
-                "error_message": f"URL already downloading under ID {holder}",
-                "existing_download_id": holder,
-            }
+        conflict = _admission_conflict(download_id, url, audio_only)
+        if conflict is not None:
+            return {"error": conflict}
         queued = _running_count() >= _max_concurrent
-        if queued:
-            if len(_pending_queue) >= _MAX_PENDING_QUEUE:
-                return {
+        if queued and len(_pending_queue) >= _MAX_PENDING_QUEUE:
+            return {
+                "error": {
                     "success": False,
                     "download_id": download_id,
                     "error_type": "ERROR_QUEUE_FULL",
-                    "error_message": f"Download queue is full (maximum {_MAX_PENDING_QUEUE} pending items)",
+                    "error_message": (
+                        "Download queue is full "
+                        f"(maximum {_MAX_PENDING_QUEUE} pending items)"
+                    ),
                     "queue_size": len(_pending_queue),
                     "max_queue_size": _MAX_PENDING_QUEUE,
                 }
-            progress_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-            result_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-            cancel_event = threading.Event()
-            entry = {
-                "download_id": download_id,
-                "url": url,
-                "config": config,
-                "network_type": network_type,
-                "progress_queue": progress_queue,
-                "result_queue": result_queue,
-                "cancel_event": cancel_event,
-                "event_callback": event_callback,
-                "queued_at": datetime.now(timezone.utc),
             }
+        progress_queue, result_queue, cancel_event = _new_download_queues()
+        entry = {
+            "download_id": download_id,
+            "url": url,
+            "config": config,
+            "network_type": network_type,
+            "progress_queue": progress_queue,
+            "result_queue": result_queue,
+            "cancel_event": cancel_event,
+            "event_callback": event_callback,
+            "queued_at": datetime.now(timezone.utc),
+        }
+        if queued:
             _pending_queue[download_id] = entry
             _index_add(download_id, url, audio_only)
             position = len(_pending_queue)
         else:
-            progress_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-            result_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
-            cancel_event = threading.Event()
-            # Atomically register in _active_downloads under lock before releasing lock
             _active_downloads[download_id] = {
                 "cancel_event": cancel_event,
                 "progress_queue": progress_queue,
@@ -1986,56 +1968,65 @@ def start_download(
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
                 "event_callback": event_callback,
-                # Set once the terminal result has reached the client.
                 "result_delivered": False,
             }
             _index_add(download_id, url, audio_only)
+            position = None
+    return {"queued": queued, "position": position, "entry": entry}
 
+
+def _notify_queued_download(entry: dict, position: int) -> None:
+    callback = entry.get("event_callback")
+    if callback is None:
+        return
+    try:
+        _emit_event(
+            callback,
+            json.dumps(
+                {
+                    "type": "event",
+                    "event": "queued",
+                    "download_id": entry["download_id"],
+                    "position": position,
+                }
+            ),
+        )
+    except Exception:
+        pass
+
+
+def start_download(
+    url: str,
+    download_id: str,
+    config: dict | None = None,
+    network_type: str = "wifi",
+    event_callback=None,
+) -> dict:
+    error = _start_download_preflight(download_id, url)
+    if error is not None:
+        return error
+    admission = _admit_download(
+        url, download_id, config, network_type, event_callback
+    )
+    if "error" in admission:
+        return admission["error"]
+    entry = admission["entry"]
     if event_callback is not None:
         try:
             set_global_event_callback(event_callback)
         except Exception:
             pass
-
     _ensure_cleanup_thread()
-
-    if queued:
-        if event_callback is not None:
-            try:
-                _emit_event(
-                    event_callback,
-                    json.dumps(
-                        {
-                            "type": "event",
-                            "event": "queued",
-                            "download_id": download_id,
-                            "position": position,
-                        }
-                    ),
-                )
-            except Exception:
-                pass
+    if admission["queued"]:
+        _notify_queued_download(entry, admission["position"])
         return {
             "success": True,
             "download_id": download_id,
             "thread_started": False,
             "queued": True,
-            "position": position,
+            "position": admission["position"],
         }
-
-    entry = {
-        "download_id": download_id,
-        "url": url,
-        "config": config,
-        "network_type": network_type,
-        "progress_queue": progress_queue,
-        "result_queue": result_queue,
-        "cancel_event": cancel_event,
-        "event_callback": event_callback,
-        "queued_at": datetime.now(timezone.utc),
-    }
     _spawn_thread(entry)
-
     return {
         "success": True,
         "download_id": download_id,
@@ -2044,28 +2035,57 @@ def start_download(
     }
 
 
-def cancel_download(download_id: str) -> dict:
+def _cancel_terminal_payload(download_id: str) -> tuple[str, dict]:
+    event = json.dumps(
+        {
+            "type": "event",
+            "event": "cancelled",
+            "download_id": download_id,
+            "error_type": "ERROR_CANCELLED",
+            "error_message": "Download cancelled by user",
+        }
+    )
+    result = {
+        "success": False,
+        "download_id": download_id,
+        "error_type": "ERROR_CANCELLED",
+        "error_message": "Download cancelled by user",
+    }
+    return event, result
+
+
+def _deliver_cancel_terminal(download_id: str, info: dict) -> None:
+    event, result = _cancel_terminal_payload(download_id)
+    callback = info.get("event_callback")
+    if callback is not None:
+        try:
+            _emit_event(callback, event)
+        except Exception:
+            pass
+        return
+    try:
+        info["result_queue"].put(result)
+    except Exception:
+        pass
+
+
+def _take_cancel_state(download_id: str) -> tuple:
     queued_entry = None
     worker_thread = None
     worker_alive = False
     active_slot_token = None
     active_info = None
     with _downloads_lock:
-        parked = _pending_queue.pop(download_id, None)
-        if parked is not None:
+        queued_entry = _pending_queue.pop(download_id, None)
+        if queued_entry is not None:
             _index_remove(
                 download_id,
-                parked.get("url"),
-                _is_audio_mode(parked.get("config")),
+                queued_entry.get("url"),
+                _is_audio_mode(queued_entry.get("config")),
             )
-            queued_entry = parked
         info = _active_downloads.get(download_id)
         if queued_entry is None and not info:
-            return {
-                "success": False,
-                "error_type": "ERROR_DOWNLOAD_NOT_FOUND",
-                "error_message": f"No active download with ID: {download_id}",
-            }
+            return None, None, None, False, None, True
         if info and not info.get("finished_at"):
             try:
                 info["cancel_event"].set()
@@ -2075,97 +2095,66 @@ def cancel_download(download_id: str) -> dict:
             worker_alive = _worker_thread_alive(info)
             active_slot_token = info.get("slot_token")
             active_info = info
+    return (
+        queued_entry,
+        active_info,
+        worker_thread,
+        worker_alive,
+        active_slot_token,
+        False,
+    )
 
+
+def _finish_queued_cancel(download_id: str, entry: dict) -> None:
+    _deliver_cancel_terminal(download_id, entry)
+    if entry.get("event_callback") is not None:
+        return
+    with _downloads_lock:
+        _active_downloads[download_id] = {
+            "cancel_event": entry["cancel_event"],
+            "progress_queue": entry["progress_queue"],
+            "result_queue": entry["result_queue"],
+            "url": entry["url"],
+            "audio_only": _is_audio_mode(entry.get("config")),
+            "thread": None,
+            "started_at": entry.get("queued_at") or datetime.now(timezone.utc),
+            "finished_at": datetime.now(timezone.utc),
+            "slot_token": _new_slot_token(),
+        }
+
+
+def _finish_stopped_cancel(
+    download_id: str, info: dict, slot_token: str | None
+) -> None:
+    if not _close_own_slot(download_id, slot_token):
+        return
+    _deliver_cancel_terminal(download_id, info)
+    try:
+        _pump_queue()
+    except Exception:
+        pass
+
+
+def cancel_download(download_id: str) -> dict:
+    (
+        queued_entry,
+        active_info,
+        worker_thread,
+        worker_alive,
+        active_slot_token,
+        missing,
+    ) = _take_cancel_state(download_id)
+    if missing:
+        return {
+            "success": False,
+            "error_type": "ERROR_DOWNLOAD_NOT_FOUND",
+            "error_message": f"No active download with ID: {download_id}",
+        }
     if queued_entry is not None:
-        # Dequeued before a thread ever spawned: deliver a terminal
-        # cancelled event through the same channel the thread would use.
-        terminal = json.dumps(
-            {
-                "type": "event",
-                "event": "cancelled",
-                "download_id": download_id,
-                "error_type": "ERROR_CANCELLED",
-                "error_message": "Download cancelled by user",
-            }
-        )
-        cb = queued_entry.get("event_callback")
-        if cb is not None:
-            try:
-                _emit_event(cb, terminal)
-            except Exception:
-                pass
-        else:
-            try:
-                queued_entry["result_queue"].put(
-                    {
-                        "success": False,
-                        "download_id": download_id,
-                        "error_type": "ERROR_CANCELLED",
-                        "error_message": "Download cancelled by user",
-                    }
-                )
-            except Exception:
-                pass
-            # Register into _active_downloads so desktop poll_queues() will
-            # drain its result_queue before cleanup_loop removes it.
-            with _downloads_lock:
-                _active_downloads[download_id] = {
-                    "cancel_event": queued_entry["cancel_event"],
-                    "progress_queue": queued_entry["progress_queue"],
-                    "result_queue": queued_entry["result_queue"],
-                    "url": queued_entry["url"],
-                    "audio_only": _is_audio_mode(queued_entry.get("config")),
-                    "thread": None,
-                    "started_at": queued_entry.get("queued_at")
-                    or datetime.now(timezone.utc),
-                    "finished_at": datetime.now(timezone.utc),
-                    "slot_token": _new_slot_token(),
-                }
-
+        _finish_queued_cancel(download_id, queued_entry)
     if active_info is not None and not worker_alive:
-        # Worker is not running (pre-spawn, threadless mock, or dead without closing slot).
-        # Close slot immediately to avoid leaking capacity, stamp finished_at, emit terminal,
-        # and pump the queue so parked downloads can proceed.
-        closed = _close_own_slot(download_id, active_slot_token)
-        if closed:
-            terminal = json.dumps(
-                {
-                    "type": "event",
-                    "event": "cancelled",
-                    "download_id": download_id,
-                    "error_type": "ERROR_CANCELLED",
-                    "error_message": "Download cancelled by user",
-                }
-            )
-            cb = active_info.get("event_callback")
-            if cb is not None:
-                try:
-                    _emit_event(cb, terminal)
-                except Exception:
-                    pass
-            else:
-                try:
-                    active_info["result_queue"].put(
-                        {
-                            "success": False,
-                            "download_id": download_id,
-                            "error_type": "ERROR_CANCELLED",
-                            "error_message": "Download cancelled by user",
-                        }
-                    )
-                except Exception:
-                    pass
-            try:
-                _pump_queue()
-            except Exception:
-                pass
-
+        _finish_stopped_cancel(download_id, active_info, active_slot_token)
     if worker_alive:
-        # A live worker may sit hook-blind (extractor hang, merge
-        # wait, stalled socket, aria2c child) for an unbounded time, so the
-        # old unconditional `cancelled: True` lied. Report the honest
-        # intermediate; the terminal `cancelled` arrives via the normal
-        # channel on worker exit, or via the watchdog below on a wedge.
         _start_cancel_watchdog(download_id, worker_thread)
         return {
             "success": True,
@@ -2205,8 +2194,7 @@ _WATCHDOG_POOL_SIZE = 4
 _watchdog_queue: _queue.Queue = _queue.Queue()
 _watchdog_active_ids: set[str] = set()
 _watchdog_pool_lock = threading.Lock()
-_watchdog_pool_started = False
-_watchdog_generation = 0
+_watchdog_pool_state = {"started": False, "generation": 0}
 # Captured at import: the test suite swaps `threading.Thread` globally,
 # and the pool must still be able to start real workers.
 _real_thread = threading.Thread
@@ -2231,16 +2219,14 @@ def _worker_thread_alive(info) -> bool:
         return False
 
 
-def _watchdog_worker(generation: int) -> None:
-    """Pool worker: run watchdog jobs until the pool is stopped.
+def _watchdog_generation_is_current(generation: int) -> bool:
+    with _watchdog_pool_lock:
+        return generation == _watchdog_pool_state["generation"]
 
-    The generation counter retires the worker: when the pool is stopped
-    (or restarted) the generation moves on and every worker exits at its
-    next loop check. A stop EVENT alone would not do — a worker that has
-    not yet observed the event would keep running after a restart and the
-    pool would grow without bound.
-    """
-    while generation == _watchdog_generation:
+
+def _watchdog_worker(generation: int) -> None:
+    """Run watchdog jobs until the pool generation is retired."""
+    while _watchdog_generation_is_current(generation):
         try:
             job = _watchdog_queue.get(timeout=0.5)
         except _queue.Empty:
@@ -2262,13 +2248,12 @@ def _watchdog_worker(generation: int) -> None:
 
 def _ensure_watchdog_pool() -> None:
     """Start the fixed watchdog pool if it is not running."""
-    global _watchdog_pool_started, _watchdog_generation
     with _watchdog_pool_lock:
-        if _watchdog_pool_started:
+        if _watchdog_pool_state["started"]:
             return
-        _watchdog_pool_started = True
-        _watchdog_generation += 1
-        generation = _watchdog_generation
+        _watchdog_pool_state["started"] = True
+        _watchdog_pool_state["generation"] += 1
+        generation = _watchdog_pool_state["generation"]
     for i in range(_WATCHDOG_POOL_SIZE):
         try:
             t = _real_thread(
@@ -2284,14 +2269,12 @@ def _ensure_watchdog_pool() -> None:
 
 def stop_watchdog_pool() -> None:
     """Stop the watchdog pool. Called from `shutdown_downloads`."""
-    global _watchdog_pool_started, _watchdog_generation
     with _watchdog_pool_lock:
-        if not _watchdog_pool_started:
+        if not _watchdog_pool_state["started"]:
             return
-        _watchdog_pool_started = False
+        _watchdog_pool_state["started"] = False
         # Retire the workers: each one exits at its next loop check.
-        _watchdog_generation += 1
-    with _watchdog_pool_lock:
+        _watchdog_pool_state["generation"] += 1
         _watchdog_active_ids.clear()
 
 

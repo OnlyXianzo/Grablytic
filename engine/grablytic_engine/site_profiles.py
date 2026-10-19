@@ -3,7 +3,6 @@ import os
 import tempfile
 import threading
 from urllib.request import Request
-from urllib.error import URLError
 
 from grablytic_engine.paths import get_paths
 from grablytic_engine.url_guard import pinned_urlopen as urlopen
@@ -62,8 +61,18 @@ _DEFAULT_PROFILES = {
 }
 
 
-_SITE_PROFILES_CACHE: dict | None = None
+_PROFILE_CACHE_STATE = {"profiles": None}
 _CACHE_LOCK = threading.Lock()
+
+
+def _get_site_profiles_cache():
+    with _CACHE_LOCK:
+        return _PROFILE_CACHE_STATE["profiles"]
+
+
+def _set_site_profiles_cache(profiles) -> None:
+    with _CACHE_LOCK:
+        _PROFILE_CACHE_STATE["profiles"] = profiles
 
 
 def sanitize_profiles(profiles) -> dict:
@@ -98,19 +107,18 @@ def sanitize_profiles(profiles) -> dict:
 
 
 def load_site_profiles() -> dict:
-    global _SITE_PROFILES_CACHE
-
     with _CACHE_LOCK:
-        if _SITE_PROFILES_CACHE is not None:
-            return _SITE_PROFILES_CACHE
-        _SITE_PROFILES_CACHE = dict(_DEFAULT_PROFILES)
-        return _SITE_PROFILES_CACHE
+        cached_profiles = _PROFILE_CACHE_STATE["profiles"]
+        if cached_profiles is not None:
+            return cached_profiles
+        cached_profiles = dict(_DEFAULT_PROFILES)
+        _PROFILE_CACHE_STATE["profiles"] = cached_profiles
+        return cached_profiles
 
 
 def load_site_profiles_from_url(url: str) -> dict:
     """Fetch remote profiles, sanitized. A failed payload NEVER lands in
     the cache — otherwise the broken payload would be served forever."""
-    global _SITE_PROFILES_CACHE
     try:
         req = Request(url, headers={"User-Agent": "Grablytic/1.0"})
         with urlopen(req, timeout=5) as resp:
@@ -131,10 +139,9 @@ def load_site_profiles_from_url(url: str) -> dict:
             except Exception:
                 pass
             return load_site_profiles()
-        with _CACHE_LOCK:
-            _SITE_PROFILES_CACHE = safe
+        _set_site_profiles_cache(safe)
         return safe
-    except (URLError, json.JSONDecodeError, OSError, ValueError):
+    except (OSError, ValueError):
         return load_site_profiles()
 
 
@@ -142,8 +149,9 @@ def site_profiles_status() -> dict:
     """Diagnostic status of the profile cache. Never raises."""
     try:
         with _CACHE_LOCK:
-            cached = _SITE_PROFILES_CACHE is not None
-            count = len(_SITE_PROFILES_CACHE or {})
+            cached_profiles = _PROFILE_CACHE_STATE["profiles"]
+            cached = cached_profiles is not None
+            count = len(cached_profiles or {})
         return {
             "loaded": cached,
             "count": count,
@@ -155,9 +163,7 @@ def site_profiles_status() -> dict:
 
 def reset_site_profiles_cache() -> None:
     """Drop the cached remote profiles (the next load re-reads them)."""
-    global _SITE_PROFILES_CACHE
-    with _CACHE_LOCK:
-        _SITE_PROFILES_CACHE = None
+    _set_site_profiles_cache(None)
 
 
 def load_profiles_from_disk(path: str) -> dict:
@@ -167,7 +173,7 @@ def load_profiles_from_disk(path: str) -> dict:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             return data if isinstance(data, dict) else {}
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return {}
     return {}
 

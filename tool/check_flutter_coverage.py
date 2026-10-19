@@ -57,6 +57,111 @@ def _integer(value: str, field: str, line_number: int) -> int:
     return parsed
 
 
+def _merge_lcov_project_record(files: dict, state: dict, end_line: int, source: str) -> None:
+    project_path = project_source(source)
+    if project_path is None:
+        return
+    line_hits = state["line_hits"]
+    if not line_hits:
+        raise ValueError(
+            f"lines {state['record_start']}-{end_line}: {source!r} has no DA line data"
+        )
+    found = len(line_hits)
+    hit = sum(line_hits.values())
+    summary_found = state["summary_found"]
+    summary_hit = state["summary_hit"]
+    if summary_found is not None and summary_found != found:
+        raise ValueError(
+            f"line {end_line}: LF:{summary_found} disagrees with {found} DA lines in {source!r}"
+        )
+    if summary_hit is not None and summary_hit != hit:
+        raise ValueError(
+            f"line {end_line}: LH:{summary_hit} disagrees with {hit} hit DA lines in {source!r}"
+        )
+    merged = files.setdefault(project_path, {})
+    for number, was_hit in line_hits.items():
+        merged[number] = merged.get(number, False) or was_hit
+
+
+def _finish_lcov_record(files: dict, state: dict, end_line: int) -> None:
+    source = state["source"]
+    if source is None:
+        if (
+            state["line_hits"]
+            or state["summary_found"] is not None
+            or state["summary_hit"] is not None
+        ):
+            raise ValueError(f"line {end_line}: LCOV data has no SF source record")
+    else:
+        _merge_lcov_project_record(files, state, end_line, source)
+    state.update(
+        source=None,
+        line_hits={},
+        summary_found=None,
+        summary_hit=None,
+        record_start=end_line + 1,
+    )
+
+
+def _handle_lcov_source(source: str, line_number: int, state: dict) -> None:
+    if state["source"] is not None:
+        raise ValueError(
+            f"line {line_number}: new SF record before end_of_record"
+        )
+    state["source"] = source
+    state["line_hits"] = {}
+    state["record_start"] = line_number
+
+
+def _handle_lcov_line_data(data: str, line_number: int, state: dict) -> None:
+    if state["source"] is None:
+        raise ValueError(f"line {line_number}: DA record appears before SF")
+    fields = data.split(",")
+    if len(fields) < 2:
+        raise ValueError(f"line {line_number}: malformed DA record")
+    source_line = _integer(fields[0], "source line", line_number)
+    if source_line == 0:
+        raise ValueError(f"line {line_number}: source line numbers must be positive")
+    hits = _integer(fields[1], "line hit count", line_number)
+    line_hits = state["line_hits"]
+    line_hits[source_line] = line_hits.get(source_line, False) or hits > 0
+
+
+def _handle_lcov_summary(data: str, line_number: int, state: dict, field: str) -> None:
+    value = _integer(data, field, line_number)
+    key = "summary_found" if field == "LF" else "summary_hit"
+    state[key] = value
+
+
+def _handle_lcov_row(row: str, line_number: int, files: dict, state: dict) -> None:
+    key, _, data = row.partition(":")
+    if key == "SF":
+        _handle_lcov_source(data, line_number, state)
+    elif key == "DA":
+        _handle_lcov_line_data(data, line_number, state)
+    elif key == "LF":
+        _handle_lcov_summary(data, line_number, state, "LF")
+    elif key == "LH":
+        _handle_lcov_summary(data, line_number, state, "LH")
+    elif key == "end_of_record":
+        _finish_lcov_record(files, state, line_number)
+
+
+def _lcov_record_is_open(state: dict) -> bool:
+    return (
+        state["source"] is not None
+        or state["line_hits"]
+        or state["summary_found"] is not None
+        or state["summary_hit"] is not None
+    )
+
+
+def _lcov_aggregate(files: dict) -> tuple[int, int]:
+    found = sum(len(lines) for lines in files.values())
+    hit = sum(sum(lines.values()) for lines in files.values())
+    return found, hit
+
+
 def parse_lcov(path: Path) -> tuple[int, int, int]:
     """Return (files, executable_lines, hit_lines) for unique project lines."""
     try:
@@ -65,83 +170,22 @@ def parse_lcov(path: Path) -> tuple[int, int, int]:
         raise ValueError(f"cannot read LCOV report {path}: {exc}") from exc
 
     files: dict[str, dict[int, bool]] = {}
-    source: str | None = None
-    line_hits: dict[int, bool] = {}
-    summary_found: int | None = None
-    summary_hit: int | None = None
-    record_start = 0
-
-    def finish_record(end_line: int) -> None:
-        nonlocal source, line_hits, summary_found, summary_hit, record_start
-        if source is None:
-            if line_hits or summary_found is not None or summary_hit is not None:
-                raise ValueError(f"line {end_line}: LCOV data has no SF source record")
-        else:
-            project_path = project_source(source)
-            if project_path is not None:
-                if not line_hits:
-                    raise ValueError(
-                        f"lines {record_start}-{end_line}: {source!r} has no DA line data"
-                    )
-                found = len(line_hits)
-                hit = sum(line_hits.values())
-                if summary_found is not None and summary_found != found:
-                    raise ValueError(
-                        f"line {end_line}: LF:{summary_found} disagrees with {found} DA lines in {source!r}"
-                    )
-                if summary_hit is not None and summary_hit != hit:
-                    raise ValueError(
-                        f"line {end_line}: LH:{summary_hit} disagrees with {hit} hit DA lines in {source!r}"
-                    )
-
-                merged = files.setdefault(project_path, {})
-                for number, was_hit in line_hits.items():
-                    merged[number] = merged.get(number, False) or was_hit
-
-        source = None
-        line_hits = {}
-        summary_found = None
-        summary_hit = None
-        record_start = end_line + 1
-
-    for number, row in enumerate(rows, start=1):
-        if row == "end_of_record":
-            finish_record(number)
-        elif row.startswith("SF:"):
-            if source is not None:
-                raise ValueError(f"line {number}: new SF record before end_of_record")
-            source = row[3:]
-            record_start = number
-        elif row.startswith("DA:"):
-            if source is None:
-                raise ValueError(f"line {number}: DA record appears before SF")
-            fields = row[3:].split(",")
-            if len(fields) < 2:
-                raise ValueError(f"line {number}: malformed DA record")
-            source_line = _integer(fields[0], "source line", number)
-            if source_line == 0:
-                raise ValueError(f"line {number}: source line numbers must be positive")
-            hits = _integer(fields[1], "line hit count", number)
-            line_hits[source_line] = line_hits.get(source_line, False) or hits > 0
-        elif row.startswith("LF:"):
-            summary_found = _integer(row[3:], "LF", number)
-        elif row.startswith("LH:"):
-            summary_hit = _integer(row[3:], "LH", number)
-
-    if (
-        source is not None
-        or line_hits
-        or summary_found is not None
-        or summary_hit is not None
-    ):
+    state = {
+        "source": None,
+        "line_hits": {},
+        "summary_found": None,
+        "summary_hit": None,
+        "record_start": 0,
+    }
+    for line_number, row in enumerate(rows, start=1):
+        _handle_lcov_row(row, line_number, files, state)
+    if _lcov_record_is_open(state):
         raise ValueError("LCOV report ends before end_of_record")
     if not files:
         raise ValueError(
             f"no project Dart sources under {LIB_ROOT} were found in {path}"
         )
-
-    found = sum(len(lines) for lines in files.values())
-    hit = sum(sum(lines.values()) for lines in files.values())
+    found, hit = _lcov_aggregate(files)
     if found == 0 or hit > found:
         raise ValueError(
             f"invalid aggregate LCOV totals: {hit} hit lines out of {found}"

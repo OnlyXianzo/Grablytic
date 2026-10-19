@@ -25,6 +25,7 @@ import os
 import platform
 import re
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -55,7 +56,8 @@ _SECRET_PARAM_RE = re.compile(
 # scheme://user:password@host
 _USERINFO_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@")
 
-_warned_unreachable_repo = False
+_unreachable_warning_state = {"emitted": False}
+_unreachable_warning_lock = threading.Lock()
 
 
 def redact_text(value) -> str:
@@ -150,11 +152,11 @@ def log_tail_enabled() -> bool:
 
 
 def _warn_unreachable_repo(repo: str) -> None:
-    """Warn ONCE when the report target cannot be reached."""
-    global _warned_unreachable_repo
-    if _warned_unreachable_repo:
-        return
-    _warned_unreachable_repo = True
+    """Warn once when the report target cannot be reached."""
+    with _unreachable_warning_lock:
+        if _unreachable_warning_state["emitted"]:
+            return
+        _unreachable_warning_state["emitted"] = True
     try:
         from grablytic_engine.logger import get_logger
 
@@ -336,6 +338,76 @@ def build_body(
 """
 
 
+def _collect_exception_logs():
+    from grablytic_engine.persistent import flush_now, read_log_tail, sanitize
+
+    try:
+        flush_now()
+    except Exception:
+        pass
+    if not log_tail_enabled():
+        return ""
+    try:
+        return str(sanitize(read_log_tail()))[:15000]
+    except Exception:
+        return "<log tail unavailable>"
+
+
+def _exception_traceback(exc: BaseException) -> tuple[str, str]:
+    from grablytic_engine.persistent import format_traceback
+
+    try:
+        formatted = format_traceback(exc)
+        first_frame = next(
+            (line.strip() for line in formatted.splitlines() if line.strip().startswith("File ")),
+            "",
+        )
+        return formatted, first_frame
+    except Exception:
+        return repr(exc), ""
+
+
+def _build_exception_report(exc, context, summary, log_tail, stack, first_frame):
+    error_text = f"{type(exc).__name__}: {exc}"
+    short = redact_text(error_text)
+    if len(short) > 120:
+        short = short[:120] + "…"
+    fp = fingerprint(short, first_frame)
+    title = f"[Auto-report {fp}] {short}"
+    body = build_body(
+        summary or "Automated engine crash report.",
+        actual=f"```\n{error_text}\n{first_frame}\n```",
+        fp=fp,
+        log_tail=log_tail,
+        stack=stack,
+        context=context,
+    )
+    return fp, title, body
+
+
+def _report_status(status: str, fp: str, title: str, body: str, **extra):
+    return {
+        "status": status,
+        **extra,
+        "fingerprint": fp,
+        "title": title,
+        "body": body,
+    }
+
+
+def _submit_exception_report(fp, title, body, repo, token):
+    duplicate = find_duplicate(fp, repo=repo, token=token)
+    if duplicate:
+        return {"status": "duplicate", "url": duplicate, "fingerprint": fp, "title": title, "body": body}
+    try:
+        url = create_issue(title, body, repo=repo, token=token)
+    except RuntimeError as exc:
+        return _report_status("manual_needed", fp, title, body, reason=str(exc))
+    if url:
+        return _report_status("created", fp, title, body, url=url)
+    return _report_status("failed", fp, title, body)
+
+
 def notify_exception(
     exc: BaseException,
     *,
@@ -345,106 +417,21 @@ def notify_exception(
     summary: str = "",
     auto_only: bool = True,
 ) -> dict[str, Any]:
-    """Full pipeline: flush → tail → dedup → file.
-
-    Returns ``{"status": ..., "url": ..., "fingerprint": ..., "title": ...}``
-    where status ∈ created | duplicate | manual_needed | failed | skipped.
-    With ``auto_only=True`` (default) filing requires
-    ``GRABLYTIC_AUTO_REPORT=1``; otherwise returns ``skipped`` after logging.
-    """
-    from grablytic_engine.persistent import (
-        flush_now,
-        read_log_tail,
-        sanitize,
-        format_traceback,
+    """Flush, fingerprint, deduplicate, and optionally file a report."""
+    log_tail = _collect_exception_logs()
+    stack, first_frame = _exception_traceback(exc)
+    fp, title, body = _build_exception_report(
+        exc, context, summary, log_tail, stack, first_frame
     )
-
-    try:
-        flush_now()
-    except Exception:
-        pass
-    log_tail = ""
-    if log_tail_enabled():
-        try:
-            raw_tail = read_log_tail()
-            log_tail = str(sanitize(raw_tail))[:15000]
-        except Exception:
-            log_tail = "<log tail unavailable>"
-
-    err_str = f"{type(exc).__name__}: {exc}"
-    try:
-        tb_full = format_traceback(exc)
-        first_frame = next(
-            (
-                ln.strip()
-                for ln in tb_full.splitlines()
-                if ln.strip().startswith("File ")
-            ),
-            "",
+    token_value = _token(token)
+    auto_disabled = auto_only and os.environ.get(AUTO_REPORT_ENV, "") != "1" and token is None
+    if auto_disabled:
+        return _report_status(
+            "skipped", fp, title, body, reason="auto-report disabled"
         )
-    except Exception:
-        tb_full, first_frame = repr(exc), ""
-
-    # The title is public too — redact it before it is used anywhere.
-    short = redact_text(err_str)
-    short = short if len(short) <= 120 else short[:120] + "…"
-    fp = fingerprint(short, first_frame)
-    title = f"[Auto-report {fp}] {short}"
-    body = build_body(
-        summary or "Automated engine crash report.",
-        actual=f"```\n{err_str}\n{first_frame}\n```",
-        fp=fp,
-        log_tail=log_tail,
-        stack=tb_full,
-        context=context,
-    )
-
-    tok = _token(token)
-    if auto_only and os.environ.get(AUTO_REPORT_ENV, "") != "1" and token is None:
-        return {
-            "status": "skipped",
-            "reason": "auto-report disabled",
-            "fingerprint": fp,
-            "title": title,
-            "body": body,
-        }
-    if not tok:
-        return {
-            "status": "manual_needed",
-            "fingerprint": fp,
-            "title": title,
-            "body": body,
-        }
-
-    dup = find_duplicate(fp, repo=repo, token=tok)
-    if dup:
-        return {
-            "status": "duplicate",
-            "url": dup,
-            "fingerprint": fp,
-            "title": title,
-            "body": body,
-        }
-    url = None
-    try:
-        url = create_issue(title, body, repo=repo, token=tok)
-    except RuntimeError as e:
-        return {
-            "status": "manual_needed",
-            "reason": str(e),
-            "fingerprint": fp,
-            "title": title,
-            "body": body,
-        }
-    if url:
-        return {
-            "status": "created",
-            "url": url,
-            "fingerprint": fp,
-            "title": title,
-            "body": body,
-        }
-    return {"status": "failed", "fingerprint": fp, "title": title, "body": body}
+    if not token_value:
+        return _report_status("manual_needed", fp, title, body)
+    return _submit_exception_report(fp, title, body, repo, token_value)
 
 
 def main(argv: list[str]) -> int:

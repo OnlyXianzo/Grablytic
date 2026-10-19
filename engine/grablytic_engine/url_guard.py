@@ -136,85 +136,108 @@ def _alt_ipv4_to_int(host: str) -> int | None:
         return None
 
 
-def _ip_is_blocked(ip) -> bool:
-    """True when an ipaddress object targets a non-public range."""
-    try:
-        # Unwrap embedded IPv4 first (IPv4-mapped IPv6 ::ffff:a.b.c.d,
-        # 6to4, Teredo) so ::ffff:127.0.0.1 cannot smuggle loopback.
-        for attr in ("ipv4_mapped", "sixtofour", "teredo"):
-            try:
-                embedded = getattr(ip, attr, None)
-            except Exception:
-                embedded = None
-            if embedded is not None and _ip_is_blocked(embedded):
-                return True
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            return True
-        # Explicit per-policy pins (redundant with the flags above on most
-        # Pythons, but pinned so behaviour can't drift with ipaddress data):
-        # cloud-metadata endpoint + IPv6 link-local / unique-local / loopback.
-        if ip == _CLOUD_METADATA_IPV4:
-            return True
-        if getattr(ip, "version", 4) == 6:
-            if ip in _IPV6_LINK_LOCAL or ip in _IPV6_UNIQUE_LOCAL:
-                return True
-            if ip == _IPV6_LOOPBACK:
-                return True
-        return False
-    except Exception:
-        # Fail closed: an uninspectable address never counts as public.
-        return True
-
-
-def _host_is_blocked(host: str, *, fail_closed_dns: bool) -> bool:
-    h = (host or "").strip().lower().rstrip(".")
-    # Zone identifiers are unnecessary in user URLs and complicate address checks.
-    if "%" in h:
-        return True
-    if not h:
-        return True
-    if h in _LOCAL_HOSTS or h.endswith(".local") or h.endswith(".localhost"):
-        return True
-    # Check ordinary and alternative numeric IP forms before doing DNS.
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        ip = None
-    if ip is not None:
-        return _ip_is_blocked(ip)
-    try:
-        alt = _alt_ipv4_to_int(h)
-    except Exception:
-        alt = None
-    if alt is not None:
+def _embedded_address_is_blocked(ip) -> bool:
+    for attribute in ("ipv4_mapped", "sixtofour", "teredo"):
         try:
-            return _ip_is_blocked(ipaddress.IPv4Address(alt))
+            embedded = getattr(ip, attribute, None)
         except Exception:
-            return True
-    if h in _METADATA_HOSTNAMES:
-        return True
-
-    # Check every answer we did receive. DNS failure has a sink-specific policy:
-    # control-plane profile fetches fail closed; user-selected media stays usable.
-    ips = _resolve_host(h)
-    if not ips:
-        return fail_closed_dns
-    for ip_str in ips:
-        try:
-            rip = ipaddress.ip_address(str(ip_str).split("%", 1)[0])
-        except ValueError:
-            return True
-        if _ip_is_blocked(rip):
+            embedded = None
+        if embedded is not None and _ip_is_blocked(embedded):
             return True
     return False
 
+
+def _has_nonpublic_ip_flag(ip) -> bool:
+    return any(
+        (
+            ip.is_private,
+            ip.is_loopback,
+            ip.is_link_local,
+            ip.is_multicast,
+            ip.is_reserved,
+            ip.is_unspecified,
+        )
+    )
+
+
+def _ipv6_address_is_blocked(ip) -> bool:
+    if getattr(ip, "version", 4) != 6:
+        return False
+    return any(
+        (
+            ip in _IPV6_LINK_LOCAL,
+            ip in _IPV6_UNIQUE_LOCAL,
+            ip == _IPV6_LOOPBACK,
+        )
+    )
+
+
+def _ip_is_blocked(ip) -> bool:
+    """True when an ipaddress object targets a non-public range."""
+    try:
+        if _embedded_address_is_blocked(ip):
+            return True
+        if _has_nonpublic_ip_flag(ip) or ip == _CLOUD_METADATA_IPV4:
+            return True
+        return _ipv6_address_is_blocked(ip)
+    except Exception:
+        return True
+
+
+def _normalize_host(host: str) -> str:
+    return (host or "").strip().lower().rstrip(".")
+
+
+def _host_is_immediately_blocked(host: str) -> bool:
+    return (
+        not host
+        or "%" in host
+        or host in _LOCAL_HOSTS
+        or host.endswith(".local")
+        or host.endswith(".localhost")
+        or host in _METADATA_HOSTNAMES
+    )
+
+
+def _numeric_host_block_status(host: str) -> tuple[bool, bool]:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None:
+        return True, _ip_is_blocked(address)
+    alternate = _alt_ipv4_to_int(host)
+    if alternate is None:
+        return False, False
+    try:
+        address = ipaddress.IPv4Address(alternate)
+    except Exception:
+        return True, True
+    return True, _ip_is_blocked(address)
+
+
+def _dns_host_is_blocked(host: str, fail_closed_dns: bool) -> bool:
+    addresses = _resolve_host(host)
+    if not addresses:
+        return fail_closed_dns
+    for address_text in addresses:
+        try:
+            address = ipaddress.ip_address(str(address_text).split("%", 1)[0])
+        except ValueError:
+            return True
+        if _ip_is_blocked(address):
+            return True
+    return False
+
+
+def _host_is_blocked(host: str, *, fail_closed_dns: bool) -> bool:
+    normalized = _normalize_host(host)
+    if _host_is_immediately_blocked(normalized):
+        return True
+    is_numeric, blocked = _numeric_host_block_status(normalized)
+    if is_numeric:
+        return blocked
+    return _dns_host_is_blocked(normalized, fail_closed_dns)
 
 def _resolve_address_records(host: str, port: int):
     """Resolve once with a deadline, preserving the exact socket addresses.
@@ -260,136 +283,117 @@ def _resolve_host(host: str) -> list[str]:
     return addresses
 
 
-def is_safe_media_url(url) -> bool:
-    """Validate a user-selected public HTTP(S) media URL before yt-dlp use.
-
-    Known private destinations and malformed URLs are rejected. If DNS has no
-    answer, allow yt-dlp to retry the user-selected hostname; this availability
-    policy is not a DNS-pinning guarantee for yt-dlp's later network requests.
-    """
+def _media_url_host(url):
     if not isinstance(url, str):
-        return False
+        return None
     text = url.strip()
     if not text or len(text) > 2048:
-        return False
+        return None
     try:
         parts = urlparse(text)
     except Exception:
-        return False
+        return None
     if parts.scheme.lower() not in _ALLOWED_MEDIA_SCHEMES:
-        return False
+        return None
     if parts.username or parts.password:
+        return None
+    return parts.hostname or None
+
+
+def is_safe_media_url(url) -> bool:
+    """Validate a public HTTP(S) media URL before yt-dlp use.
+
+    DNS failures remain available to yt-dlp's retry policy; this check is
+    not a DNS-pinning guarantee for later extractor requests.
+    """
+    host = _media_url_host(url)
+    if host is None:
         return False
-    host = parts.hostname or ""
-    if not host:
-        return False
-    if _host_is_blocked(host, fail_closed_dns=False):
-        return False
-    return True
+    return not _host_is_blocked(host, fail_closed_dns=False)
 
 
 def is_safe_profile_url(url) -> bool:
     """Fail closed on DNS errors for control-plane profile URLs."""
-    if not isinstance(url, str):
+    host = _media_url_host(url)
+    if host is None:
         return False
-    text = url.strip()
-    if not text or len(text) > 2048:
-        return False
-    try:
-        parts = urlparse(text)
-    except Exception:
-        return False
-    if (
-        parts.scheme.lower() not in _ALLOWED_MEDIA_SCHEMES
-        or parts.username
-        or parts.password
-    ):
-        return False
-    host = parts.hostname or ""
-    return bool(host) and not _host_is_blocked(host, fail_closed_dns=True)
+    return not _host_is_blocked(host, fail_closed_dns=True)
 
 
 _MAX_PINNED_DNS_ANSWERS = 32
 _PINNED_REQUEST_ATTR = "_grablytic_vetted_addresses"
 
 
-def _validated_socket_addresses(url: str):
-    """Resolve one HTTP(S) destination, reject unsafe answers, and retain pins."""
-    if not isinstance(url, str) or not url or len(url) > 2048:
-        return ()
-    try:
-        parts = urlparse(url)
-        scheme = parts.scheme.lower()
-        host = parts.hostname or ""
-        port = parts.port or (443 if scheme == "https" else 80)
-    except Exception:
-        return ()
+def _pinned_url_input_is_valid(url) -> bool:
+    return isinstance(url, str) and bool(url) and len(url) <= 2048
+
+
+def _pinned_url_parts(parts):
+    scheme = parts.scheme.lower()
+    host = parts.hostname or ""
+    port = parts.port or (443 if scheme == "https" else 80)
     if (
         scheme not in _ALLOWED_MEDIA_SCHEMES
         or not host
         or parts.username
         or parts.password
     ):
-        return ()
+        return None
+    return host, port
 
-    normalized = host.strip().lower().rstrip(".")
-    if (
-        not normalized
-        or "%" in normalized
-        or normalized in _LOCAL_HOSTS
-        or normalized.endswith(".local")
-        or normalized.endswith(".localhost")
-        or normalized in _METADATA_HOSTNAMES
-    ):
-        return ()
 
-    # Canonicalize literal and alternate numeric addresses without a DNS query.
+def _parse_pinned_url(url: str):
+    if not _pinned_url_input_is_valid(url):
+        return None
     try:
-        literal = ipaddress.ip_address(normalized)
-    except ValueError:
-        literal = None
-    if literal is None:
-        alternate = _alt_ipv4_to_int(normalized)
-        if alternate is not None:
-            literal = ipaddress.IPv4Address(alternate)
-    if literal is not None:
-        if _ip_is_blocked(literal):
-            return ()
-        if literal.version == 4:
-            return (
-                (
-                    socket.AF_INET,
-                    socket.SOCK_STREAM,
-                    socket.IPPROTO_TCP,
-                    "",
-                    (str(literal), port),
-                ),
-            )
-        return (
-            (
-                socket.AF_INET6,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                (str(literal), port, 0, 0),
-            ),
-        )
+        parts = urlparse(url)
+    except Exception:
+        return None
+    parsed_parts = _pinned_url_parts(parts)
+    if parsed_parts is None:
+        return None
+    host, port = parsed_parts
+    return host, _normalize_host(host), port
 
-    records = _resolve_address_records(host, port)
-    if not records or len(records) > _MAX_PINNED_DNS_ANSWERS:
+
+def _pinned_host_is_clean(host: str) -> bool:
+    return not _host_is_immediately_blocked(host)
+
+
+def _literal_socket_record(host: str, port: int):
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is None:
+        alternate = _alt_ipv4_to_int(host)
+        if alternate is None:
+            return None
+        address = ipaddress.IPv4Address(alternate)
+    if _ip_is_blocked(address):
         return ()
+    if address.version == 4:
+        sockaddr = (str(address), port)
+        family = socket.AF_INET
+    else:
+        sockaddr = (str(address), port, 0, 0)
+        family = socket.AF_INET6
+    return ((family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr),)
+
+
+def _filter_resolved_records(records):
     vetted = []
     seen = set()
     for record in records:
         try:
             family, socktype, protocol, canonical_name, sockaddr = record
-            if (
-                family not in (socket.AF_INET, socket.AF_INET6)
-                or socktype != socket.SOCK_STREAM
-            ):
-                continue
-            if not isinstance(sockaddr, tuple) or not sockaddr:
-                return ()
+        except (ValueError, TypeError):
+            return ()
+        if family not in (socket.AF_INET, socket.AF_INET6) or socktype != socket.SOCK_STREAM:
+            continue
+        if not isinstance(sockaddr, tuple) or not sockaddr:
+            return ()
+        try:
             address = ipaddress.ip_address(str(sockaddr[0]).split("%", 1)[0])
         except (ValueError, TypeError, IndexError):
             return ()
@@ -402,42 +406,89 @@ def _validated_socket_addresses(url: str):
     return tuple(vetted)
 
 
+def _resolve_and_filter_addresses(host: str, port: int):
+    records = _resolve_address_records(host, port)
+    if not records or len(records) > _MAX_PINNED_DNS_ANSWERS:
+        return ()
+    return _filter_resolved_records(records)
+
+
+def _validated_socket_addresses(url: str):
+    """Resolve one HTTP(S) destination, reject unsafe answers, and retain pins."""
+    parsed = _parse_pinned_url(url)
+    if parsed is None:
+        return ()
+    host, normalized, port = parsed
+    if not _pinned_host_is_clean(normalized):
+        return ()
+    literal_records = _literal_socket_record(normalized, port)
+    if literal_records is not None:
+        return literal_records
+    return _resolve_and_filter_addresses(host, port)
+
+def get_global_default_timeout():
+    """Return the sentinel used by HTTP connections for an unspecified timeout."""
+    return socket._GLOBAL_DEFAULT_TIMEOUT
+
+
+def _connection_deadline(timeout):
+    if isinstance(timeout, (int, float)):
+        return time.monotonic() + timeout
+    return None
+
+
+def _remaining_connection_timeout(timeout, deadline):
+    if deadline is None:
+        return timeout
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise socket.timeout("profile connection timed out")
+    return remaining
+
+
+def _close_failed_connection(connection) -> None:
+    if connection is None:
+        return
+    try:
+        connection.close()
+    except OSError:
+        pass
+
+
+def _connect_one_vetted_address(record, timeout, deadline, source_address):
+    family, socktype, protocol, _canonical_name, sockaddr = record
+    connection = None
+    try:
+        remaining = _remaining_connection_timeout(timeout, deadline)
+        connection = socket.socket(family, socktype, protocol)
+        if timeout is not get_global_default_timeout():
+            connection.settimeout(remaining)
+        if source_address is not None:
+            raise OSError("Pinned connections do not accept a source address")
+        connection.connect(sockaddr)
+        try:
+            connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+        return connection
+    except OSError:
+        _close_failed_connection(connection)
+        raise
+
+
 def _connect_vetted_addresses(addresses, timeout, source_address=None):
     """Connect only to vetted addresses within one total connection budget."""
+    deadline = _connection_deadline(timeout)
     errors = []
-    deadline = None
-    if isinstance(timeout, (int, float)):
-        deadline = time.monotonic() + timeout
-    for family, socktype, protocol, _canonical_name, sockaddr in addresses:
-        connection = None
+    for record in addresses:
         try:
-            if deadline is not None:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    errors.append(socket.timeout("profile connection timed out"))
-                    break
-            else:
-                remaining = timeout
-            connection = socket.socket(family, socktype, protocol)
-            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-                connection.settimeout(remaining)
-            if source_address is not None:
-                # This fetcher never supplies a source address. Refuse an
-                # unexpected one rather than resolving it outside the pin.
-                raise OSError("Pinned connections do not accept a source address")
-            connection.connect(sockaddr)
-            try:
-                connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            except OSError:
-                pass
-            return connection
+            return _connect_one_vetted_address(
+                record, timeout, deadline, source_address
+            )
         except OSError as exc:
             errors.append(exc)
-            if connection is not None:
-                try:
-                    connection.close()
-                except OSError:
-                    pass
+            if deadline is not None and deadline <= time.monotonic():
+                break
     if errors:
         raise errors[-1]
     raise OSError("No vetted public socket address is available")
@@ -496,9 +547,9 @@ def _request_addresses(request):
 class _PinnedHTTPHandler(urllib.request.HTTPHandler):
     def http_open(self, request):
         addresses = _request_addresses(request)
-        connection = lambda host, **kwargs: _PinnedHTTPConnection(
-            host, addresses, **kwargs
-        )
+        def connection(host, **kwargs):
+            return _PinnedHTTPConnection(host, addresses, **kwargs)
+
         return self.do_open(connection, request)
 
 
@@ -515,9 +566,9 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 
     def https_open(self, request):
         addresses = _request_addresses(request)
-        connection = lambda host, **kwargs: _PinnedHTTPSConnection(
-            host, addresses, **kwargs
-        )
+        def connection(host, **kwargs):
+            return _PinnedHTTPSConnection(host, addresses, **kwargs)
+
         return self.do_open(connection, request, context=self._context)
 
 

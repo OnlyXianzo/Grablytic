@@ -24,9 +24,14 @@ def _wrap_fake(monkeypatch, fake_run, timeout):
     monkeypatch.setattr(
         yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", fake_run, raising=True
     )
-    monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
+    monkeypatch.setattr(
+        dl_mod,
+        "_ffmpeg_patch_state",
+        {"installed": False, "seam": None, "error": None},
+        raising=True,
+    )
     dl_mod._ensure_ffmpeg_serialized()
-    assert dl_mod._ffmpeg_patched is True
+    assert dl_mod._ffmpeg_patch_state["installed"] is True
     return dl_mod, yt_ffmpeg
 
 

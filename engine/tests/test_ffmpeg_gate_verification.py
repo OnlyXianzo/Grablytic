@@ -36,7 +36,7 @@ def test_gate_is_installed_on_the_real_yt_dlp_class():
         "yt-dlp removed FFmpegPostProcessor.real_run_ffmpeg — the gate "
         "seam moved; update the installer"
     )
-    assert getattr(seam, "_grablytic_ffmpeg_gate", False) is True, (
+    assert getattr(seam, "grablytic_ffmpeg_gate", False) is True, (
         "the FFmpeg gate is NOT installed on the real yt-dlp class; "
         "concurrent merges would oversubscribe the CPU"
     )
@@ -53,7 +53,6 @@ def test_status_reports_failure_when_no_seam_is_available(monkeypatch):
     from yt_dlp.utils import Popen
 
     dl_mod = _dl()
-    monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
     monkeypatch.setattr(
         dl_mod,
         "_ffmpeg_patch_state",
@@ -79,7 +78,6 @@ def test_fallback_seam_installs_when_primary_seam_is_gone(monkeypatch):
     from yt_dlp.utils import Popen
 
     dl_mod = _dl()
-    monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
     monkeypatch.setattr(
         dl_mod,
         "_ffmpeg_patch_state",
@@ -114,7 +112,6 @@ def test_fallback_seam_serializes_ffmpeg_process_spawns(monkeypatch):
     # Remove the primary seam so the fallback is the one under test.
     monkeypatch.delattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg", raising=True)
     monkeypatch.setattr(Popen, "run", classmethod(fake_inner), raising=True)
-    monkeypatch.setattr(dl_mod, "_ffmpeg_patched", False, raising=True)
 
     monkeypatch.setattr(
         dl_mod,

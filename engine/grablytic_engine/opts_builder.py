@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 
 from grablytic_engine.config import (
     DEFAULT_CFG,
@@ -38,70 +39,72 @@ SAFE_COMPAT_OPTIONS = frozenset(
 )
 
 
+def _sanitize_playlist_list(values, max_items: int, max_index: int) -> str | None:
+    if not values or len(values) > max_items:
+        return None
+    items = []
+    for value in values:
+        try:
+            index = int(value)
+        except (ValueError, TypeError):
+            return None
+        if index < 1 or index > max_index:
+            return None
+        items.append(str(index))
+    return ",".join(items)
+
+
+def _parse_playlist_segment(token: str, max_items: int, max_index: int):
+    match = _PLAYLIST_SEGMENT_RE.fullmatch(token)
+    if match is None:
+        return None
+    start_text, separator, end_text = match.groups()
+    start = int(start_text)
+    if start < 1 or start > max_index:
+        return None
+    if separator is None:
+        return str(start), 1
+    end = int(end_text)
+    if end < 1 or end > max_index or start > end:
+        return None
+    span = end - start + 1
+    if span > max_items:
+        return None
+    return f"{start}{separator}{end}", span
+
+
+def _sanitize_playlist_string(value: str, max_items: int, max_index: int) -> str | None:
+    text = value.strip()
+    if not text:
+        return None
+    tokens = text.split(",")
+    if any(not token.strip() for token in tokens):
+        return None
+    clean_parts = []
+    total_items = 0
+    for token in tokens:
+        parsed = _parse_playlist_segment(token.strip(), max_items, max_index)
+        if parsed is None:
+            return None
+        part, item_count = parsed
+        total_items += item_count
+        if total_items > max_items:
+            return None
+        clean_parts.append(part)
+    return ",".join(clean_parts)
+
+
 def sanitize_playlist_items(
     val: str | list | tuple | None, max_items: int = 500, max_index: int = 10000
 ) -> str | None:
-    """Sanitize and validate playlist_items specification.
-
-    Prevents flat-fetch DoS attacks and unhandled parser ValueError exceptions.
-    Returns sanitized string if valid, None if invalid or out of bounds.
-    """
+    """Sanitize and validate playlist item indices and ranges."""
     if val is None:
         return None
     if isinstance(val, (list, tuple)):
-        items = []
-        for x in val:
-            try:
-                n = int(x)
-                if 1 <= n <= max_index:
-                    items.append(str(n))
-                else:
-                    return None
-            except (ValueError, TypeError):
-                return None
-        if not items or len(items) > max_items:
-            return None
-        return ",".join(items)
-
-    if not isinstance(val, str):
-        return None
-
-    val_str = val.strip()
-    if not val_str:
-        return None
-
-    tokens = val_str.split(",")
-    if any(not t.strip() for t in tokens):
-        return None
-
-    total_items = 0
-    clean_parts = []
-    for token in tokens:
-        token = token.strip()
-        m = _PLAYLIST_SEGMENT_RE.match(token)
-        if not m:
-            return None
-        start_str, sep, end_str = m.group(1), m.group(2), m.group(3)
-        start = int(start_str)
-        if start <= 0 or start > max_index:
-            return None
-        if sep is not None:
-            end = int(end_str)
-            if end <= 0 or end > max_index or start > end:
-                return None
-            span = end - start + 1
-            if span > max_items:
-                return None
-            total_items += span
-            clean_parts.append(f"{start}{sep}{end}")
-        else:
-            total_items += 1
-            clean_parts.append(str(start))
-
-    if total_items > max_items:
-        return None
-
-    return ",".join(clean_parts)
+        return _sanitize_playlist_list(val, max_items, max_index)
+    if isinstance(val, str):
+        return _sanitize_playlist_string(val, max_items, max_index)
+    return None
 
 
 def sanitize_ratelimit(val) -> int | None:
@@ -217,7 +220,8 @@ def sanitize_subtitleslangs(val: list | tuple | str | None) -> list[str]:
 # is unique within one playlist and `%(autonumber)s` always increments.
 _UNIQUE_TMPL_FIELDS = ("id", "playlist_index", "autonumber")
 
-_collision_warned = False
+_collision_warning_state = {"emitted": False}
+_collision_warning_lock = threading.Lock()
 
 
 def _outtmpl_is_collision_safe(tmpl) -> bool:
@@ -227,12 +231,12 @@ def _outtmpl_is_collision_safe(tmpl) -> bool:
     return any(f"%({field})" in tmpl for field in _UNIQUE_TMPL_FIELDS)
 
 
-def _warn_collision_unsafe_tmpl(tmpl) -> None:
-    """Warn ONCE that the template can overwrite existing downloads."""
-    global _collision_warned
-    if _collision_warned:
-        return
-    _collision_warned = True
+def _warn_collision_unsafe_tmpl(_tmpl) -> None:
+    """Warn once that the template can overwrite existing downloads."""
+    with _collision_warning_lock:
+        if _collision_warning_state["emitted"]:
+            return
+        _collision_warning_state["emitted"] = True
     try:
         from grablytic_engine.logger import get_logger
 

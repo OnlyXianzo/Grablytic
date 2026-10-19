@@ -348,5 +348,5 @@ class TestDownloadPathsAndFFmpegSafety:
         import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
 
         dl_mod._ensure_ffmpeg_serialized()
-        assert dl_mod._ffmpeg_patched is True
+        assert dl_mod._ffmpeg_patch_state["installed"] is True
         assert hasattr(yt_ffmpeg.FFmpegPostProcessor, "real_run_ffmpeg")

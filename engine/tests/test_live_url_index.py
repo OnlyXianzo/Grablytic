@@ -31,12 +31,15 @@ class _NoopThread:
         self.kwargs = kwargs
 
     def start(self):
+        # The test double intentionally does not execute its target.
         pass
 
-    def is_alive(self):
+    @staticmethod
+    def is_alive():
         return False
 
     def join(self, timeout=None):
+        # There is no background worker to join.
         pass
 
 

@@ -24,16 +24,17 @@ def _dl():
 
 class _NoopThread:
     def __init__(self, *args, **kwargs):
-        pass
+        """No initialization is needed for this test double."""
 
     def start(self):
-        pass
+        """Do not execute the thread target in these tests."""
 
-    def is_alive(self):
+    @staticmethod
+    def is_alive():
         return False
 
     def join(self, timeout=None):
-        pass
+        """The no-op thread has nothing to join."""
 
 
 @pytest.fixture(autouse=True)

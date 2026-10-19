@@ -72,9 +72,9 @@ def test_collision_unsafe_templates_are_recognised(tmpl):
 def test_the_engine_warns_about_a_collision_unsafe_template():
     """A template without a unique field must be flagged, not silently used."""
     ob = _ob()
-    ob._collision_warned = False
+    ob._collision_warning_state["emitted"] = False
     ob._warn_collision_unsafe_tmpl("%(title)s.%(ext)s")
-    assert ob._collision_warned is True
+    assert ob._collision_warning_state["emitted"] is True
 
 
 @pytest.mark.unit

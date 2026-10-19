@@ -59,7 +59,7 @@ def test_pinned_profile_connection_uses_the_validated_address(monkeypatch):
             self.wfile.write(body)
 
         def log_message(self, *_args):
-            pass
+            """Suppress default HTTP access logging in tests."""
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -107,15 +107,18 @@ def test_pinned_connection_shares_one_total_connect_timeout(monkeypatch):
     timeouts = []
 
     class _Socket:
-        def settimeout(self, value):
+        @staticmethod
+        def settimeout(value):
             timeouts.append(value)
 
-        def connect(self, _address):
+        @staticmethod
+        def connect(_address):
             now[0] += 0.6
             raise socket.timeout("mocked connect timeout")
 
-        def close(self):
-            pass
+        @staticmethod
+        def close():
+            """The fake socket has no resources to release."""
 
     monkeypatch.setattr(ug.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(ug.socket, "socket", lambda *_args: _Socket())
@@ -150,14 +153,16 @@ def test_https_connection_keeps_original_hostname_for_tls(monkeypatch):
     seen = {}
 
     class _Socket:
-        def close(self):
-            pass
+        @staticmethod
+        def close():
+            """The fake socket has no resources to release."""
 
     class _Context:
         check_hostname = True
         verify_mode = ssl.CERT_REQUIRED
 
-        def wrap_socket(self, raw_socket, *, server_hostname):
+        @staticmethod
+        def wrap_socket(raw_socket, *, server_hostname):
             seen["socket"] = raw_socket
             seen["server_hostname"] = server_hostname
             return raw_socket
@@ -186,7 +191,7 @@ def test_profile_redirect_to_private_address_is_rejected(monkeypatch):
             self.end_headers()
 
         def log_message(self, *_args):
-            pass
+            """Suppress default HTTP access logging in tests."""
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -221,11 +226,12 @@ def test_profile_redirect_to_private_address_is_rejected(monkeypatch):
 def test_oversized_profile_response_keeps_the_existing_cache(monkeypatch):
     sp = _sp()
     good = {"Good": {"format_code": "best", "container": "mp4"}}
-    sp._SITE_PROFILES_CACHE = good
+    sp._set_site_profiles_cache(good)
     requested_sizes = []
 
     class _Resp:
-        def read(self, size=-1):
+        @staticmethod
+        def read(size=-1):
             requested_sizes.append(size)
             return b" " * size
 
@@ -237,7 +243,7 @@ def test_oversized_profile_response_keeps_the_existing_cache(monkeypatch):
 
     monkeypatch.setattr(sp, "urlopen", lambda *a, **k: _Resp())
     assert sp.load_site_profiles_from_url("https://example.com/profiles.json") == good
-    assert sp._SITE_PROFILES_CACHE == good
+    assert sp._get_site_profiles_cache() == good
     assert requested_sizes == [sp._MAX_PROFILE_BYTES + 1]
 
 
@@ -368,7 +374,7 @@ def test_builtin_profiles_are_all_safe():
 def test_failed_fetch_does_not_poison_the_cache(monkeypatch):
     sp = _sp()
     good = {"Good": {"format_code": "best", "container": "mp4"}}
-    sp._SITE_PROFILES_CACHE = good
+    sp._set_site_profiles_cache(good)
 
     def _boom(*args, **kwargs):
         raise OSError("network down")
@@ -377,17 +383,18 @@ def test_failed_fetch_does_not_poison_the_cache(monkeypatch):
     result = sp.load_site_profiles_from_url("https://example.com/p.json")
     # The previous (good) cache survived the failed fetch.
     assert result == good
-    assert sp._SITE_PROFILES_CACHE == good
+    assert sp._get_site_profiles_cache() == good
 
 
 @pytest.mark.unit
 def test_empty_remote_payload_keeps_the_previous_cache(monkeypatch):
     sp = _sp()
     good = {"Good": {"format_code": "best", "container": "mp4"}}
-    sp._SITE_PROFILES_CACHE = good
+    sp._set_site_profiles_cache(good)
 
     class _Resp:
-        def read(self, size=-1):
+        @staticmethod
+        def read(size=-1):
             return b"{}"
 
         def __enter__(self):
@@ -399,17 +406,18 @@ def test_empty_remote_payload_keeps_the_previous_cache(monkeypatch):
     monkeypatch.setattr(sp, "urlopen", lambda *a, **k: _Resp())
     result = sp.load_site_profiles_from_url("https://example.com/p.json")
     assert result == good
-    assert sp._SITE_PROFILES_CACHE == good
+    assert sp._get_site_profiles_cache() == good
 
 
 @pytest.mark.unit
 def test_unsafe_remote_payload_is_not_cached(monkeypatch):
     sp = _sp()
-    sp._SITE_PROFILES_CACHE = None
+    sp._set_site_profiles_cache(None)
     payload = json.dumps({"Evil": {"format_code": "all"}}).encode()
 
     class _Resp:
-        def read(self, size=-1):
+        @staticmethod
+        def read(size=-1):
             return payload[:size] if size >= 0 else payload
 
         def __enter__(self):
@@ -429,7 +437,7 @@ def test_site_profiles_status_and_reset():
     sp.reset_site_profiles_cache()
     status = sp.site_profiles_status()
     assert status["source"] == "builtin"
-    sp._SITE_PROFILES_CACHE = {"A": {"format_code": "best"}}
+    sp._set_site_profiles_cache({"A": {"format_code": "best"}})
     status = sp.site_profiles_status()
     assert status["loaded"] is True
     assert status["count"] == 1

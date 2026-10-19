@@ -120,7 +120,8 @@ class _StdoutFirewall:
         return _StderrBuffer(self._err)
 
     # -- introspection ----------------------------------------------
-    def isatty(self):
+    @staticmethod
+    def isatty():
         return False
 
     def fileno(self):
@@ -141,13 +142,16 @@ class _StdoutFirewall:
     def closed(self):
         return False
 
-    def writable(self):
+    @staticmethod
+    def writable():
         return True
 
-    def readable(self):
+    @staticmethod
+    def readable():
         return False
 
-    def seekable(self):
+    @staticmethod
+    def seekable():
         return False
 
     def __enter__(self):
@@ -182,13 +186,16 @@ class _StderrBuffer:
         except Exception:
             pass
 
-    def writable(self):
+    @staticmethod
+    def writable():
         return True
 
-    def readable(self):
+    @staticmethod
+    def readable():
         return False
 
-    def seekable(self):
+    @staticmethod
+    def seekable():
         return False
 
 
@@ -247,112 +254,118 @@ def _write_stdout_line(line_str: str) -> None:
         stream.flush()
 
 
+def _drain_log_queue() -> None:
+    if _log_queue is None:
+        return
+    while True:
+        try:
+            log_entry = _log_queue.get_nowait()
+            _write_stdout_line(json.dumps(log_entry))
+        except _queue_module.Empty:
+            break
+        except Exception as exc:
+            try:
+                log.warn(f"Dropping malformed log entry: {type(exc).__name__}")
+            except Exception:
+                pass
+            break
+
+
+def _drain_progress_queue(progress_queue) -> None:
+    while True:
+        try:
+            event = progress_queue.get_nowait()
+            _write_stdout_line(event)
+        except _queue_module.Empty:
+            break
+        except Exception as exc:
+            try:
+                log.warn(
+                    f"Dropping malformed progress event: {type(exc).__name__}"
+                )
+            except Exception:
+                pass
+            break
+
+
+def _result_event(download_id: str, result: dict) -> dict:
+    if result.get("success", False):
+        return {
+            "type": "event",
+            "event": "finished",
+            "download_id": download_id,
+            "filesize_bytes": result.get("filesize_bytes", 0),
+            "total_bytes": result.get("filesize_bytes", 0),
+            "file_path": result.get("file_path"),
+            "thumbnail_path": result.get("thumbnail_path"),
+        }
+    if result.get("error_type") == "ERROR_CANCELLED":
+        return {
+            "type": "event",
+            "event": "cancelled",
+            "download_id": download_id,
+            "error_type": "ERROR_CANCELLED",
+            "error_message": result.get(
+                "error_message", "Download cancelled by user"
+            ),
+        }
+    return {
+        "type": "event",
+        "event": "error",
+        "download_id": download_id,
+        "error_type": result.get("error_type", "ERROR_UNKNOWN"),
+        "error_message": result.get("error_message", "Unknown error"),
+        "recoverable": result.get("recoverable", True),
+        "suggests_vpn": result.get("suggests_vpn", False),
+    }
+
+
+def _mark_poll_result_delivered(download_id: str) -> None:
+    try:
+        from grablytic_engine.downloader import _mark_result_delivered
+
+        _mark_result_delivered(download_id)
+    except Exception:
+        pass
+
+
+def _drain_result_queue(download_id: str, result_queue) -> None:
+    while True:
+        try:
+            result = result_queue.get_nowait()
+            _write_stdout_line(json.dumps(_result_event(download_id, result)))
+        except _queue_module.Empty:
+            break
+        except Exception as exc:
+            try:
+                log.warn(f"Dropping malformed result event: {type(exc).__name__}")
+            except Exception:
+                pass
+            break
+        else:
+            _mark_poll_result_delivered(download_id)
+
+
+def _poll_download_queues(download_id: str) -> None:
+    with _downloads_lock:
+        info = _active_downloads.get(download_id)
+        if not info:
+            return
+        progress_queue = info.get("progress_queue")
+        result_queue = info.get("result_queue")
+    if progress_queue:
+        _drain_progress_queue(progress_queue)
+    if result_queue:
+        _drain_result_queue(download_id, result_queue)
+
+
 def poll_queues():
     while True:
-        if _log_queue is not None:
-            while True:
-                try:
-                    log_entry = _log_queue.get_nowait()
-                    _write_stdout_line(json.dumps(log_entry))
-                except _queue_module.Empty:
-                    break
-                except Exception as exc:
-                    try:
-                        log.warn(f"Dropping malformed log entry: {type(exc).__name__}")
-                    except Exception:
-                        pass
-                    break
-
+        _drain_log_queue()
         with _downloads_lock:
-            active_ids = list(_active_downloads.keys())
-
+            active_ids = list(_active_downloads)
         for download_id in active_ids:
-            with _downloads_lock:
-                info = _active_downloads.get(download_id)
-                if not info:
-                    continue
-                prog_q = info.get("progress_queue")
-                res_q = info.get("result_queue")
-
-            if prog_q:
-                while True:
-                    try:
-                        event_str = prog_q.get_nowait()
-                        _write_stdout_line(event_str)
-                    except _queue_module.Empty:
-                        break
-                    except Exception as exc:
-                        try:
-                            log.warn(
-                                f"Dropping malformed progress event: {type(exc).__name__}"
-                            )
-                        except Exception:
-                            pass
-                        break
-
-            if res_q:
-                while True:
-                    try:
-                        res = res_q.get_nowait()
-                        is_success = res.get("success", False)
-                        if is_success:
-                            event = {
-                                "type": "event",
-                                "event": "finished",
-                                "download_id": download_id,
-                                "filesize_bytes": res.get("filesize_bytes", 0),
-                                "total_bytes": res.get("filesize_bytes", 0),
-                                "file_path": res.get("file_path"),
-                                "thumbnail_path": res.get("thumbnail_path"),
-                            }
-                        elif res.get("error_type") == "ERROR_CANCELLED":
-                            # Parity with Android: user cancellation is a
-                            # distinct "cancelled" event, never an "error"
-                            # (re-audit #3; download_provider.dart:172).
-                            event = {
-                                "type": "event",
-                                "event": "cancelled",
-                                "download_id": download_id,
-                                "error_type": "ERROR_CANCELLED",
-                                "error_message": res.get(
-                                    "error_message", "Download cancelled by user"
-                                ),
-                            }
-                        else:
-                            event = {
-                                "type": "event",
-                                "event": "error",
-                                "download_id": download_id,
-                                "error_type": res.get("error_type", "ERROR_UNKNOWN"),
-                                "error_message": res.get(
-                                    "error_message", "Unknown error"
-                                ),
-                                "recoverable": res.get("recoverable", True),
-                                "suggests_vpn": res.get("suggests_vpn", False),
-                            }
-                        _write_stdout_line(json.dumps(event))
-                    except _queue_module.Empty:
-                        break
-                    except Exception as exc:
-                        try:
-                            log.warn(
-                                f"Dropping malformed result event: {type(exc).__name__}"
-                            )
-                        except Exception:
-                            pass
-                        break
-                    else:
-                        # The result reached the client: the cleanup loop
-                        # may now reap the entry.
-                        try:
-                            from grablytic_engine.downloader import (
-                                _mark_result_delivered,
-                            )
-
-                            _mark_result_delivered(download_id)
-                        except Exception:
-                            pass
-
+            _poll_download_queues(download_id)
         time.sleep(0.1)
 
 
@@ -416,11 +429,11 @@ def _negotiate_contract(params):
     return None
 
 
-def _h_engine_bootstrap(params):
+def _h_engine_bootstrap(_params):
     return bootstrap()
 
 
-def _h_engine_contract(params):
+def _h_engine_contract(_params):
     return contract.contract_info()
 
 
@@ -437,7 +450,7 @@ def _h_download_cancel(params):
     return cancel_download(_req(params, "download_id"))
 
 
-def _h_download_queue_status(params):
+def _h_download_queue_status(_params):
     return get_queue_status()
 
 
@@ -483,7 +496,7 @@ def _h_resume_report(params):
     )
 
 
-def _h_update_check(params):
+def _h_update_check(_params):
     return update_check()
 
 
@@ -657,7 +670,7 @@ def _execute_parsed_request(req_id, method, params):
         _write_stdout_line(json.dumps(err_res))
 
 
-def _busy_envelope(req_id, method) -> dict:
+def _busy_envelope(req_id, _method) -> dict:
     """Explicit, retryable load-shed envelope (never a silent hang)."""
     return {
         "id": req_id,
@@ -674,120 +687,117 @@ def _busy_envelope(req_id, method) -> dict:
     }
 
 
-def main():
-    if len(sys.argv) > 1:
-        command = sys.argv[1]
-        if command == "bootstrap":
-            _write_stdout_line(json.dumps(bootstrap()))
-        elif command == "formats" and len(sys.argv) >= 3:
-            _write_stdout_line(json.dumps(get_formats(sys.argv[2])))
-        else:
-            _write_stdout_line(f"Unknown CLI command: {command}")
-        return
+def _handle_cli(argv) -> bool:
+    if len(argv) <= 1:
+        return False
+    command = argv[1]
+    if command == "bootstrap":
+        _write_stdout_line(json.dumps(bootstrap()))
+    elif command == "formats" and len(argv) >= 3:
+        _write_stdout_line(json.dumps(get_formats(argv[2])))
+    else:
+        _write_stdout_line(f"Unknown CLI command: {command}")
+    return True
 
-    # Framing firewall first: from here on, only _write_stdout_line() can
-    # put bytes on the real stdout, so a stray print() from any library
-    # can no longer desync the client's JSON line parser.
-    install_stdout_firewall()
 
-    threading.Thread(target=poll_queues, daemon=True).start()
-
-    # In-flight budget for the slow lane. Acquired before a request is
-    # accepted and released when its response has been written, so the
-    # bound covers "running + queued" work, not just running work.
-    inflight = threading.BoundedSemaphore(_MAX_IPC_INFLIGHT)
-
-    def _run_guarded(req_id, method, params):
+def _run_guarded_request(req_id, method, params, inflight) -> None:
+    try:
+        _execute_parsed_request(req_id, method, params)
+    finally:
         try:
-            _execute_parsed_request(req_id, method, params)
-        finally:
-            try:
-                inflight.release()
-            except Exception:
-                pass
+            inflight.release()
+        except Exception:
+            pass
 
+
+def _report_ipc_parse_error(exc: Exception, method: str, req_id) -> None:
+    log.log_exception(exc, f"Error processing {method}")
+    try:
+        persistent_flush()
+    except Exception:
+        pass
+    try:
+        from grablytic_engine.github_notifier import notify_exception
+
+        notify_exception(exc, context={"method": str(method)})
+    except Exception:
+        pass
+    _write_stdout_line(
+        json.dumps(
+            {
+                "id": req_id,
+                "error": {
+                    "success": False,
+                    "error_type": "ERROR_INTERNAL",
+                    "error_message": str(exc),
+                },
+            }
+        )
+    )
+
+
+def _parse_ipc_request(line: str):
+    req_id = None
+    method = "<unparsed>"
+    params = {}
+    if len(line) > _MAX_IPC_LINE_BYTES:
+        raise ValueError(f"IPC line exceeds {_MAX_IPC_LINE_BYTES} bytes")
+    request = json.loads(line)
+    req_id = request.get("id")
+    method = request.get("method")
+    params = request.get("params", {})
+    return req_id, method, params
+
+
+def _dispatch_ipc_request(req_id, method, params, pool, inflight) -> None:
+    if method in _FAST_IPC_METHODS or method == "paths/set":
+        _execute_parsed_request(req_id, method, params)
+        return
+    if not inflight.acquire(blocking=False):
+        try:
+            log.warn(
+                f"IPC load shed: {method} rejected, "
+                f"{_MAX_IPC_INFLIGHT} requests already in flight"
+            )
+        except Exception:
+            pass
+        _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+        return
+    try:
+        pool.submit(_run_guarded_request, req_id, method, params, inflight)
+    except Exception:
+        try:
+            inflight.release()
+        except Exception:
+            pass
+        _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+
+
+def _process_ipc_line(line: str, pool, inflight) -> None:
+    req_id = None
+    method = "<unparsed>"
+    params = {}
+    try:
+        req_id, method, params = _parse_ipc_request(line)
+    except Exception as exc:
+        _report_ipc_parse_error(exc, method, req_id)
+        return
+    _dispatch_ipc_request(req_id, method, params, pool, inflight)
+
+
+def main():
+    if _handle_cli(sys.argv):
+        return
+    install_stdout_firewall()
+    threading.Thread(target=poll_queues, daemon=True).start()
+    inflight = threading.BoundedSemaphore(_MAX_IPC_INFLIGHT)
     with _futures.ThreadPoolExecutor(
         max_workers=_MAX_IPC_WORKERS, thread_name_prefix="ipc"
-    ) as _pool:
+    ) as pool:
         for line in sys.stdin:
             line = line.strip()
-            if not line:
-                continue
-            # Bound before parsing: a malformed line must produce an error
-            # envelope, never an UnboundLocalError that kills the whole loop.
-            req_id = None
-            method = "<unparsed>"
-            params = {}
-            try:
-                if len(line) > _MAX_IPC_LINE_BYTES:
-                    raise ValueError(f"IPC line exceeds {_MAX_IPC_LINE_BYTES} bytes")
-                req = json.loads(line)
-                req_id = req.get("id")
-                method = req.get("method")
-                params = req.get("params", {})
-            except Exception as e:
-                # Parse failure stays inline: no id to preserve beyond null.
-                log.log_exception(e, f"Error processing {method}")
-                try:
-                    persistent_flush()
-                except Exception:
-                    pass
-                try:
-                    from grablytic_engine.github_notifier import notify_exception
-
-                    notify_exception(e, context={"method": str(method)})
-                except Exception:
-                    pass
-                _write_stdout_line(
-                    json.dumps(
-                        {
-                            "id": req_id,
-                            "error": {
-                                "success": False,
-                                "error_type": "ERROR_INTERNAL",
-                                "error_message": str(e),
-                            },
-                        }
-                    )
-                )
-                continue
-
-            # Fast lane: local-only cancel/status (and sibling setters) run
-            # inline so a wedged extraction can never hold them hostage.
-            # paths/set is also inline (serialized global init, no network).
-            if method in _FAST_IPC_METHODS or method == "paths/set":
-                _execute_parsed_request(req_id, method, params)
-                continue
-
-            # Slow lane: bounded admission. Over budget → shed with an
-            # explicit ERROR_BUSY so the client can retry, instead of
-            # growing an unbounded queue (the old behaviour, which had no
-            # back-pressure at all).
-            if not inflight.acquire(blocking=False):
-                try:
-                    log.warn(
-                        f"IPC load shed: {method} rejected, "
-                        f"{_MAX_IPC_INFLIGHT} requests already in flight"
-                    )
-                except Exception:
-                    pass
-                _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
-                continue
-            try:
-                _pool.submit(_run_guarded, req_id, method, params)
-            except Exception:
-                # Pool saturated/closed: release the slot and shed loudly
-                # rather than dropping the request silently.
-                try:
-                    inflight.release()
-                except Exception:
-                    pass
-                _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
-        # Exiting `with` drains in-flight workers so every accepted request
-        # gets its envelope before EOF shutdown (keeps _run_lines-style
-        # harnesses deterministic).
-
-    # Gracefully shut down any in-flight downloads on EOF/exit
+            if line:
+                _process_ipc_line(line, pool, inflight)
     try:
         shutdown_downloads(timeout=5.0)
     except Exception:
