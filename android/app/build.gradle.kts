@@ -107,7 +107,11 @@ chaquopy {
     defaultConfig {
         version = "3.11"
         pip {
-            install("yt-dlp")
+            // Pinned, like the desktop bootstrap. An unpinned install
+            // makes the packaged engine depend on whatever PyPI serves
+            // at build time, with no review of the change.
+            // Keep in step with EngineContract.ytDlpVersion.
+            install("yt-dlp==2026.08.19")
             // python-quickjs requires native Android wheel not yet available via Chaquopy pip.
             // QuickJS on Android will be bridged via Kotlin JNI in a future milestone.
         }

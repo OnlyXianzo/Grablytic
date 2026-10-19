@@ -1,8 +1,10 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/search_provider.dart';
@@ -702,9 +704,29 @@ class NetworkSettingsScreen extends ConsumerWidget {
                   ref
                       .read(settingsProvider.notifier)
                       .setMaxConcurrentDownloads(v);
-                  try {
-                    ref.read(engineProvider).setConcurrency(v);
-                  } catch (_) {}
+                  // The engine is the real gate. A rejected or unreachable
+                  // engine left the UI and the engine disagreeing about
+                  // the limit, with no signal — the user kept getting more
+                  // parallel downloads than they asked for.
+                  unawaited(
+                    ref
+                        .read(engineProvider)
+                        .setConcurrency(v)
+                        .then((result) {
+                          if (result['success'] == true) return;
+                          AppLogger.warn(
+                            'Engine rejected concurrency=$v: '
+                            '${result['error_message'] ?? result['error_type']}',
+                            tag: 'settings',
+                          );
+                        })
+                        .catchError((Object error) {
+                          AppLogger.warn(
+                            'Concurrency sync failed: $error',
+                            tag: 'settings',
+                          );
+                        }),
+                  );
                 },
                 colorScheme: colorScheme,
               ),

@@ -274,6 +274,54 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     );
   }
 
+  /// Replaces one item in [state] and returns its new index, or null.
+  ///
+  /// The hot progress path used to build the list with a per-element
+  /// conditional (`for (final d in state) if (d.id != id) d else
+  /// d.copyWith(...)`), which re-scanned the list for the id even after
+  /// the index was already known, and allocated a fresh list on every
+  /// coalesced tick. One lookup, one list copy, one new item.
+  int? _replaceItem(String id, DownloadItem Function(DownloadItem) mutate) {
+    final index = state.indexWhere((d) => d.id == id);
+    if (index == -1) return null;
+    final next = List<DownloadItem>.of(state);
+    next[index] = mutate(next[index]);
+    state = next;
+    return index;
+  }
+
+  /// Applies a terminal transition to the item with [id].
+  ///
+  /// Returns the updated item, or null when [id] is not in the list.
+  ///
+  /// The old code looked the item up with
+  /// `firstWhere(..., orElse: () => state.last)`. When the id was gone —
+  /// deleted from history while running, a restored-but-not-yet-loaded
+  /// item, a late duplicate terminal from the cancel watchdog — the
+  /// fallback returned an UNRELATED item, which was then persisted and
+  /// reported to the resume strike store, corrupting that other
+  /// download's attempt counter. With an empty list, `state.last` threw
+  /// inside the engine event listener. No fallback: an unknown id is
+  /// ignored with one diagnosable log line.
+  DownloadItem? _applyTerminal(
+    String id,
+    DownloadItem Function(DownloadItem) mutate,
+  ) {
+    final index = state.indexWhere((d) => d.id == id);
+    if (index == -1) {
+      AppLogger.warn(
+        'Terminal event for unknown download id: $id',
+        tag: 'download',
+      );
+      return null;
+    }
+    final updated = mutate(state[index]);
+    state = [
+      for (final d in state) if (d.id == id) updated else d,
+    ];
+    return updated;
+  }
+
   List<DownloadItem> get completed =>
       state.where((d) => d.status == 'completed').toList();
   List<DownloadItem> get inProgress =>
@@ -313,15 +361,24 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// Legacy alias for [syncConcurrency] (kept for API stability — one
   /// external caller may still reference it). Canonical path is
   /// [syncConcurrency]; both forward identically to the engine backstop.
-  Future<void> setMaxConcurrent(int maxConcurrent) =>
+  Future<bool> setMaxConcurrent(int maxConcurrent) =>
       syncConcurrency(maxConcurrent);
 
   /// Push the user's concurrency preference to the engine backstop
   /// (desktop JSON-RPC + Android Chaquopy handlers; never throws).
-  Future<void> syncConcurrency(int maxConcurrent) async {
+  Future<bool> syncConcurrency(int maxConcurrent) async {
     try {
-      await _engine.setConcurrency(maxConcurrent);
-    } catch (_) {}
+      final result = await _engine.setConcurrency(maxConcurrent);
+      if (result['success'] == true) return true;
+      AppLogger.warn(
+        'Engine rejected concurrency=$maxConcurrent: '
+        '${result['error_message'] ?? result['error_type']}',
+        tag: 'download',
+      );
+    } catch (error) {
+      AppLogger.warn('Concurrency sync failed: $error', tag: 'download');
+    }
+    return false;
   }
 
   void addDownload(DownloadItem item) {
@@ -400,10 +457,16 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     if (eventType == 'queued') {
       // Engine backstop parked this id (at-limit). Surface queue position
       // so the card can render "Queued #N" instead of a stalled 0%.
-      state = [
-        for (final d in state)
-          if (d.id != downloadId) d else d.copyWith(status: 'queued'),
-      ];
+      // The engine's own position is kept on the item: it is the only
+      // meaningful queue ordering (the UI list order is not).
+      final position = (event['position'] as num?)?.toInt();
+      _replaceItem(
+        downloadId,
+        (d) => d.copyWith(
+          status: 'queued',
+          queuePosition: position,
+        ),
+      );
     } else if (eventType == 'downloading') {
       // Engine sends bytes via JSON — numbers may decode as int OR double
       // (HLS/fragmented totals, Chaquopy/Kotlin number coercion). `as int?`
@@ -440,53 +503,44 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         now: now,
         previous: current.speedHistory,
       );
-      state = [
-        for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(
-              status: 'downloading',
-              progress: progress.clamp(0.0, 0.99),
-              downloadedBytes: downloaded,
-              totalBytes: total,
-              speed: display.speed,
-              eta: display.eta,
-              speedHistory: display.history,
-              clearStage: true,
-              clearStageLabel: true,
-            ),
-      ];
+      _replaceItem(
+        downloadId,
+        (d) => d.copyWith(
+          status: 'downloading',
+          progress: progress.clamp(0.0, 0.99),
+          downloadedBytes: downloaded,
+          totalBytes: total,
+          speed: display.speed,
+          eta: display.eta,
+          speedHistory: display.history,
+          clearStage: true,
+          clearStageLabel: true,
+        ),
+      );
     } else if (eventType == 'postprocessing') {
       // yt-dlp entered a post-processing stage (merging, embedding, …).
       // Surfaced on the card so a 99% item visibly keeps working.
       final stage = event['stage'] as String?;
       final stageLabel = event['stage_label'] as String?;
-      state = [
-        for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(stage: stage, stageLabel: stageLabel),
-      ];
+      _replaceItem(
+        downloadId,
+        (d) => d.copyWith(stage: stage, stageLabel: stageLabel),
+      );
     } else if (eventType == 'stream_finished') {
       // One stream (e.g. DASH video) landed; more may follow, then FFmpeg
       // merge + post-processing. Record bytes, hold below 100%, stay
       // 'downloading' — only terminal 'finished' completes the item.
       // Same num-tolerant parsing as above (JSON may yield double).
       final filesize = (event['filesize_bytes'] as num?)?.toInt() ?? 0;
-      state = [
-        for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(
-              status: 'downloading',
-              progress: d.progress.clamp(0.0, 0.99),
-              downloadedBytes: filesize > 0 ? filesize : d.downloadedBytes,
-              totalBytes: filesize > d.totalBytes ? filesize : d.totalBytes,
-            ),
-      ];
+      _replaceItem(
+        downloadId,
+        (d) => d.copyWith(
+          status: 'downloading',
+          progress: d.progress.clamp(0.0, 0.99),
+          downloadedBytes: filesize > 0 ? filesize : d.downloadedBytes,
+          totalBytes: filesize > d.totalBytes ? filesize : d.totalBytes,
+        ),
+      );
     } else if (eventType == 'finished') {
       // Same num-tolerant parsing — terminal filesize may also arrive as double.
       final filesize = (event['filesize_bytes'] as num?)?.toInt() ?? 0;
@@ -506,32 +560,26 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         tag: 'download',
       );
 
-      state = [
-        for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(
-              status: 'completed',
-              progress: 1.0,
-              downloadedBytes: filesize,
-              totalBytes: filesize,
-              filePath: filePath ?? d.filePath,
-              // Keep the creation-time app-private cache over the
-              // post-download sidecar so it survives file deletion.
-              thumbnailPath: d.thumbnailPath ?? thumbnailPath,
-              speed: 0,
-              eta: -1,
-              clearStage: true,
-              clearStageLabel: true,
-              fileSize: sizeStr,
-              completedDate: 'Today',
-            ),
-      ];
-      final item = state.firstWhere(
-        (d) => d.id == downloadId,
-        orElse: () => state.last,
+      final item = _applyTerminal(
+        downloadId,
+        (d) => d.copyWith(
+          status: 'completed',
+          progress: 1.0,
+          downloadedBytes: filesize,
+          totalBytes: filesize,
+          filePath: filePath ?? d.filePath,
+          // Keep the creation-time app-private cache over the
+          // post-download sidecar so it survives file deletion.
+          thumbnailPath: d.thumbnailPath ?? thumbnailPath,
+          speed: 0,
+          eta: -1,
+          clearStage: true,
+          clearStageLabel: true,
+          fileSize: sizeStr,
+          completedDate: 'Today',
+        ),
       );
+      if (item == null) return;
       _persistRecord(item);
       _reportResumeOutcome(item.url, true);
       _dropSmoother(downloadId);
@@ -553,26 +601,20 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         tag: 'download',
       );
 
-      state = [
-        for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(
-              status: 'error',
-              speed: 0,
-              eta: -1,
-              clearStage: true,
-              clearStageLabel: true,
-              errorType: errorType,
-              errorMessage: errorMessage,
-              suggestsVpn: suggestsVpn,
-            ),
-      ];
-      final item = state.firstWhere(
-        (d) => d.id == downloadId,
-        orElse: () => state.last,
+      final item = _applyTerminal(
+        downloadId,
+        (d) => d.copyWith(
+          status: 'error',
+          speed: 0,
+          eta: -1,
+          clearStage: true,
+          clearStageLabel: true,
+          errorType: errorType,
+          errorMessage: errorMessage,
+          suggestsVpn: suggestsVpn,
+        ),
       );
+      if (item == null) return;
       _persistRecord(item);
       _reportResumeOutcome(item.url, false);
       _dropSmoother(downloadId);
@@ -588,26 +630,20 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       );
     } else if (eventType == 'cancelled') {
       AppLogger.info('Download cancelled: $downloadId', tag: 'download');
-      state = [
-        for (final d in state)
-          if (d.id != downloadId)
-            d
-          else
-            d.copyWith(
-              status: 'cancelled',
-              speed: 0,
-              eta: -1,
-              clearStage: true,
-              clearStageLabel: true,
-              errorType: 'ERROR_CANCELLED',
-              errorMessage: 'Download cancelled',
-              recoveryAction: 'none',
-            ),
-      ];
-      final item = state.firstWhere(
-        (d) => d.id == downloadId,
-        orElse: () => state.last,
+      final item = _applyTerminal(
+        downloadId,
+        (d) => d.copyWith(
+          status: 'cancelled',
+          speed: 0,
+          eta: -1,
+          clearStage: true,
+          clearStageLabel: true,
+          errorType: 'ERROR_CANCELLED',
+          errorMessage: 'Download cancelled',
+          recoveryAction: 'none',
+        ),
       );
+      if (item == null) return;
       _persistRecord(item);
       _dropSmoother(downloadId);
       AppLogger.endLogSession(downloadId);
@@ -688,7 +724,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               bytesDownloaded: downloaded,
               totalBytes: total > 0 ? total : null,
               progress: total > 0 ? (downloaded / total).clamp(0.0, 0.99) : 0.0,
-              now: now.toIso8601String(),
+              now: now.toUtc().toIso8601String(),
             )
             .then((_) => s.heartbeatFailStreak = 0)
             .catchError((e) {
@@ -711,11 +747,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   void _persistRecord(DownloadItem item) {
     try {
       final configJson = item.config != null ? jsonEncode(item.config) : null;
-      final qPos =
-          item.queuePosition ??
-          (state.indexWhere((d) => d.id == item.id) >= 0
-              ? state.indexWhere((d) => d.id == item.id)
-              : null);
+      // The engine's queue position, not the index of the item in the UI
+      // list. The old code stored the UI index (and computed it twice,
+      // two O(n) scans) and `restoreInterruptedDownloads` then sorted the
+      // backlog by that meaningless column.
+      final qPos = item.queuePosition;
       final record = DownloadRecord(
         id: item.id,
         url: item.url,
@@ -729,7 +765,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         filePath: item.filePath,
         status: item.status,
         progress: item.progress,
-        timestamp: item.addedAt.toIso8601String(),
+        timestamp: item.addedAt.toUtc().toIso8601String(),
         thumbnailUrl: item.thumbnailUrl,
         thumbnailPath: item.thumbnailPath,
         configJson: configJson,
@@ -739,7 +775,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         lastErrorMessage: item.errorMessage,
         bytesDownloaded: item.downloadedBytes,
         totalBytes: item.totalBytes > 0 ? item.totalBytes : null,
-        updatedAt: DateTime.now().toIso8601String(),
+        updatedAt: utcNowIso(),
       );
       DownloadHistoryDb.instance.insert(record).catchError((e) {
         // Never throw (state is source of truth), but never go
@@ -767,7 +803,15 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     // One connectivity read per cold start, not per row: the gate only
     // governs unattended auto-resume (explicit user taps are consent).
     final networkOk = await _unattendedAllowed();
-    final records = await DownloadHistoryDb.instance.getInterrupted();
+    // Bounded read. The old code loaded the ENTIRE interrupt backlog
+    // into memory and then ran `state.any(...)` inside the loop — an
+    // O(n*m) scan over a list that grew with every row it added, on the
+    // UI isolate, at every cold start.
+    final records = await DownloadHistoryDb.instance.getInterrupted(
+      limit: kMaxAutoResume * 4,
+    );
+    // One index instead of a linear scan per row.
+    final knownIds = state.map((d) => d.id).toSet();
     int resumed = 0;
     for (final record in records) {
       Map<String, dynamic> config = {};
@@ -782,7 +826,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         // Cap reached, admission storm guard, or metered/offline network:
         // surface as interrupted in memory for manual user resume —
         // never silently orphan.
-        if (!state.any((d) => d.id == record.id)) {
+        if (knownIds.add(record.id)) {
           state = [
             ...state,
             DownloadItem(
@@ -809,7 +853,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         launchConfig = await _configWithSecureProxy(config);
       } catch (error) {
         AppLogger.warn('Auto-resume paused: secure proxy unavailable ($error)', tag: 'download');
-        if (!state.any((d) => d.id == record.id)) {
+        if (knownIds.add(record.id)) {
           state = [...state, DownloadItem(
             id: record.id, title: record.title, url: record.url,
             status: 'interrupted', progress: record.progress,
@@ -829,7 +873,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         record.copyWith(
           attempts: nextAttempts,
           status: 'queued',
-          updatedAt: DateTime.now().toIso8601String(),
+          updatedAt: utcNowIso(),
         ),
       );
 
@@ -848,7 +892,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         queuePosition: record.queuePosition,
       );
 
-      if (!state.any((d) => d.id == record.id)) {
+      if (knownIds.add(record.id)) {
         state = [...state, item];
       }
       AppLogger.beginLogSession(record.id);
@@ -941,13 +985,21 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       config['ignore_archive'] = true;
     }
 
+    // Optimistic "downloading" before the engine answered made a REJECTED
+    // request look like a running download: the engine rejects with
+    // ERROR_INVALID_PARAM (SSRF gate), ERROR_QUEUE_FULL,
+    // ERROR_DUPLICATE_URL, ERROR_SHUTTING_DOWN or ERROR_TRANSPORT, and no
+    // terminal event ever arrives for a request that was never admitted.
+    // The card then sat at 0% forever and the DB heartbeat kept writing
+    // status='downloading'. Use an honest intermediate state and
+    // reconcile with the engine's actual verdict.
     state = [
       for (final d in state)
         if (d.id != id)
           d
         else
           d.copyWith(
-            status: 'downloading',
+            status: 'pending',
             progress: 0,
             downloadedBytes: 0,
             totalBytes: 0,
@@ -969,22 +1021,59 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ),
     );
 
+    Map<String, dynamic> result;
     try {
       final launchConfig = await _configWithSecureProxy(config);
-      final result = await _engine.startDownload(
+      result = await _engine.startDownload(
         url: item.url, downloadId: id, config: launchConfig,
         networkType: item.networkType ?? 'wifi',
       );
-      if (result['queued'] == true) {
-        state = [for (final d in state) if (d.id != id) d else d.copyWith(status: 'queued')];
-      }
-      if (result['success'] != true && result['error_type'] == 'ERROR_ALREADY_ACTIVE') {
-        AppLogger.warn('Redownload rejected: $id already active', tag: 'download');
-      }
     } catch (error) {
-      AppLogger.warn('Redownload paused: secure config unavailable ($error)', tag: 'download');
-      state = [for (final d in state) if (d.id != id) d else d.copyWith(status: 'error')];
+      AppLogger.warn('Redownload failed: engine unreachable ($error)', tag: 'download');
+      _failLocally(id, 'ERROR_TRANSPORT', 'Engine unreachable: $error');
+      return;
     }
+
+    if (result['success'] != true) {
+      final type = result['error_type'] as String? ?? 'ERROR_UNKNOWN';
+      final message =
+          result['error_message'] as String? ?? 'Download was not accepted';
+      AppLogger.warn('Redownload rejected: $id ($type)', tag: 'download');
+      _failLocally(id, type, message);
+      return;
+    }
+
+    final queued = result['queued'] == true;
+    state = [
+      for (final d in state)
+        if (d.id != id)
+          d
+        else
+          d.copyWith(status: queued ? 'queued' : 'downloading'),
+    ];
+  }
+
+  /// Transition an item to a local failure state and persist it.
+  ///
+  /// Used when the engine refuses to admit a download: without a terminal
+  /// event the row would keep its optimistic status forever.
+  void _failLocally(String id, String errorType, String errorMessage) {
+    final index = state.indexWhere((d) => d.id == id);
+    if (index == -1) return;
+    final updated = state[index].copyWith(
+      status: 'error',
+      errorType: errorType,
+      errorMessage: errorMessage,
+      speed: 0,
+      eta: -1,
+      clearStage: true,
+      clearStageLabel: true,
+    );
+    state = [
+      for (final d in state) if (d.id == id) updated else d,
+    ];
+    _persistRecord(updated);
+    AppLogger.warn('Download admission rejected for $id: $errorType', tag: 'download');
   }
 
   /// "Extract audio" (source re-fetch variant): enqueues a NEW audio-only
@@ -1141,15 +1230,6 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void cancelDownload(String id) {
-    unawaited(
-      _engine.cancelDownload(id).catchError((Object err, StackTrace st) {
-        AppLogger.warn(
-          'Engine cancelDownload call failed for $id: $err',
-          tag: 'download',
-        );
-        return <String, dynamic>{'success': false, 'error_message': '$err'};
-      }),
-    );
     // Honest intermediate — the worker may still be winding down
     // (extractor/merge/socket/aria2c are hook-blind). The terminal
     // 'cancelled' event finalizes this; error fields are set there, not here.
@@ -1166,6 +1246,61 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
             clearStageLabel: true,
           ),
     ];
+    unawaited(_cancelAndReconcile(id));
+  }
+
+  /// Await the engine's cancel verdict and close the row locally when the
+  /// engine says there is nothing to cancel.
+  ///
+  /// The old code discarded the reply: the item stayed 'cancelling' for
+  /// ever when the engine answered ERROR_DOWNLOAD_NOT_FOUND (the id had
+  /// already been reaped, or the entry was removed by a shutdown), because
+  /// no terminal event is ever produced for an id the engine does not
+  /// know. The cancel watchdog only helps LIVE workers.
+  Future<void> _cancelAndReconcile(String id) async {
+    Map<String, dynamic> reply;
+    try {
+      reply = await _engine.cancelDownload(id);
+    } catch (error) {
+      AppLogger.warn(
+        'Engine cancelDownload call failed for $id: $error',
+        tag: 'download',
+      );
+      reply = <String, dynamic>{
+        'success': false,
+        'error_type': 'ERROR_TRANSPORT',
+        'error_message': '$error',
+      };
+    }
+
+    final errorType = reply['error_type'] as String?;
+    final notCancellable =
+        reply['success'] != true || errorType == 'ERROR_DOWNLOAD_NOT_FOUND';
+    if (!notCancellable) {
+      // The engine accepted the cancel; its terminal 'cancelled' event
+      // (or the 120 s watchdog) finalizes the row.
+      return;
+    }
+
+    AppLogger.warn(
+      'Cancel not honoured for $id ($errorType); closing locally',
+      tag: 'download',
+    );
+    _applyTerminal(
+      id,
+      (d) => d.copyWith(
+        status: 'cancelled',
+        speed: 0,
+        eta: -1,
+        errorType: 'ERROR_CANCELLED',
+        errorMessage: 'Download cancelled',
+        recoveryAction: 'none',
+        clearStage: true,
+        clearStageLabel: true,
+      ),
+    );
+    _dropSmoother(id);
+    AppLogger.endLogSession(id);
   }
 
   String? _downloadDir() {

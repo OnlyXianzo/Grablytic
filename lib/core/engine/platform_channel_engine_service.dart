@@ -40,12 +40,103 @@ class PlatformChannelEngineService implements EngineService {
   @override
   Stream<String> get sharedUrlStream => _intentController.stream;
 
+
+  /// Default budget for one native round trip.
+  ///
+  /// The platform channel had NO timeout at all: a native handler that
+  /// never answered left the Dart future pending forever, so the UI
+  /// waited on a spinner that could not end (and the download card kept
+  /// a "starting" state for the rest of the session).
+  static const Duration defaultCallTimeout = Duration(seconds: 120);
+
+  /// Long-running extraction methods get a larger budget than the fast
+  /// lane, mirroring the desktop transport's per-method budgets.
+  static Duration timeoutForMethod(String method) {
+    switch (method) {
+      case EngineMethods.getFormats:
+      case EngineMethods.playlistInfo:
+      case EngineMethods.searchQuery:
+        return const Duration(minutes: 5);
+      case EngineMethods.startDownload:
+        return const Duration(minutes: 2);
+      default:
+        return defaultCallTimeout;
+    }
+  }
+
+  /// Invokes a native method and returns a well-formed envelope.
+  ///
+  /// Never throws: every failure mode becomes an envelope with
+  /// `success: false` and a typed `error_type`, so callers keep working
+  /// while the failure is still visible.
+  ///
+  /// The old code returned `{}` for a malformed payload. `{}` has no
+  /// `success` key, so every caller read it as "not successful" — but
+  /// with no error type and no message, the UI showed nothing and the
+  /// log recorded nothing. A corrupted or truncated bridge payload is
+  /// now reported as `ERROR_PROTOCOL`.
+  Future<Map<String, dynamic>> _invokeEnvelope(
+    String method, [
+    Object? arguments,
+  ]) async {
+    final String? raw;
+    try {
+      raw = await _channel
+          .invokeMethod<String>(method, arguments)
+          .timeout(timeoutForMethod(method));
+    } on TimeoutException {
+      AppLogger.warn(
+        'Native call $method timed out',
+        tag: 'engine',
+      );
+      return EngineEnvelope.error(
+        errorType: 'ERROR_TIMEOUT',
+        message: 'Native call $method timed out',
+      );
+    } on PlatformException catch (e) {
+      AppLogger.warn(
+        'Native call $method failed: ${e.code}',
+        tag: 'engine',
+      );
+      return EngineEnvelope.error(
+        errorType: e.code.isEmpty ? 'ERROR_TRANSPORT' : e.code,
+        message: e.message ?? 'Native call failed',
+      );
+    } catch (e) {
+      AppLogger.warn(
+        'Native call $method failed: $e',
+        tag: 'engine',
+      );
+      return EngineEnvelope.error(
+        errorType: 'ERROR_TRANSPORT',
+        message: 'Native call failed: $e',
+      );
+    }
+
+    if (raw == null || raw.isEmpty) {
+      return EngineEnvelope.error(
+        errorType: 'ERROR_TRANSPORT',
+        message: 'No response from native layer for $method',
+      );
+    }
+    final decoded = EngineEnvelope.decodeResponse(raw);
+    if (decoded.isEmpty) {
+      AppLogger.warn(
+        'Malformed native response for $method',
+        tag: 'engine',
+      );
+      return EngineEnvelope.error(
+        errorType: 'ERROR_PROTOCOL',
+        message: 'Malformed response for $method',
+      );
+    }
+    return decoded;
+  }
+
   @override
   Future<Map<String, dynamic>> bootstrap() async {
-    final result = await _channel.invokeMethod<String>(EngineMethods.bootstrap);
-    if (result == null) return {};
-    final decoded = EngineEnvelope.decodeResponse(result);
-    EngineContract.assertCompatible(decoded);
+    final decoded = await _invokeEnvelope(EngineMethods.bootstrap);
+    if (decoded['success'] == true) EngineContract.assertCompatible(decoded);
     return decoded;
   }
 
@@ -61,25 +152,20 @@ class PlatformChannelEngineService implements EngineService {
     required Map<String, dynamic> config,
     required String networkType,
   }) async {
-    final result = await _channel
-        .invokeMethod<String>(EngineMethods.startDownload, {
-          'url': url,
-          'download_id': downloadId,
-          'config': config,
-          'network_type': networkType,
-        });
-    if (result == null) return {};
-    return EngineEnvelope.decodeResponse(result);
+    return _invokeEnvelope(EngineMethods.startDownload, {
+      'url': url,
+      'download_id': downloadId,
+      'config': config,
+      'network_type': networkType,
+    });
   }
 
   @override
   Future<Map<String, dynamic>> cancelDownload(String downloadId) async {
-    final result = await _channel.invokeMethod<String>(
+    return _invokeEnvelope(
       EngineMethods.cancelDownload,
       {'download_id': downloadId},
     );
-    if (result == null) return {};
-    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
@@ -125,12 +211,10 @@ class PlatformChannelEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) async {
-    final result = await _channel.invokeMethod<String>(
+    return _invokeEnvelope(
       EngineMethods.getFormats,
       {'url': url, 'config': config},
     );
-    if (result == null) return {};
-    return EngineEnvelope.decodeResponseAsync(result);
   }
 
   @override
@@ -138,12 +222,10 @@ class PlatformChannelEngineService implements EngineService {
     required String url,
     required Map<String, dynamic> config,
   }) async {
-    final result = await _channel.invokeMethod<String>(
+    return _invokeEnvelope(
       EngineMethods.playlistInfo,
       {'url': url, 'config': config},
     );
-    if (result == null) return {};
-    return EngineEnvelope.decodeResponseAsync(result);
   }
 
   @override
@@ -153,12 +235,10 @@ class PlatformChannelEngineService implements EngineService {
     int limit = 20,
     required Map<String, dynamic> config,
   }) async {
-    final result = await _channel.invokeMethod<String>(
+    return _invokeEnvelope(
       EngineMethods.searchQuery,
       {'query': query, 'site': site, 'limit': limit, 'config': config},
     );
-    if (result == null) return {};
-    return EngineEnvelope.decodeResponseAsync(result);
   }
 
   @override
@@ -177,12 +257,10 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> scanResumeCandidates({
     required String cacheDir,
   }) async {
-    final result = await _channel.invokeMethod<String>(
+    return _invokeEnvelope(
       EngineMethods.scanResume,
       {'cache_dir': cacheDir},
     );
-    if (result == null) return {};
-    return EngineEnvelope.decodeResponse(result);
   }
 
   @override
@@ -375,46 +453,15 @@ class PlatformChannelEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> queueStatus() async {
-    try {
-      final result = await _channel.invokeMethod<String>(
-        EngineMethods.queueStatus,
-        {},
-      );
-      if (result == null) {
-        return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT',
-          message: 'No response from native layer',
-        );
-      }
-      return EngineEnvelope.decodeResponse(result);
-    } catch (_) {
-      return EngineEnvelope.error(
-        errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
-      );
-    }
+    return _invokeEnvelope(EngineMethods.queueStatus, {});
   }
 
   @override
   Future<Map<String, dynamic>> setConcurrency(int maxConcurrent) async {
-    try {
-      final result = await _channel.invokeMethod<String>(
-        EngineMethods.setConcurrency,
-        {'max_concurrent': maxConcurrent},
-      );
-      if (result == null) {
-        return EngineEnvelope.error(
-          errorType: 'ERROR_TRANSPORT',
-          message: 'No response from native layer',
-        );
-      }
-      return EngineEnvelope.decodeResponse(result);
-    } catch (_) {
-      return EngineEnvelope.error(
-        errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
-      );
-    }
+    return _invokeEnvelope(
+      EngineMethods.setConcurrency,
+      {'max_concurrent': maxConcurrent},
+    );
   }
 
   @override
