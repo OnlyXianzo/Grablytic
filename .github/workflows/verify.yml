@@ -1,19 +1,19 @@
-# Verification matrix — every push/PR to main.
+# Verification matrix — every push/PR and reusable workflow call.
 #
 # Layers (each fails the run independently):
-#   flutter_verify  analyze (fatal) + unit/widget tests + coverage artifact
-#   python_verify   pytest + coverage ratchet (>=70%) + ruff correctness gate
-#   docs_links      relative Markdown links resolve (allowlist documented)
-#   secrets_scan    gitleaks (no committed credentials)
+#   flutter_verify      analyze + unit/widget tests + project-lib LCOV floor
+#   android_ipc_smoke   API 35 emulator: Flutter MethodChannel → Chaquopy → Python
+#   python_verify       pytest + 75% coverage ratchet + ruff correctness gate
+#   docs_links          relative Markdown links resolve
+#   secrets_scan        gitleaks (no committed credentials)
+#   workflow_lint       parse every workflow and require triggers/jobs
 #
-# Deliberately NOT gated (documented, revisit quarterly):
-#   - dart format: 55 files predate formatting; normalizing mid-flight
-#     would churn every concurrent branch. Enforce after one cleanup PR.
-#   - flutter coverage floor: 24% today (widget tests are young); ratcheting
-#     a low number enshrines it. Artifact uploaded for visibility instead.
-#   - ruff style rules (BLE/SIM/etc.): the engine uses defensive
-#     try/except-by-design; only correctness rules (F, minus F401 import
-#     audit backlog) are gated.
+# Coverage exclusions are intentionally narrow: `.coveragerc` omits only
+# typing-only blocks and optional Python script entrypoints; the Dart checker
+# measures unique executable lines under `lib/` and ignores SDK/test files.
+# Flutter's floor is ratcheted at 30% (higher than the previous 24% baseline).
+# Dart formatting remains a separate cleanup because of repository-wide legacy
+# churn; Ruff style rules outside correctness remain intentionally ungated.
 
 name: Verification
 
@@ -49,11 +49,48 @@ jobs:
       - name: Run widget & unit tests with coverage
         run: flutter test --coverage
 
+      - name: Enforce Flutter project-lib coverage floor
+        run: python3 tool/check_flutter_coverage.py coverage/lcov.info --fail-under 30
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
           name: flutter-coverage
           path: coverage/lcov.info
+
+  android_ipc_smoke:
+    name: Android API 35 — Flutter → Chaquopy → Python IPC
+    runs-on: ubuntu-latest
+    env:
+      # The bridge smoke needs a compileable APK but does not exercise bundled
+      # package extraction; release/package CI remains responsible for assets.
+      ORG_GRADLE_PROJECT_skipNativePackages: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Run end-to-end Android integration test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          disable-animations: true
+          script: flutter test integration_test/android_engine_ipc_test.dart -d emulator-5554
 
   python_verify:
     name: Python Engine Tests (3.11 / 3.12)
