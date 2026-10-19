@@ -281,24 +281,30 @@ object BinaryPackageManager {
         }
     }
 
-    private fun deleteEntryNoFollow(file: File) {
+    private fun deleteEntryNoFollow(file: File): Boolean {
         val stat = try {
             android.system.Os.lstat(file.absolutePath)
         } catch (e: android.system.ErrnoException) {
-            if (e.errno == android.system.OsConstants.ENOENT) return
+            if (e.errno == android.system.OsConstants.ENOENT) return true
             throw e
         }
         if (android.system.OsConstants.S_ISDIR(stat.st_mode)) {
-            val children = file.listFiles()
-                ?: throw IllegalStateException("Cannot list directory for cleanup: ${file.absolutePath}")
-            children.forEach { deleteEntryNoFollow(it) }
+            val children = file.listFiles() ?: return false
+            for (child in children) {
+                if (!deleteEntryNoFollow(child)) return false
+            }
             android.system.Os.rmdir(file.absolutePath)
         } else {
             android.system.Os.remove(file.absolutePath)
         }
+        return true
     }
 
-    private fun safeDeleteEntry(file: File) = deleteEntryNoFollow(file)
+    private fun safeDeleteEntry(file: File) {
+        check(deleteEntryNoFollow(file)) {
+            "Cannot remove package entry: ${file.absolutePath}"
+        }
+    }
 
     private fun markExecutableNoFollow(root: File) {
         val mask = android.system.OsConstants.S_IXUSR or android.system.OsConstants.S_IXGRP or
@@ -416,8 +422,12 @@ object BinaryPackageManager {
         }
         val tmp = File(packagesDir, "${target.name}.tmp")
         val backup = File(packagesDir, "${target.name}.bak")
-        deleteEntryNoFollow(tmp)
-        deleteEntryNoFollow(backup)
+        check(deleteEntryNoFollow(tmp)) {
+            "Cannot remove staging entry: ${tmp.absolutePath}"
+        }
+        check(deleteEntryNoFollow(backup)) {
+            "Cannot remove staging entry: ${backup.absolutePath}"
+        }
         check(tmp.mkdir()) { "Cannot create clean staging directory: ${tmp.absolutePath}" }
         check(android.system.OsConstants.S_ISDIR(android.system.Os.lstat(tmp.absolutePath).st_mode)) {
             "Staging path is not a real directory: ${tmp.absolutePath}"
@@ -657,17 +667,15 @@ object BinaryPackageManager {
 
     private fun deleteQuietly(file: File) {
         try {
-            deleteEntryNoFollow(file)
+            if (!deleteEntryNoFollow(file)) {
+                logDeleteFailure(file, "could not enumerate a directory")
+            }
         } catch (e: android.system.ErrnoException) {
-            logDeleteFailure(file, e)
-        } catch (e: IllegalStateException) {
-            logDeleteFailure(file, e)
-        } catch (e: SecurityException) {
-            logDeleteFailure(file, e)
+            logDeleteFailure(file, e.toString())
         }
     }
 
-    private fun logDeleteFailure(file: File, error: Throwable) {
-        Log.w(TAG, "Failed to remove ${file.absolutePath}: ${error.message}")
+    private fun logDeleteFailure(file: File, reason: String) {
+        Log.w(TAG, "Failed to remove ${file.absolutePath}: $reason")
     }
 }
