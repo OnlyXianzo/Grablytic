@@ -280,9 +280,7 @@ def _drain_progress_queue(progress_queue) -> None:
             break
         except Exception as exc:
             try:
-                log.warn(
-                    f"Dropping malformed progress event: {type(exc).__name__}"
-                )
+                log.warn(f"Dropping malformed progress event: {type(exc).__name__}")
             except Exception:
                 pass
             break
@@ -305,9 +303,7 @@ def _result_event(download_id: str, result: dict) -> dict:
             "event": "cancelled",
             "download_id": download_id,
             "error_type": "ERROR_CANCELLED",
-            "error_message": result.get(
-                "error_message", "Download cancelled by user"
-            ),
+            "error_message": result.get("error_message", "Download cancelled by user"),
         }
     return {
         "type": "event",

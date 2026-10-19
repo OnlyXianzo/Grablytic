@@ -57,7 +57,9 @@ def _integer(value: str, field: str, line_number: int) -> int:
     return parsed
 
 
-def _merge_lcov_project_record(files: dict, state: dict, end_line: int, source: str) -> None:
+def _merge_lcov_project_record(
+    files: dict, state: dict, end_line: int, source: str
+) -> None:
     project_path = project_source(source)
     if project_path is None:
         return
@@ -105,9 +107,7 @@ def _finish_lcov_record(files: dict, state: dict, end_line: int) -> None:
 
 def _handle_lcov_source(source: str, line_number: int, state: dict) -> None:
     if state["source"] is not None:
-        raise ValueError(
-            f"line {line_number}: new SF record before end_of_record"
-        )
+        raise ValueError(f"line {line_number}: new SF record before end_of_record")
     state["source"] = source
     state["line_hits"] = {}
     state["record_start"] = line_number

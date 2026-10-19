@@ -239,6 +239,7 @@ def _host_is_blocked(host: str, *, fail_closed_dns: bool) -> bool:
         return blocked
     return _dns_host_is_blocked(normalized, fail_closed_dns)
 
+
 def _resolve_address_records(host: str, port: int):
     """Resolve once with a deadline, preserving the exact socket addresses.
 
@@ -389,7 +390,10 @@ def _filter_resolved_records(records):
             family, socktype, protocol, canonical_name, sockaddr = record
         except (ValueError, TypeError):
             return ()
-        if family not in (socket.AF_INET, socket.AF_INET6) or socktype != socket.SOCK_STREAM:
+        if (
+            family not in (socket.AF_INET, socket.AF_INET6)
+            or socktype != socket.SOCK_STREAM
+        ):
             continue
         if not isinstance(sockaddr, tuple) or not sockaddr:
             return ()
@@ -425,6 +429,7 @@ def _validated_socket_addresses(url: str):
     if literal_records is not None:
         return literal_records
     return _resolve_and_filter_addresses(host, port)
+
 
 def get_global_default_timeout():
     """Return the sentinel used by HTTP connections for an unspecified timeout."""
@@ -547,6 +552,7 @@ def _request_addresses(request):
 class _PinnedHTTPHandler(urllib.request.HTTPHandler):
     def http_open(self, request):
         addresses = _request_addresses(request)
+
         def connection(host, **kwargs):
             return _PinnedHTTPConnection(host, addresses, **kwargs)
 
@@ -566,6 +572,7 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 
     def https_open(self, request):
         addresses = _request_addresses(request)
+
         def connection(host, **kwargs):
             return _PinnedHTTPSConnection(host, addresses, **kwargs)
 

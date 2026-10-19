@@ -134,7 +134,6 @@ def _ffmpeg_gate_release() -> None:
         pass
 
 
-
 def _cancel_event_is_set(cancel_event) -> bool:
     if cancel_event is None:
         return False
@@ -183,6 +182,7 @@ def _is_ffmpeg_command(args) -> bool:
     except Exception:
         return False
 
+
 def _install_ffmpeg_seam_primary() -> str:
     """Install the gate on ``FFmpegPostProcessor.real_run_ffmpeg``.
 
@@ -223,6 +223,7 @@ def _install_ffmpeg_seam_primary() -> str:
         )
     return "FFmpegPostProcessor.real_run_ffmpeg"
 
+
 def _install_ffmpeg_seam_fallback() -> str:
     """Serialize ffmpeg/ffprobe process spawns when the primary seam is absent."""
     from yt_dlp.utils import Popen
@@ -252,9 +253,13 @@ def _install_ffmpeg_seam_fallback() -> str:
     serialized_run.grablytic_ffmpeg_gate = True
     Popen.run = classmethod(serialized_run)
     installed = Popen.__dict__.get("run")
-    if not isinstance(installed, classmethod) or installed.__func__ is not serialized_run:
+    if (
+        not isinstance(installed, classmethod)
+        or installed.__func__ is not serialized_run
+    ):
         raise RuntimeError("Popen.run serialization assignment did not stick")
     return "yt_dlp.utils.Popen.run"
+
 
 def _ensure_ffmpeg_serialized() -> bool:
     """Install the process-wide FFmpeg serialization gate.
@@ -1451,7 +1456,9 @@ def _report_missing_ffmpeg(download_id: str, event_callback, result_queue) -> bo
     return True
 
 
-def _send_terminal_result(event_callback, result_queue, event: dict, result: dict) -> None:
+def _send_terminal_result(
+    event_callback, result_queue, event: dict, result: dict
+) -> None:
     if event_callback is not None:
         _emit_event(event_callback, json.dumps(event))
     else:
@@ -1707,7 +1714,9 @@ def _execute_download(
         return
     attempts_made, ydl_logger = outcome
     if cancel.is_set():
-        log.warn(f"Download cancelled: {download_id}", extra={"download_id": download_id})
+        log.warn(
+            f"Download cancelled: {download_id}", extra={"download_id": download_id}
+        )
         _send_cancelled_result(download_id, event_callback, result_queue)
         return
     log.info("Download completed", extra={"download_id": download_id})
@@ -1749,7 +1758,9 @@ def _report_download_exception(
     _send_terminal_result(event_callback, result_queue, event, result)
 
 
-def _report_download_crash(exc: BaseException, download_id: str, event_callback, result_queue) -> None:
+def _report_download_crash(
+    exc: BaseException, download_id: str, event_callback, result_queue
+) -> None:
     kind = type(exc).__name__
     try:
         log.error(
@@ -2005,9 +2016,7 @@ def start_download(
     error = _start_download_preflight(download_id, url)
     if error is not None:
         return error
-    admission = _admit_download(
-        url, download_id, config, network_type, event_callback
-    )
+    admission = _admit_download(url, download_id, config, network_type, event_callback)
     if "error" in admission:
         return admission["error"]
     entry = admission["entry"]

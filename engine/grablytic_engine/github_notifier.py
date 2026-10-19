@@ -359,7 +359,11 @@ def _exception_traceback(exc: BaseException) -> tuple[str, str]:
     try:
         formatted = format_traceback(exc)
         first_frame = next(
-            (line.strip() for line in formatted.splitlines() if line.strip().startswith("File ")),
+            (
+                line.strip()
+                for line in formatted.splitlines()
+                if line.strip().startswith("File ")
+            ),
             "",
         )
         return formatted, first_frame
@@ -398,7 +402,13 @@ def _report_status(status: str, fp: str, title: str, body: str, **extra):
 def _submit_exception_report(fp, title, body, repo, token):
     duplicate = find_duplicate(fp, repo=repo, token=token)
     if duplicate:
-        return {"status": "duplicate", "url": duplicate, "fingerprint": fp, "title": title, "body": body}
+        return {
+            "status": "duplicate",
+            "url": duplicate,
+            "fingerprint": fp,
+            "title": title,
+            "body": body,
+        }
     try:
         url = create_issue(title, body, repo=repo, token=token)
     except RuntimeError as exc:
@@ -424,11 +434,11 @@ def notify_exception(
         exc, context, summary, log_tail, stack, first_frame
     )
     token_value = _token(token)
-    auto_disabled = auto_only and os.environ.get(AUTO_REPORT_ENV, "") != "1" and token is None
+    auto_disabled = (
+        auto_only and os.environ.get(AUTO_REPORT_ENV, "") != "1" and token is None
+    )
     if auto_disabled:
-        return _report_status(
-            "skipped", fp, title, body, reason="auto-report disabled"
-        )
+        return _report_status("skipped", fp, title, body, reason="auto-report disabled")
     if not token_value:
         return _report_status("manual_needed", fp, title, body)
     return _submit_exception_report(fp, title, body, repo, token_value)

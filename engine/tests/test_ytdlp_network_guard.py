@@ -174,7 +174,10 @@ def test_guarded_ytdlp_rejects_private_redirect_before_connect(monkeypatch):
         lambda ip: False if ip.is_loopback else original_is_blocked(ip),
     )
     try:
-        with GuardedYoutubeDL({"quiet": True, "no_warnings": True}) as ydl, pytest.raises(HTTPError):
+        with (
+            GuardedYoutubeDL({"quiet": True, "no_warnings": True}) as ydl,
+            pytest.raises(HTTPError),
+        ):
             ydl.urlopen(Request(f"http://profiles.example:{port}/redirect"))
     finally:
         server.shutdown()

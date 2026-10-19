@@ -51,6 +51,7 @@ def test_stuck_ffmpeg_does_not_wedge_gate_forever(monkeypatch):
     assert gate.acquire(blocking=False), "fresh gate must be free"
     errors: list = []
     try:
+
         def waiter():
             try:
                 yt_ffmpeg.FFmpegPostProcessor.real_run_ffmpeg(object())
