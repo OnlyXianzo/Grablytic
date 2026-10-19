@@ -7,6 +7,7 @@ from grablytic_engine.paths import get_paths
 from grablytic_engine.config import coerce_config
 from grablytic_engine.errors import classify_error
 from grablytic_engine.logger import get_logger
+from grablytic_engine.url_guard import is_youtube_url, redact_url
 
 
 log = get_logger("grablytic_engine.playlist")
@@ -117,7 +118,7 @@ def _build_playlist_options(url: str, config: dict | None) -> dict:
         "force_generic_extractor": False,
     }
     _configure_js_runtime(opts, paths)
-    if "youtube.com" in url or "youtu.be" in url:
+    if is_youtube_url(url):
         youtube_args = opts.setdefault("extractor_args", {}).setdefault("youtube", {})
         youtube_args["player_client"] = ["default", "mweb"]
         from grablytic_engine.po_token import generate_po_token
@@ -276,7 +277,7 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
             "max_entries": _MAX_PLAYLIST_ENTRIES,
         }
     except Exception as exc:
-        log.log_exception(exc, f"Playlist fetch failed: {url}")
+        log.log_exception(exc, f"Playlist fetch failed: {redact_url(url)}")
         error = classify_error(exc)
         return {
             "success": False,

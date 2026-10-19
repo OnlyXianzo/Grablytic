@@ -5,6 +5,7 @@ from grablytic_engine.config import coerce_config
 from grablytic_engine.format_selector import build_format_string
 from grablytic_engine.errors import classify_error, GrablyticError
 from grablytic_engine.logger import get_logger
+from grablytic_engine.url_guard import is_youtube_url, redact_url
 
 
 log = get_logger("grablytic_engine.formats")
@@ -37,7 +38,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
 
     _configure_js_runtime(opts, paths)
 
-    if "youtube.com" in url or "youtu.be" in url:
+    if is_youtube_url(url):
         opts.setdefault("extractor_args", {})
         opts["extractor_args"].setdefault("youtube", {})
         opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
@@ -282,7 +283,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         }
 
     except Exception as exc:
-        log.log_exception(exc, f"Format fetch failed: {url}")
+        log.log_exception(exc, f"Format fetch failed: {redact_url(url)}")
         err = classify_error(exc)
         return {
             "success": False,

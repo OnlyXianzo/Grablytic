@@ -1,4 +1,5 @@
 import shutil as _shutil
+import threading
 
 
 def _is_abs(path) -> bool:
@@ -106,8 +107,98 @@ _paths = {
     "update_channel": "stable",
 }
 
+# set_paths() rewrites process-global state (the _paths mapping, PATH,
+# LD_LIBRARY_PATH, sys.path). On Android it is called straight from
+# Kotlin on a background dispatcher, so two calls could interleave and a
+# reader could observe a half-updated mapping (new data_dir, old
+# output_dir). One lock for writers AND readers gives snapshot semantics.
+_paths_lock = threading.RLock()
+
+
+# Process-global env entries this module added. Tracked so a second
+# set_paths() with a different data dir REPLACES our entry instead of
+# stacking another one on top of it.
+_own_env_prefixes: dict[str, list[str]] = {}
+
+
+def _remember_env_prefix(name: str, entries: list[str]) -> None:
+    """Record the env entries we own so a reconfiguration can replace them.
+
+    The previous entries for THIS variable are removed from the live
+    environment before the new ones are prepended, so calling
+    set_paths() twice with different data dirs does not stack one
+    LD_LIBRARY_PATH/PATH entry per call.
+    """
+    import os
+
+    previous = _own_env_prefixes.get(name, [])
+    _own_env_prefixes[name] = list(entries)
+    current = os.environ.get(name, "")
+    parts = [p for p in current.split(os.pathsep) if p]
+    if previous:
+        parts = [p for p in parts if p not in previous]
+    for entry in reversed(entries):
+        if entry in parts:
+            parts.remove(entry)
+        parts.insert(0, entry)
+    os.environ[name] = os.pathsep.join(parts)
+
+
+def child_env(base: dict | None = None, *, ld_dirs: list[str] | None = None) -> dict:
+    """Environment for a child process, without mutating the global one.
+
+    Callers that spawn ffmpeg/deno/aria2c should pass the loader path
+    explicitly instead of relying on the process-wide LD_LIBRARY_PATH
+    mutation done by set_paths().
+    """
+    import os
+
+    env = dict(base or os.environ)
+    if ld_dirs:
+        existing = env.get("LD_LIBRARY_PATH", "")
+        parts = [p for p in existing.split(os.pathsep) if p]
+        for d in reversed(list(ld_dirs)):
+            if d and d not in parts:
+                parts.insert(0, d)
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(parts)
+    return env
+
 
 def set_paths(
+    data_dir: str,
+    output_dir: str,
+    ffmpeg_path: str | None,
+    cache_dir: str,
+    cookies_path: str | None = None,
+    aria2c_path: str | None = None,
+    deno_path: str | None = None,
+    po_token: str | None = None,
+    ffmpeg_ld_path: str | None = None,
+    nodejs_path: str | None = None,
+) -> dict:
+    """Configure every engine path. Serialized by _paths_lock.
+
+    Wrapper around :func:`_set_paths_impl` so the whole call — the
+    mapping, PATH, LD_LIBRARY_PATH and sys.path — happens under one
+    lock acquisition. Callers on Android invoke this straight from
+    Kotlin on a background dispatcher.
+    """
+    with _paths_lock:
+        return _set_paths_impl(
+            data_dir,
+            output_dir,
+            ffmpeg_path,
+            cache_dir,
+            cookies_path,
+            aria2c_path,
+            deno_path,
+            po_token,
+            ffmpeg_ld_path,
+            nodejs_path,
+        )
+
+
+def _set_paths_impl(
     data_dir: str,
     output_dir: str,
     ffmpeg_path: str | None,
@@ -195,6 +286,11 @@ def set_paths(
                     os.environ["LD_LIBRARY_PATH"] = d + (
                         os.pathsep + existing_ld if existing_ld else ""
                     )
+            # Remember what WE added so a later set_paths() with a
+            # different data dir can drop the old entry instead of
+            # accumulating one LD_LIBRARY_PATH entry per reconfiguration
+            # (the loader search path grew on every call).
+            _remember_env_prefix("LD_LIBRARY_PATH", valid)
 
     # PATH carries ONLY our own constructed bin_dir — never the
     # dirname of an explicitly-supplied binary. The old code prepended every
@@ -214,6 +310,7 @@ def set_paths(
         if p
     ]:
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+    _remember_env_prefix("PATH", [bin_dir])
 
     # Prepends site-packages to sys.path to load dynamically updated yt-dlp
     # modules. The directory is IPC-derived, so gate it — realpath
@@ -254,12 +351,15 @@ def set_paths(
 
 
 def set_update_channel(channel: str) -> dict:
-    _paths["update_channel"] = channel
+    with _paths_lock:
+        _paths["update_channel"] = channel
     return {"success": True}
 
 
 def get_paths() -> dict:
-    return dict(_paths)
+    """Snapshot of the current path mapping (never a live reference)."""
+    with _paths_lock:
+        return dict(_paths)
 
 
 def is_initialized() -> bool:

@@ -67,10 +67,22 @@ def redact_text(value) -> str:
     signed URL or a proxy credential must not ship as-is. The parameter
     name survives (``token=***REDACTED***``) so the report is still
     debuggable; the value never does.
+
+    Delegates to the engine's shared scrubber so the notifier and the
+    on-disk logger can never drift apart — the notifier used to know
+    about ``token=`` and URL userinfo but not about ``Authorization:``
+    or ``Cookie:`` headers, which is exactly what yt-dlp puts into
+    exception messages.
     """
     if value is None:
         return ""
     text = value if isinstance(value, str) else str(value)
+    try:
+        from grablytic_engine.persistent import scrub_text
+
+        return scrub_text(text)
+    except Exception:
+        pass
     text = _SECRET_PARAM_RE.sub(r"\1" + _REDACTED, text)
 
     def _mask_userinfo(m: "re.Match[str]") -> str:
@@ -88,31 +100,36 @@ def redact_context(context) -> dict:
         return {}
     try:
         from grablytic_engine.persistent import sanitize as _sanitize
+        from grablytic_engine.persistent import is_sensitive_key
     except Exception:
         _sanitize = None
+
+        def is_sensitive_key(key) -> bool:  # noqa: D103 - conservative fallback
+            lk = str(key).lower()
+            return any(
+                s in lk
+                for s in (
+                    "cookie",
+                    "token",
+                    "password",
+                    "passwd",
+                    "secret",
+                    "auth",
+                    "proxy",
+                    "api_key",
+                    "apikey",
+                    "session",
+                    "po_token",
+                )
+            )
+
     out: dict = {}
     try:
         items = list(context.items())
     except Exception:
         return {}
     for k, v in items:
-        lk = str(k).lower()
-        if any(
-            s in lk
-            for s in (
-                "cookie",
-                "token",
-                "password",
-                "passwd",
-                "secret",
-                "auth",
-                "proxy",
-                "api_key",
-                "apikey",
-                "session",
-                "po_token",
-            )
-        ):
+        if is_sensitive_key(k):
             out[k] = _REDACTED
             continue
         if _sanitize is not None:
