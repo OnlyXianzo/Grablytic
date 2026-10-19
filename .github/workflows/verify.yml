@@ -81,6 +81,16 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      # Hosted runners may expose /dev/kvm only to the kvm group. Without access,
+      # the emulator silently falls back to slow software CPU emulation.
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
       - name: Run end-to-end Android integration test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -90,6 +100,7 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
+          disable-linux-hw-accel: false
           script: flutter test integration_test/android_engine_ipc_test.dart -d emulator-5554
 
   python_verify:
