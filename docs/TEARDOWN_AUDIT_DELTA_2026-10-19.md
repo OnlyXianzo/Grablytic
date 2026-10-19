@@ -434,9 +434,14 @@ constant stays overridable), and the 18 unused imports are gone (§52).
 **debug-signed release APK** whenever the keystore secret was missing,
 with no warning. `lint { checkReleaseBuilds = false; abortOnError =
 false }` disabled the lint gate entirely.
-**Fix:** a release task without a keystore now fails with a clear
-message; lint runs on release builds and its errors abort the build; a
-`:app:lintRelease` step was added to the verify matrix.
+**Fix:** a task that actually produces a signed release artifact
+(`assembleRelease`, `bundleRelease`, `packageRelease`, `signRelease`,
+`installRelease`) without a keystore now fails with a clear message;
+lint runs on release builds and its errors abort the build; a
+`:app:lintRelease` step was added to the verify matrix. The lint gate
+regenerates the plugin registrant in release mode first (see §5) and
+tolerates the lint tool's own crash on the Kotlin DSL build scripts
+with a warning, so it still fails on every real finding.
 
 ### 57 — Unconstrained HTTPS intent filter *(Low)*
 `<data android:scheme="https"/>` made the app a candidate handler for
@@ -519,7 +524,7 @@ taken on trust from the commit log.
 | 47 | Make `EngineEnvelope.decodeResponse` throw | The codec keeps its documented lenient contract; the **transports** detect the empty result and answer `ERROR_PROTOCOL` | The codec's `{}` fallback is a tested, documented contract (`engine_codec_test.dart`). Changing it would ripple through every consumer for no security gain. |
 | 60 | Make `BootReceiver` unexported | Kept exported, but with `android:permission="android.permission.RECEIVE_BOOT_COMPLETED"` | A receiver for `BOOT_COMPLETED` **must** be exported to receive the system broadcast. The real gap was the missing sender restriction, which is now closed. |
 | 37 | Move to a per-download provider (full state-management refactor) | One indexed lookup + one list copy per event | The session list holds the active downloads, not the whole history, so the measured cost was a pointer copy, not thousands of object allocations. A provider refactor touches every screen and cannot be validated without `flutter test` in this environment — the wrong risk for a "Medium" finding. |
-| 56 | Remove the debug signing fallback | The fallback survives **only** for non-release tasks; a release task without a keystore fails loudly | Local `flutter build apk` (debug) must keep working on a machine without the release keystore. |
+| 56 | Remove the debug signing fallback | The fallback survives **only** for tasks that never sign anything; `assembleRelease` / `bundleRelease` / `packageRelease` without a keystore fail loudly | Local `flutter build apk` (debug) must keep working on a machine without the release keystore, and the CI lint gate (`:app:lintRelease`) has no keystore either — so the guard is tied to the artifact-producing tasks, not to the word "release" in a task name. |
 
 ---
 
@@ -569,19 +574,67 @@ taken on trust from the commit log.
   correct form is the top-level `NonCancellable + Dispatchers.Main`.
 * The manifest and the workflow YAML were parsed after the edits.
 
-**Not executed here — CI is authoritative**
+**Executed by the GitHub Actions `Verification` workflow on this branch**
 
-* `flutter analyze` and `flutter test` (no Flutter SDK in the sandbox).
-  The new Dart tests — `test/providers/download_terminal_events_test.dart`,
+The branch was pushed and the whole verification matrix was run
+against it. The final run is green — all seven jobs:
+
+| Job | Result |
+|---|---|
+| Flutter Analyze & Test | success (`flutter analyze` → *No issues found*; `flutter test --coverage` → **658 passed, 0 failed**) |
+| Python Engine Tests (3.11) | success |
+| Python Engine Tests (3.12) | success |
+| Android API 35 — Flutter → Chaquopy → Python IPC | success (the emulator test reports *All tests passed*) |
+| Secret Scan (gitleaks) | success |
+| Docs Link Check | success |
+| Workflow YAML Lint | success |
+
+The first run of that matrix was **red**, and every failure was
+addressed rather than waived:
+
+1. `Secret Scan` — gitleaks flagged the fake `X-Api-Key` header fixture
+   in `engine/tests/test_review_2026_10_19.py`. The line now
+   carries an inline `gitleaks:allow` marker (commit-independent), and
+   the historical fingerprint is in `.gitleaksignore` like the
+   repository's other fake credentials.
+2. `Flutter Analyze & Test` — `use_null_aware_elements` in
+   `lib/core/engine/desktop_engine_service.dart`. The null check is now
+   a null-aware element.
+3. `Flutter Analyze & Test` — four Dart tests needed to follow the
+   corrected behaviour: the download-history schema moved to v7, a
+   retry is no longer admitted optimistically, and two cookie-jar
+   assertions used the element matcher on a list of lines.
+4. `Flutter Analyze & Test` — two widget tests used the real desktop
+   engine transport, which now arms a 30 s request timeout (finding
+   #46); the timer was still pending when the widget tree was torn
+   down. Both tests use the mock engine, like their siblings.
+5. `Android API 35` — the new lint gate ran `./gradlew` from the
+   repository root, where no wrapper exists. It now runs in `android/`.
+6. `Android API 35` — `:app:compileReleaseJavaWithJavac` failed with
+   *package dev.flutter.plugins.integration_test does not exist*.
+   `flutter pub get` writes the plugin registrant with the dev-only
+   plugins that the release variant does not link; a release-mode
+   `flutter build --config-only` rewrites the registrant without them
+   and injects the Gradle wrapper (which is git-ignored), without
+   running a single Gradle task.
+7. `Android API 35` — the lint tool itself crashes while analysing the
+   Kotlin DSL build scripts (*Cannot find a KaModule for the
+   VirtualFile*). That is a lint bug, not a finding in this project;
+   the gate reports it as a warning and keeps failing on real
+   findings.
+
+**Not executed here — CI was authoritative and has now run it**
+
+* `flutter analyze` and `flutter test` cannot run in the sandbox (no
+  Flutter SDK). They have now been run by CI, and the new Dart tests —
+  `test/providers/download_terminal_events_test.dart`,
   `test/providers/cookie_secret_storage_test.dart`,
-  `test/core/database/download_record_copywith_test.dart` — are written
-  against the documented behaviour and have **not** been executed.
-* The Gradle build and the Android lint job (no Android SDK). The
-  Kotlin sources have nevertheless been type-checked against the real
-  API-35 and Flutter 3.41.4 APIs as described above, which covers the
-  compile-time half of that job. Enabling `abortOnError` may surface
-  pre-existing lint findings on the first CI run; that is the intended
-  visibility, and it is in a separate job from the release artifact.
+  `test/core/database/download_record_copywith_test.dart` — pass.
+* The Gradle build and the Android lint job cannot run in the sandbox
+  (no Android SDK). The Kotlin sources were nevertheless type-checked
+  against the real API-35 and Flutter 3.41.4 APIs as described above,
+  and the Gradle build, the release lint and the API-35 emulator test
+  have now been run by CI on this branch.
 
 ---
 
@@ -591,4 +644,11 @@ taken on trust from the commit log.
 |---|---|
 | `6963b94` | `fix(engine)`: the engine-side findings (#3, #10, #12, #21, #30, #31, #39, #40, #43, #48, #58 and the `scrub_text` hardening) |
 | `45df9a5` | `fix(app)`: the Flutter-side findings (#6, #7, #8, #9, #17, #18, #19, #33, #34, #36, #37, #46, #47, #50, #53, #59) |
-| (this branch, final) | `fix(android)`: the Android-side findings (#4, #5, #22, #23, #24, #25, #26, #41, #44, #45, #57, #60) and the CI/build findings (#52, #56) |
+| `f2b380b` | `fix(android)`: the Android-side findings (#4, #5, #22, #23, #24, #25, #26, #41, #44, #45, #57, #60) and the CI/build findings (#52, #56), plus this document |
+| `cb94980` | `docs(audit)`: the outcome counts in this document |
+| `e5850e5` | `docs(audit)`: the real API-35 and Flutter 3.41.4 Kotlin type-check |
+| `54fddff` | `fix(ci)`: the Verification workflow defects found by the first CI run |
+| `f8bda1d` | `chore(secrets)`: the gitleaks fingerprint for the fake API-key fixture |
+| `2bb53f1` | `fix(tests)`: the Dart tests follow the corrected behaviour |
+| `fbba6d6` | `fix(tests)`: the widget tests stay off the real engine transport |
+| `ff0dfb6` | `ci(android)`: the full release lint, tolerating the lint tool bug |
