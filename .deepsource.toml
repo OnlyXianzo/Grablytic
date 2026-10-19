@@ -113,13 +113,14 @@ exclude_patterns = [
 # -----------------------------------------------------------------------------
 # test_patterns — tell DeepSource "this is test code" so it suppresses
 # production-only false positives and computes doc-coverage correctly.
-# Covers: Flutter widget/unit tests, Python engine pytest suite.
+# Covers: Flutter widget/unit tests, Python engine and repository-tool tests.
 # -----------------------------------------------------------------------------
 test_patterns = [
   "test/**",                     # flutter_test: test/**/*_test.dart
   "**/*_test.dart",              # belt-and-braces for nested Dart tests
   "engine/tests/**",             # pytest engine suite (test_*.py)
   "engine/**/test_*.py",
+  "tool/tests/**",               # Python tests for repository tooling
   "tests/**",
   "test_*.py",
   "**/conftest.py",              # pytest fixtures (engine/tests/conftest.py)

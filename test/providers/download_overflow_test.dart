@@ -6,18 +6,18 @@ DownloadNotifier _notifier() => DownloadNotifier(MockEngineService());
 
 void main() {
   group('Overflow actions (Milestones 4)', () {
-    test('redownload blocked while active', () {
+    test('redownload blocked while active', () async {
       final n = _notifier();
       n.addDownload(DownloadItem(
           id: 'o-1',
           title: 't',
           url: 'https://x.test/1',
           status: 'queued'));
-      n.redownload('o-1', fresh: true);
+      await n.redownload('o-1', fresh: true);
       expect(n.state.single.status, 'queued');
     });
 
-    test('redownload fresh merges overwrite+archive bypass into config', () {
+    test('redownload fresh merges overwrite+archive bypass into config', () async {
       final n = _notifier();
       n.addDownload(DownloadItem(
           id: 'o-2',
@@ -25,7 +25,7 @@ void main() {
           url: 'https://x.test/2',
           status: 'completed',
           config: {'container': 'mp4'}));
-      n.redownload('o-2', fresh: true);
+      await n.redownload('o-2', fresh: true);
       final item = n.state.single;
       expect(item.status, 'downloading');
       expect(item.config?['force_overwrite'], isTrue);
@@ -33,7 +33,7 @@ void main() {
       expect(item.config?['container'], 'mp4');
     });
 
-    test('failed retry keeps resume-capable defaults (no force flags)', () {
+    test('failed retry keeps resume-capable defaults (no force flags)', () async {
       final n = _notifier();
       n.addDownload(DownloadItem(
           id: 'o-3',
@@ -41,7 +41,7 @@ void main() {
           url: 'https://x.test/3',
           status: 'error',
           config: {'container': 'mkv'}));
-      n.redownload('o-3');
+      await n.redownload('o-3');
       final item = n.state.single;
       expect(item.status, 'downloading');
       expect(item.config?.containsKey('force_overwrite'), isFalse);

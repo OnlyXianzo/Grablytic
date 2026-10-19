@@ -6,6 +6,7 @@ import 'package:grablytic/core/engine/engine_provider.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/home/screens/format_picker_screen.dart';
 import 'package:grablytic/providers/settings_provider.dart';
+import '../../support/fake_proxy_secret_store.dart';
 
 class _SoundCloudMockEngine extends MockEngineService {
   Map<String, dynamic>? lastStartDownloadConfig;
@@ -119,6 +120,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(mockEngine),
           ],
           child: const MaterialApp(
@@ -168,6 +170,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(mockEngine),
           ],
           child: const MaterialApp(

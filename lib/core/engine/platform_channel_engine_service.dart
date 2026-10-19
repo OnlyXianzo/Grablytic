@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../utils/app_logger.dart';
 import 'engine_codec.dart';
+import 'engine_contract.dart';
 import 'engine_service.dart';
 
 class PlatformChannelEngineService implements EngineService {
@@ -43,7 +44,9 @@ class PlatformChannelEngineService implements EngineService {
   Future<Map<String, dynamic>> bootstrap() async {
     final result = await _channel.invokeMethod<String>(EngineMethods.bootstrap);
     if (result == null) return {};
-    return EngineEnvelope.decodeResponse(result);
+    final decoded = EngineEnvelope.decodeResponse(result);
+    EngineContract.assertCompatible(decoded);
+    return decoded;
   }
 
   @override

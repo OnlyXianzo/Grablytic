@@ -1,6 +1,6 @@
 import 'dart:io' show Directory, File, HttpClient;
 
-/// App-private thumbnail prefetch cache (T07).
+/// App-private thumbnail prefetch cache.
 ///
 /// Independent of the save-thumbnail setting: at job creation the provider
 /// fire-and-forgets one fetch of [thumbnailUrl] into

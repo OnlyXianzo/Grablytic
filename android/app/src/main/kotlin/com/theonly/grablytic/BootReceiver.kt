@@ -16,7 +16,7 @@ import android.util.Log
  * SQLite to 'interrupted' state so they are cleanly re-driven when the app
  * starts or foregrounds.
  *
- * Item 6 (dual-engine SQLite races): this receiver no longer touches
+ * This receiver avoids racing the Dart-side database owner by not touching
  * `grablytic.db` directly. All SQLite access funnels through
  * [DownloadDbSweepHelper.sweepActiveToInterrupted], which serializes
  * Kotlin-side openers, arms busy-timeout + bounded retry against the Dart

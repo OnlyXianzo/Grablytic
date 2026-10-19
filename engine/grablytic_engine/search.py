@@ -1,5 +1,5 @@
 import re
-from yt_dlp import YoutubeDL
+from grablytic_engine.ytdlp_network import GuardedYoutubeDL as YoutubeDL
 
 from grablytic_engine.paths import get_paths
 from grablytic_engine.config import coerce_config
@@ -63,16 +63,21 @@ def search(
     }
 
     from grablytic_engine.opts_builder import sanitize_cookiefile
-    cookiefile = sanitize_cookiefile(cfg.get("cookies_path") or paths.get("cookies_path"))
+
+    cookiefile = sanitize_cookiefile(
+        cfg.get("cookies_path") or paths.get("cookies_path")
+    )
     if cookiefile:
         opts["cookiefile"] = cookiefile
     from grablytic_engine.url_guard import sanitized_proxy
+
     proxy = sanitized_proxy(cfg.get("proxy"))
     if proxy:
         opts["proxy"] = proxy
 
     try:
         from grablytic_engine.opts_builder import _configure_js_runtime
+
         _configure_js_runtime(opts, paths)
     except Exception:
         pass
@@ -91,7 +96,11 @@ def search(
                 "entries": [],
             }
 
-        entries_raw = data.get("entries") if "entries" in data and data.get("entries") is not None else [data]
+        entries_raw = (
+            data.get("entries")
+            if "entries" in data and data.get("entries") is not None
+            else [data]
+        )
         entries = []
         idx = 1
         for e in entries_raw:
@@ -103,7 +112,11 @@ def search(
                 title = "[Deleted video]"
 
             raw_url = e.get("url") or e.get("webpage_url") or ""
-            if raw_url and not raw_url.startswith("http") and not raw_url.startswith("/"):
+            if (
+                raw_url
+                and not raw_url.startswith("http")
+                and not raw_url.startswith("/")
+            ):
                 # Plain YouTube 11-char video ID from flat extraction
                 if re.match(r"^[a-zA-Z0-9_-]{11}$", raw_url):
                     raw_url = f"https://www.youtube.com/watch?v={raw_url}"
@@ -111,20 +124,27 @@ def search(
             thumb = e.get("thumbnail")
             if not thumb and e.get("thumbnails"):
                 thumbs = e.get("thumbnails")
-                if isinstance(thumbs, list) and len(thumbs) > 0 and isinstance(thumbs[-1], dict):
+                if (
+                    isinstance(thumbs, list)
+                    and len(thumbs) > 0
+                    and isinstance(thumbs[-1], dict)
+                ):
                     thumb = thumbs[-1].get("url")
 
             uploader = e.get("uploader") or e.get("channel") or e.get("uploader_id")
 
-            entries.append({
-                "index": idx,
-                "title": title,
-                "url": raw_url,
-                "duration_seconds": e.get("duration"),
-                "thumbnail_url": thumb,
-                "uploader": uploader,
-                "is_available": e.get("title") is not None and e.get("availability") != "private",
-            })
+            entries.append(
+                {
+                    "index": idx,
+                    "title": title,
+                    "url": raw_url,
+                    "duration_seconds": e.get("duration"),
+                    "thumbnail_url": thumb,
+                    "uploader": uploader,
+                    "is_available": e.get("title") is not None
+                    and e.get("availability") != "private",
+                }
+            )
             idx += 1
 
         log.info(f"Search for '{query_clean}' returned {len(entries)} entries")

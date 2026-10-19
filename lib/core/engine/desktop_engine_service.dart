@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
 import '../utils/trust_boundary.dart';
 import 'engine_codec.dart';
+import 'engine_contract.dart';
 import 'engine_service.dart';
 
 const _uuid = Uuid();
@@ -32,7 +33,7 @@ bool shouldResetCrashCounter({
   Duration window = const Duration(minutes: 5),
 }) => lastExitAt == null || now.difference(lastExitAt) > window;
 
-/// Item 3: per-method timeout budget. Slow network extractions
+/// Per-method timeout budget. Slow network extractions
 /// (formats/playlist/search) legitimately exceed the 30s fast budget; giving
 /// them headroom stops false timeouts that desync Dart (pending dropped)
 /// from the engine (still working). Cancel/queue-status stay tight so a
@@ -50,7 +51,7 @@ Duration requestTimeoutForMethod(String method) {
   }
 }
 
-/// Item 3: fast lane. Cancel and queue-status bypass the serialized stdin
+/// Fast lane. Cancel and queue-status bypass the serialized stdin
 /// write queue so one slow formats/playlist extraction cannot hold them
 /// hostage behind Dart's side of the pipe. Writes are synchronous
 /// `IOSink.writeln` calls on Dart's single-threaded event loop, so bypassing
@@ -388,7 +389,7 @@ class DesktopEngineService implements EngineService {
         completer.complete(data['result'] as Map<String, dynamic>? ?? {});
       }
     } catch (e) {
-      // BRUTAL-6: malformed engine stdout lines used to vanish. Protocol
+      // Malformed engine stdout lines used to vanish. Protocol
       // violations are engine bugs — surface them (truncated) instead.
       final preview = line.length > 200 ? '${line.substring(0, 200)}…' : line;
       AppLogger.warn(
@@ -508,7 +509,13 @@ class DesktopEngineService implements EngineService {
     final request = EngineEnvelope.encodeRequest(
       id: id,
       method: method,
-      params: params,
+      params: {
+        ...params,
+        // Every request states which contract it speaks. The engine
+        // refuses a mismatched MAJOR version instead of half-understanding
+        // the request.
+        'contract_version': EngineContract.version,
+      },
     );
 
     Future<void> writeRequest() async {
@@ -572,7 +579,9 @@ class DesktopEngineService implements EngineService {
 
   @override
   Future<Map<String, dynamic>> bootstrap() async {
-    return _sendRequest(EngineMethods.bootstrap, {});
+    final result = await _sendRequest(EngineMethods.bootstrap, {});
+    EngineContract.assertCompatible(result);
+    return result;
   }
 
   @override
@@ -896,3 +905,5 @@ class DesktopEngineService implements EngineService {
     required String message,
   }) async {}
 }
+
+

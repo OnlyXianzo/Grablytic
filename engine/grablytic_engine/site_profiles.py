@@ -1,9 +1,13 @@
 import json
 import os
-from urllib.request import urlopen, Request
-from urllib.error import URLError
+import tempfile
+import threading
+from urllib.request import Request
 
 from grablytic_engine.paths import get_paths
+from grablytic_engine.url_guard import pinned_urlopen as urlopen
+
+_MAX_PROFILE_BYTES = 256 * 1024
 
 
 _DEFAULT_PROFILES = {
@@ -57,41 +61,147 @@ _DEFAULT_PROFILES = {
 }
 
 
-_SITE_PROFILES_CACHE: dict | None = None
+_PROFILE_CACHE_STATE = {"profiles": None}
+_CACHE_LOCK = threading.Lock()
+
+
+def _get_site_profiles_cache():
+    with _CACHE_LOCK:
+        return _PROFILE_CACHE_STATE["profiles"]
+
+
+def _set_site_profiles_cache(profiles) -> None:
+    with _CACHE_LOCK:
+        _PROFILE_CACHE_STATE["profiles"] = profiles
+
+
+def sanitize_profiles(profiles) -> dict:
+    """Filter a site-profile payload down to the SAFE entries.
+
+    Remote profiles are UNTRUSTED INPUT: they are fetched from a URL the
+    user points at, and their `format_code` / `container` reach yt-dlp
+    verbatim.
+
+    This is a FILTER, not a schema projection: unknown keys survive (a
+    profile may carry extractor-specific hints), but an entry with an
+    unsafe `format_code` or `container` is dropped WHOLE. The entry is
+    never partially trusted — a half-trusted profile is worse than none.
+    """
+    if not isinstance(profiles, dict):
+        return {}
+    from grablytic_engine.config import is_safe_container
+    from grablytic_engine.format_selector import is_safe_format_expression
+
+    safe: dict = {}
+    for name, profile in profiles.items():
+        if not isinstance(name, str) or not isinstance(profile, dict):
+            continue
+        fmt = profile.get("format_code")
+        if fmt is not None and not is_safe_format_expression(fmt):
+            continue
+        container = profile.get("container")
+        if container is not None and not is_safe_container(container):
+            continue
+        safe[name] = dict(profile)
+    return safe
 
 
 def load_site_profiles() -> dict:
-    global _SITE_PROFILES_CACHE
-
-    if _SITE_PROFILES_CACHE is not None:
-        return _SITE_PROFILES_CACHE
-
-    _SITE_PROFILES_CACHE = dict(_DEFAULT_PROFILES)
-    return _SITE_PROFILES_CACHE
+    with _CACHE_LOCK:
+        cached_profiles = _PROFILE_CACHE_STATE["profiles"]
+        if cached_profiles is not None:
+            return cached_profiles
+        cached_profiles = dict(_DEFAULT_PROFILES)
+        _PROFILE_CACHE_STATE["profiles"] = cached_profiles
+        return cached_profiles
 
 
 def load_site_profiles_from_url(url: str) -> dict:
-    global _SITE_PROFILES_CACHE
+    """Fetch remote profiles, sanitized. A failed payload NEVER lands in
+    the cache — otherwise the broken payload would be served forever."""
     try:
-        from grablytic_engine.url_guard import is_safe_profile_url
-        if not is_safe_profile_url(url):
-            return load_site_profiles()
         req = Request(url, headers={"User-Agent": "Grablytic/1.0"})
         with urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-            _SITE_PROFILES_CACHE = data
-            return data
-    except (URLError, json.JSONDecodeError, OSError):
+            payload = resp.read(_MAX_PROFILE_BYTES + 1)
+        if len(payload) > _MAX_PROFILE_BYTES:
+            raise ValueError("remote profile response exceeds size limit")
+        data = json.loads(payload.decode("utf-8"))
+        safe = sanitize_profiles(data)
+        if not safe:
+            # Empty or fully-rejected payload: keep the previous cache.
+            try:
+                from grablytic_engine.logger import get_logger
+
+                get_logger("grablytic_engine.site_profiles").warn(
+                    "Remote site profiles were empty or unsafe; keeping the "
+                    "previous profiles"
+                )
+            except Exception:
+                pass
+            return load_site_profiles()
+        _set_site_profiles_cache(safe)
+        return safe
+    except (OSError, ValueError):
         return load_site_profiles()
 
 
+def site_profiles_status() -> dict:
+    """Diagnostic status of the profile cache. Never raises."""
+    try:
+        with _CACHE_LOCK:
+            cached_profiles = _PROFILE_CACHE_STATE["profiles"]
+            cached = cached_profiles is not None
+            count = len(cached_profiles or {})
+        return {
+            "loaded": cached,
+            "count": count,
+            "source": "remote" if cached else "builtin",
+        }
+    except Exception:
+        return {"loaded": False, "count": 0, "source": "builtin"}
+
+
+def reset_site_profiles_cache() -> None:
+    """Drop the cached remote profiles (the next load re-reads them)."""
+    _set_site_profiles_cache(None)
+
+
 def load_profiles_from_disk(path: str) -> dict:
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
+    """Read profiles from disk. A corrupt file yields {} — never raises."""
+    try:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
     return {}
 
 
-def save_profiles_to_disk(profiles: dict, path: str):
-    with open(path, "w") as f:
-        json.dump(profiles, f, indent=2)
+def save_profiles_to_disk(profiles: dict, path: str) -> bool:
+    """Write profiles ATOMICALLY (temp file + os.replace).
+
+    A crash mid-write used to leave a truncated JSON file behind, and the
+    next read raised JSONDecodeError — losing every profile at once.
+    Returns True on success.
+    """
+    tmp_path = None
+    try:
+        directory = os.path.dirname(os.path.abspath(path)) or "."
+        os.makedirs(directory, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=directory, prefix=".profiles-", suffix=".tmp"
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(profiles, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+        return True
+    except Exception:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return False

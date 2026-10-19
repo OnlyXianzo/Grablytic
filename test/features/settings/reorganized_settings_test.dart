@@ -8,6 +8,7 @@ import 'package:grablytic/providers/settings_provider.dart';
 import 'package:grablytic/providers/resume_provider.dart';
 import 'package:grablytic/core/engine/engine_provider.dart';
 import 'package:grablytic/core/engine/mock_engine_service.dart';
+import '../../support/fake_proxy_secret_store.dart';
 
 class _NoopResumeNotifier extends ResumeNotifier {
   _NoopResumeNotifier(super.ref);
@@ -40,6 +41,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWith((ref) => MockEngineService()),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
@@ -84,6 +86,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWith((ref) => MockEngineService()),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
@@ -116,6 +119,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWith((ref) => MockEngineService()),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
@@ -146,6 +150,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWith((ref) => MockEngineService()),
             resumeProvider.overrideWith((ref) => _NoopResumeNotifier(ref)),
           ],
@@ -156,7 +161,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Proxy row (Network) opens a dialog and saves to the 'proxy' key.
+      // Proxy row stores credentials only in the injected secure store.
       final netCat = find.text('Network and speed');
       await tester.scrollUntilVisible(netCat, 200,
           scrollable: find.byType(Scrollable).first);
@@ -171,7 +176,7 @@ void main() {
       await tester.enterText(find.byType(TextField), 'http://proxy:8080');
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
-      expect(prefs.getString('proxy'), 'http://proxy:8080');
+      expect(prefs.getString('proxy'), isNull);
 
       // Verbose switch (System) flips the existing 'verbose' key.
       await tester.pageBack();
@@ -218,15 +223,20 @@ void main() {
       await prefs.setString('qualityCeiling', '720p');
       await prefs.setBool('wifiOnly', true);
 
+      final secretStore = FakeProxySecretStore();
       final container = ProviderContainer(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
+          proxySecretStoreProvider.overrideWithValue(secretStore),
         ],
       );
       addTearDown(container.dispose);
 
+      await container.read(settingsProvider.notifier).proxyReady;
       final s = container.read(settingsProvider);
       expect(s.proxy, 'http://proxy:8080');
+      expect(secretStore.value, 'http://proxy:8080');
+      expect(prefs.getString('proxy'), isNull);
       expect(s.verbose, isTrue);
       expect(s.updateChannel, 'nightly');
       expect(s.downloadArchive, isTrue);

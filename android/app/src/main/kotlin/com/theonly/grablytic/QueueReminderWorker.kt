@@ -25,7 +25,7 @@ import java.io.ObjectInputStream
 import java.util.concurrent.TimeUnit
 
 /**
- * Background worker for periodic reminders about unprocessed offline queued links (T20).
+ * Background worker for periodic reminders about unprocessed offline queued links.
  *
  * System constraints:
  * - Inexact periodic scheduling via WorkManager (JobScheduler-backed, Doze-aware).
@@ -68,8 +68,10 @@ class QueueReminderWorker(
                 .build()
 
             val request = PeriodicWorkRequestBuilder<QueueReminderWorker>(
-                intervalMinutes.coerceAtLeast(15L), TimeUnit.MINUTES,
-                15L, TimeUnit.MINUTES,
+                intervalMinutes.coerceAtLeast(15L),
+                TimeUnit.MINUTES,
+                15L,
+                TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)
                 .build()

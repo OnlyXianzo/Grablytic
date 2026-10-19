@@ -16,10 +16,19 @@ def test_flat_entry_video_id_invalid_inputs():
 
 
 def test_flat_entry_video_id_skips_unavailable():
-    assert flat_entry_video_id({"title": "[Deleted video]", "url": "dQw4w9WgXcQ"}) is None
-    assert flat_entry_video_id({"title": "[Private video]", "url": "dQw4w9WgXcQ"}) is None
+    assert (
+        flat_entry_video_id({"title": "[Deleted video]", "url": "dQw4w9WgXcQ"}) is None
+    )
+    assert (
+        flat_entry_video_id({"title": "[Private video]", "url": "dQw4w9WgXcQ"}) is None
+    )
     assert flat_entry_video_id({"title": None, "url": "dQw4w9WgXcQ"}) is None
-    assert flat_entry_video_id({"title": "Secret", "availability": "private", "url": "dQw4w9WgXcQ"}) is None
+    assert (
+        flat_entry_video_id(
+            {"title": "Secret", "availability": "private", "url": "dQw4w9WgXcQ"}
+        )
+        is None
+    )
 
 
 def test_flat_entry_video_id_valid_formats():
@@ -27,15 +36,30 @@ def test_flat_entry_video_id_valid_formats():
     # Bare 11-char ID
     assert flat_entry_video_id({"title": "Never Gonna Give You Up", "url": vid}) == vid
     # Watch URL
-    assert flat_entry_video_id({"title": "Song", "url": f"https://www.youtube.com/watch?v={vid}"}) == vid
+    assert (
+        flat_entry_video_id(
+            {"title": "Song", "url": f"https://www.youtube.com/watch?v={vid}"}
+        )
+        == vid
+    )
     # youtu.be URL
-    assert flat_entry_video_id({"title": "Song", "url": f"https://youtu.be/{vid}"}) == vid
+    assert (
+        flat_entry_video_id({"title": "Song", "url": f"https://youtu.be/{vid}"}) == vid
+    )
     # webpage_url fallback
-    assert flat_entry_video_id({"title": "Song", "webpage_url": f"https://www.youtube.com/watch?v={vid}"}) == vid
+    assert (
+        flat_entry_video_id(
+            {"title": "Song", "webpage_url": f"https://www.youtube.com/watch?v={vid}"}
+        )
+        == vid
+    )
 
 
 def test_flat_entry_video_id_rejects_non_youtube():
-    assert flat_entry_video_id({"title": "Other", "url": "https://vimeo.com/123456"}) is None
+    assert (
+        flat_entry_video_id({"title": "Other", "url": "https://vimeo.com/123456"})
+        is None
+    )
     assert flat_entry_video_id({"title": "Other", "url": "not a url or id"}) is None
 
 
@@ -114,7 +138,7 @@ def test_diff_new_entries():
 
 
 def test_parse_youtube_rss_rejects_entity_declarations(monkeypatch):
-    """T3-16: billion-laughs needs <!ENTITY — YouTube Atom never carries
+    """billion-laughs needs <!ENTITY — YouTube Atom never carries
     one, so refuse entity-bearing feeds outright (no defusedxml dep needed
     on Chaquopy) instead of handing them to expat. Proved by spy: the XML
     parser must never see the payload."""
@@ -139,7 +163,7 @@ def test_parse_youtube_rss_rejects_entity_declarations(monkeypatch):
 
 
 def test_parse_youtube_rss_rejects_oversize(monkeypatch):
-    """T3-16: feeds are KBs — a multi-MB blob is never legitimate and must
+    """feeds are KBs — a multi-MB blob is never legitimate and must
     not reach the parser."""
     import xml.etree.ElementTree as _ET
 

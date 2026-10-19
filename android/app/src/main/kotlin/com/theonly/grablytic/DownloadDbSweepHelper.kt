@@ -11,7 +11,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 // ---------------------------------------------------------------------------
-// Item 6 (dual-engine SQLite races): shared Kotlin-side SQLite discipline.
+// Serialize Kotlin-side database access shared with the Dart owner.
 //
 // `app_flutter/grablytic.db` has TWO owners inside one process:
 //   * Dart sqflite (canonical owner) — see
@@ -155,7 +155,8 @@ object DownloadDbSweepHelper {
         return try {
             withGrablyticDb(dbFile) { db ->
                 val hasTable = db.rawQuery(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='downloads'", null,
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='downloads'",
+                    null,
                 ).use { it.moveToFirst() }
                 if (!hasTable) {
                     Log.i(TAG, "downloads table absent; nothing to sweep")

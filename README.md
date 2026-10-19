@@ -484,6 +484,7 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 | [Features](docs/features.md) | Full capability catalog with settings map |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → fix table, log locations, FAQ |
 | [JS Runtimes (Android)](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Deno/Node/QuickJS/bgutil research + recommendation |
+| [Output templates](docs/output_templates.md) | Naming, uniqueness, length limits, safe/unsafe fields |
 | [Contributing](docs/contributing.md) | Style, commits, branches, PRs, architecture rules |
 | [Agent skills](skills/README.md) | Reusable review, verification, and design-loop skills |
 | [Changelog](docs/CHANGELOG.md) | Release notes distilled from commit history |

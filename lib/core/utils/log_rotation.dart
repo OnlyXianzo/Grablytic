@@ -1,4 +1,4 @@
-/// Size-capped chunked log rotation (T11).
+/// Size-capped chunked log rotation.
 ///
 /// Pure, synchronously testable policy: 1 MB per chunk, each sealed chunk
 /// opens with a `grablytic logs - <Date & Time>` header. File IO stays in
@@ -20,7 +20,7 @@ class LogRotation {
         '${two(now.hour)}-${two(now.minute)}-${two(now.second)}.txt';
   }
 
-  /// First line of every fresh chunk (T11 spec).
+  /// First line written to every fresh chunk.
   static String header([DateTime? at]) {
     final now = at ?? DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
@@ -29,10 +29,10 @@ class LogRotation {
         '${two(now.hour)}:${two(now.minute)}:${two(now.second)}\n';
   }
 
-  /// Safety valve (T12): a single session never holds rotation past this.
+  /// A single active session cannot defer rotation beyond this safety limit.
   static const int forceRotateBytes = 4 * 1024 * 1024;
 
-  /// First line of a chunk that continues an in-flight session (T12).
+  /// First line of a chunk that continues an in-flight session.
   static String continuedHeader([DateTime? at]) {
     final now = at ?? DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
@@ -46,8 +46,8 @@ class LogRotation {
   static bool shouldRotate(int currentBytes, int incomingBytes) =>
       currentBytes + incomingBytes > chunkMaxBytes;
 
-  /// T12: defer sealing while any video session is active, unless the chunk
-  /// already hit the 4 MB force valve.
+  /// Defer sealing while a video session is active, unless the chunk has
+  /// already reached the 4 MB force limit.
   static bool shouldDefer(
     int currentBytes,
     int incomingBytes, {

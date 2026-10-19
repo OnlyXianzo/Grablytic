@@ -79,9 +79,7 @@ class TestLegitimateUrls:
             }
         )
         monkeypatch.setattr(socket, "getaddrinfo", fake)
-        assert (
-            is_safe_media_url("https://www.youtube.com/watch?v=abc123XYZ_-") is True
-        )
+        assert is_safe_media_url("https://www.youtube.com/watch?v=abc123XYZ_-") is True
 
     def test_normal_domain_ok(self, monkeypatch):
         fake = _fake_getaddrinfo_factory(
@@ -108,10 +106,11 @@ class TestLegitimateUrls:
     def test_private_ip_literal_rejected(self):
         assert is_safe_media_url("http://192.168.1.50:8096") is False
 
-    def test_dns_failure_fails_open(self, monkeypatch):
+    def test_dns_failure_keeps_user_selected_media_available(self, monkeypatch):
+        """A DNS outage does not reject content the user explicitly selected."""
+
         def _raise(host, port, *args, **kwargs):
             raise socket.gaierror("mocked DNS outage")
 
         monkeypatch.setattr(socket, "getaddrinfo", _raise)
-        # Known residual: offline/broken-DNS can't prove rebinding, so allow.
         assert is_safe_media_url("https://example.com/video") is True

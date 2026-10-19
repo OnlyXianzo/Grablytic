@@ -169,7 +169,8 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   /// (Download/Grablytic-logs/ via MediaStore on Android 10+), which IS
   /// browsable in any file manager — unlike app-private dirs on Android
   /// 12+. Falls back to the external-app-dir export on failure.
-  /// Default export per T10; filename `grablytic logs - YYYY-MM-DD HH-mm-ss.log`.
+  /// The default export uses a timestamped filename such as
+  /// `grablytic logs - YYYY-MM-DD HH-mm-ss.log`.
   Future<void> _saveToDownloads() async {
     if (_exporting || _selectedFile == null) return;
     setState(() => _exporting = true);
@@ -315,7 +316,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: cs.outlineVariant.withAlpha(80)),
         ),
-        // T13: collapsible so the log takes the full viewport when collapsed.
+        // Keep the log viewport available while allowing the options card to collapse.
         // Outer SingleChildScrollView scrolls all options (fixes hidden
         // footer / not-able-to-scroll reports) — log viewport is fixed height.
         child: ExpansionTile(
@@ -533,7 +534,7 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              // T10: single default export = Downloads via MediaStore.
+              // Save the default export to Downloads through MediaStore.
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(

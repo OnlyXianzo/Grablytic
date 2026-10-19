@@ -14,6 +14,7 @@ import '../core/utils/app_logger.dart';
 import '../core/utils/local_analytics.dart';
 import '../core/utils/thumbnail_cache.dart';
 import '../core/utils/trust_boundary.dart';
+import '../core/utils/config_secrets.dart';
 import 'resume_provider.dart';
 import 'settings_provider.dart';
 
@@ -197,7 +198,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   final DateTime Function() _clock;
   final Map<String, _DownloadSmoother> _smoothers = {};
 
-  /// Outcome hook for the resume strike loop (BRUTAL-5): invoked with the
+  /// Outcome hook for the resume strike loop: invoked with the
   /// terminal item's URL on finished/error (never on user-cancel). Wired to
   /// ResumeNotifier.reportAttempt in downloadProvider; null in tests that
   /// don't cover it. Must never throw.
@@ -210,6 +211,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// downloadProvider; null (tests, embeds) means allow. Must never throw —
   /// a failing gate fails open with a warning, preserving old behavior.
   final Future<bool> Function()? unattendedNetworkAllowed;
+  final Future<String?> Function()? secureProxyForDownload;
 
   /// Drops transient smoother state for [id]. Called on every terminal
   /// transition and on history removal so long sessions cannot accumulate
@@ -232,6 +234,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     DateTime Function()? clock,
     this.onDownloadOutcome,
     this.unattendedNetworkAllowed,
+    this.secureProxyForDownload,
     this.resolveDownloadDir,
   }) : _clock = clock ?? DateTime.now,
        super([]);
@@ -248,6 +251,15 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       );
       return true;
     }
+  }
+
+  Future<Map<String, dynamic>> _configWithSecureProxy(Map<String, dynamic> input) async {
+    final safe = Map<String, dynamic>.from(stripProxyFields(input) as Map);
+    final readProxy = secureProxyForDownload;
+    if (readProxy == null) return safe;
+    final proxy = sanitizeProxy(await readProxy());
+    if (proxy != null) safe['proxy'] = proxy;
+    return safe;
   }
 
   void _reportResumeOutcome(String url, bool success) {
@@ -319,10 +331,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _persistRecord(item);
   }
 
-  /// T07: fire-and-forget thumbnail prefetch into app-private storage at job
-  /// creation (async IO, never UI-blocking). Records the path on the item
-  /// and DB only when still missing, so a finished sidecar is never
-  /// clobbered by a late fetch.
+  /// Prefetches the thumbnail into app-private storage when a job is created.
+  /// This runs asynchronously without blocking the UI and records the path on
+  /// the item and database only when still missing, so a finished sidecar is
+  /// never clobbered by a late fetch.
   void _prefetchThumbnail(String id, String? url, String? existingPath) {
     final thumbUrl = url ?? '';
     if (thumbUrl.isEmpty || (existingPath ?? '').isNotEmpty) return;
@@ -505,8 +517,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               downloadedBytes: filesize,
               totalBytes: filesize,
               filePath: filePath ?? d.filePath,
-              // T07: keep the creation-time app-private cache over the
-              // post-download sidecar (persistent across file deletes).
+              // Keep the creation-time app-private cache over the
+              // post-download sidecar so it survives file deletion.
               thumbnailPath: d.thumbnailPath ?? thumbnailPath,
               speed: 0,
               eta: -1,
@@ -664,7 +676,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     }
 
     // Throttled heartbeat to SQLite (~5s cadence) for DB-driven resume continuity.
-    // BRUTAL-6: failures are logged (first + every 12th ≈ 1/min) instead of
+    // Failures are logged (first + every 12th ≈ 1/min) instead of
     // swallowed — a broken DB silently kills resume continuity otherwise.
     if (downloaded > 0 || total > 0) {
       if (s.lastHeartbeatAt == null ||
@@ -730,7 +742,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         updatedAt: DateTime.now().toIso8601String(),
       );
       DownloadHistoryDb.instance.insert(record).catchError((e) {
-        // BRUTAL-6: never throw (state is source of truth), but never go
+        // Never throw (state is source of truth), but never go
         // silent either — a failing insert means history diverges from UI.
         AppLogger.warn(
           'History persist failed for ${item.id}: $e',
@@ -792,6 +804,25 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         continue;
       }
 
+      Map<String, dynamic> launchConfig;
+      try {
+        launchConfig = await _configWithSecureProxy(config);
+      } catch (error) {
+        AppLogger.warn('Auto-resume paused: secure proxy unavailable ($error)', tag: 'download');
+        if (!state.any((d) => d.id == record.id)) {
+          state = [...state, DownloadItem(
+            id: record.id, title: record.title, url: record.url,
+            status: 'interrupted', progress: record.progress,
+            downloadedBytes: record.bytesDownloaded,
+            totalBytes: record.totalBytes ?? record.fileSize ?? 0,
+            config: config, thumbnailUrl: record.thumbnailUrl,
+            thumbnailPath: record.thumbnailPath, attempts: attempts,
+            queuePosition: record.queuePosition,
+          )];
+        }
+        continue;
+      }
+
       // Auto-resume: increment attempt and re-start
       final nextAttempts = attempts + 1;
       await DownloadHistoryDb.instance.update(
@@ -835,7 +866,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
           .startDownload(
             url: record.url,
             downloadId: record.id,
-            config: config,
+            config: launchConfig,
             networkType: config['network_type']?.toString() ?? 'wifi',
           )
           .then((result) {
@@ -853,7 +884,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void resumeInterrupted(String id) {
-    redownload(id, fresh: false);
+    unawaited(redownload(id, fresh: false));
   }
 
   static String _derivePlatform(String url) {
@@ -870,7 +901,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   }
 
   void retryDownload(String id) {
-    redownload(id, fresh: false);
+    unawaited(redownload(id, fresh: false));
   }
 
   /// Redownload a terminal item reusing the same id (history-row stability).
@@ -883,7 +914,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// actually re-fetched instead of hitting the "already downloaded" skip
   /// or the archive skip (Seal #2065 trap). Failed/cancelled retries keep
   /// resume-capable defaults so partial `.part` data is reused.
-  void redownload(String id, {bool fresh = false}) {
+  Future<void> redownload(String id, {bool fresh = false}) async {
     final index = state.indexWhere((d) => d.id == id);
     if (index == -1) return;
 
@@ -903,7 +934,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     }
 
     final config = Map<String, dynamic>.from(
-      item.config ?? <String, dynamic>{},
+      stripProxyFields(item.config ?? <String, dynamic>{}) as Map,
     );
     if (fresh) {
       config['force_overwrite'] = true;
@@ -938,31 +969,22 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       ),
     );
 
-    _engine
-        .startDownload(
-          url: item.url,
-          downloadId: id,
-          config: config,
-          networkType: item.networkType ?? 'wifi',
-        )
-        .then((result) {
-          // Engine backstop may park this as queued (at-limit): reflect it so
-          // the card renders Queued instead of a stalled 0%.
-          if (result['queued'] == true) {
-            state = [
-              for (final d in state)
-                if (d.id != id) d else d.copyWith(status: 'queued'),
-            ];
-          }
-          if (result['success'] != true &&
-              result['error_type'] == 'ERROR_ALREADY_ACTIVE') {
-            AppLogger.warn(
-              'Redownload rejected: $id already active',
-              tag: 'download',
-            );
-          }
-        })
-        .catchError((_) {});
+    try {
+      final launchConfig = await _configWithSecureProxy(config);
+      final result = await _engine.startDownload(
+        url: item.url, downloadId: id, config: launchConfig,
+        networkType: item.networkType ?? 'wifi',
+      );
+      if (result['queued'] == true) {
+        state = [for (final d in state) if (d.id != id) d else d.copyWith(status: 'queued')];
+      }
+      if (result['success'] != true && result['error_type'] == 'ERROR_ALREADY_ACTIVE') {
+        AppLogger.warn('Redownload rejected: $id already active', tag: 'download');
+      }
+    } catch (error) {
+      AppLogger.warn('Redownload paused: secure config unavailable ($error)', tag: 'download');
+      state = [for (final d in state) if (d.id != id) d else d.copyWith(status: 'error')];
+    }
   }
 
   /// "Extract audio" (source re-fetch variant): enqueues a NEW audio-only
@@ -976,7 +998,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     final item = state[index];
     final newId = _uuid.v4();
     final config = Map<String, dynamic>.from(
-      item.config ?? <String, dynamic>{},
+      stripProxyFields(item.config ?? <String, dynamic>{}) as Map,
     );
     config['audio_only'] = true;
     // Fresh artifact: never hit the completed-file skip or archive skip.
@@ -984,10 +1006,11 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     config['ignore_archive'] = true;
     Map<String, dynamic> result;
     try {
+      final launchConfig = await _configWithSecureProxy(config);
       result = await _engine.startDownload(
         url: item.url,
         downloadId: newId,
-        config: config,
+        config: launchConfig,
         networkType: item.networkType ?? 'wifi',
       );
     } catch (_) {
@@ -1127,7 +1150,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         return <String, dynamic>{'success': false, 'error_message': '$err'};
       }),
     );
-    // T1-3: honest intermediate — the worker may still be winding down
+    // Honest intermediate — the worker may still be winding down
     // (extractor/merge/socket/aria2c are hook-blind). The terminal
     // 'cancelled' event finalizes this; error fields are set there, not here.
     state = [
@@ -1194,7 +1217,8 @@ final downloadProvider =
         // Trust boundary: engine-reported file paths must resolve inside the
         // user's download folder before state, history, or deletion touch them.
         resolveDownloadDir: () => ref.read(settingsProvider).downloadPath,
-        // Resume strike loop (BRUTAL-5): terminal outcomes feed the engine's
+        secureProxyForDownload: () => ref.read(settingsProvider.notifier).proxyForDownload(),
+        // Resume strike loop: terminal outcomes feed the engine's
         // per-file attempt counter; unresumed URLs are ignored downstream.
         onDownloadOutcome: ({required String url, required bool success}) => ref
             .read(resumeProvider.notifier)

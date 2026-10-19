@@ -6,13 +6,15 @@ import re
 
 log = get_logger("grablytic_engine.errors")
 
-_VPN_TYPES = frozenset({
-    "ERROR_GEO_BLOCKED",
-    "ERROR_AGE_RESTRICTED",
-    "ERROR_FORBIDDEN",
-    "ERROR_RATE_LIMITED",
-    "ERROR_SSL_BLOCKED",
-})
+_VPN_TYPES = frozenset(
+    {
+        "ERROR_GEO_BLOCKED",
+        "ERROR_AGE_RESTRICTED",
+        "ERROR_FORBIDDEN",
+        "ERROR_RATE_LIMITED",
+        "ERROR_SSL_BLOCKED",
+    }
+)
 
 
 class GrablyticError(Exception):
@@ -39,6 +41,14 @@ _ERROR_MAP = {
     "confirm you're not a bot": ("ERROR_FORBIDDEN", True),
     "sign in to confirm": ("ERROR_FORBIDDEN", True),
     "this video is private": ("ERROR_PRIVATE", True),
+    # The exact phrasings yt-dlp uses. Without them a private video
+    # fell through to ERROR_UNKNOWN and the UI offered a VPN for a
+    # permission problem.
+    "private video": ("ERROR_PRIVATE", True),
+    "sign in if you've been granted access": ("ERROR_PRIVATE", True),
+    "this video has been removed": ("ERROR_UNAVAILABLE", False),
+    "has been terminated": ("ERROR_UNAVAILABLE", False),
+    "this live event will begin": ("ERROR_UNAVAILABLE", False),
     "video unavailable": ("ERROR_UNAVAILABLE", False),
     "HTTP Error 429": ("ERROR_RATE_LIMITED", True),
     "HTTP Error 403": ("ERROR_FORBIDDEN", True),
@@ -47,7 +57,7 @@ _ERROR_MAP = {
     "ffmpeg not found": ("ERROR_FFMPEG_MISSING", True),
 }
 
-# T3-14: "drm" as a bare substring false-positives on filenames
+# "Drm" as a bare substring false-positives on filenames
 # ("mydrmvideo.mkv"). Whole-word only — genuine yt-dlp DRM errors always
 # carry the word ("DRM protected", "DRM"). Checked at the map position
 # below to preserve long-standing precedence.
@@ -61,19 +71,28 @@ _ERROR_MAP_TAIL = {
     "no space left": ("ERROR_QUOTA_EXCEEDED", False),
 }
 
-# T3-14: genuine TLS failures only. Timeouts/DNS/refused/reset are
+# Genuine TLS failures only. Timeouts/DNS/refused/reset are
 # congestion, not censorship — they used to map to ERROR_SSL_BLOCKED and
 # trigger a bogus VPN upsell (SSL_BLOCKED ∈ _VPN_TYPES).
-_SSL_KEYWORDS = frozenset({
-    "ssl", "handshake", "certificate",
-})
+_SSL_KEYWORDS = frozenset(
+    {
+        "ssl",
+        "handshake",
+        "certificate",
+    }
+)
 
-_NETWORK_TRANSIENT = frozenset({
-    "timeout", "timed out",
-    "name or service not known", "dns",
-    "connection refused", "connection reset",
-    "temporary failure",
-})
+_NETWORK_TRANSIENT = frozenset(
+    {
+        "timeout",
+        "timed out",
+        "name or service not known",
+        "dns",
+        "connection refused",
+        "connection reset",
+        "temporary failure",
+    }
+)
 
 _MAX_MESSAGE = 500
 
@@ -81,7 +100,7 @@ _MAX_MESSAGE = 500
 def _safe_message(exc: Exception) -> str:
     """User-facing message: credentials/tokens scrubbed, length-capped.
 
-    T3-14: str(exc) used to reach Flutter logs verbatim (proxy creds,
+    Str(exc) used to reach Flutter logs verbatim (proxy creds,
     cookie paths, signed URLs). sanitize() covers tokens + userinfo;
     the cap bounds log/DB rows.
     """

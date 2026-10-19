@@ -26,7 +26,7 @@ class AppLogger {
   static const Duration _flushInterval = Duration(seconds: 30);
   static const String _appLogFileName = 'app_logs.txt';
   static const int _maxSealedChunks = 5;
-  // T12: ids of video sessions with logs in flight (begin at enqueue/start,
+  // IDs of video sessions with logs in flight (begin at enqueue/start,
   // end at finished/error/cancelled; interrupted keeps its session).
   static final Set<String> _activeSessions = <String>{};
   static Future<void> Function(Object error, StackTrace stack)? _fatalHook;
@@ -61,11 +61,11 @@ class AppLogger {
 
   static bool get isEnabled => _loggingEnabled;
 
-  /// T12: mark a video session's logs in flight; rotation defers past 1 MB
+  /// Mark a video session's logs in flight; rotation defers past 1 MB
   /// until every session ends (4 MB force valve).
   static void beginLogSession(String id) => _activeSessions.add(id);
 
-  /// T12: close a video session (job terminal state).
+  /// Close a video session when the job reaches a terminal state.
   static void endLogSession(String id) => _activeSessions.remove(id);
 
   /// Enable or disable logging.
@@ -166,9 +166,9 @@ class AppLogger {
       final dayFile = File('$_logsDirPath/log_$dayStr.txt');
       await dayFile.writeAsString(blob, mode: FileMode.append);
       final appFile = File('$_logsDirPath/$_appLogFileName');
-      // T11: 1 MB chunked rotation on the serialized flush chain (async,
+      // Rotate app logs into 1 MB chunks on the serialized flush chain (async,
       // never UI-blocking). Sealed chunks keep newest-first listing order.
-      // T12: never cut a video's log mid-session — defer past 1 MB while any
+      // Avoid cutting a video's log mid-session by deferring rotation while any
       // session is active; 4 MB force valve seals with a (continued) header.
       final incoming = blob.length;
       var current = await appFile.exists() ? await appFile.length() : 0;
@@ -220,9 +220,8 @@ class AppLogger {
     }
   }
 
-  /// Keeps only the newest [_maxSealedChunks] sealed chunks (T11 ASSUMPTION:
-  /// spec caps chunk size, not count; 5 x 1 MB bounds disk without a
-  /// day-based retention pref).
+  /// Keeps only the newest [_maxSealedChunks] sealed chunks to bound disk
+  /// use without requiring a day-based retention preference.
   static Future<void> _pruneSealedChunks() async {
     try {
       final dir = Directory(_logsDirPath!);
@@ -452,8 +451,8 @@ class AppLogger {
 
   /// Retrieves list of all available log files.
   ///
-  /// Includes daily `log_*.txt` files, 1 MB sealed `app_logs-*.txt` chunks
-  /// (T11), engine `engine_*.txt` mirrors (if any),
+  /// Includes daily `log_*.txt` files, 1 MB sealed `app_logs-*.txt` chunks,
+  /// engine `engine_*.txt` mirrors (if any),
   /// `server_logs.log` + its RotatingFileHandler backups (`server_logs.log.1`
   /// … — previously invisible because they don't end with `.log`), and the
   /// active `app_logs.txt` chunk flush target. Newest first, with
@@ -735,7 +734,7 @@ class AppLogger {
     }
   }
 
-  /// Spec filename for Downloads exports (T10): colons are illegal in
+  /// Builds a timestamped Downloads export filename; colons are illegal in
   /// MediaStore display names on some launchers/MTP, so time uses dashes.
   /// Example: `grablytic logs - 2026-10-02 03-45-12.log`.
   static String exportFileName([DateTime? at]) {
@@ -746,9 +745,9 @@ class AppLogger {
         '${two(now.hour)}-${two(now.minute)}-${two(now.second)}.log';
   }
 
-  /// Failure fallback for log exports (T10). Default export is Downloads via
-  /// MediaStore ([engine.exportLogToDownloads]); this app-dir copy runs only
-  /// when MediaStore is unavailable.
+  /// Fallback when the default Downloads export through MediaStore
+  /// ([engine.exportLogToDownloads]) is unavailable. This app-directory copy
+  /// runs only when MediaStore cannot save the file.
   ///
   /// Android: app-specific external dir, e.g.
   /// `.../Android/data/APP_ID/files/log-exports/` — writable with NO

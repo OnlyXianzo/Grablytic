@@ -108,7 +108,7 @@ abstract class EngineService {
     bool requiresCharging = false,
   });
 
-  /// Synchronizes offline queue reminder parameters with native WorkManager (T20).
+  /// Synchronizes offline queue reminder parameters with native WorkManager.
   /// Never throws.
   Future<Map<String, dynamic>> syncQueueReminder({
     required bool enabled,

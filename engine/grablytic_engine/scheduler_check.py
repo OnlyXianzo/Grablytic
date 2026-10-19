@@ -77,7 +77,11 @@ def flat_entries_to_ids(entries: list) -> list[dict]:
             continue
         seen.add(vid)
         raw = entry.get("url") or entry.get("webpage_url") or ""
-        url = raw if isinstance(raw, str) and raw.startswith("http") else f"https://www.youtube.com/watch?v={vid}"
+        url = (
+            raw
+            if isinstance(raw, str) and raw.startswith("http")
+            else f"https://www.youtube.com/watch?v={vid}"
+        )
         out.append({"id": vid, "url": url, "title": entry.get("title")})
     return out
 
@@ -95,7 +99,7 @@ def parse_youtube_rss(xml_content: str) -> list[dict]:
     if not isinstance(xml_content, str) or not xml_content.strip():
         return []
 
-    # T3-16: no defusedxml on Chaquopy, so gate stdlib ET instead. Entity
+    # No defusedxml on Chaquopy, so gate stdlib ET instead. Entity
     # expansion (billion-laughs) needs <!ENTITY declarations, which YouTube
     # Atom never carries — refuse such feeds outright. Feeds are KBs; a
     # multi-MB blob is never legitimate.
@@ -139,25 +143,39 @@ def parse_youtube_rss(xml_content: str) -> list[dict]:
         title_elem = node.find("atom:title", ns)
         if title_elem is None:
             title_elem = node.find("title")
-        title = title_elem.text.strip() if title_elem is not None and title_elem.text else None
+        title = (
+            title_elem.text.strip()
+            if title_elem is not None and title_elem.text
+            else None
+        )
 
         published_elem = node.find("atom:published", ns)
         if published_elem is None:
             published_elem = node.find("published")
-        published = published_elem.text.strip() if published_elem is not None and published_elem.text else None
+        published = (
+            published_elem.text.strip()
+            if published_elem is not None and published_elem.text
+            else None
+        )
 
         link_elem = node.find("atom:link", ns)
         if link_elem is None:
             link_elem = node.find("link")
         link_href = link_elem.attrib.get("href") if link_elem is not None else None
-        url = link_href if isinstance(link_href, str) and link_href.startswith("http") else f"https://www.youtube.com/watch?v={vid}"
+        url = (
+            link_href
+            if isinstance(link_href, str) and link_href.startswith("http")
+            else f"https://www.youtube.com/watch?v={vid}"
+        )
 
-        entries.append({
-            "id": vid,
-            "url": url,
-            "title": title,
-            "published": published,
-        })
+        entries.append(
+            {
+                "id": vid,
+                "url": url,
+                "title": title,
+                "published": published,
+            }
+        )
 
     return entries
 

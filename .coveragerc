@@ -1,0 +1,8 @@
+# Coverage only measures the production package (selected by pytest-cov's
+# --cov=engine/grablytic_engine in CI). Do not omit live production modules to
+# inflate the score. These patterns remove only code which is not executable
+# in a normal runtime path: typing-only blocks and optional script entrypoints.
+[report]
+exclude_also =
+    if TYPE_CHECKING:
+    if __name__ == .__main__.

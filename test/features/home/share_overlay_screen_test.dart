@@ -11,6 +11,7 @@ import 'package:grablytic/features/home/screens/playlist_selection_screen.dart';
 import 'package:grablytic/features/home/screens/share_overlay_screen.dart';
 import 'package:grablytic/providers/engine_status_provider.dart';
 import 'package:grablytic/providers/settings_provider.dart';
+import '../../support/fake_proxy_secret_store.dart';
 
 Future<SharedPreferences> _prefs({
   Map<String, Object> initial = const {},
@@ -36,7 +37,7 @@ void main() {
     );
   });
 
-  // T01's process-global extraction cache is keyed by URL and shared
+  // The process-global extraction cache is keyed by URL and shared
   // across tests in one run — clear per test for isolation.
   setUp(() => ExtractionCache.instance.clear());
 
@@ -80,6 +81,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(mockEngine),
             engineStatusProvider.overrideWith(
               (ref) => Future.value(const EngineStatus(ready: true)),
@@ -107,6 +109,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(mockEngine),
             engineStatusProvider.overrideWith(
               (ref) => Future.value(const EngineStatus(ready: true)),
@@ -132,6 +135,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(mockEngine),
             engineStatusProvider.overrideWith(
               (ref) => Future.value(const EngineStatus(ready: true)),
@@ -157,6 +161,7 @@ void main() {
           ProviderScope(
             overrides: [
               sharedPreferencesProvider.overrideWithValue(prefs),
+              proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
               engineProvider.overrideWithValue(mockEngine),
               engineStatusProvider.overrideWith(
                 (ref) => Future.value(const EngineStatus(ready: true)),
@@ -192,6 +197,7 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            proxySecretStoreProvider.overrideWithValue(FakeProxySecretStore()),
             engineProvider.overrideWithValue(mockEngine),
             engineStatusProvider.overrideWith(
               (ref) => Future.value(const EngineStatus(ready: true)),

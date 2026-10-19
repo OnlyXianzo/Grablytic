@@ -24,7 +24,6 @@ class TestGrablyticError:
         assert err.to_dict()["suggests_vpn"] is True
 
 
-
 class TestClassifyError:
     def test_geo_blocked(self):
         exc = Exception("This video is not available in your country")
@@ -41,7 +40,8 @@ class TestClassifyError:
     def test_bot_check_maps_to_forbidden_for_cookie_guidance(self):
         exc = Exception(
             "ERROR: [youtube] RhxEmvngWBY: Sign in to confirm you're not "
-            "a bot. Use --cookies-from-browser or --cookies")
+            "a bot. Use --cookies-from-browser or --cookies"
+        )
         err = classify_error(exc)
         assert err.error_type == "ERROR_FORBIDDEN"
         assert err.recoverable is True
@@ -106,7 +106,7 @@ class TestClassifyError:
 
 
 class TestClassifyPrecision:
-    """T3-14 engine half: precise classification (no substring false
+    """engine half: precise classification (no substring false
     positives, no congestion→VPN misdirection) + sanitized messages."""
 
     def test_drm_filename_not_drm(self):

@@ -1,0 +1,27 @@
+# Verified research — Android service concurrency and binary integrity
+
+**Run date:** 2026-10-19 (Asia/Kolkata)
+
+**Method:** verified-implementation — independent source angles, local call-path audit, blast radius, implementation, focused proof.
+
+## Findings
+
+| Topic | Sources | Claims cross-checked | Decision | Confidence |
+|---|---|---|---|---|
+| `DownloadService` map safety | [Kotlin MutableMap contract](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.collections/-mutable-map/); [Android ConcurrentHashMap API](https://developer.android.com/reference/kotlin/java/util/concurrent/ConcurrentHashMap); local call graph (`MainActivity.kt`, `DownloadService.kt`) | Kotlin mutable maps do not promise thread safety. A concurrent map makes per-operation access safe but its aggregate state and iteration are weakly consistent/unordered. Current service event entrypoints post to the main looper; moving power management off-main creates a second reader of active-download state. | Preserve linked insertion order and guard all map state + notification snapshots with one private lock. Do not rely on concurrent-map iteration for a coherent notification snapshot. | High |
+| Wake-lock renewal thread | [Android Services overview](https://developer.android.com/develop/background-work/services); [Android `HandlerThread` API](https://developer.android.com/reference/android/os/HandlerThread); [Android `WakeLock` API](https://developer.android.com/reference/android/os/PowerManager.WakeLock) | Android services run on the hosting process's main thread unless work is explicitly dispatched. Wake-lock acquire/release are calls into the system service; official docs require prompt release and timed acquisition but do not require the main looper. Android's HandlerThread docs recommend an executor when a Handler API is not required. | Use one single-thread `ScheduledThreadPoolExecutor` as the sole owner of PowerManager/WifiManager lock operations and periodic renewal; keep service lifecycle and notification updates on main. All stop paths enqueue release and the executor is shut down on service destruction. | High |
+| Package integrity boundary | [AOSP APK signing](https://source.android.com/docs/security/features/apksigning); [Java `MessageDigest`](https://docs.oracle.com/javase/8/docs/api/java/security/MessageDigest.html); local `packages.gradle.kts` / `BinaryPackageManager.kt` audit | Build-time download code already verifies SHA-256 for upstream APK/AAR artifacts, and Android Package Manager verifies the installed APK signature. Runtime extraction currently uses a CRC32 stamp on the input zip, which is suitable for accidental cache-change detection but is not a cryptographic digest and does not verify the extracted tree on subsequent launches. | Keep the build-time upstream SHA-256 gate. At runtime use SHA-256 for the bundled archive and a canonical SHA-256 digest of the extracted tree; verify archive→tree extraction before stamping, verify both on cache hits, and re-extract on mismatch. Version the stamp so legacy CRC32 stamps trigger one safe rebuild. | High |
+
+## Call-path and disagreement notes
+
+- The service's public event helpers enqueue mutations on the main handler; Android service callbacks also run on main. The current maps are therefore mostly serialized today. The race becomes real once renewal reads queue state from a background executor, and explicit locking makes that ownership boundary durable.
+- `ConcurrentHashMap` was considered as a one-line fix, but the UI notification needs a consistent `(active, progress, alert)` snapshot and insertion-order behavior. A lock is a better match than weakly consistent aggregate iteration.
+- The OS verifies APK signatures at install time; that is not a substitute for a runtime cache integrity check on extracted support files. The code uses both boundaries: signed packaged archive as input, runtime SHA-256 archive/tree digests for the app-private extraction cache.
+
+## Verified approach / blast radius
+
+1. `DownloadService`: introduce a single `stateLock` for `active`, `prog`, `alertPrefs`, and notification-selection fields. Read a stable snapshot before constructing notifications or timeout alerts.
+2. Keep main-handler work limited to lifecycle/event/UI notification handling. Run acquisition, release, and scheduled renewal of partial WakeLock/WifiLock on a single background executor. Preserve non-counted locks, the existing quota backstop, and every release path.
+3. `BinaryPackageManager`: replace CRC32 cache proof with SHA-256 archive and extracted-tree digests; include entry type, contents/target, and executable bits; use no-follow `lstat` traversal for hashing, permissions, and cleanup; reject duplicate archive paths and retain zip-slip/symlink guards; treat old stamps as cache misses.
+4. Blast radius: `DownloadService.kt`, `BinaryPackageManager.kt`, `MainActivity.kt` call sites, package Gradle task/asset packaging, and Android build workflow. Do not change FGS type, lock modes, timeout policy, or package sources.
+5. Prove: static review verifies shared map reads/writes use the lock and periodic renewal uses the dedicated executor. The Android emulator IPC workflow is configured to compile the app and exercise the production MethodChannel/Chaquopy/Python path, but it skips bundled native packages; it therefore does not execute package extraction. This workspace has no Android SDK/emulator, so Kotlin compilation, WakeLock behavior, and extracted-tree mutation/recovery remain pending CI/device verification.

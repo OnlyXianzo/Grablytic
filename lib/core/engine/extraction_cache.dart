@@ -1,10 +1,10 @@
 import 'dart:async';
 
-/// In-memory cache and in-flight request deduplicator for extraction results (T01).
+/// In-memory cache and in-flight request deduplicator for extraction results.
 ///
 /// Ensures exactly one extraction is performed per URL within [defaultTtl].
-/// Results are cached and shared across FormatPickerScreen, Share Intent (T04),
-/// auto-download (T02), and in-app preview (T08).
+/// Results are shared across the format picker, share intent, automatic
+/// downloads, and in-app preview.
 class ExtractionCache {
   ExtractionCache._();
   static final ExtractionCache instance = ExtractionCache._();

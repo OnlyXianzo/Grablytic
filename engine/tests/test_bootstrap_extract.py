@@ -57,10 +57,17 @@ class TestSafeZip:
         assert (out / "ffmpeg").read_bytes() == b"bin"
 
     @pytest.mark.unit
-    @pytest.mark.parametrize("evil", [
-        "../evil.txt", "sub/../../evil.txt", "/abs.txt", "C:/evil.txt",
-        "C:\\evil.txt", "\\\\host\\share\\evil.txt",
-    ])
+    @pytest.mark.parametrize(
+        "evil",
+        [
+            "../evil.txt",
+            "sub/../../evil.txt",
+            "/abs.txt",
+            "C:/evil.txt",
+            "C:\\evil.txt",
+            "\\\\host\\share\\evil.txt",
+        ],
+    )
     def test_malicious_names_rejected(self, tmp_path, evil):
         archive = _write(_zip_bytes([(evil, b"x")]), tmp_path / "a.zip")
         out = tmp_path / "out"
@@ -73,8 +80,7 @@ class TestSafeZip:
 class TestSafeTar:
     @pytest.mark.unit
     def test_valid_member_extracts(self, tmp_path):
-        archive = _write(
-            _tar_bytes([("ffmpeg", b"bin")]), tmp_path / "a.tar")
+        archive = _write(_tar_bytes([("ffmpeg", b"bin")]), tmp_path / "a.tar")
         out = tmp_path / "out"
         out.mkdir()
         _safe_extract_tar(archive, str(out))
@@ -104,36 +110,80 @@ class TestSafeTar:
 class TestWiredExtraction:
     @pytest.mark.unit
     def test_e2e_malicious_zip_blocked(self, tmp_path, monkeypatch):
-        import urllib.request
+        import importlib
 
+        boot = importlib.import_module("grablytic_engine.bootstrap")
         payload = _zip_bytes([("../evil.txt", b"x")])
         sha = __import__("hashlib").sha256(payload).hexdigest()
 
         class MockResponse:
             def __init__(self):
                 self._done = False
+
             def read(self, *a, **k):
                 if self._done:
                     return b""
                 self._done = True
                 return payload
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 pass
 
         monkeypatch.setattr(
-            urllib.request, "urlopen",
+            boot,
+            "_open_https_request",
             lambda req, timeout=None: MockResponse(),
         )
         with pytest.raises(ValueError, match="Security Violation"):
             _download_and_extract_binary(
-                "https://example.com/tool.zip", sha,
-                str(tmp_path / "bin" / "tool"), str(tmp_path),
+                "https://example.com/tool.zip",
+                sha,
+                str(tmp_path / "bin" / "tool"),
+                str(tmp_path),
+            )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///etc/passwd",
+            "ftp://example.com/tool.tar.gz",
+            "http://example.com/tool.zip",
+            "https://user@example.com/tool.zip",
+        ],
+    )
+    def test_binary_download_rejects_non_https_urls(self, tmp_path, url):
+        with pytest.raises(ValueError, match="HTTPS"):
+            _download_and_extract_binary(
+                url,
+                None,
+                str(tmp_path / "bin" / "tool"),
+                str(tmp_path),
+            )
+
+    @pytest.mark.unit
+    def test_https_download_rejects_insecure_redirects(self):
+        import importlib
+        from urllib.request import Request
+
+        boot = importlib.import_module("grablytic_engine.bootstrap")
+        handler = boot._HTTPSOnlyRedirectHandler()
+        request = Request("https://github.com/example/tool.zip")
+        with pytest.raises(ValueError, match="HTTPS"):
+            handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "http://example.com/tool.zip",
             )
 
 
-# ── Exploit-proof tests (T0-5: trojaned-binary trust gap) ─────────────
+# ── Exploit-proof tests (trojaned-binary trust gap) ─────────────
 
 
 class TestBinaryManifestVerification:
@@ -145,6 +195,7 @@ class TestBinaryManifestVerification:
         """A binary with no manifest entry must NOT be trusted."""
         cache_dir = str(tmp_path / "cache")
         import os
+
         os.makedirs(cache_dir, exist_ok=True)
         binary = tmp_path / "bin" / "ffmpeg"
         binary.parent.mkdir(parents=True, exist_ok=True)
@@ -157,6 +208,7 @@ class TestBinaryManifestVerification:
         """A binary whose content differs from the manifest must NOT be trusted."""
         cache_dir = str(tmp_path / "cache")
         import os
+
         os.makedirs(cache_dir, exist_ok=True)
         binary = tmp_path / "bin" / "ffmpeg"
         binary.parent.mkdir(parents=True, exist_ok=True)
@@ -173,6 +225,7 @@ class TestBinaryManifestVerification:
         """A binary matching its manifest entry IS trusted."""
         cache_dir = str(tmp_path / "cache")
         import os
+
         os.makedirs(cache_dir, exist_ok=True)
         binary = tmp_path / "bin" / "ffmpeg"
         binary.parent.mkdir(parents=True, exist_ok=True)
@@ -185,6 +238,7 @@ class TestBinaryManifestVerification:
         """Manifest survives save/load cycle."""
         cache_dir = str(tmp_path / "cache")
         import os
+
         os.makedirs(cache_dir, exist_ok=True)
         binary = tmp_path / "bin" / "ffmpeg"
         binary.parent.mkdir(parents=True, exist_ok=True)
@@ -195,7 +249,6 @@ class TestBinaryManifestVerification:
         real_path = os.path.realpath(str(binary))
         assert real_path in manifest
         assert manifest[real_path] == _calculate_sha256(str(binary))
-
 
 
 class _FakeResp:
@@ -213,7 +266,7 @@ class _FakeResp:
 
 
 class TestUpdateCheckMeaningful:
-    """T4-8: comparing the local BINARY sha against the remote ARCHIVE sha
+    """comparing the local BINARY sha against the remote ARCHIVE sha
     could never match (perpetual update_available=True). Installed archive
     shas are recorded at install time; the check compares archive-to-archive."""
 
@@ -222,41 +275,55 @@ class TestUpdateCheckMeaningful:
     OLD_SHA = "b" * 64
 
     def _release(self):
-        return {"tag_name": "v9", "assets": [
-            {"name": self.ARCHIVE,
-             "browser_download_url": f"https://x.test/{self.ARCHIVE}"},
-            {"name": self.ARCHIVE + ".sha256",
-             "browser_download_url": f"https://x.test/{self.ARCHIVE}.sha256"},
-        ]}
+        return {
+            "tag_name": "v9",
+            "assets": [
+                {
+                    "name": self.ARCHIVE,
+                    "browser_download_url": f"https://x.test/{self.ARCHIVE}",
+                },
+                {
+                    "name": self.ARCHIVE + ".sha256",
+                    "browser_download_url": f"https://x.test/{self.ARCHIVE}.sha256",
+                },
+            ],
+        }
 
     def _env(self, tmp_path, monkeypatch):
         import grablytic_engine.paths as paths_mod
         import sys as _sys
+
         boot = _sys.modules["grablytic_engine.bootstrap"]
         fake_bin = tmp_path / "ffmpeg"
         fake_bin.write_bytes(b"fake-binary-bytes")
         paths_mod.set_paths(
-            data_dir=str(tmp_path), output_dir=str(tmp_path),
-            ffmpeg_path=str(fake_bin), cache_dir=str(tmp_path),
+            data_dir=str(tmp_path),
+            output_dir=str(tmp_path),
+            ffmpeg_path=str(fake_bin),
+            cache_dir=str(tmp_path),
         )
         monkeypatch.setattr(
-            boot, "_get_asset_substring", lambda name, key: self.ARCHIVE)
+            boot, "_get_asset_substring", lambda name, key: self.ARCHIVE
+        )
         monkeypatch.setattr(
-            boot, "_resolve_latest_release", lambda repo: self._release())
+            boot, "_resolve_latest_release", lambda repo: self._release()
+        )
         monkeypatch.setattr(
-            "urllib.request.urlopen",
+            boot,
+            "_open_https_request",
             lambda req, timeout=10: _FakeResp(
-                f"{self.REMOTE_SHA}  {self.ARCHIVE}\n".encode()),
+                f"{self.REMOTE_SHA}  {self.ARCHIVE}\n".encode()
+            ),
         )
         return boot
 
     @pytest.mark.unit
     def test_same_archive_sha_means_no_update(self, tmp_path, monkeypatch):
         import sys as _sys
+
         boot = _sys.modules["grablytic_engine.bootstrap"]
         self._env(tmp_path, monkeypatch)
-        boot._record_archive_sha(
-            str(tmp_path), "ffmpeg", self.ARCHIVE, self.REMOTE_SHA)
+        boot._record_archive_sha(str(tmp_path), "ffmpeg", self.ARCHIVE, self.REMOTE_SHA)
         res = boot.update_check()
         assert res["success"] is True
         ffmpeg = next(b for b in res["binaries"] if b["name"] == "ffmpeg")
@@ -265,10 +332,10 @@ class TestUpdateCheckMeaningful:
     @pytest.mark.unit
     def test_different_archive_sha_means_update(self, tmp_path, monkeypatch):
         import sys as _sys
+
         boot = _sys.modules["grablytic_engine.bootstrap"]
         self._env(tmp_path, monkeypatch)
-        boot._record_archive_sha(
-            str(tmp_path), "ffmpeg", self.ARCHIVE, self.OLD_SHA)
+        boot._record_archive_sha(str(tmp_path), "ffmpeg", self.ARCHIVE, self.OLD_SHA)
         res = boot.update_check()
         ffmpeg = next(b for b in res["binaries"] if b["name"] == "ffmpeg")
         assert ffmpeg["update_available"] is True
@@ -276,6 +343,7 @@ class TestUpdateCheckMeaningful:
     @pytest.mark.unit
     def test_missing_record_means_no_update_claim(self, tmp_path, monkeypatch):
         import sys as _sys
+
         boot = _sys.modules["grablytic_engine.bootstrap"]
         self._env(tmp_path, monkeypatch)
         res = boot.update_check()

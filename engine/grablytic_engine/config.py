@@ -3,6 +3,46 @@
 import json
 
 
+# Containers yt-dlp can actually produce. A container name that is not on
+# this list is rejected, because it reaches ffmpeg/yt-dlp as a file
+# extension and (in the merge path) as part of an output filename.
+SAFE_CONTAINERS = frozenset(
+    {
+        # video
+        "mp4",
+        "mkv",
+        "webm",
+        "mov",
+        # audio
+        "m4a",
+        "mp3",
+        "opus",
+        "flac",
+        "aac",
+        "ogg",
+        "wav",
+        "vorbis",
+    }
+)
+
+
+def is_safe_container(value) -> bool:
+    """True iff `value` names a container yt-dlp can produce."""
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower().lstrip(".") in SAFE_CONTAINERS
+
+
+def sanitize_container(value, default: str = "mkv") -> str:
+    """Return a safe container name, or `default` when the value is not
+    on the allowlist. Never raises."""
+    if isinstance(value, str):
+        candidate = value.strip().lower().lstrip(".")
+        if candidate in SAFE_CONTAINERS:
+            return candidate
+    return default
+
+
 def coerce_config(config) -> dict:
     """Normalize an IPC-supplied config into a plain dict (never raises).
 
@@ -58,7 +98,6 @@ def sanitize_config(config: dict) -> dict:
     return sanitized
 
 
-
 DEFAULT_CFG = {
     # ── Update ────────────────────────────────────────────────────────────
     "update_channel": "stable",
@@ -106,6 +145,9 @@ DEFAULT_CFG = {
     "sleep_interval": "0",
     # ── Playlist ────────────────────────────────────────────────────────
     "no_playlist": False,
+    # A channel URL downloads ONE video by default. Expanding a channel
+    # means downloading every video it has ever posted — opt-in only.
+    "expand_channel": False,
     "playlist_items": "",
     "playlist_rev": False,
     "playlist_rand": False,
@@ -133,7 +175,12 @@ DEFAULT_CFG = {
     "write_info_json": True,
     "compat_options": "",
     "verbose": False,
-    "output_tmpl": "%(uploader)s - %(title)s.%(ext)s",
+    # Collision-safe by default: `%(id)s` is unique per media item, and
+    # yt-dlp REPLACES an existing video file (overwrites defaults to
+    # None, which means "overwrite non-video files" — a video file is
+    # replaced). Without a unique field two uploads with the same title
+    # silently overwrite each other.
+    "output_tmpl": "%(uploader)s - %(title)s [%(id)s].%(ext)s",
     # ── Explicit override (Format Picker) ───────────────────────────────
     "explicit_format_id": None,
     "explicit_audio_format_id": None,

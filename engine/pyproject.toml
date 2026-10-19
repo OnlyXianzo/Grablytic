@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "Grablytic download engine — yt-dlp Python API wrapper"
 requires-python = ">=3.11"
 dependencies = [
-    "yt-dlp>=2025.0.0",
+    "yt-dlp>=2025.11.12",
 ]
 [project.optional-dependencies]
 quickjs = ["python-quickjs>=0.8.0"]

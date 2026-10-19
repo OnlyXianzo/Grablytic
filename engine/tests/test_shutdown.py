@@ -1,4 +1,4 @@
-"""Tests for T1-6: lazy background cleanup and graceful shutdown handling.
+"""Tests for lazy background cleanup and graceful shutdown handling.
 
 Proves:
 1. Importing downloader does not start an unkillable background cleanup loop.
@@ -79,7 +79,7 @@ def test_shutdown_signals_cancel_and_clears_queue():
 
     # Add a queued item
     with dl_mod._downloads_lock:
-        dl_mod._pending_queue.append({"download_id": "shut-queued-1"})
+        dl_mod._pending_queue["shut-queued-1"] = {"download_id": "shut-queued-1"}
 
     try:
         # Trigger graceful shutdown
@@ -88,10 +88,14 @@ def test_shutdown_signals_cancel_and_clears_queue():
         assert res["success"] is True
         # Both active cancel events must have been set
         for cev in active_cancel_events:
-            assert cev.is_set(), "Active download cancel_event was not signalled on shutdown!"
+            assert cev.is_set(), (
+                "Active download cancel_event was not signalled on shutdown!"
+            )
 
         # Pending queue must be drained
-        assert len(dl_mod._pending_queue) == 0, "Pending queue was not cleared on shutdown!"
+        assert len(dl_mod._pending_queue) == 0, (
+            "Pending queue was not cleared on shutdown!"
+        )
 
         # Active worker threads must have been joined cleanly
         for did in ("shut-active-0", "shut-active-1"):

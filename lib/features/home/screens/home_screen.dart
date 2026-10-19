@@ -781,7 +781,8 @@ class _DownloadCard extends StatelessWidget {
         titleLower.contains('beats');
   }
 
-  /// T07 artwork chain: app-private cache file → network URL → status icon.
+  /// Artwork falls back from the app-private cache to the network URL, then
+  /// the status icon.
   /// File/network images are ImageCache-backed, so rebuilds never refetch.
   Widget _artwork() {
     final cached = item.thumbnailPath ?? '';
@@ -1078,7 +1079,8 @@ class _DownloadCard extends StatelessWidget {
                     color: colorScheme.surfaceContainer,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  // T07: cached file → network → status-icon placeholder.
+                  // Prefer the cached thumbnail, then the network image, then
+                  // a placeholder.
                   // FileImage is ImageCache-backed (no per-rebuild fetch).
                   child: _artwork(),
                 ),

@@ -15,7 +15,9 @@ def test_default_config_values():
     assert DEFAULT_CFG["audio_only"] is False
     assert DEFAULT_CFG["retries"] == 10
     assert DEFAULT_CFG["fragment_retries"] == 10
-    assert DEFAULT_CFG["output_tmpl"] == "%(uploader)s - %(title)s.%(ext)s"
+    # Collision-safe: `%(id)s` is unique per media item, and yt-dlp
+    # replaces an existing video file.
+    assert DEFAULT_CFG["output_tmpl"] == "%(uploader)s - %(title)s [%(id)s].%(ext)s"
 
 
 def test_default_config_explicit_overrides_are_none():

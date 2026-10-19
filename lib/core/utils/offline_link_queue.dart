@@ -19,7 +19,7 @@ const String offlineLinkQueueKey = 'grablytic_offline_link_queue';
 /// SharedPreferences key for the cached offline link count.
 const String offlineQueueCountKey = 'offlineQueueCount';
 
-/// Interval presets in minutes for queue reminders (T20).
+/// Available reminder intervals in minutes.
 const List<int> queueReminderIntervalPresets = [60, 180, 360, 720, 1440];
 
 /// Formats queue reminder interval for human-readable UI.
@@ -34,7 +34,7 @@ String formatQueueReminderInterval(int minutes) {
 }
 
 /// Requests POST_NOTIFICATIONS permission on Android 13+ only when
-/// the user opts into queue reminders (T20).
+/// the user opts into queue reminders.
 Future<bool> requestQueueReminderPermission(EngineService engine) async {
   try {
     final status = await engine.notificationPermissionStatus();
@@ -48,7 +48,7 @@ Future<bool> requestQueueReminderPermission(EngineService engine) async {
   }
 }
 
-/// Represents a URL queued while the device was offline (T19).
+/// Represents a URL queued while the device was offline.
 class QueuedLink {
   final String url;
   final String? title;

@@ -1,4 +1,4 @@
-from grablytic_engine.playlist import detect_playlist
+from grablytic_engine.playlist import detect_channel, detect_playlist
 
 
 class TestDetectPlaylist:
@@ -9,16 +9,22 @@ class TestDetectPlaylist:
         assert detect_playlist("https://youtube.com/playlist?list=PLxyz") is True
 
     def test_youtube_channel(self):
-        assert detect_playlist("https://youtube.com/channel/UCxyz") is True
+        # A channel is NOT a playlist: it is a stream of every video the
+        # channel has ever posted.
+        assert detect_playlist("https://youtube.com/channel/UCxyz") is False
+        assert detect_channel("https://youtube.com/channel/UCxyz") is True
 
     def test_youtube_custom_url(self):
-        assert detect_playlist("https://youtube.com/c/ChannelName") is True
+        assert detect_playlist("https://youtube.com/c/ChannelName") is False
+        assert detect_channel("https://youtube.com/c/ChannelName") is True
 
     def test_youtube_handle(self):
-        assert detect_playlist("https://youtube.com/@ChannelName") is True
+        assert detect_playlist("https://youtube.com/@ChannelName") is False
+        assert detect_channel("https://youtube.com/@ChannelName") is True
 
     def test_youtube_user(self):
-        assert detect_playlist("https://youtube.com/user/username") is True
+        assert detect_playlist("https://youtube.com/user/username") is False
+        assert detect_channel("https://youtube.com/user/username") is True
 
     def test_single_video_not_playlist(self):
         assert detect_playlist("https://youtube.com/watch?v=dQw4w9WgXcQ") is False
@@ -51,10 +57,13 @@ class TestGetPlaylistInfo:
         class MockYDL:
             def __init__(self, opts):
                 pass
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *args):
                 pass
+
             def extract_info(self, url, download=False):
                 return {
                     "_type": "playlist",
@@ -85,7 +94,10 @@ class TestGetPlaylistInfo:
                 "title": "Item 1",
                 "url": "https://example.com/1",
                 "playlist_index": 5,
-                "thumbnails": [{"url": "https://example.com/small.jpg"}, {"url": "https://example.com/large.jpg"}],
+                "thumbnails": [
+                    {"url": "https://example.com/small.jpg"},
+                    {"url": "https://example.com/large.jpg"},
+                ],
             }
             yield {
                 "title": "Item 2",
@@ -96,10 +108,13 @@ class TestGetPlaylistInfo:
         class MockYDL:
             def __init__(self, opts):
                 pass
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *args):
                 pass
+
             def extract_info(self, url, download=False):
                 return {
                     "_type": "playlist",
@@ -126,6 +141,7 @@ class TestBuildPlaylistItems:
         # matching the `index` values get_playlist_info reports — no 0→1
         # adjustment. "2,4,7" must download exactly the 2nd/4th/7th entries.
         from grablytic_engine.playlist import build_playlist_items
+
         assert build_playlist_items([2, 4, 7]) == "2,4,7"
 
     def test_produced_string_round_trips_through_ytdlp_parser(self):
@@ -133,21 +149,25 @@ class TestBuildPlaylistItems:
         # yt-dlp itself parses it (guards 0-vs-1-index regressions).
         from yt_dlp.utils import PlaylistEntries
         from grablytic_engine.playlist import build_playlist_items
+
         spec = build_playlist_items([1, 3, 5])
         kinds = list(PlaylistEntries.parse_playlist_items(spec))
         assert kinds == [1, 3, 5]
 
     def test_dedupes_keeps_order(self):
         from grablytic_engine.playlist import build_playlist_items
+
         assert build_playlist_items([3, 1, 3, 2]) == "3,1,2"
 
     def test_empty_returns_empty(self):
         from grablytic_engine.playlist import build_playlist_items
+
         assert build_playlist_items([]) == ""
 
     def test_invalid_indices_raise(self):
         import pytest
         from grablytic_engine.playlist import build_playlist_items
+
         for bad in (0, -2, "abc", None, 2.5):
             with pytest.raises(ValueError):
                 build_playlist_items([1, bad])
@@ -161,16 +181,22 @@ class TestBuildPlaylistItems:
             yield {"title": "[Deleted video]", "url": "https://example.com/2"}
             yield {"title": "[Private video]", "url": "https://example.com/3"}
             yield {"url": "https://example.com/4"}  # no title at all
-            yield {"title": "Gone", "url": "https://example.com/5",
-                   "availability": "private"}
+            yield {
+                "title": "Gone",
+                "url": "https://example.com/5",
+                "availability": "private",
+            }
 
         class MockYDL:
             def __init__(self, opts):
                 pass
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *args):
                 pass
+
             def extract_info(self, url, download=False):
                 return {"title": "P", "entries": sample_generator()}
 
@@ -178,9 +204,14 @@ class TestBuildPlaylistItems:
         res = get_playlist_info("https://youtube.com/playlist?list=test")
         assert res["success"] is True
         assert [e["is_available"] for e in res["entries"]] == [
-            True, False, False, False, False,
+            True,
+            False,
+            False,
+            False,
+            False,
         ]
         # Only available indices feed the download selector.
         from grablytic_engine.playlist import build_playlist_items
+
         avail = [e["index"] for e in res["entries"] if e["is_available"]]
         assert build_playlist_items(avail) == "1"

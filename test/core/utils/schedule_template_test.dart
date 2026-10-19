@@ -26,7 +26,8 @@ void main() {
       expect(p.config['container'], 'mp4');
       expect(p.config['concurrent_fragments'], 8);
       expect(p.config['socket_timeout'], 15);
-      expect(p.config['proxy'], 'http://p:8080');
+      expect(p.config.containsKey('proxy'), isFalse);
+      expect(p.ignored, contains('--proxy [use the secure Proxy setting]'));
       expect(p.config['rate_limit'], '5M');
     });
 
@@ -39,7 +40,8 @@ void main() {
 
     test('quoted values tokenize intact', () {
       final p = parseTemplateConfig('--proxy "http://p:8080/x y"');
-      expect(p.config['proxy'], 'http://p:8080/x y');
+      expect(p.config.containsKey('proxy'), isFalse);
+      expect(p.ignored, contains('--proxy [use the secure Proxy setting]'));
     });
   });
 

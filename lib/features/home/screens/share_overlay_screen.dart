@@ -179,7 +179,7 @@ class _ShareOverlayScreenState extends ConsumerState<ShareOverlayScreen> {
       'container': settings.qualityCeiling == 'best' ? 'mkv' : 'mp4',
       'quality_ceiling': settings.qualityCeiling,
       'audio_only': settings.audioOnly,
-      ...settingsDownloadConfig(settings),
+      ...(await secureSettingsDownloadConfig(ref.read(settingsProvider.notifier))),
     };
 
     try {

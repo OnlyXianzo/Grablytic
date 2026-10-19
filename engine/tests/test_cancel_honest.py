@@ -1,16 +1,12 @@
-"""T1-3 engine honesty tests: cancel must not claim completion prematurely.
+"""Cancellation must not report completion while a worker is still running.
 
-Contract under test (see GRABLYTIC_TEARDOWN.md T1-3 + arjun.md T1-3 statement):
-  * queued dequeue / pre-spawn / already-terminal entry → terminal
-    `{success: True, cancelled: True}` (nothing remains running — honest).
-  * LIVE worker thread → `{success: True, cancelled: False, cancelling: True}`
-    + watchdog; the terminal `cancelled` arrives later via the normal channel
-    (worker exit) or the watchdog (wedged worker, presumed-stopped).
-  * NOT_FOUND shape unchanged.
+Queued or pre-spawn entries and already-terminal downloads produce a terminal
+cancelled result immediately. A live worker reports `cancelling` first; the
+terminal event arrives after worker exit or when the watchdog closes a wedged
+worker. The NOT_FOUND result shape remains unchanged.
 
-All workers here are REAL threads (never test doubles without is_alive —
-doubles take the legacy terminal path by design) running download_thread
-against a blocking FakeYDL (hook-blind wedge: no progress callbacks ever).
+These tests use real threads running download_thread against a blocking
+FakeYDL, so the worker receives no progress callbacks while wedged.
 """
 
 import queue as _queue
@@ -36,16 +32,26 @@ def _engine_env(tmp_path, monkeypatch):
     ffmpeg.write_text("#!/bin/sh\nexit 0\n")
     import os as _os
     import stat as _stat
+
     _os.chmod(str(ffmpeg), _os.stat(str(ffmpeg)).st_mode | _stat.S_IXUSR)
 
     import grablytic_engine.paths as _paths_mod
+
     saved_paths = dict(_paths_mod._paths)
-    _paths_mod._paths.update({
-        "data_dir": str(tmp_path), "output_dir": str(tmp_path),
-        "cache_dir": str(tmp_path), "ffmpeg_path": str(ffmpeg),
-        "aria2c_path": None, "deno_path": None, "nodejs_path": None,
-        "po_token": None, "cookies_path": None, "ffmpeg_ld_path": None,
-    })
+    _paths_mod._paths.update(
+        {
+            "data_dir": str(tmp_path),
+            "output_dir": str(tmp_path),
+            "cache_dir": str(tmp_path),
+            "ffmpeg_path": str(ffmpeg),
+            "aria2c_path": None,
+            "deno_path": None,
+            "nodejs_path": None,
+            "po_token": None,
+            "cookies_path": None,
+            "ffmpeg_ld_path": None,
+        }
+    )
     dl_mod._active_downloads.clear()
     dl_mod._pending_queue.clear()
 
@@ -70,9 +76,14 @@ def _engine_env(tmp_path, monkeypatch):
         # into later tests (daemon threads would survive; map entries would).
         deadline = time.time() + 10
         while time.time() < deadline:
-            live = [i for i in dl_mod._active_downloads.values()
-                    if (i.get("thread") is not None
-                        and getattr(i["thread"], "is_alive", lambda: False)())]
+            live = [
+                i
+                for i in dl_mod._active_downloads.values()
+                if (
+                    i.get("thread") is not None
+                    and getattr(i["thread"], "is_alive", lambda: False)()
+                )
+            ]
             if not live:
                 break
             time.sleep(0.05)
@@ -162,7 +173,7 @@ def test_watchdog_frees_wedged_worker_and_slot(_engine_env, monkeypatch):
 
 def test_cancel_without_live_worker_stays_terminal(_engine_env):
     # Thread-double entries (no is_alive, e.g. _NoopThread fixtures) and
-    # pre-spawn entries keep the legacy terminal shape (T1-2 pins this).
+    # pre-spawn entries keep the legacy terminal result shape.
     dl_mod._active_downloads["hon-3"] = {
         "cancel_event": threading.Event(),
         "progress_queue": _queue.Queue(),

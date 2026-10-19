@@ -104,7 +104,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
   Playlist? _selectedPlaylist;
   bool _isStarting = false; // guard against duplicate download taps
 
-  // T03: Picker-integrated toggles with session persistence
+  // Picker toggles retain customizations across visits in this app session.
   String _qualityCeiling = 'best';
   bool _embedSubtitles = false;
   bool _clipEnabled = false;
@@ -127,7 +127,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
     '%(extractor)s/%(title)s.%(ext)s',
   ];
 
-  // T08: In-app progressive preview
+  // State for the in-app progressive preview.
   Map<String, dynamic>? _previewStream;
   VideoPlayerController? _previewController;
   bool _isPreviewInitializing = false;
@@ -389,7 +389,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       _thumbnailUrl = result['thumbnail_url'] as String? ?? '';
       _durationSeconds = (result['duration_seconds'] as num?)?.toInt();
 
-      // T08: Preview stream from single extraction
+      // Reuse the preview stream returned with the metadata extraction.
       if (result['preview_stream'] != null && result['preview_stream'] is Map) {
         _previewStream = Map<String, dynamic>.from(
           result['preview_stream'] as Map,
@@ -415,7 +415,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       _selectedContainer = activePreset.preferredContainer;
       _validateClip();
 
-      // P0: sort-then-first (never unsorted .first). Audio = max bitrate.
+      // Sort-then-first (never unsorted .first). Audio = max bitrate.
       _selectedAudioFormat = selectBestAudioFormat(_audioFormats);
 
       if (_isAudioOnlyMode) {
@@ -840,10 +840,10 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
     final config = <String, dynamic>{
       'container': _selectedContainer,
-      // P1: forward user settings under exact engine contract keys
+      // Forward user settings under exact engine contract keys
       // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
-      ...settingsDownloadConfig(settings),
+      ...(await secureSettingsDownloadConfig(ref.read(settingsProvider.notifier))),
       'quality_ceiling': _qualityCeiling,
       // Picker overrides for description/thumbnail per Phase 1.
       'write_description': _saveDescription,

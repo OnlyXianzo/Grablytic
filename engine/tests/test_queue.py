@@ -87,9 +87,9 @@ def test_promotion_when_slot_frees(monkeypatch):
         # Simulate slot freeing: mark q-prom-1 finished, pump.
         import datetime
 
-        dl_mod._active_downloads["q-prom-1"]["finished_at"] = (
-            __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
-        )
+        dl_mod._active_downloads["q-prom-1"]["finished_at"] = __import__(
+            "datetime"
+        ).datetime.now(__import__("datetime").timezone.utc)
         if hasattr(dl_mod, "_pump_queue"):
             dl_mod._pump_queue()
         status = dl_mod.get_queue_status()
@@ -150,8 +150,8 @@ def test_concurrency_clamped_1_to_5():
 
 
 def test_register_before_start_race(monkeypatch):
-    """T1-1: Prove that _active_downloads is populated BEFORE t.start() runs.
-    
+    """Prove that _active_downloads is populated BEFORE t.start() runs.
+
     A fast cancel issued during t.start() must find the download in
     _active_downloads and succeed, rather than hitting NOT_FOUND.
     """
@@ -182,17 +182,21 @@ def test_register_before_start_race(monkeypatch):
         )
         assert len(cancel_result_during_start) == 1
         assert cancel_result_during_start[0]["success"] is True
-        assert cancel_result_during_start[0].get("error_type") != "ERROR_DOWNLOAD_NOT_FOUND"
+        assert (
+            cancel_result_during_start[0].get("error_type")
+            != "ERROR_DOWNLOAD_NOT_FOUND"
+        )
     finally:
         dl_mod._active_downloads.pop("race-1", None)
 
 
 def test_pump_queue_cancel_loss_window_terminal_cancelled(monkeypatch):
-    """T1-2 / HQ2: Prove that cancelling between pop and spawn in _pump_queue
+    """Prove that cancelling between pop and spawn in _pump_queue
     results in a terminal 'cancelled' event delivered to the caller, and
     no phantom download thread is spawned.
     """
     import json
+
     _reset()
     events_received = []
 
@@ -236,14 +240,19 @@ def test_pump_queue_cancel_loss_window_terminal_cancelled(monkeypatch):
     try:
         # 3. Free a slot and trigger _pump_queue()
         import datetime
-        dl_mod._active_downloads["q-loss-1"]["finished_at"] = (
-            datetime.datetime.now(datetime.timezone.utc)
+
+        dl_mod._active_downloads["q-loss-1"]["finished_at"] = datetime.datetime.now(
+            datetime.timezone.utc
         )
         dl_mod._pump_queue()
 
         # 4. Verify the terminal event received by the caller
-        terminal_events = [ev for ev in events_received if ev.get("event") == "cancelled"]
-        assert len(terminal_events) == 1, f"Expected terminal 'cancelled' event, got: {events_received}"
+        terminal_events = [
+            ev for ev in events_received if ev.get("event") == "cancelled"
+        ]
+        assert len(terminal_events) == 1, (
+            f"Expected terminal 'cancelled' event, got: {events_received}"
+        )
         term = terminal_events[0]
         assert term["download_id"] == "q-loss-3"
         assert term["error_type"] == "ERROR_CANCELLED"
@@ -257,8 +266,6 @@ def test_pump_queue_cancel_loss_window_terminal_cancelled(monkeypatch):
         dl_mod._pending_queue.clear()
 
 
-
-
 def _cleanup(*ids):
     for did in ids:
         dl_mod._active_downloads.pop(did, None)
@@ -266,7 +273,7 @@ def _cleanup(*ids):
 
 
 class TestUrlDedup:
-    """T1-5: same URL under N different IDs must not download N times."""
+    """same URL under N different IDs must not download N times."""
 
     def test_duplicate_url_while_active_rejected(self, monkeypatch):
         _reset()
@@ -308,7 +315,8 @@ class TestUrlDedup:
             # Extract-audio re-fetch is an explicit user action producing a
             # different artifact — must not be blocked as a duplicate.
             r2 = dl_mod.start_download(
-                url="https://x.test/m", download_id="m-aud",
+                url="https://x.test/m",
+                download_id="m-aud",
                 config={"audio_only": True},
             )
             assert r2["success"] is True, r2
@@ -319,12 +327,13 @@ class TestUrlDedup:
         _reset()
         monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
         import datetime
+
         try:
             r1 = dl_mod.start_download(url="https://x.test/r", download_id="re-1")
             assert r1["success"] is True
             # Terminal entries awaiting cleanup must not block re-download.
-            dl_mod._active_downloads["re-1"]["finished_at"] = (
-                datetime.datetime.now(datetime.timezone.utc)
+            dl_mod._active_downloads["re-1"]["finished_at"] = datetime.datetime.now(
+                datetime.timezone.utc
             )
             r2 = dl_mod.start_download(url="https://x.test/r", download_id="re-2")
             assert r2["success"] is True, r2
@@ -336,6 +345,7 @@ def test_progress_queues_are_bounded(monkeypatch):
     """E2 regression: admission queues must carry maxsize so drop-oldest
     engages; unbounded queues retained tens of thousands of ticks (OOM)."""
     from grablytic_engine.hooks import _QUEUE_MAXSIZE
+
     _reset()
     monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
     try:
@@ -352,12 +362,13 @@ def test_ydlogger_output_files_capped_and_deduped():
     """E2 regression: output_files can never grow without bound and
     duplicate log lines must not rescan an O(n) list."""
     from grablytic_engine.downloader import YDLogger
+
     yd = YDLogger()
-    yd._extract_path('[download] Destination: /tmp/a.mp4')
-    yd._extract_path('[download] Destination: /tmp/a.mp4')
-    assert yd.output_files == ['/tmp/a.mp4']
+    yd._extract_path("[download] Destination: /tmp/a.mp4")
+    yd._extract_path("[download] Destination: /tmp/a.mp4")
+    assert yd.output_files == ["/tmp/a.mp4"]
     for i in range(yd.MAX_OUTPUT_FILES + 100):
-        yd._extract_path(f'[download] Destination: /tmp/f{i}.mp4')
+        yd._extract_path(f"[download] Destination: /tmp/f{i}.mp4")
     assert len(yd.output_files) <= yd.MAX_OUTPUT_FILES
 
 
@@ -379,6 +390,7 @@ def test_queued_promotion_is_pollable_on_desktop(monkeypatch):
     """Desktop (no callback) must observe promoted_from_queue in its
     progress queue; previously only the callback path emitted it."""
     import json as _json
+
     _reset()
     dl_mod.set_max_concurrent(1)
     monkeypatch.setattr(dl_mod.threading, "Thread", _NoopThread)
@@ -394,7 +406,10 @@ def test_queued_promotion_is_pollable_on_desktop(monkeypatch):
         found = False
         while not prog_q.empty():
             ev = _json.loads(prog_q.get_nowait())
-            if ev.get("promoted_from_queue") is True and ev.get("download_id") == "pr-2":
+            if (
+                ev.get("promoted_from_queue") is True
+                and ev.get("download_id") == "pr-2"
+            ):
                 found = True
         assert found, "promotion event missing from desktop progress queue"
     finally:
@@ -403,7 +418,7 @@ def test_queued_promotion_is_pollable_on_desktop(monkeypatch):
 
 
 def test_pending_queue_rejects_when_full(monkeypatch):
-    """FLAW E-R1: start_download must reject with ERROR_QUEUE_FULL when queue cap reached."""
+    """start_download must reject with ERROR_QUEUE_FULL when queue cap reached."""
     _reset()
     dl_mod.set_max_concurrent(1)
     monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 3)
@@ -420,22 +435,25 @@ def test_pending_queue_rejects_when_full(monkeypatch):
         assert len(dl_mod._pending_queue) == 3
 
         # 4th pending item must be rejected
-        r_overflow = dl_mod.start_download(url="https://x.test/overflow", download_id="overflow-1")
+        r_overflow = dl_mod.start_download(
+            url="https://x.test/overflow", download_id="overflow-1"
+        )
         assert r_overflow["success"] is False
         assert r_overflow["error_type"] == "ERROR_QUEUE_FULL"
         assert r_overflow["queue_size"] == 3
         assert r_overflow["max_queue_size"] == 3
         assert len(dl_mod._pending_queue) == 3
         assert "overflow-1" not in dl_mod._active_downloads
-        assert not any(e["download_id"] == "overflow-1" for e in dl_mod._pending_queue)
+        assert "overflow-1" not in dl_mod._pending_queue
     finally:
         dl_mod.set_max_concurrent(2)
         _cleanup(*ids)
 
 
 def test_queue_rejection_allocates_no_resources(monkeypatch):
-    """FLAW E-R1: Rejected downloads must not allocate Queues or Events."""
+    """Rejected downloads must not allocate Queues or Events."""
     import queue as _q
+
     _reset()
     dl_mod.set_max_concurrent(1)
     monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 1)
@@ -456,7 +474,9 @@ def test_queue_rejection_allocates_no_resources(monkeypatch):
         dl_mod.start_download(url="https://x.test/q-res", download_id="q-res")
         before_count = alloc_count[0]
 
-        res = dl_mod.start_download(url="https://x.test/overflow-res", download_id="overflow-res")
+        res = dl_mod.start_download(
+            url="https://x.test/overflow-res", download_id="overflow-res"
+        )
         assert res["success"] is False
         assert res["error_type"] == "ERROR_QUEUE_FULL"
         # Zero queue allocations for rejected admission
@@ -467,7 +487,7 @@ def test_queue_rejection_allocates_no_resources(monkeypatch):
 
 
 def test_queue_promotion_unblocks_after_queue_full(monkeypatch):
-    """FLAW E-R1: Releasing slot unblocks queue and allows new admissions."""
+    """Releasing slot unblocks queue and allows new admissions."""
     _reset()
     dl_mod.set_max_concurrent(1)
     monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 1)
@@ -479,7 +499,9 @@ def test_queue_promotion_unblocks_after_queue_full(monkeypatch):
         dl_mod.start_download(url="https://x.test/q-p", download_id="q-p")
 
         # Full now
-        r_blocked = dl_mod.start_download(url="https://x.test/block", download_id="block")
+        r_blocked = dl_mod.start_download(
+            url="https://x.test/block", download_id="block"
+        )
         assert r_blocked["success"] is False
         assert r_blocked["error_type"] == "ERROR_QUEUE_FULL"
 
@@ -497,4 +519,3 @@ def test_queue_promotion_unblocks_after_queue_full(monkeypatch):
     finally:
         dl_mod.set_max_concurrent(2)
         _cleanup(*ids, "block")
-

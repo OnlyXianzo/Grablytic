@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:isolate';
 
-/// Single source of truth for the engine IPC contract (BRUTAL-1).
+/// Single source of truth for the engine IPC contract.
 ///
 /// The same method ids are dispatched on by three other layers with plain
 /// string literals — Kotlin `MainActivity` (`"download/start" ->` branches)
@@ -44,7 +44,7 @@ abstract final class EngineMethods {
   static const String syncQueueReminder = 'queue_reminder/sync';
 }
 
-/// Shared encode/decode for the engine envelope (BRUTAL-1).
+/// Shared encode/decode for the engine envelope.
 ///
 /// Both Dart transports previously hand-rolled the same three shapes
 /// (request `{id, method, params}`, nullable-JSON response, failure map)

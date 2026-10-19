@@ -23,8 +23,9 @@ If you discover a security vulnerability or sensitive data issue in Grablytic, p
 | Asset | Storage Location | Accessibility |
 |---|---|---|
 | Session cookies (`cookies.txt`, 0600) | App-private storage | App only (sandboxed) |
-| Auth flags, settings, presets | SharedPreferences (private) | App only |
-| Download history | App-private SQLite database | App only |
+| Non-secret settings and presets | SharedPreferences (private) | App only |
+| Proxy credentials | `flutter_secure_storage` (Android Keystore-backed) | App only; not stored in history JSON |
+| Download history | App-private SQLite database | App only; proxy fields are scrubbed |
 | Diagnostic logs (`app_logs.txt`) | App-private logs directory | App only (tokens redacted) |
 | Exported logs | User-selected folder / Downloads | User only |
 
@@ -49,6 +50,43 @@ If you discover a security vulnerability or sensitive data issue in Grablytic, p
 | **Log Scrubbing** | Real-time redaction of authentication parameters and signatures in logs | Prevents accidental token leakage when users export diagnostic logs |
 | **Intent Bounds** | Strict length and payload guards on incoming send intents | Protects against intent-based denial-of-service and intent overflow crashes |
 | **Template Validation** | Sanitization and escape-blocking on custom output template formats | Restricts template path traversal and unauthorized command flags |
+
+## Crash Auto-Reporting (opt-in, disclosed)
+
+**Auto-reporting is OFF by default.** A crash report is only filed when
+`GRABLYTIC_AUTO_REPORT=1` is set in the environment AND a `GITHUB_TOKEN`
+with issue-write access is available. Neither is set in a normal install,
+so a stock build never contacts GitHub.
+
+When a build *does* enable it, the following is filed as a **public**
+GitHub issue against the configured repository (default
+`OnlyXianzo/Grablytic`):
+
+| Included | Redacted before it leaves the device |
+|---|---|
+| Exception type and message | URL userinfo passwords (`user:***REDACTED***@host`) |
+| Full traceback frames | `token=` / `sig=` / `lsig=` / `key=` / `auth=` query parameters |
+| Tail of `server_logs.log` (up to 15 KB) | The same parameter names as query strings, plus dict keys matching `cookie`, `token`, `password`, `secret`, `auth`, `proxy`, `api_key`, `session`, `po_token` |
+| Platform versions (OS, Python, yt-dlp) | — |
+| The IPC method that failed | — |
+
+**What is NOT redacted:** the URL path and query parameter *names*, the
+video/channel identifiers in a URL, and file names. If you need those
+gone too, disable the log tail with `GRABLYTIC_REPORT_LOG_TAIL=0`.
+
+### Configuration
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `GRABLYTIC_AUTO_REPORT` | `1` enables auto-filing | unset (off) |
+| `GITHUB_TOKEN` | Token used to file the issue | unset (manual mode) |
+| `GRABLYTIC_REPORT_REPO` | Target `owner/repo` for reports | `OnlyXianzo/Grablytic` |
+| `GITHUB_REPO` | Generic repo override (lower priority) | unset |
+| `GRABLYTIC_REPORT_LOG_TAIL` | `0` keeps the log tail out of the report | `1` |
+
+If the target repository is renamed or deleted, the notifier logs a
+warning once and drops the report — it does not fail silently and it
+does not retry against a different repository.
 
 ## Privacy Standards
 

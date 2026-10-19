@@ -2,7 +2,7 @@ import '../../providers/settings_provider.dart';
 import 'playlist_selection.dart';
 import 'trust_boundary.dart';
 
-/// Shared engine-config overlay built from user settings (P1).
+/// Shared engine-config overlay built from user settings.
 ///
 /// Keys match `engine/grablytic_engine/config.py` DEFAULT_CFG exactly
 /// (Dart `downloadSubtitles` → yt-dlp `writesubtitles`, etc.). Null/empty
@@ -61,5 +61,14 @@ Map<String, dynamic> playlistDownloadConfig({
   };
   if (reverse) config['playlist_rev'] = true;
   if (shuffle) config['playlist_rand'] = true;
+  return config;
+}
+
+/// Wait for secure proxy migration and add the secret only from secure storage.
+Future<Map<String, dynamic>> secureSettingsDownloadConfig(SettingsNotifier notifier) async {
+  await notifier.proxyReady;
+  final config = settingsDownloadConfig(notifier.settingsSnapshot)..remove('proxy');
+  final proxy = sanitizeProxy(await notifier.proxyForDownload());
+  if (proxy != null) config['proxy'] = proxy;
   return config;
 }
