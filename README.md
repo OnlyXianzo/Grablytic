@@ -127,6 +127,57 @@ Grablytic is a **privacy-first media downloader** that pulls video & audio from
 
 ---
 
+## 🧑‍💻 How this is built
+
+Grablytic is a student hobby project, and it is vibe coded end to end. Every
+screen, the Python engine, and the Android glue were written with AI coding
+agents. What keeps it honest is the other half: a human maintainer reads the
+diff, runs the test suites, and tries the builds on real devices before a
+release.
+
+That means iteration is fast, and the project is upfront about where the code
+comes from. Treat a release like any other hobby project: read the notes, keep a
+backup, and report anything that looks wrong. Real code, not AI slop: every
+change has to compile, run, and pass the tests.
+
+The rules agents follow are in [`AGENTS.md`](AGENTS.md). The reusable skills
+are in [`skills/`](skills/README.md).
+
+---
+
+## 🔐 What it stores
+
+Nothing in the app is designed to harm your device or leak your data. No
+account, no telemetry, no ads. Here is what it actually keeps:
+
+- Settings, presets, playlists, and download history live in the app's private
+  storage.
+- Logs stay in the app's private log directory and are redacted before they are
+  written. You export them only when you choose to.
+- Cookies are optional. When enabled, they are stored in app-private storage
+  with owner-only permissions.
+- Downloads go to the folder you pick.
+- Android backup is disabled, so private app files are not uploaded to cloud
+  backup.
+- Crash reporting is off by default. If you enable it in Settings, the app
+  files a GitHub issue with the error and a redacted log tail. Nothing is sent
+  otherwise. You can also file a report manually from the diagnostics screen.
+
+The app does not request permission to install other apps. On Android, the
+media tools ship inside the APK and run from its native library directory, which
+the operating system controls. On desktop, the app downloads Deno, FFmpeg, and
+aria2c on first run, checks their SHA-256, then runs them from its own data
+folder.
+
+Uninstalling the app removes its private data. Files you downloaded stay where
+you put them until you delete them.
+
+Grablytic is a downloader. It talks to the sites you give it, and those sites
+see the request like any other client. Use it for content you have the right to
+download.
+
+---
+
 ## ✨ Features
 
 ### 📥 Downloading
@@ -433,9 +484,8 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → fix table, log locations, FAQ |
 | [JS Runtimes (Android)](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Deno/Node/QuickJS/bgutil research + recommendation |
 | [Contributing](docs/contributing.md) | Style, commits, branches, PRs, architecture rules |
+| [Agent skills](skills/README.md) | Reusable review, verification, and design-loop skills |
 | [Changelog](docs/CHANGELOG.md) | Release notes distilled from commit history |
-| [Accessibility audit](docs/testing/ACCESSIBILITY_AUDIT.md) | WCAG 2.2 findings & remediation |
-| [Performance audit](docs/testing/PERFORMANCE_AUDIT.md) | Frame-rate methodology |
 | [DMCA / Copyright](DMCA.md) | General-purpose-tool notice, user responsibility, takedown contact |
 
 ---
@@ -449,6 +499,7 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 5. PR to `main` with motivation + verification + platforms tested.
 
 See **[docs/contributing.md](docs/contributing.md)** for the full checklist.
+Agents should also read [`AGENTS.md`](AGENTS.md).
 
 ---
 
