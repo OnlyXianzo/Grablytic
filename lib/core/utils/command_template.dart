@@ -45,11 +45,16 @@ List<String> _tokenize(String args) {
 }
 
 String stripProxyOptionsFromTemplateArgs(String args) {
-  final tokens = _tokenize(args); final safe = <String>[]; var i = 0;
+  final tokens = _tokenize(args);
+  final safe = <String>[];
+  var i = 0;
   while (i < tokens.length) {
     final t = tokens[i];
-    if (t == '--proxy') { if (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) i++; }
-    else if (!t.startsWith('--proxy=')) safe.add(t);
+    if (t == '--proxy') {
+      if (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) i++;
+    } else if (!t.startsWith('--proxy=')) {
+      safe.add(t);
+    }
     i++;
   }
   return safe.join(' ');

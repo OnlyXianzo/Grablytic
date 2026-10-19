@@ -238,7 +238,6 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
     setState(() => _isDirectDownloading = true);
     try {
       final engine = ref.read(engineProvider);
-      final settings = ref.read(settingsProvider);
       final preset = ref.read(presetsProvider).activePreset;
       final notifier = ref.read(downloadProvider.notifier);
       final downloadId = const Uuid().v4();

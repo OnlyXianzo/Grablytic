@@ -325,6 +325,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     proxyReady = _initializeProxy();
   }
 
+  AppSettings get settingsSnapshot => state;
+
   Future<void> _initializeProxy() async {
     final legacy = _prefs.getString('proxy');
     try {

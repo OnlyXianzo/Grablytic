@@ -67,7 +67,7 @@ Map<String, dynamic> playlistDownloadConfig({
 /// Wait for secure proxy migration and add the secret only from secure storage.
 Future<Map<String, dynamic>> secureSettingsDownloadConfig(SettingsNotifier notifier) async {
   await notifier.proxyReady;
-  final config = settingsDownloadConfig(notifier.state)..remove('proxy');
+  final config = settingsDownloadConfig(notifier.settingsSnapshot)..remove('proxy');
   final proxy = sanitizeProxy(await notifier.proxyForDownload());
   if (proxy != null) config['proxy'] = proxy;
   return config;

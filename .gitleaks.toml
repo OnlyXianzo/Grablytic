@@ -4,9 +4,8 @@ title = "Grablytic secret scanning configuration"
 useDefault = true
 
 [[allowlists]]
-description = "Synthetic redaction-test value in its original test-only commit"
+description = "Synthetic redaction-test values in their original test-only commit"
+targetRules = ["generic-api-key"]
 condition = "AND"
-regexTarget = "secret"
 commits = ["938f395640a01e74d884f36c08dc11b7aaf3984c"]
 paths = ['''^engine/tests/test_auto_report_redaction\.py$''']
-regexes = ['''^abcde[f]123456$''']

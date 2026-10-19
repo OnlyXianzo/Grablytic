@@ -287,6 +287,7 @@ class DownloadOverflowButton extends ConsumerWidget {
           tag: 'DownloadOverflow',
         );
         await notifier.redownload(item.id, fresh: item.status == 'completed');
+        if (!context.mounted) return;
         _snack(
           context,
           item.status == 'completed'
