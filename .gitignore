@@ -63,12 +63,14 @@ session_app_work
 session_*
 graphify-out/
 .codegraph/
+test_screenshot.png
 
 # Skills tooling
 skills-lock.json
 
-# Agent instruction files — never commit (live in .agents/ only)
-AGENTS.md
+# Agent instruction files
+# AGENTS.md is tracked on purpose: it is the public contract for contributors
+# and coding agents. Local overrides and tool-specific files stay private.
 CLAUDE.md
 GEMINI.md
 .gemini/
