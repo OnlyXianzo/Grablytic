@@ -293,7 +293,7 @@ object BinaryPackageManager {
             for (child in children) {
                 if (!deleteEntryNoFollow(child)) return false
             }
-            android.system.Os.rmdir(file.absolutePath)
+            if (!file.delete()) return false
         } else {
             android.system.Os.remove(file.absolutePath)
         }
