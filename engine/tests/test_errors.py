@@ -106,7 +106,7 @@ class TestClassifyError:
 
 
 class TestClassifyPrecision:
-    """T3-14 engine half: precise classification (no substring false
+    """ engine half: precise classification (no substring false
     positives, no congestion→VPN misdirection) + sanitized messages."""
 
     def test_drm_filename_not_drm(self):

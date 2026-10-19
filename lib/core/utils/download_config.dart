@@ -2,7 +2,7 @@ import '../../providers/settings_provider.dart';
 import 'playlist_selection.dart';
 import 'trust_boundary.dart';
 
-/// Shared engine-config overlay built from user settings (P1).
+/// Shared engine-config overlay built from user settings.
 ///
 /// Keys match `engine/grablytic_engine/config.py` DEFAULT_CFG exactly
 /// (Dart `downloadSubtitles` → yt-dlp `writesubtitles`, etc.). Null/empty

@@ -255,7 +255,7 @@ def _is_safe_outtmpl(tmpl) -> bool:
 
 def _clamped_int(config, key: str, default: int, lo: int, hi: int) -> int:
     """Coerce an IPC numeric param to [lo, hi], falling back to default with
-    a warning. T3-10: unguarded int() turned garbage into a dead thread and
+    a warning. An unguarded int() turned garbage into a dead thread and
     absurd values into eternal hangs."""
     from grablytic_engine.logger import get_logger
     log = get_logger("grablytic_engine.opts_builder")
@@ -333,7 +333,7 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
             "falling back to native downloader"
         )
         return opts
-    # T0-2: re-validate at the exec site (admission in set_paths is not the
+    # Re-validate at the exec site (admission in set_paths is not the
     # last word — _paths can hold placeholders or legacy values). isfile +
     # X_OK, same bar as yt-dlp's own _find_exe (F_OK|X_OK).
     if (aria_on and aria_path and os.path.isfile(aria_path)
@@ -353,7 +353,7 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
         max_speed = str(config.get("aria2c_max_speed") or "").strip()
         if max_speed:
             if re.match(r"^\d+[KkMmGg]?$", max_speed):
-                # T3-10: a zero limit throttles the download to nothing —
+                # A zero limit throttles the download to nothing —
                 # reject it like any other invalid value.
                 if int(max_speed.rstrip("KkMmGg")) == 0:
                     log.warn(
@@ -366,7 +366,7 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
                     f"Ignoring invalid aria2c_max_speed value: {max_speed!r}"
                 )
         # CVE-2026-50574: Avoid using aria2c for DASH/HLS fragmented manifests
-        # T0-2: pin the ABSOLUTE validated binary, not the bare name "aria2c".
+        # Pin the ABSOLUTE validated binary, not the bare name "aria2c".
         # Verified against installed yt-dlp (downloader/__init__.py +
         # external.py): the dict value flows to get_external_downloader
         # (basename→Aria2cFD class lookup works with a path) and then to
@@ -415,7 +415,7 @@ def build_ydl_opts(
         _warn_collision_unsafe_tmpl(tmpl)
 
     fmt = override_format or build_format_string(cfg)
-    # T0-3: an explicit audio ID must be a VALIDATED single ID before it may
+    # An explicit audio ID must be a VALIDATED single ID before it may
     # influence mode selection — otherwise `explicit_audio_format_id: "all"`
     # would both inject the selector and flip the download into extract-audio.
     from grablytic_engine.format_selector import is_safe_format_id as _safe_fmt_id
@@ -486,7 +486,7 @@ def build_ydl_opts(
         ]
         opts["keepvideo"] = False
 
-    # T0-2: ffmpeg_location is an exec sink (yt-dlp spawns it for every
+    # `ffmpeg_location` is an execution input (yt-dlp spawns it for every
     # merge/extract). Re-check isfile+X_OK here — never trust the store blind.
     _ffmpeg = paths.get("ffmpeg_path")
     if _ffmpeg:
@@ -550,7 +550,7 @@ def build_ydl_opts(
             except Exception:
                 pass
 
-    # TEARDOWN-4: same guard as retries/fragments (T3-10) — a bare int()
+    # Same guard as retries/fragments — a bare int()
     # here turned a settings typo into a ValueError that killed the whole
     # download start path. Garbage/out-of-range falls back to 0 (omitted).
     sleep = _clamped_int(cfg, "sleep_interval", 0, 0, 3600)
@@ -623,7 +623,7 @@ def build_ydl_opts(
         opts["extractor_args"].setdefault("youtube", {})
         opts["extractor_args"]["youtube"]["po_token"] = [paths["po_token"]]
 
-    # T0-3: `explicit_vid`/`explicit_aid` above are already allowlisted —
+    # `explicit_vid`/`explicit_aid` above are already allowlisted —
     # this join can only ever produce `<id>`, `<id>+<id>`, never an injected
     # expression. Invalid IDs were warned about at mode-selection time and
     # are simply absent here, so `fmt` (auto ladder) survives untouched.
@@ -814,9 +814,9 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
     import os
     from grablytic_engine.po_token import detect_js_runtime
 
-    # T0-2: runtime paths are exec sinks (yt-dlp spawns deno/node for EJS
-    # challenge solving). isfile+X_OK at every branch; shutil.which results
-    # are already X_OK-gated by construction.
+    # Runtime paths are execution inputs: yt-dlp spawns deno/node for EJS
+    # challenge solving. Check isfile+X_OK at each branch; shutil.which results
+    # are already executable-gated by construction.
     def _is_exec(p) -> bool:
         return bool(p) and os.path.isfile(p) and os.access(p, os.X_OK)
 
@@ -859,13 +859,11 @@ def _configure_js_runtime(opts: dict, paths: dict) -> None:
         opts["remote_components"] = ["ejs:github"]
         return
 
-    # T0-6: no usable JS runtime → request NO remote solver. yt-dlp's default
-    # is deny (`remote_components=()` upstream); the old fallthrough enabled
-    # `ejs:github` unconditionally, triggering a solver fetch nothing could
-    # execute. (With a runtime present, the branches above opt in — and the
-    # integrity of that fetched solver is yt-dlp's own SHA3-512 + version pin
-    # in yt_dlp/extractor/youtube/jsc/_builtin/ejs.py, NOT our stub gate in
-    # po_token.py, which covers only local inert stubs. See HQ5.)
+    # Without a usable JS runtime, keep yt-dlp's default deny setting. The old
+    # fallthrough requested `ejs:github` unconditionally, fetching a solver
+    # that could not run. With a runtime, the branches above enable the remote
+    # component; yt-dlp applies its own SHA3-512/version checks to that solver,
+    # separately from the local stub allowlist described in po_token.py.
 
 
 def shutil_which(cmd):

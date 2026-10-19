@@ -114,7 +114,7 @@ def test_diff_new_entries():
 
 
 def test_parse_youtube_rss_rejects_entity_declarations(monkeypatch):
-    """T3-16: billion-laughs needs <!ENTITY — YouTube Atom never carries
+    """billion-laughs needs <!ENTITY — YouTube Atom never carries
     one, so refuse entity-bearing feeds outright (no defusedxml dep needed
     on Chaquopy) instead of handing them to expat. Proved by spy: the XML
     parser must never see the payload."""
@@ -139,7 +139,7 @@ def test_parse_youtube_rss_rejects_entity_declarations(monkeypatch):
 
 
 def test_parse_youtube_rss_rejects_oversize(monkeypatch):
-    """T3-16: feeds are KBs — a multi-MB blob is never legitimate and must
+    """feeds are KBs — a multi-MB blob is never legitimate and must
     not reach the parser."""
     import xml.etree.ElementTree as _ET
 

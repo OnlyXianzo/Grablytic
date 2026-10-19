@@ -150,7 +150,7 @@ def test_concurrency_clamped_1_to_5():
 
 
 def test_register_before_start_race(monkeypatch):
-    """T1-1: Prove that _active_downloads is populated BEFORE t.start() runs.
+    """Prove that _active_downloads is populated BEFORE t.start() runs.
     
     A fast cancel issued during t.start() must find the download in
     _active_downloads and succeed, rather than hitting NOT_FOUND.
@@ -188,7 +188,7 @@ def test_register_before_start_race(monkeypatch):
 
 
 def test_pump_queue_cancel_loss_window_terminal_cancelled(monkeypatch):
-    """T1-2 / HQ2: Prove that cancelling between pop and spawn in _pump_queue
+    """Prove that cancelling between pop and spawn in _pump_queue
     results in a terminal 'cancelled' event delivered to the caller, and
     no phantom download thread is spawned.
     """
@@ -266,7 +266,7 @@ def _cleanup(*ids):
 
 
 class TestUrlDedup:
-    """T1-5: same URL under N different IDs must not download N times."""
+    """same URL under N different IDs must not download N times."""
 
     def test_duplicate_url_while_active_rejected(self, monkeypatch):
         _reset()
@@ -403,7 +403,7 @@ def test_queued_promotion_is_pollable_on_desktop(monkeypatch):
 
 
 def test_pending_queue_rejects_when_full(monkeypatch):
-    """FLAW E-R1: start_download must reject with ERROR_QUEUE_FULL when queue cap reached."""
+    """start_download must reject with ERROR_QUEUE_FULL when queue cap reached."""
     _reset()
     dl_mod.set_max_concurrent(1)
     monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 3)
@@ -434,7 +434,7 @@ def test_pending_queue_rejects_when_full(monkeypatch):
 
 
 def test_queue_rejection_allocates_no_resources(monkeypatch):
-    """FLAW E-R1: Rejected downloads must not allocate Queues or Events."""
+    """Rejected downloads must not allocate Queues or Events."""
     import queue as _q
     _reset()
     dl_mod.set_max_concurrent(1)
@@ -467,7 +467,7 @@ def test_queue_rejection_allocates_no_resources(monkeypatch):
 
 
 def test_queue_promotion_unblocks_after_queue_full(monkeypatch):
-    """FLAW E-R1: Releasing slot unblocks queue and allows new admissions."""
+    """Releasing slot unblocks queue and allows new admissions."""
     _reset()
     dl_mod.set_max_concurrent(1)
     monkeypatch.setattr(dl_mod, "_MAX_PENDING_QUEUE", 1)

@@ -1,16 +1,12 @@
-"""T1-3 engine honesty tests: cancel must not claim completion prematurely.
+"""Cancellation must not report completion while a worker is still running.
 
-Contract under test (see GRABLYTIC_TEARDOWN.md T1-3 + arjun.md T1-3 statement):
-  * queued dequeue / pre-spawn / already-terminal entry → terminal
-    `{success: True, cancelled: True}` (nothing remains running — honest).
-  * LIVE worker thread → `{success: True, cancelled: False, cancelling: True}`
-    + watchdog; the terminal `cancelled` arrives later via the normal channel
-    (worker exit) or the watchdog (wedged worker, presumed-stopped).
-  * NOT_FOUND shape unchanged.
+Queued or pre-spawn entries and already-terminal downloads produce a terminal
+cancelled result immediately. A live worker reports `cancelling` first; the
+terminal event arrives after worker exit or when the watchdog closes a wedged
+worker. The NOT_FOUND result shape remains unchanged.
 
-All workers here are REAL threads (never test doubles without is_alive —
-doubles take the legacy terminal path by design) running download_thread
-against a blocking FakeYDL (hook-blind wedge: no progress callbacks ever).
+These tests use real threads running download_thread against a blocking
+FakeYDL, so the worker receives no progress callbacks while wedged.
 """
 
 import queue as _queue
@@ -162,7 +158,7 @@ def test_watchdog_frees_wedged_worker_and_slot(_engine_env, monkeypatch):
 
 def test_cancel_without_live_worker_stays_terminal(_engine_env):
     # Thread-double entries (no is_alive, e.g. _NoopThread fixtures) and
-    # pre-spawn entries keep the legacy terminal shape (T1-2 pins this).
+    # pre-spawn entries keep the legacy terminal result shape.
     dl_mod._active_downloads["hon-3"] = {
         "cancel_event": threading.Event(),
         "progress_queue": _queue.Queue(),

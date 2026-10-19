@@ -1,4 +1,4 @@
-"""Tests for T1-6: lazy background cleanup and graceful shutdown handling.
+"""Tests for lazy background cleanup and graceful shutdown handling.
 
 Proves:
 1. Importing downloader does not start an unkillable background cleanup loop.

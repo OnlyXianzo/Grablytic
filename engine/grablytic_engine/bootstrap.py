@@ -126,7 +126,7 @@ def _calculate_sha256(filepath: str) -> str:
 # in a JSON manifest keyed by real dest_path. On subsequent runs,
 # _bootstrap_github_binary verifies the on-disk binary against this
 # manifest before trusting it — closing the trojaned-cache trust gap
-# where a pre-planted malicious binary was trusted forever (audit T0-5).
+# where a pre-planted malicious binary was trusted forever.
 
 
 def _manifest_path(cache_dir: str) -> str:
@@ -183,7 +183,7 @@ def _record_archive_sha(
 ) -> None:
     """Record which upstream ARCHIVE a binary was installed from.
 
-    T4-8: update_check must compare archive-to-archive (the remote digest
+    `update_check` must compare archive-to-archive (the remote digest
     covers the archive, never the extracted binary). Keyed per binary so
     ffmpeg/deno/aria2c track independently.
     """
@@ -532,7 +532,7 @@ def _bootstrap_github_binary(
         return False, None
 
     if os.path.isfile(dest_path) and os.access(dest_path, os.X_OK):
-        # T0-5: verify existing binary against the manifest instead of
+        # Verify existing binary against the manifest instead of
         # trusting it blindly. A trojaned binary planted here would
         # otherwise be trusted forever.
         if _verify_binary_against_manifest(cache_dir, dest_path):
@@ -597,10 +597,10 @@ def _bootstrap_github_binary(
         )
 
         if os.path.isfile(dest_path):
-            # T0-5: record the extracted binary's SHA in the manifest so
+            # Record the extracted binary's SHA in the manifest so
             # future runs can verify it hasn't been replaced/trojaned.
             _record_binary_sha(cache_dir, dest_path)
-            # T4-8: record the installed ARCHIVE digest so update_check
+            # Record the installed ARCHIVE digest so update_check
             # compares archive-to-archive (binary bytes never equal it).
             # Keyed by logical binary name (matches update_check targets).
             _record_archive_sha(
@@ -1067,7 +1067,7 @@ def update_check() -> dict:
         except Exception:
             pass
 
-        # T4-8: compare ARCHIVE to ARCHIVE. The old code compared the local
+        # Compare ARCHIVE to ARCHIVE. The old code compared the local
         # BINARY sha against the remote ARCHIVE sha — unequal by
         # construction, so up_to_date could never be reported.
         installed_sha = _installed_archive_sha(paths.get("cache_dir"), name)

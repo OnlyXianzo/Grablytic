@@ -1,11 +1,9 @@
-"""T0-6 honesty tests: the PO-token stub gate vs the real remote JS path.
+"""The local PO-token stub allowlist and remote JavaScript solver are separate.
 
-Diagnosis (see GRABLYTIC_TEARDOWN.md §4 + HQ5): `verify_js_code()` allowlists
-two inert stub scripts (both return null), while every `_configure_js_runtime`
-branch — INCLUDING the no-runtime fallthrough — enabled
-`remote_components=["ejs:github"]`, fetching yt-dlp's EJS challenge solver
-(LIB+CORE) from GitHub Releases at runtime. The executed code never passed
-through the stub gate.
+`verify_js_code()` allowlists two inert stub scripts that return null. Runtime
+configuration can separately enable `remote_components=["ejs:github"]`, which
+fetches yt-dlp's EJS challenge solver (LIB+CORE) from GitHub Releases. The
+remote solver does not pass through the local stub allowlist.
 
 Fail-closed expectations:
   * no usable JS runtime → NO `remote_components` flag (yt-dlp default-deny;
@@ -66,17 +64,16 @@ def test_stub_allowlist_rejects_foreign_js():
 
 
 def test_remote_solver_decoupled_from_stub_gate(_no_runtime):
-    """Locks in the T0-6 diagnosis: stubs solve nothing (token None) — any
+    """Locks in the diagnosis: stubs solve nothing (token None) — any
     real challenge solving comes from the `ejs:github` remote path, which
     the stub allowlist never inspects (integrity there is yt-dlp's own
     SHA3-512 + version pin in `ejs.py`, not our SHA-256 stub list)."""
     assert generate_po_token("https://www.youtube.com/watch?v=abc123xyz_-") is None
 
 
-# Item 4 (phantom PO-token): both stubs are inert by design, so a token via
-# `deno eval` is guaranteed None — yet every YouTube download paid a full
-# subprocess spawn (up to 10s timeout). Gate: no spawn while inert;
-# machinery intact for a future real solver.
+# Both stubs always return None, so invoking `deno eval` for a YouTube
+# download would add a subprocess spawn (up to 10 seconds) without producing
+# a token. The test verifies that this work is skipped while the stubs remain.
 
 
 def test_inert_stub_spawns_no_subprocess(monkeypatch):

@@ -8,12 +8,11 @@ import '../core/utils/trust_boundary.dart';
 import 'download_provider.dart';
 import 'settings_provider.dart';
 
-/// Remove ONE trailing '.part' only (BRUTAL-6 info.json).
+/// Remove one trailing '.part' only; the sibling '.info.json' path is derived
+/// from the original filename without changing embedded '.part' segments.
 ///
-/// replaceAll mangles names like 'my.part.video.f137.part' into
-/// 'my.info.json.video.f137.info.json', orphaning the real sibling
-/// '.info.json' on dismiss/delete. Mirrors the engine's _strip_part_suffix
-/// (TEARDOWN-3).
+/// replaceAll would mangle names like 'my.part.video.f137.part' and orphan
+/// the real sidecar on dismiss/delete. This mirrors the engine helper.
 String stripPartSuffix(String path) =>
     path.endsWith('.part') ? path.substring(0, path.length - 5) : path;
 
@@ -276,7 +275,7 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
     state = AsyncValue.data(currentList.where((c) => c.filepath != candidate.filepath).toList());
   }
 
-  /// Claim a resume candidate for restart (P2).
+  /// Claim a resume candidate for restart.
   ///
   /// Returns the [ResumeCandidate.likelyUrl] to re-open in the format flow
   /// and drops the candidate from the list, or null when there is nothing
@@ -284,8 +283,8 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
   /// engine restart in the format flow preserves yt-dlp `continuedl`
   /// resume-by-filename without inventing Range logic here.
   ///
-  /// Stashes url -> filepath so [reportAttempt] can strike-count the outcome
-  /// (BRUTAL-5); the stash is one-shot per resume tap.
+  /// Stashes url -> filepath so [reportAttempt] can count terminal outcomes;
+  /// the stash is one-shot per resume tap.
   final Map<String, String> _resumeOrigins = {};
 
   Future<String?> resumeDownload(ResumeCandidate candidate) async {

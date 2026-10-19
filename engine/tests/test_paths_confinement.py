@@ -1,4 +1,4 @@
-"""T0-2 exploit-proof tests: IPC-controlled paths must not hijack execution.
+""" exploit-proof tests: IPC-controlled paths must not hijack execution.
 
 Attack primitives under test (see GRABLYTIC_TEARDOWN.md §4 + HQ tracking):
   (a) explicit binary (ffmpeg/aria2c/deno/node) accepted on bare `isfile`
@@ -308,7 +308,7 @@ def test_ipc_paths_set_forwards_failure(monkeypatch, _isolated):
     monkeypatch.setattr(_sys, "stdout", out)
     mod.main()
     # Select by id: background engine threads may interleave their own JSON
-    # lines on stdout (the T1-7 hazard) — never assume resps[0] is ours, and
+    # lines on stdout (the hazard) — never assume resps[0] is ours, and
     # skip non-JSON print noise defensively.
     answer = None
     for line in out.getvalue().splitlines():

@@ -44,7 +44,7 @@ def test_paths_set_envelope(tmp_path, monkeypatch, capsys):
 
 @pytest.mark.unit
 def test_paths_set_forwards_nodejs_path(tmp_path, monkeypatch, capsys):
-    """Regression test for FLAW E-R3: paths/set must forward nodejs_path."""
+    """Regression test for paths/set must forward nodejs_path."""
     from grablytic_engine.paths import get_paths
     node_bin = tmp_path / "node"
     node_bin.touch()
@@ -64,7 +64,7 @@ def test_paths_set_forwards_nodejs_path(tmp_path, monkeypatch, capsys):
 
 @pytest.mark.unit
 def test_download_queue_status_ipc_envelope(tmp_path, monkeypatch, capsys):
-    """Regression test for FLAW E-R3: download/queue_status returns success envelope."""
+    """Regression test for download/queue_status returns success envelope."""
     resps = _run_lines(monkeypatch, capsys, [
         json.dumps({"id": "s1", "method": "paths/set", "params": {
             "data_dir": str(tmp_path), "output_dir": str(tmp_path),
@@ -174,7 +174,7 @@ def test_malformed_line_does_not_kill_loop(monkeypatch, capsys):
 
 @pytest.mark.unit
 def test_malformed_line_error_keeps_null_id(monkeypatch, capsys):
-    """T1-8: even an unparseable line must produce an error envelope that
+    """even an unparseable line must produce an error envelope that
     keeps its (null) request ID — the client correlates every error by id,
     never a bare id-less failure."""
     resps = _run_lines(monkeypatch, capsys, [
@@ -188,7 +188,7 @@ def test_malformed_line_error_keeps_null_id(monkeypatch, capsys):
 
 @pytest.mark.unit
 def test_5_concurrent_downloads_stdout_never_interleaved(monkeypatch):
-    """T1-7 / HQ1: Prove that under 5 concurrent downloads and simultaneous
+    """Prove that under 5 concurrent downloads and simultaneous
     main-thread responses, _stdout_lock guarantees zero interleaved or
     corrupted JSON lines reach stdout.
     """

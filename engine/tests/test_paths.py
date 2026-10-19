@@ -4,7 +4,7 @@ import os
 
 @pytest.fixture(autouse=True)
 def mock_isfile(monkeypatch):
-    # T0-2: admission now gates on isfile AND X_OK. The fixture simulates
+    # Admission now gates on isfile AND X_OK. The fixture simulates
     # installed system binaries, so it must simulate both bits.
     original_isfile = os.path.isfile
     original_access = os.access

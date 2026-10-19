@@ -46,7 +46,7 @@ def _is_contained(child, parent) -> bool:
 def _accept_explicit_binary(explicit) -> str | None:
     """Validate an IPC-supplied binary path. Returns resolved path or None.
 
-    Admission rule (T0-2): absolute + resolved + regular file + X_OK.
+    Admission rule: absolute + resolved + regular file + X_OK.
     Deliberately NO location allowlist: custom toolchains (/opt, nix store,
     side-loaded test tmp dirs) are legitimate and common on desktop — an
     allowlist would break them while adding nothing once the PATH-prepend
@@ -128,7 +128,7 @@ def set_paths(
         except Exception:
             pass
 
-    # T0-2: directory roots are the trust anchor for everything below
+    # Directory roots are the trust anchor for everything below
     # (bin_dir construction, site-packages containment). A non-absolute
     # root makes every derived path cwd-relative — NLTK #3642 shape — so
     # fail closed BEFORE mutating any process-global state.
@@ -168,7 +168,7 @@ def set_paths(
     _paths["ffmpeg_ld_path"] = None
     if ffmpeg_ld_path:
         valid = [p.strip() for p in str(ffmpeg_ld_path).split(os.pathsep)]
-        # T0-2: absolute-only. A cwd-relative entry would resolve against an
+        # Absolute-only. A cwd-relative entry would resolve against an
         # unpredictable working directory into the loader search path.
         valid = [d for d in valid if d and os.path.isabs(d) and os.path.isdir(d)]
         if valid:
@@ -182,7 +182,7 @@ def set_paths(
                         d + (os.pathsep + existing_ld if existing_ld else "")
                     )
 
-    # T0-2: PATH carries ONLY our own constructed bin_dir — never the
+    # PATH carries ONLY our own constructed bin_dir — never the
     # dirname of an explicitly-supplied binary. The old code prepended every
     # `dirname(explicit)` (so `aria2c_path=/evil/dir/x` injected `/evil/dir`
     # into the search order of all later `which()` fallbacks) and tested
@@ -199,7 +199,7 @@ def set_paths(
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
 
     # Prepends site-packages to sys.path to load dynamically updated yt-dlp
-    # modules. T0-2: the dir is IPC-derived, so gate it — realpath
+    # modules. The directory is IPC-derived, so gate it — realpath
     # containment strictly inside data_dir (kills symlink escape: a
     # site-packages symlink pointing outside resolves outside and is
     # rejected), isdir, and list membership (already correct — `in sys.path`

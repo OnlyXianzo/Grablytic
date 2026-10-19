@@ -43,7 +43,7 @@ class _AppShellState extends ConsumerState<AppShell>
   // Guards against stacking duplicate share sheets when intents arrive in
   // quick succession (cold-start getSharedUrl + stream event for one share).
   bool _shareSheetOpen = false;
-  // T2-6: FIFO of share URLs awaiting a sheet. A second share arriving
+  // FIFO of share URLs awaiting a sheet. A second share arriving
   // while a sheet is open used to be silently dropped (single-var native
   // slot + open-guard with no backlog). Bounded like the native side.
   final ListQueue<String> _pendingShareUrls = ListQueue();

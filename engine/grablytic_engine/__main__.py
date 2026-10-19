@@ -35,11 +35,11 @@ log = get_logger("grablytic_engine.main")
 _log_queue: _queue_module.Queue | None = None
 _stdout_lock = threading.Lock()
 
-# Item 3: head-of-line blocking. The stdin reader must never block behind a
+# Head-of-line blocking. The stdin reader must never block behind a
 # slow network extraction (formats/get, playlist/info, search/query). Slow
 # methods run on a bounded worker pool; responses are correlated by request
 # id over the single stdout lock, so out-of-order completion is safe. The
-# envelope contract and method ids are byte-identical (BRUTAL-1).
+# envelope contract and method ids are byte-identical.
 _MAX_IPC_WORKERS = 8
 # Back-pressure (finding: unbounded pool queue). The number of slow-lane
 # requests allowed in flight (running + queued) at any moment. The old
@@ -478,7 +478,7 @@ def _h_set_update_channel(params):
     return set_update_channel(_req(params, "channel"))
 
 
-# The dispatch registry. Method ids are frozen (BRUTAL-1) — the
+# The dispatch registry. Method ids are frozen — the
 # registry exists so the chain is data, not control flow, and so the
 # contract can assert that it and the contract agree.
 _METHOD_HANDLERS = {
@@ -559,7 +559,7 @@ def _execute_parsed_request(req_id, method, params):
         if _mismatch is not None:
             res = _mismatch
         elif method == "paths/set":
-            # T0-2: forward set_paths' verdict — it fails closed on
+            # Forward set_paths' verdict — it fails closed on
             # non-absolute roots / untrusted binaries. The old code
             # always answered success, hiding rejections from the UI.
             # Serialized: mutates the global log queue.

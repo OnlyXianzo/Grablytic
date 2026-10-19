@@ -16,7 +16,7 @@ def _strip_part_suffix(path: str) -> str:
     return path
 
 
-# Strike store for resume attempts (BRUTAL-5 attempts>=3). Keyed by
+# Strike store for resume attempts (attempts>=3). Keyed by
 # realpath so renames/case variants cannot fork counters. Same-process
 # lock discipline as the bootstrap manifest (single engine process).
 _attempts_lock = threading.Lock()

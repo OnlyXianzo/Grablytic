@@ -1,4 +1,4 @@
-"""T3-15: sanitize() must cover proxy userinfo creds in strings, terminate
+"""sanitize() must cover proxy userinfo creds in strings, terminate
 on cyclic structures, and redact mapping-like proxies (Chaquopy Java maps
 are not `dict` instances)."""
 

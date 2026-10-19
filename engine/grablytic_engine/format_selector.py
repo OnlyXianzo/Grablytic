@@ -1,6 +1,6 @@
 import re
 
-# T0-3: allowlist for a SINGLE concrete yt-dlp format ID. The `format`
+# Allowlist for a SINGLE concrete yt-dlp format ID. The `format`
 # option is a selector-expression language (`/ + , ( )` are structural,
 # `[...]` opens filters, `all`/`mergeall` amplify one download into many —
 # cf. YoutubeDL.build_format_selector, ALLOWED_OPS). Interpolating an
@@ -84,7 +84,7 @@ def is_safe_format_expression(value) -> bool:
 def build_format_string(cfg: dict) -> str:
     raw_vid = cfg.get("explicit_format_id")
     raw_aid = cfg.get("explicit_audio_format_id")
-    # T0-3: validate BEFORE interpolation — an invalid ID is treated as
+    # Validate BEFORE interpolation — an invalid ID is treated as
     # absent, so a smuggled expression can never reach the `f"{vid}+{aid}"`
     # join below. `format_code` (deliberate raw power-user override) is
     # untouched by this gate by design.

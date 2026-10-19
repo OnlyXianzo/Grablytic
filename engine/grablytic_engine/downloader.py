@@ -591,7 +591,7 @@ def _is_audio_mode(config) -> bool:
 
 def _find_live_url_holder(url: str, audio_only: bool):
     """ID of a live (non-terminal) active-or-queued download for the same
-    (url, audio-mode), or None. Caller must hold _downloads_lock. T1-5.
+    (url, audio-mode), or None. Caller must hold _downloads_lock.
 
     O(1): the candidate set comes from the incremental dedup index, so
     this no longer walks the whole active map and the whole pending
@@ -632,7 +632,7 @@ def get_queue_status() -> dict:
 
 
 def _spawn_thread(entry: dict) -> threading.Thread | None:
-    # T1-1 fix: register in the active map BEFORE starting the thread.
+    # Register in the active map BEFORE starting the thread.
     # Without this, a fast cancel/finish between t.start() and map
     # registration hits NOT_FOUND while the thread is already running.
     cancel_event = entry["cancel_event"]
@@ -775,7 +775,7 @@ def _pump_queue() -> None:
                     _active_downloads[did].get("audio_only"),
                 )
                 continue
-            # T1-2 fix: Atomically move from _pending_queue into _active_downloads
+            # Atomically move from _pending_queue into _active_downloads
             # under the exact same lock so there is no window where the ID is in neither.
             _active_downloads[did] = {
                 "cancel_event": entry["cancel_event"],
@@ -823,7 +823,7 @@ def _pump_queue() -> None:
                 pass
 
 
-# ── Lazy cleanup thread and graceful shutdown (T1-6) ───────────────────
+# ── Lazy cleanup thread and graceful shutdown ───────────────────
 
 # Store real Thread reference at import time so test monkeypatching of
 # threading.Thread for download workers does not hijack the internal cleanup loop.
@@ -932,7 +932,7 @@ def _cleanup_loop():
 def shutdown_downloads(timeout: float = 5.0) -> dict:
     """Gracefully shut down all active downloads on engine/interpreter exit.
 
-    T1-6 fix: Prevents mid-write daemon thread kills that leave corrupt .part
+    Prevents mid-write daemon thread kills that leave corrupt .part
     files.
     1. Sets cancel_event for all active downloads to request clean exit.
     2. Clears pending queue so queued items never spawn.
@@ -1029,7 +1029,7 @@ _PATH_PATTERNS = [
 class YDLogger:
     """yt-dlp logger bridge. Collects error lines and tracks output file paths."""
 
-    # T3-9: bound the tail — ignoreerrors playlists can log thousands of
+    # Bound the tail — ignoreerrors playlists can log thousands of
     # entries. Most-recent retained (diagnostically relevant). output_files
     # is capped high enough for legit big playlists but can never grow
     # without bound; a set gives O(1) dedup instead of O(n) list scans.
@@ -1092,7 +1092,7 @@ class YDLogger:
 def _drain_public(prog_q) -> list:
     """Snapshot buffered progress events using only the public Queue API.
 
-    T3-8: the old prog_q.mutex/prog_q.queue reach-through depended on
+    The old prog_q.mutex/prog_q.queue reach-through depended on
     CPython internals (and scaled the locked section with playlist size).
     Drain + restore preserves every item in order; a producer racing us
     only perturbs best-effort ordering, never loses items — we re-queue
@@ -1403,7 +1403,7 @@ def download_thread(
         except Exception:
             pass
 
-        # T1-9: bound before try — the except-handler below logs safe_url,
+        # Bound before try — the except-handler below logs safe_url,
         # so a failure before its in-try assignment must not raise
         # UnboundLocalError and mask the real error.
         safe_url = "<url>"
@@ -1814,7 +1814,7 @@ def start_download(
                 "error_type": "ERROR_ALREADY_ACTIVE",
                 "error_message": "Download already queued for this ID",
             }
-        # T1-5: same URL under a different ID must not download twice.
+        # Same URL under a different ID must not download twice.
         # Keyed on (url, audio-mode) so explicit "extract audio" re-fetches
         # (different artifact) still pass; terminal entries never block.
         audio_only = _is_audio_mode(config)
@@ -1859,7 +1859,7 @@ def start_download(
             progress_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
             result_queue = _queue.Queue(maxsize=_QUEUE_MAXSIZE)
             cancel_event = threading.Event()
-            # T1-1: Atomically register in _active_downloads under lock before releasing lock
+            # Atomically register in _active_downloads under lock before releasing lock
             _active_downloads[download_id] = {
                 "cancel_event": cancel_event,
                 "progress_queue": progress_queue,
@@ -2030,7 +2030,7 @@ def cancel_download(download_id: str) -> dict:
                 pass
 
     if worker_alive:
-        # T1-3: a live worker may sit hook-blind (extractor hang, merge
+        # A live worker may sit hook-blind (extractor hang, merge
         # wait, stalled socket, aria2c child) for an unbounded time, so the
         # old unconditional `cancelled: True` lied. Report the honest
         # intermediate; the terminal `cancelled` arrives via the normal
@@ -2050,7 +2050,7 @@ def cancel_download(download_id: str) -> dict:
     }
 
 
-# T1-3: bound on "cancelling". A worker wedged where no yt-dlp progress hook
+# Bound on "cancelling". A worker wedged where no yt-dlp progress hook
 # ever fires again would otherwise leave the UI in "cancelling" forever.
 # CPython threads cannot be killed, and Popen-handle interposition was
 # rejected (yt-dlp helper-thread births misattribute kills across
@@ -2085,7 +2085,7 @@ def _worker_thread_alive(info) -> bool:
     """True only for a provably-live worker thread.
 
     Pre-spawn entries (thread None) and thread doubles without is_alive
-    (test NoopThreads) report False → legacy terminal path, which T1-2 pins.
+    (test NoopThreads) report False and use the legacy terminal path.
     Only a real live thread takes the honest `cancelling` intermediate.
     """
     th = info.get("thread") if isinstance(info, dict) else None

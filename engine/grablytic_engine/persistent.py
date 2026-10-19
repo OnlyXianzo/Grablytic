@@ -81,7 +81,7 @@ def sanitize(obj: Any, _seen: set[int] | None = None) -> Any:
             obj,
             flags=re.IGNORECASE,
         )
-        # T3-15: mask user:password@host userinfo (proxy creds in URLs).
+        # Mask user:password@host userinfo (proxy creds in URLs).
         # Greedy to the last @ before / or whitespace, so passwords
         # containing @ are fully masked; user-only form stays untouched.
         def _mask_userinfo(m: "re.Match[str]") -> str:

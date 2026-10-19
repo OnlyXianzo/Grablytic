@@ -35,7 +35,7 @@ open class MainActivity : FlutterActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var methodChannel: MethodChannel? = null
-    // T2-6: FIFO of share URLs (was a single nullable var — two rapid
+    // FIFO of share URLs (was a single nullable var — two rapid
     // shares overwrote, the second silently lost). Bounded: overflow evicts
     // the oldest. Thread-safe for onNewIntent vs method-channel threads.
     private val sharedUrls = java.util.concurrent.ConcurrentLinkedQueue<String>()
@@ -50,7 +50,7 @@ open class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 4101
-        // T2-6: backlog bound for rapid shares (mirrors Dart _maxPendingShares).
+        // Backlog bound for rapid shares (mirrors Dart _maxPendingShares).
         private const val MAX_QUEUED_SHARES = 50
         // Terminals missed per detach gap (mirrors the engine queue vocabulary).
         private const val MAX_UNDELIVERED_TERMINALS = 50

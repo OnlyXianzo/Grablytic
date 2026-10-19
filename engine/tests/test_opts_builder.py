@@ -7,7 +7,7 @@ from grablytic_engine.opts_builder import build_ydl_opts
 def reset_paths(monkeypatch):
     import shutil
     import os
-    # T0-2: admission now gates on isfile AND X_OK — simulate both bits for
+    # Admission now gates on isfile AND X_OK — simulate both bits for
     # the fake system binaries (mirrors test_paths.py mock_isfile).
     original_isfile = os.path.isfile
     original_access = os.access
@@ -216,7 +216,7 @@ def test_sleep_interval():
 
 
 def test_sleep_interval_garbage_is_ignored_not_fatal():
-    # Regression [TEARDOWN-4]: bare int() turned a settings typo into a
+    # A bare int() turned a settings typo into a
     # ValueError out of build_ydl_opts, killing the download start path.
     opts = build_ydl_opts(config={"sleep_interval": "abc"})
     assert "sleep_interval" not in opts
@@ -571,7 +571,7 @@ def test_thumbnails_opt_out_writes_no_thumbnail():
 
 
 class TestNumericGuards:
-    """T3-10: unguarded int() on IPC params killed threads (UNKNOWN) or hung
+    """unguarded int() on IPC params killed threads (UNKNOWN) or hung
     forever; 0-speed throttled downloads to zero (DoS)."""
 
     def test_garbage_retries_fall_back(self):
@@ -635,7 +635,7 @@ def test_video_keeps_jpg_cover_art():
 
 
 def test_playlist_items_malicious_ranges_rejected():
-    """FLAW E-R2: Out-of-bounds or malformed playlist_items must be omitted."""
+    """Out-of-bounds or malformed playlist_items must be omitted."""
     # Massive flat-fetch ranges
     assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "1:100000"})
     assert "playlist_items" not in build_ydl_opts(config={"playlist_items": "1-50000"})
@@ -652,7 +652,7 @@ def test_playlist_items_malicious_ranges_rejected():
 
 
 def test_rate_limit_coercion_and_clamping():
-    """FLAW E-R2: rate_limit must be converted to numeric bytes/sec or omitted."""
+    """rate_limit must be converted to numeric bytes/sec or omitted."""
     opts_500k = build_ydl_opts(config={"rate_limit": "500K"})
     assert isinstance(opts_500k.get("ratelimit"), (int, float))
     assert opts_500k["ratelimit"] == 512000
@@ -667,7 +667,7 @@ def test_rate_limit_coercion_and_clamping():
 
 
 def test_cookies_path_security_checks(tmp_path):
-    """FLAW E-R2: cookiefile must exist, be regular file, and be readable."""
+    """cookiefile must exist, be regular file, and be readable."""
     real_cookie = tmp_path / "valid_cookies.txt"
     real_cookie.touch()
     _paths["cookies_path"] = str(real_cookie)
@@ -687,7 +687,7 @@ def test_cookies_path_security_checks(tmp_path):
 
 
 def test_compat_opts_allowlist():
-    """FLAW E-R2: Dangerous compat_options must be filtered out against allowlist."""
+    """Dangerous compat_options must be filtered out against allowlist."""
     # Disallow unsafe flags
     opts_bad = build_ydl_opts(config={"compat_options": "allow-unsafe-exec-expansion,no-certifi"})
     assert "compat_opts" not in opts_bad
@@ -702,7 +702,7 @@ def test_compat_opts_allowlist():
 
 
 def test_subtitleslangs_sanitization():
-    """FLAW E-R2: subtitleslangs must be sanitized against ReDoS and invalid tokens."""
+    """subtitleslangs must be sanitized against ReDoS and invalid tokens."""
     # Standard languages
     assert build_ydl_opts(config={"writesubtitles": True, "subtitleslangs": ["en", "es"]})["subtitleslangs"] == ["en", "es"]
 
@@ -715,7 +715,7 @@ def test_subtitleslangs_sanitization():
 
 
 def test_config_schema_validation():
-    """FLAW E-R2: sanitize_config must drop unknown keys and coerce known types."""
+    """sanitize_config must drop unknown keys and coerce known types."""
     from grablytic_engine.config import sanitize_config
     raw = {
         "evil_key": "drop_me",

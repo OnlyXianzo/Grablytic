@@ -5,23 +5,22 @@ SHA-256 allowlist). Both stubs are inert by design — they return null and
 the download falls back to no token. The gate proves "this exact stub ran",
 nothing more.
 
-What is NOT gated here (HQ5 answer): the real YouTube challenge solver.
+The local stub allowlist does not cover the real YouTube challenge solver.
 Whenever `_configure_js_runtime` selects a runtime it also sets
 `remote_components=["ejs:github"]`, so yt-dlp fetches the EJS solver bundle
 (LIB+CORE) from github.com/yt-dlp/ejs releases and executes it (plus
-YouTube-player JS as input data) in deno/node. That code NEVER passes
-through `verify_js_code`. Its integrity gate is yt-dlp's OWN check in
-`yt_dlp/extractor/youtube/jsc/_builtin/ejs.py`: pinned SCRIPT_VERSION plus
-a SHA3-512 hash pin per script variant (cache purged on mismatch), with
+YouTube-player JS as input data) in deno/node. That code never passes through
+`verify_js_code`. Its integrity gate is yt-dlp's own check in
+`yt_dlp/extractor/youtube/jsc/_builtin/ejs.py`: a pinned SCRIPT_VERSION plus
+a SHA3-512 hash per script variant (cache purged on mismatch), with
 deliberate dev-only bypasses (`youtube-ejs:dev/repo/script_version`
-extractor args — we never set those). Deno runs the solver with no
-`--allow-*` flags (default-deny); Node's permission model is explicitly NOT
+extractor args — not set here). Deno runs the solver with no
+`--allow-*` flags (default-deny); Node's permission model is explicitly not
 a security boundary for malicious code (nodejs.org/api/permissions).
 
-Do NOT cite this module's allowlist as covering the EJS path (that was the
-T0-6 "theater" finding). Follow-ups, not this push: preferring a vendored
-`yt-dlp-ejs` package over the network fetch; auditing `youtube-ejs` arg
-reachability through our extractor-args plumbing.
+Vendoring the EJS bundle and auditing `youtube-ejs` extractor-argument
+reachability are separate hardening work; the local stub allowlist is not a
+substitute for either.
 """
 
 import os
@@ -67,14 +66,10 @@ _DENO_RUN_FLAGS = (
     "--no-config",
 )
 
-# Item 4 (phantom PO-token) gate: both allowlisted stubs above are inert by
-# design — they can only ever yield None. Spawning `deno eval` (a full
-# subprocess, up to 10s timeout) on every YouTube download to compute a
-# guaranteed-None token is pure latency/battery waste, so generation
-# fast-paths to None until a REAL solver lands. Landing one means: add its
-# script to APPROVED_JS_HASHES, implement it below, and flip this flag.
-# The spawn machinery is gated, not deleted. Callers already fall back to
-# a user-supplied `paths["po_token"]` when this returns None.
+# Both allowlisted stubs always return None, so running `deno eval` for each
+# YouTube download would add latency and battery use without producing a token.
+# Generation fast-paths to None until a real solver is explicitly allowlisted
+# and enabled. Callers can still fall back to a user-supplied `paths["po_token"]`.
 PO_TOKEN_SOLVER_ENABLED = False
 
 
@@ -130,7 +125,7 @@ def js_runtime_available() -> bool:
 
 
 def generate_po_token(url: str) -> str | None:
-    # Item 4 fast-path: no real solver configured — return None WITHOUT
+    # Fast-path: no real solver configured — return None WITHOUT
     # probing for a runtime (detect_js_runtime itself can spawn
     # `deno --version`) and WITHOUT spawning `deno eval`.
     if not PO_TOKEN_SOLVER_ENABLED:
@@ -147,7 +142,7 @@ def generate_po_token(url: str) -> str | None:
 
 def _generate_with_quickjs(url: str) -> str | None:
     """Generate PO Token via python-quickjs binding."""
-    # Item 4 fast-path: the allowlisted stub is inert (always None).
+    # Fast-path: the allowlisted stub is inert (always None).
     if not PO_TOKEN_SOLVER_ENABLED:
         return None
     try:
@@ -162,7 +157,7 @@ def _generate_with_quickjs(url: str) -> str | None:
 
 def _generate_with_deno(url: str) -> str | None:
     """Generate PO Token via Deno subprocess."""
-    # Item 4 fast-path: the allowlisted stub is inert (always None) — skip
+    # Fast-path: the allowlisted stub is inert (always None) — skip
     # the `deno eval` spawn entirely. The machinery below stays intact for
     # a future real solver (see PO_TOKEN_SOLVER_ENABLED).
     if not PO_TOKEN_SOLVER_ENABLED:

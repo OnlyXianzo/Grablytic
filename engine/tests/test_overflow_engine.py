@@ -75,7 +75,7 @@ def test_clear_archive_explicit_path_inside_data_dir(_env):
     assert os.path.isdir(str(tmp_path))
 
 
-# ── Exploit-proof tests (T0-1: arbitrary file delete) ─────────────────
+# ── Exploit-proof tests (arbitrary file delete) ─────────────────
 
 
 def test_clear_archive_rejects_absolute_path_outside_data_dir(_env):

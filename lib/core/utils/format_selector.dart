@@ -1,4 +1,4 @@
-/// Pure format pre-selection helpers (P0 fix).
+/// Pure format pre-selection helpers.
 ///
 /// Extracted from `FormatPickerScreen` so the preset auto-selection logic is
 /// unit-testable without widgets. Rules (see Verified Approach 04):

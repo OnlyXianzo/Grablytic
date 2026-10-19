@@ -1,4 +1,4 @@
-"""Item 3 HEAD-OF-LINE blocking regression (RED-first).
+""" HEAD-OF-LINE blocking regression (RED-first).
 
 A single slow `formats/get` (or playlist extraction) must not hold
 `download/cancel` / `download/queue_status` hostage until Dart's 30s

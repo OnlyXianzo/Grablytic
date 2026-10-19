@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit
  * in this workspace); logic mirrors ytdlnis DownloadWorker + ExoPlayer
  * DownloadService patterns.
  *
- * T2-1 power locks (verified approach, Sept 2026 — official WakeLock/WifiLock
+ * Power locks (verified approach, Sept 2026 — official WakeLock/WifiLock
  * refs + NewPipe queue-active scope + vitals/Doze failure-modes research):
  * - One non-counted PARTIAL_WAKE_LOCK + one non-counted WifiLock, held exactly
  *   while `active` is non-empty (queue-active window), released on every idle
@@ -236,7 +236,7 @@ class DownloadService : Service() {
     override fun onTimeout(startId: Int) {
         android.util.Log.w(TAG, "ForegroundService dataSync timeout (startId=$startId)")
         try {
-            // Item 5: cancel active engine workers BEFORE alerts/sweep/stop.
+            // Cancel active engine workers BEFORE alerts/sweep/stop.
             // Without this the Chaquopy/Python threads keep downloading with
             // no service until SIGKILL, corrupting .part files. Best-effort:
             // a failing cancel must never block the timeout path.
@@ -271,7 +271,7 @@ class DownloadService : Service() {
     }
 
     /**
-     * Item 5: best-effort cancel of every active download through the
+     * Best-effort cancel of every active download through the
      * EXISTING engine contract (`grablytic_engine.cancel_download(id)` —
      * same callAttr channel as MainActivity "download/cancel"; no new
      * contract invented).

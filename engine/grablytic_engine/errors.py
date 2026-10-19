@@ -55,7 +55,7 @@ _ERROR_MAP = {
     "ffmpeg not found": ("ERROR_FFMPEG_MISSING", True),
 }
 
-# T3-14: "drm" as a bare substring false-positives on filenames
+# "Drm" as a bare substring false-positives on filenames
 # ("mydrmvideo.mkv"). Whole-word only — genuine yt-dlp DRM errors always
 # carry the word ("DRM protected", "DRM"). Checked at the map position
 # below to preserve long-standing precedence.
@@ -69,7 +69,7 @@ _ERROR_MAP_TAIL = {
     "no space left": ("ERROR_QUOTA_EXCEEDED", False),
 }
 
-# T3-14: genuine TLS failures only. Timeouts/DNS/refused/reset are
+# Genuine TLS failures only. Timeouts/DNS/refused/reset are
 # congestion, not censorship — they used to map to ERROR_SSL_BLOCKED and
 # trigger a bogus VPN upsell (SSL_BLOCKED ∈ _VPN_TYPES).
 _SSL_KEYWORDS = frozenset({
@@ -89,7 +89,7 @@ _MAX_MESSAGE = 500
 def _safe_message(exc: Exception) -> str:
     """User-facing message: credentials/tokens scrubbed, length-capped.
 
-    T3-14: str(exc) used to reach Flutter logs verbatim (proxy creds,
+    Str(exc) used to reach Flutter logs verbatim (proxy creds,
     cookie paths, signed URLs). sanitize() covers tokens + userinfo;
     the cap bounds log/DB rows.
     """

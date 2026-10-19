@@ -198,7 +198,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   final DateTime Function() _clock;
   final Map<String, _DownloadSmoother> _smoothers = {};
 
-  /// Outcome hook for the resume strike loop (BRUTAL-5): invoked with the
+  /// Outcome hook for the resume strike loop: invoked with the
   /// terminal item's URL on finished/error (never on user-cancel). Wired to
   /// ResumeNotifier.reportAttempt in downloadProvider; null in tests that
   /// don't cover it. Must never throw.
@@ -676,7 +676,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     }
 
     // Throttled heartbeat to SQLite (~5s cadence) for DB-driven resume continuity.
-    // BRUTAL-6: failures are logged (first + every 12th ≈ 1/min) instead of
+    // Failures are logged (first + every 12th ≈ 1/min) instead of
     // swallowed — a broken DB silently kills resume continuity otherwise.
     if (downloaded > 0 || total > 0) {
       if (s.lastHeartbeatAt == null ||
@@ -742,7 +742,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         updatedAt: DateTime.now().toIso8601String(),
       );
       DownloadHistoryDb.instance.insert(record).catchError((e) {
-        // BRUTAL-6: never throw (state is source of truth), but never go
+        // Never throw (state is source of truth), but never go
         // silent either — a failing insert means history diverges from UI.
         AppLogger.warn(
           'History persist failed for ${item.id}: $e',
@@ -1150,7 +1150,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         return <String, dynamic>{'success': false, 'error_message': '$err'};
       }),
     );
-    // T1-3: honest intermediate — the worker may still be winding down
+    // Honest intermediate — the worker may still be winding down
     // (extractor/merge/socket/aria2c are hook-blind). The terminal
     // 'cancelled' event finalizes this; error fields are set there, not here.
     state = [
@@ -1218,7 +1218,7 @@ final downloadProvider =
         // user's download folder before state, history, or deletion touch them.
         resolveDownloadDir: () => ref.read(settingsProvider).downloadPath,
         secureProxyForDownload: () => ref.read(settingsProvider.notifier).proxyForDownload(),
-        // Resume strike loop (BRUTAL-5): terminal outcomes feed the engine's
+        // Resume strike loop: terminal outcomes feed the engine's
         // per-file attempt counter; unresumed URLs are ignored downstream.
         onDownloadOutcome: ({required String url, required bool success}) => ref
             .read(resumeProvider.notifier)

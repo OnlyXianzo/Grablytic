@@ -95,7 +95,7 @@ def parse_youtube_rss(xml_content: str) -> list[dict]:
     if not isinstance(xml_content, str) or not xml_content.strip():
         return []
 
-    # T3-16: no defusedxml on Chaquopy, so gate stdlib ET instead. Entity
+    # No defusedxml on Chaquopy, so gate stdlib ET instead. Entity
     # expansion (billion-laughs) needs <!ENTITY declarations, which YouTube
     # Atom never carries — refuse such feeds outright. Feeds are KBs; a
     # multi-MB blob is never legitimate.

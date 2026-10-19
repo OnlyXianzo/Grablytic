@@ -133,7 +133,7 @@ class TestWiredExtraction:
             )
 
 
-# ── Exploit-proof tests (T0-5: trojaned-binary trust gap) ─────────────
+# ── Exploit-proof tests (trojaned-binary trust gap) ─────────────
 
 
 class TestBinaryManifestVerification:
@@ -213,7 +213,7 @@ class _FakeResp:
 
 
 class TestUpdateCheckMeaningful:
-    """T4-8: comparing the local BINARY sha against the remote ARCHIVE sha
+    """comparing the local BINARY sha against the remote ARCHIVE sha
     could never match (perpetual update_available=True). Installed archive
     shas are recorded at install time; the check compares archive-to-archive."""
 

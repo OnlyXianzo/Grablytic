@@ -1,9 +1,9 @@
-"""T0-3 exploit-proof tests: explicit format IDs must not inject selector syntax.
+""" exploit-proof tests: explicit format IDs must not inject selector syntax.
 
 `explicit_format_id` / `explicit_audio_format_id` arrive via IPC config
 (Format Picker forwards yt-dlp-supplied IDs, but the config channel itself
 is untrusted). They must be single concrete format IDs — never a full
-`-f` selector expression. See GRABLYTIC_TEARDOWN.md §4 + HQ tracking (T0-3).
+`-f` selector expression. See GRABLYTIC_TEARDOWN.md §4 + HQ tracking.
 """
 
 import pytest

@@ -180,7 +180,7 @@ class TestFindThumbnailPath:
 class TestSafeUrlScoping:
     @pytest.mark.unit
     def test_failure_before_safe_url_assignment_reports_real_error(self, _env):
-        """T1-9: the worker's except-handler logs safe_url, which is bound
+        """the worker's except-handler logs safe_url, which is bound
         inside try. A failure before that assignment must surface the REAL
         error — never NameError (previously masked as
         ERROR_DOWNLOADER_CRASH "Downloader stopped unexpectedly (NameError)")."""
@@ -203,7 +203,7 @@ class TestSafeUrlScoping:
 class TestErrorLogCap:
     @pytest.mark.unit
     def test_ydlogger_errors_bounded_most_recent_kept(self):
-        """T3-9: ignoreerrors playlists must not grow YDLogger.errors
+        """ignoreerrors playlists must not grow YDLogger.errors
         without bound — cap retains the most recent (diagnostically
         relevant) tail."""
         logger = dl_mod.YDLogger()
@@ -216,7 +216,7 @@ class TestErrorLogCap:
 class TestPublicQueueScan:
     @pytest.mark.unit
     def test_last_known_uses_only_public_queue_api(self):
-        """T3-8: terminal filesize scan must not reach into CPython
+        """terminal filesize scan must not reach into CPython
         internals (prog_q.mutex/prog_q.queue). A queue exposing only the
         public API works, and every drained item is restored in order."""
         import json as _json

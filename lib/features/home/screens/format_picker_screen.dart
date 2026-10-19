@@ -415,7 +415,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
       _selectedContainer = activePreset.preferredContainer;
       _validateClip();
 
-      // P0: sort-then-first (never unsorted .first). Audio = max bitrate.
+      // Sort-then-first (never unsorted .first). Audio = max bitrate.
       _selectedAudioFormat = selectBestAudioFormat(_audioFormats);
 
       if (_isAudioOnlyMode) {
@@ -840,7 +840,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
 
     final config = <String, dynamic>{
       'container': _selectedContainer,
-      // P1: forward user settings under exact engine contract keys
+      // Forward user settings under exact engine contract keys
       // (config.py DEFAULT_CFG). Nulls dropped so defaults survive the
       // {**DEFAULT_CFG, **config} merge in build_ydl_opts().
       ...(await secureSettingsDownloadConfig(ref.read(settingsProvider.notifier))),

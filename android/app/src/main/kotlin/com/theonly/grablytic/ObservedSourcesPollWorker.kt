@@ -57,7 +57,7 @@ class ObservedSourcesPollWorker(
         // poll notification while logs looked healthy.
         private const val NOTIF_CHANNEL_COMPLETE = "grablytic_complete"
 
-        // ---- Item 6: shared_preferences mapping (defensive mirror) ----
+        // ---- shared_preferences mapping (defensive mirror) ----
         // Verified against upstream shared_preferences_android (locked at
         // 2.4.23 in pubspec.lock) and the Dart write sites in
         // lib/providers/settings_provider.dart:
@@ -221,7 +221,7 @@ class ObservedSourcesPollWorker(
         }
     }
 
-    // ---- Item 6: defensive prefs snapshot ----
+    // ---- defensive prefs snapshot ----
 
     private data class ParsedSource(val url: String, val name: String, val quality: String)
 
@@ -472,7 +472,7 @@ class ObservedSourcesPollWorker(
     }
 
     /**
-     * Item 6: pure-network filter. Seen ids come from the Phase-A snapshot,
+     * Pure-network filter. Seen ids come from the Phase-A snapshot,
      * never from a live DB handle, so slow RSS/Chaquopy calls hold no lock.
      */
     private fun checkSource(sourceUrl: String, seenIds: Set<String>): List<SourceEntry> {
