@@ -44,10 +44,12 @@ disagreed (none materially), noted inline.
    before they leave the device; make the target repo configurable per build. (Finding 5)
 7. **SSRF** — fail closed for remote profile control-plane requests; pin each
    validated DNS answer to the socket, revalidate redirects, disable ambient
-   proxies, and cap response bytes. Keep the documented fail-open-on-no-answer
-   policy for user-selected media while rejecting all known private answers.
-   yt-dlp's later network requests remain outside the pinned transport, so the
-   DNS-rebinding residual applies to that media path only. (Finding 29)
+   proxies, and cap response bytes. For yt-dlp, use the guarded urllib transport
+   to pin direct HTTP(S) requests and redirects while rejecting other network
+   backends that could bypass the socket guard. Keep the documented preflight
+   fail-open-on-no-answer policy for selected media, while rejecting known
+   private answers. Explicit user-configured proxies remain trusted egress
+   boundaries because they resolve/connect to the origin themselves. (Finding 29)
 8. **Deno** — run the PO-Token solver with an explicit deny-all permission set.
    (Finding 30)
 9. **Secrets at rest** — proxy credentials must not sit in plaintext
@@ -98,7 +100,7 @@ disagreed (none materially), noted inline.
 31. `ci: raise the Flutter coverage floor`
 32. `docs: answer the 30 hard questions and record residuals`
 
-The remote topic branch still points at `c68db36e92b7be7d7d46f11cb07085ae188477d3` (main base: `306877eea144ec088f98e73c1c5f68c8215d6245`). A fresh-clone audit found that the documented profile-response cap, redirect validation, and DNS-failure policy were not fully implemented. Local commits `298df70` (replace audit labels in code comments with behavior-focused text) and `2c6a285` (pinned profile transport, bounded body reads and resolver/connect work, and sink-specific media policy) correct those mismatches. Local verification passes: 726 engine tests at 79.67% coverage, 3 tool tests, Ruff, compilation, doc links, workflow YAML, and diff checks. These commits are not pushed yet; no PR, remote review, or CI checks exist. Use fresh GitHub authentication because the earlier chat-exposed token must not be reused. Android/Dart toolchains remain unavailable locally.
+The remote topic branch still points at `c68db36e92b7be7d7d46f11cb07085ae188477d3` (main base: `306877eea144ec088f98e73c1c5f68c8215d6245`). A fresh-clone audit found mismatches in the documented profile-response cap, redirect validation, and DNS-failure policy, then identified that yt-dlp's actual direct media requests were still vulnerable to DNS rebinding. Local commits `298df70` (replace audit labels in code comments with behavior-focused text), `2c6a285` (pinned profile transport and bounded resolver/body/connect work), `b3da8d2` (record verified audit results), `46f9aba` (pin direct yt-dlp HTTP(S) requests and redirects; retain explicit proxies as a documented trust boundary), and `f7da2e5` (replace remaining task labels in code comments with behavior-focused text) address these findings. Local verification passes: 731 engine tests at 79.70% coverage, 3 tool tests, a 63-test URL/profile/yt-dlp focus set, compatibility tests on yt-dlp 2025.11.12 and 2026.08.19, Ruff lint/format, compilation, doc links, workflow YAML, and diff checks. The five listed implementation/audit commits plus this documentation update are not pushed yet; no PR, remote review, or CI checks exist. Use fresh GitHub authentication because the earlier chat-exposed token must not be reused. Android/Dart toolchains remain unavailable locally.
 
 ## Phase 3 — Blast radius (per change, checked before editing)
 
@@ -121,4 +123,4 @@ The remote topic branch still points at `c68db36e92b7be7d7d46f11cb07085ae188477d
 * `ruff check --select F --ignore F401 engine/` clean.
 * `python3 tool/check_doc_links.py` clean.
 * `PYTHONPATH=. pytest tool/tests -q` green; LCOV parser tests pass; parse all workflow YAML and verify the Android bridge job is present.
-* Do not claim Flutter Pub resolution or Android/Kotlin/device behavior unless the SDK/emulator run completes. Keep the DNS-rebinding TOCTOU residual explicit for the yt-dlp media request path; remote profile fetches use the pinned, redirect-validated transport.
+* Do not claim Flutter Pub resolution or Android/Kotlin/device behavior unless the SDK/emulator run completes. Direct yt-dlp HTTP(S) requests and redirects now use the pinned transport; explicitly configured HTTP/SOCKS proxies remain a trusted egress boundary because the proxy resolves/connects to the origin. Remote profile fetches remain proxy-free, pinned, redirect-validated, and response-bounded.
