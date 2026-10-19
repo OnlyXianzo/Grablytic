@@ -15,7 +15,6 @@ Only stdlib dependencies — safe for Chaquopy + desktop bundles.
 
 from __future__ import annotations
 
-import copy
 import logging
 import logging.handlers
 import os

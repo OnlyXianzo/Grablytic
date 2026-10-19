@@ -102,13 +102,36 @@ object BinaryPackageManager {
                         }
                     }
                     .start()
-                val firstLine = proc.inputStream.bufferedReader().readLine()?.take(120)
+                // The first line is read on its own thread. The old code
+                // called `readLine()` on the calling thread BEFORE
+                // `waitFor(8, SECONDS)`: a binary that never writes a line
+                // (a corrupted download, a binary that waits on stdin)
+                // blocked the probe for ever and the 8 s timeout was never
+                // reached — the whole bootstrap hung with it.
+                val firstLineRef = java.util.concurrent.atomic.AtomicReference<String?>(null)
+                val reader = Thread({
+                    try {
+                        firstLineRef.set(proc.inputStream.bufferedReader().readLine()?.take(120))
+                    } catch (_: Exception) {
+                    }
+                }, "binprobe-$name")
+                reader.isDaemon = true
+                reader.start()
+
                 val exited = proc.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)
-                if (exited && proc.exitValue() == 0 && firstLine != null) {
-                    NativeBinStatus(name, true, firstLine, bin.executable)
-                } else {
+                if (!exited) {
                     proc.destroyForcibly()
-                    NativeBinStatus(name, false, null, "probe failed: $firstLine")
+                    try { reader.join(200) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                    NativeBinStatus(name, false, null, "probe timed out after 8s")
+                } else {
+                    try { reader.join(500) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                    val firstLine = firstLineRef.get()
+                    if (proc.exitValue() == 0 && firstLine != null) {
+                        NativeBinStatus(name, true, firstLine, bin.executable)
+                    } else {
+                        proc.destroyForcibly()
+                        NativeBinStatus(name, false, null, "probe failed: $firstLine")
+                    }
                 }
             } catch (e: Exception) {
                 NativeBinStatus(name, false, null, "probe error: ${e.message}")

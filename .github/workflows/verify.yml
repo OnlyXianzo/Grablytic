@@ -14,6 +14,8 @@
 # Flutter's floor is ratcheted at 30% (higher than the previous 24% baseline).
 # Dart formatting remains a separate cleanup because of repository-wide legacy
 # churn; Ruff style rules outside correctness remain intentionally ungated.
+# The Ruff gate covers the whole correctness rule set, unused imports (F401)
+# included.
 
 name: Verification
 
@@ -95,6 +97,12 @@ jobs:
           sudo chmod 0666 /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
 
+      # Lint on the release variant. `lint { abortOnError = true }` in
+      # android/app/build.gradle.kts used to be disabled, so nothing
+      # checked a release build before it shipped.
+      - name: Android lint (release variant)
+        run: ./gradlew :app:lintRelease --console=plain
+
       - name: Run end-to-end Android integration test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -138,15 +146,18 @@ jobs:
 
       # astral-sh/ruff-action, pinned to immutable commit SHA (upstream
       # carries no `v4` moving tag — `.../ruff-action@v4` fails to resolve).
-      # Gate unchanged: correctness rules (F, minus F401 import audit
-      # backlog). The ruff VERSION pin is load-bearing (new releases add
-      # rules); the ACTION pin is supply-chain hygiene.
+      # Gate: the full correctness rule set (F), including F401
+      # (unused imports). F401 was disabled behind an "import audit
+      # backlog" that has since been worked off — the engine and its
+      # tests are clean, so the exclusion is gone. The ruff VERSION pin
+      # is load-bearing (new releases add rules); the ACTION pin is
+      # supply-chain hygiene.
       - name: Ruff correctness gate
         uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
         with:
           version: "0.16.7"
           src: "engine/"
-          args: "check --select F --ignore F401 --output-format=github"
+          args: "check --select F --output-format=github"
 
   docs_links:
     name: Docs Link Check

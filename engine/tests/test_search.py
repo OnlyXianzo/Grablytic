@@ -1,4 +1,3 @@
-import pytest
 from grablytic_engine.search import _build_search_url, search
 import grablytic_engine.search as search_mod
 

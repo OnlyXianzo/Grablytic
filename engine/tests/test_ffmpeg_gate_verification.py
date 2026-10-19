@@ -75,7 +75,6 @@ def test_status_reports_failure_when_no_seam_is_available(monkeypatch):
 def test_fallback_seam_installs_when_primary_seam_is_gone(monkeypatch):
     """Losing the PP method must not lose the gate entirely."""
     import yt_dlp.postprocessor.ffmpeg as yt_ffmpeg
-    from yt_dlp.utils import Popen
 
     dl_mod = _dl()
     monkeypatch.setattr(

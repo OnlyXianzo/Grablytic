@@ -147,7 +147,6 @@ class EngineLogger:
         # so unit tests without persistent init keep passing.
         try:
             from grablytic_engine.persistent import bridge_event as _bridge
-            import logging as _stdlib_logging
 
             _level_map = {10: 10, 20: 20, 30: 30, 40: 40, 50: 50}
             _bridge(_level_map.get(level, 20),

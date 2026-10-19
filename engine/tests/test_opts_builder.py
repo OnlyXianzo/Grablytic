@@ -522,7 +522,6 @@ def test_legacy_use_aria2_alias(tmp_path):
 def test_android_prefers_node_over_deno(tmp_path, monkeypatch):
     import sys
     import types
-    import grablytic_engine.opts_builder as opts_mod
 
     deno_file = tmp_path / "deno"
     deno_file.touch()

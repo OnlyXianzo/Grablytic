@@ -27,7 +27,7 @@ flutter test test/features/home/format_picker_output_test.dart
 pytest engine/tests/ -v
 pytest engine/tests/test_format_selector.py -v
 python3 tool/check_doc_links.py
-ruff check --select F --ignore F401 engine/
+ruff check --select F engine/
 ```
 
 Python setup for the engine:

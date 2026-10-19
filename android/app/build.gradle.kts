@@ -19,7 +19,12 @@ fun loadKeystoreProperties(): Properties? {
 
 android {
     namespace = "com.theonly.grablytic"
-    compileSdk = flutter.compileSdkVersion
+    // At least API 35: `Service.onTimeout(int startId, int fgsType)` —
+    // the callback the system actually uses when a dataSync foreground
+    // service runs out of its 6-hour budget — was added in API 35, and
+    // DownloadService overrides it. Compiling against a lower API level
+    // would make the override unresolvable.
+    compileSdk = maxOf(flutter.compileSdkVersion, 35)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -85,13 +90,48 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            val releaseSigning = signingConfigs.findByName("release")
+            if (releaseSigning == null) {
+                // A release APK signed with the DEBUG key is a trap: it
+                // cannot be upgraded in place over the shipped build, it
+                // carries a key every developer has, and it looks
+                // published. The old code fell back silently, so a
+                // release built without a keystore produced a
+                // debug-signed artifact with no warning.
+                //
+                // A local build that only asks for a debug variant is
+                // unaffected; a RELEASE task without a keystore fails
+                // loudly.
+                val buildingRelease = gradle.startParameter.taskNames.any {
+                    it.contains("Release", ignoreCase = true)
+                }
+                if (buildingRelease) {
+                    throw org.gradle.api.GradleException(
+                        "No release signing configuration. Provide " +
+                            "android/key.properties (storeFile, storePassword, " +
+                            "keyAlias, keyPassword) before building a release " +
+                            "variant; a release must never be signed with the " +
+                            "debug key.",
+                    )
+                }
+                signingConfig = signingConfigs.getByName("debug")
+            } else {
+                signingConfig = releaseSigning
+            }
         }
     }
 
     lint {
-        checkReleaseBuilds = false
-        abortOnError = false
+        // Lint runs on release builds again (the AGP default) and its
+        // errors fail the build. The old configuration disabled both
+        // (`checkReleaseBuilds = false`, `abortOnError = false`), so a
+        // release could ship with unchecked lint findings — including
+        // the API-level mistakes that break a build on a newer Android
+        // version.
+        checkReleaseBuilds = true
+        abortOnError = true
+        // Informational findings stay informational; only errors gate.
+        warningsAsErrors = false
     }
 }
 

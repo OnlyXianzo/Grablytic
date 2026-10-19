@@ -891,7 +891,10 @@ def bootstrap() -> dict:
     quickjs_ok = False
     if is_android:
         try:
-            import quickjs  # type: ignore[import-untyped]
+            # The import IS the probe: it fails when the module is not
+            # installed. Ruff's F401 is silenced for this line only
+            # (the symbol is deliberately unused).
+            import quickjs  # type: ignore[import-untyped]  # noqa: F401
 
             quickjs_ok = True
         except ImportError:

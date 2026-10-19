@@ -479,10 +479,26 @@ class DownloadHistoryDb {
     }
   }
 
+  /// Upsert by primary key.
+  ///
+  /// UPDATE-then-INSERT, never `ConflictAlgorithm.replace` and never a
+  /// manual delete+insert. REPLACE deletes the old row and inserts a new
+  /// one: the rowid changes, the `downloads_fts` delete trigger fires
+  /// and the FTS index is rebuilt for the row, and any column the caller
+  /// does not supply is reset to its default. `ON CONFLICT DO UPDATE`
+  /// would be the natural SQL, but it needs SQLite 3.24 (API 30) while
+  /// this app supports API 24 and sqflite runs on the PLATFORM SQLite,
+  /// so the two-step form is the portable equivalent.
   Future<int> insert(DownloadRecord record) async {
     final db = await database;
     return db.transaction((txn) async {
-      await txn.delete('downloads', where: 'id = ?', whereArgs: [record.id]);
+      final updated = await txn.update(
+        'downloads',
+        record.toMap(),
+        where: 'id = ?',
+        whereArgs: [record.id],
+      );
+      if (updated > 0) return updated;
       return txn.insert('downloads', record.toMap());
     });
   }

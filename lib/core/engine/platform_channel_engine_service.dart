@@ -275,10 +275,14 @@ class PlatformChannelEngineService implements EngineService {
         {'cache_dir': cacheDir, 'filepath': filepath, 'success': success},
       );
       return EngineEnvelope.decodeResponse(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -291,10 +295,10 @@ class PlatformChannelEngineService implements EngineService {
       );
       if (result == null) return {};
       return EngineEnvelope.decodeResponse(result);
-    } catch (_) {
+    } catch (e) {
       return EngineEnvelope.error(
         errorType: 'ERROR_UNKNOWN',
-        message: 'Not available on this platform',
+        message: 'Not available on this platform: $e',
       );
     }
   }
@@ -308,10 +312,10 @@ class PlatformChannelEngineService implements EngineService {
       );
       if (result == null) return {};
       return EngineEnvelope.decodeResponse(result);
-    } catch (_) {
+    } catch (e) {
       return EngineEnvelope.error(
         errorType: 'ERROR_UNKNOWN',
-        message: 'Not available on this platform',
+        message: 'Not available on this platform: $e',
       );
     }
   }
@@ -342,10 +346,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -400,10 +408,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -443,10 +455,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -478,10 +494,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return EngineEnvelope.decodeResponse(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -500,10 +520,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -521,10 +545,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -542,10 +570,14 @@ class PlatformChannelEngineService implements EngineService {
         );
       }
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -567,10 +599,14 @@ class PlatformChannelEngineService implements EngineService {
           });
       if (result == null) return {'success': true};
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }
@@ -587,10 +623,14 @@ class PlatformChannelEngineService implements EngineService {
       );
       if (result == null) return {'success': true};
       return Map<String, dynamic>.from(result);
-    } catch (_) {
+    } catch (e) {
+      // The reason travels with the failure. The old code answered a
+      // generic "Native call failed", so a broken bridge, a missing
+      // plugin and a rejected argument were indistinguishable in the
+      // UI and in the log.
       return EngineEnvelope.error(
         errorType: 'ERROR_TRANSPORT',
-        message: 'Native call failed',
+        message: 'Native call failed: $e',
       );
     }
   }

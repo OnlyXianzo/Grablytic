@@ -33,6 +33,64 @@ open class MainActivity : FlutterActivity() {
     private val PROGRESS_CHANNEL = "com.theonly.grablytic/progress"
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    /**
+     * Answers a MethodChannel result on the main thread, even when the
+     * calling coroutine has been cancelled.
+     *
+     * The old code used `withContext(Dispatchers.Main) { result.success(..) }`.
+     * Inside a cancelled coroutine `withContext` throws before the body
+     * runs, so a reply that was due when the activity was destroyed (or
+     * the scope cancelled) never reached the Dart side: the future hung
+     * for ever and the UI showed a spinner that could not end.
+     *
+     * `NonCancellable` makes the delivery attempt independent of the
+     * caller's cancellation. The `try/catch` covers the case where the
+     * engine is already gone and the channel throws.
+     */
+    private suspend fun replySuccess(result: MethodChannel.Result, payload: Any?) {
+        withContext(NonCancellable + Dispatchers.Main) {
+            try {
+                result.success(payload)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Error counterpart of [replySuccess]. */
+    private suspend fun replyError(
+        result: MethodChannel.Result,
+        code: String,
+        message: String?,
+        details: Any? = null,
+    ) {
+        withContext(NonCancellable + Dispatchers.Main) {
+            try {
+                result.error(code, message, details)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * True when the engine's JSON answer carries `"success": true`.
+     *
+     * The old code decided this with
+     * `jsonStr.contains("\"success\": true")` — a substring test over
+     * the WHOLE payload. A download title containing the literal text
+     * `"success": true` flipped the verdict, and a different JSON
+     * spacing (`"success":true`) slipped past the first test. The
+     * payload is parsed instead.
+     */
+    private fun jsonReportsSuccess(jsonStr: String): Boolean {
+        return try {
+            val obj = org.json.JSONObject(jsonStr)
+            obj.optBoolean("success", false)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private var methodChannel: MethodChannel? = null
 
     // FIFO of share URLs (was a single nullable var — two rapid
@@ -48,6 +106,18 @@ open class MainActivity : FlutterActivity() {
     private var pendingNotifResult: MethodChannel.Result? = null
     private var notifPromptShown = false
 
+    /** This activity's own progress sink (see the listener registry). */
+    private var myEventSink: EventChannel.EventSink? = null
+
+    /**
+     * Download ids whose event listener THIS activity registered.
+     *
+     * `activeCallbacks` is process-wide, so a destroyed activity left its
+     * entries behind for entries whose download never reached a terminal
+     * event.
+     */
+    private val ownedCallbackIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 4101
 
@@ -60,8 +130,32 @@ open class MainActivity : FlutterActivity() {
 
         val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
-        @Volatile
-        var eventSink: EventChannel.EventSink? = null
+        // Every registered listener, not a single shared sink.
+        //
+        // MainActivity and ShareActivity each run their own Flutter engine
+        // (and their own Dart isolate) and both listen on the same
+        // EventChannel name. The old code kept ONE static sink, so the
+        // second listener silently REPLACED the first: while the share
+        // overlay was open, the main activity's download cards stopped
+        // receiving progress events, and the share overlay received the
+        // main activity's events.
+        private val eventSinks = java.util.concurrent.CopyOnWriteArrayList<EventChannel.EventSink>()
+
+        /** Sinks that are currently attached, for a broadcast dispatch. */
+        fun currentEventSinks(): List<EventChannel.EventSink> = eventSinks.toList()
+
+        fun registerEventSink(sink: EventChannel.EventSink?) {
+            if (sink == null) return
+            if (!eventSinks.contains(sink)) eventSinks.add(sink)
+        }
+
+        fun unregisterEventSink(sink: EventChannel.EventSink?) {
+            if (sink == null) {
+                eventSinks.clear()
+            } else {
+                eventSinks.remove(sink)
+            }
+        }
         private val terminalLock = Any()
         private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -129,7 +223,7 @@ open class MainActivity : FlutterActivity() {
 
             bufferTerminal(id, eventJson)
             mainHandler.post {
-                eventSink?.let { flushTerminals(it) }
+                currentEventSinks().forEach { flushTerminals(it) }
             }
         }
 
@@ -407,13 +501,15 @@ open class MainActivity : FlutterActivity() {
                 bufferTerminal(terminalId, eventJson)
                 // 2. Dispatch flush to Main thread via Handler
                 mainHandler.post {
-                    eventSink?.let { flushTerminals(it) }
+                    currentEventSinks().forEach { flushTerminals(it) }
                 }
             } else {
-                val sink = eventSink
-                if (sink != null) {
+                val sinks = currentEventSinks()
+                if (sinks.isNotEmpty()) {
                     mainHandler.post {
-                        try { eventSink?.success(eventJson) } catch (_: Exception) {}
+                        for (sink in currentEventSinks()) {
+                            try { sink.success(eventJson) } catch (_: Exception) {}
+                        }
                     }
                 } else if (!noSinkWarned) {
                     noSinkWarned = true
@@ -626,19 +722,42 @@ open class MainActivity : FlutterActivity() {
                             )
                         }
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
-                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
-                            withContext(Dispatchers.Main) { result.success(mapOf("success" to true)) }
+                            // The engine FAILS CLOSED on a non-absolute
+                            // root (it is the trust anchor for every
+                            // derived path). The old code threw that
+                            // verdict away and answered
+                            // `{"success": true}` unconditionally, so the
+                            // app believed it was configured while the
+                            // engine had rejected the paths.
+                            val setPathsResult = engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
+                            replySuccess(result, pyJson(setPathsResult))
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_INVALID_PATH", e.message, null) }
+                            replyError(result, "ERROR_INVALID_PATH", e.message, null)
                         }
                     }
                 }
                 "engine/bootstrap" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val bootstrapResult = engine.callAttr("bootstrap")
 
@@ -659,9 +778,9 @@ open class MainActivity : FlutterActivity() {
                             }
 
                             val jsonStr = pyJson(bootstrapResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_BOOTSTRAP_FAILED", e.message, null) }
+                            replyError(result, "ERROR_BOOTSTRAP_FAILED", e.message, null)
                         }
                     }
                 }
@@ -711,51 +830,77 @@ open class MainActivity : FlutterActivity() {
 
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
 
                             val eventCallback = ProcessEngineEventListener(applicationContext, outputDir)
-                            if (downloadId != null) {
-                                activeCallbacks[downloadId] = eventCallback
+                            val ownedId = downloadId
+                            if (ownedId != null) {
+                                activeCallbacks[ownedId] = eventCallback
+                                ownedCallbackIds.add(ownedId)
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
                             val jsonStr = pyJson(startResult)
-                            if (downloadId != null && !jsonStr.contains("\"success\": true") && !jsonStr.contains("\"success\":true")) {
+                            if (downloadId != null && !jsonReportsSuccess(jsonStr)) {
                                 activeCallbacks.remove(downloadId)
                             }
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
                             if (downloadId != null) {
                                 activeCallbacks.remove(downloadId)
                             }
-                            withContext(Dispatchers.Main) { result.error("ERROR_START_FAILED", e.message, null) }
+                            replyError(result, "ERROR_START_FAILED", e.message, null)
                         }
                     }
                 }
                 "download/clear_archive" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val cleared = engine.callAttr("clear_download_archive")
                             val jsonStr = pyJson(cleared)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_ARCHIVE_FAILED", e.message, null) }
+                            replyError(result, "ERROR_ARCHIVE_FAILED", e.message, null)
                         }
                     }
                 }
                 "download/queue_status" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val status = engine.callAttr("get_queue_status")
                             val jsonStr = pyJson(status)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_QUEUE_FAILED", e.message, null) }
+                            replyError(result, "ERROR_QUEUE_FAILED", e.message, null)
                         }
                     }
                 }
@@ -763,13 +908,21 @@ open class MainActivity : FlutterActivity() {
                     val maxConcurrent = call.argument<Int>("max_concurrent") ?: 2
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val updated = engine.callAttr("set_max_concurrent", maxConcurrent)
                             val jsonStr = pyJson(updated)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_CONCURRENCY_FAILED", e.message, null) }
+                            replyError(result, "ERROR_CONCURRENCY_FAILED", e.message, null)
                         }
                     }
                 }
@@ -777,13 +930,21 @@ open class MainActivity : FlutterActivity() {
                     val downloadId = call.argument<String>("download_id")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val cancelResult = engine.callAttr("cancel_download", downloadId)
                             val jsonStr = pyJson(cancelResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_CANCEL_FAILED", e.message, null) }
+                            replyError(result, "ERROR_CANCEL_FAILED", e.message, null)
                         }
                     }
                 }
@@ -792,13 +953,21 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val formatsResult = engine.callAttr("get_formats", url, configJson(config))
                             val jsonStr = pyJson(formatsResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_FORMATS_FAILED", e.message, null) }
+                            replyError(result, "ERROR_FORMATS_FAILED", e.message, null)
                         }
                     }
                 }
@@ -807,13 +976,21 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val playlistResult = engine.callAttr("get_playlist_info", url, configJson(config))
                             val jsonStr = pyJson(playlistResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_PLAYLIST_FAILED", e.message, null) }
+                            replyError(result, "ERROR_PLAYLIST_FAILED", e.message, null)
                         }
                     }
                 }
@@ -824,13 +1001,21 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val searchResult = engine.callAttr("search_query", query, site, limit, configJson(config))
                             val jsonStr = pyJson(searchResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_SEARCH_FAILED", e.message, null) }
+                            replyError(result, "ERROR_SEARCH_FAILED", e.message, null)
                         }
                     }
                 }
@@ -838,13 +1023,21 @@ open class MainActivity : FlutterActivity() {
                     val cacheDir = call.argument<String>("cache_dir")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val resumeResult = engine.callAttr("scan_resume_candidates", cacheDir)
                             val jsonStr = pyJson(resumeResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_RESUME_FAILED", e.message, null) }
+                            replyError(result, "ERROR_RESUME_FAILED", e.message, null)
                         }
                     }
                 }
@@ -854,7 +1047,15 @@ open class MainActivity : FlutterActivity() {
                     val success = call.argument<Boolean>("success") ?: false
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val reportResult = engine.callAttr(
                                 "report_resume_attempt",
@@ -863,9 +1064,9 @@ open class MainActivity : FlutterActivity() {
                                 success,
                             )
                             val jsonStr = pyJson(reportResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_RESUME_FAILED", e.message, null) }
+                            replyError(result, "ERROR_RESUME_FAILED", e.message, null)
                         }
                     }
                 }
@@ -965,13 +1166,21 @@ open class MainActivity : FlutterActivity() {
                 "engine/update_check" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val updateResult = engine.callAttr("update_check")
                             val jsonStr = pyJson(updateResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_UPDATE_FAILED", e.message, null) }
+                            replyError(result, "ERROR_UPDATE_FAILED", e.message, null)
                         }
                     }
                 }
@@ -979,13 +1188,21 @@ open class MainActivity : FlutterActivity() {
                     val channel = call.argument<String>("channel")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val channelResult = engine.callAttr("set_update_channel", channel)
                             val jsonStr = pyJson(channelResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_CHANNEL_FAILED", e.message, null) }
+                            replyError(result, "ERROR_CHANNEL_FAILED", e.message, null)
                         }
                     }
                 }
@@ -1096,18 +1313,20 @@ open class MainActivity : FlutterActivity() {
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, PROGRESS_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
+                // Per-listener sink. The registry keeps every attached
+                // listener, so a second activity (the share overlay) no
+                // longer steals the first one's sink.
                 private var events: EventChannel.EventSink? = null
 
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     this.events = events
-                    eventSink = events
+                    myEventSink = events
+                    registerEventSink(events)
                     events?.let { flushTerminals(it) }
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    if (eventSink === events) {
-                        eventSink = null
-                    }
+                    unregisterEventSink(events)
                     this.events = null
                 }
             },
@@ -1116,6 +1335,19 @@ open class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         scope.cancel()
+        // The listener registry is process-wide; drop THIS activity's
+        // sink so a destroyed activity does not keep receiving events
+        // (and does not keep the Flutter engine alive through it).
+        unregisterEventSink(myEventSink)
+        myEventSink = null
+        // The callback map is process-wide too. Entries for downloads
+        // that never reached a terminal event (the activity was
+        // destroyed mid-download) used to stay for the whole session,
+        // holding the listener — and its engine callback — alive.
+        for (id in ownedCallbackIds) {
+            activeCallbacks.remove(id)
+        }
+        ownedCallbackIds.clear()
         super.onDestroy()
     }
 

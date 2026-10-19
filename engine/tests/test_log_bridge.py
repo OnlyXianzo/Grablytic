@@ -504,7 +504,6 @@ class TestMilestones:
     """Bounded stall visibility: 25/50/75% lines, never per-fragment."""
 
     def _drive(self, total, steps):
-        import queue as _queue
         from grablytic_engine import hooks as hooks_mod
         q: queue.Queue = queue.Queue()
         hook = hooks_mod.build_progress_hook(q, "mile1")
@@ -540,7 +539,6 @@ class TestMilestones:
         orig = hlog._log
         try:
             def spy(level, message, **kw):
-                import grablytic_engine.logger as lm
                 got.append(getattr(hlog._context, "data", {}).get("download_id"))
                 return orig(level, message, **kw)
             hlog._log = spy
@@ -618,7 +616,6 @@ class TestEmitDiagnostics:
     """A dead callback must warn once (diagnosable) then stay silent."""
 
     def test_first_failure_warns_once(self, _clean_bridge):
-        import queue as _queue
         from grablytic_engine import hooks as hooks_mod
 
         q: queue.Queue = queue.Queue()

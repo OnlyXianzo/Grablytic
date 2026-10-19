@@ -1,6 +1,5 @@
 """Stronger binary installed-state mechanism + advisory version floor."""
 
-import os
 import stat
 
 import pytest

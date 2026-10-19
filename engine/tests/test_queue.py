@@ -8,7 +8,6 @@ Expected behavior (Verified Approach):
 - Queued cancel dequeues without spawning a thread.
 """
 
-import queue as _queue
 
 import grablytic_engine.downloader as dl_mod
 
@@ -85,7 +84,6 @@ def test_promotion_when_slot_frees(monkeypatch):
     dl_mod.start_download(url="https://x.test/3", download_id="q-prom-3")
     try:
         # Simulate slot freeing: mark q-prom-1 finished, pump.
-        import datetime
 
         dl_mod._active_downloads["q-prom-1"]["finished_at"] = __import__(
             "datetime"

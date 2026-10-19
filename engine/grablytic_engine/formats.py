@@ -2,8 +2,7 @@ from grablytic_engine.ytdlp_network import GuardedYoutubeDL as YoutubeDL
 
 from grablytic_engine.paths import get_paths
 from grablytic_engine.config import coerce_config
-from grablytic_engine.format_selector import build_format_string
-from grablytic_engine.errors import classify_error, GrablyticError
+from grablytic_engine.errors import classify_error
 from grablytic_engine.logger import get_logger
 from grablytic_engine.url_guard import is_youtube_url, redact_url
 
