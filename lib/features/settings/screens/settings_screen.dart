@@ -100,7 +100,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              // T14: root is a category list; options live in sub-menus.
+              // Keep the root as a category list; individual options live in
+              // submenus.
               // Grouped per redesign mockup: Downloads vs App.
               if (_matches('General', 'Auto-start and defaults') ||
                   _matches('Storage', settings.downloadPath) ||
@@ -270,19 +271,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ),
 
-              // (T14: moved to StorageSettingsScreen)
-
-              // (T14: moved to NetworkSettingsScreen)
-
-              // (T14: moved to MediaSettingsScreen)
-
-              // (T14: moved to AutomationSettingsScreen)
-
-              // (T14: moved to AccountsSettingsScreen)
-
-              // (T14: moved to PackagesSettingsScreen)
-
-              // (T14: moved to SystemSettingsScreen)
               if (_query.isNotEmpty &&
                   !_matches('General', 'Auto-start and defaults') &&
                   !_matches('Storage', settings.downloadPath) &&

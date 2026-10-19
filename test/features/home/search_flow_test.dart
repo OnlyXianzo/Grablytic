@@ -24,7 +24,7 @@ class _NoopResumeNotifier extends ResumeNotifier {
 }
 
 void main() {
-  // T19's offline interception awaits the platform connectivity channel,
+  // The offline interceptor awaits the platform connectivity channel,
   // which never answers in widget tests (pumpAndSettle exits with no
   // frames scheduled). Answer 'wifi' so submit/share flows proceed online.
   setUpAll(() {
@@ -38,7 +38,7 @@ void main() {
     );
   });
 
-  // T01's process-global extraction cache is keyed by URL and shared
+  // The process-global extraction cache is keyed by URL and shared
   // across tests in one run — clear per test for isolation.
   setUp(() => ExtractionCache.instance.clear());
 

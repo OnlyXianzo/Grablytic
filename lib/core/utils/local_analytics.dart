@@ -2,7 +2,7 @@ import 'dart:convert' show jsonDecode, jsonEncode;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Strictly local download analytics (T21).
+/// Stores download analytics locally on this device.
 ///
 /// No network, no SDK, no telemetry — events persist as JSON in
 /// SharedPreferences on this device only. Sources: shared intents, pasted

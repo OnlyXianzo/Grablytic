@@ -9,7 +9,7 @@ import '../../../providers/preset_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../screens/batch_download_screen.dart';
 
-/// Banner displayed on [HomeScreen] when links are saved in the offline queue (T19).
+/// Banner displayed on [HomeScreen] when links are saved in the offline queue.
 ///
 /// Provides visibility into queued links and a "one-tap send when back online"
 /// button that dispatches all queued links to the download queue.

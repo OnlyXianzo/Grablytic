@@ -521,8 +521,8 @@ class _AppShellState extends ConsumerState<AppShell>
       _currentIndex = index;
     });
     _animTarget = index;
-    // T16: the indicator bar drives the controller itself on drag-settle;
-    // taps still animate here (jump under reduced motion).
+    // The indicator bar drives the controller on drag-settle; taps still
+    // animate here, except when reduced motion is enabled.
     try {
       final cur = _pageController.hasClients ? _pageController.page : null;
       if (cur != null && (cur - index).abs() <= 0.02) return;
@@ -545,8 +545,8 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
-  /// T16: drag release already animated the controller in the bar — record
-  /// the index (fly-through guard in [_onPageChanged] handles the rest).
+  /// The bar animates the controller on drag release; record the settled
+  /// index and let [_onPageChanged] handle any intermediate page changes.
   void _onIndicatorSettled(int index) {
     if (index == _currentIndex) {
       _animTarget = null;
@@ -687,8 +687,8 @@ class _FluidBottomNavBar extends StatefulWidget {
 }
 
 class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
-  // T16: the PageController is the single source of truth. Position flows
-  // controller → _pos → AnimatedBuilder with zero per-frame setState calls.
+  // The PageController is the single source of truth. Position flows from
+  // the controller through [_pos] to AnimatedBuilder without per-frame setState.
   final ValueNotifier<double> _pos = ValueNotifier(0.0);
 
   static const List<_NavItemData> _items = [
@@ -830,9 +830,8 @@ class _FluidBottomNavBarState extends State<_FluidBottomNavBar> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    // T16: one AnimatedBuilder on controller-driven notifiers — the pill,
-    // colors, and stretch all derive from the fractional page, never from
-    // per-frame setState.
+    // One AnimatedBuilder derives the pill, colors, and stretch from the
+    // fractional page, without per-frame setState calls.
     return AnimatedBuilder(
       animation: _pos,
       builder: (context, _) {

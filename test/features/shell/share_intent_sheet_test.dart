@@ -163,7 +163,7 @@ void main() {
   });
 
   group('FormatPicker metadata preview header', () {
-    // T01's process-global extraction cache would leak the null-thumbnail
+    // The process-global extraction cache would leak the null-thumbnail
     // result across tests sharing one URL — isolate each test.
     setUp(() => ExtractionCache.instance.clear());
 

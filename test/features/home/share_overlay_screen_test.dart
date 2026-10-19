@@ -36,7 +36,7 @@ void main() {
     );
   });
 
-  // T01's process-global extraction cache is keyed by URL and shared
+  // The process-global extraction cache is keyed by URL and shared
   // across tests in one run — clear per test for isolation.
   setUp(() => ExtractionCache.instance.clear());
 

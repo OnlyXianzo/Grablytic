@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/local_analytics.dart';
 
-/// Strictly local analytics dashboard (T21).
+/// Dashboard for download analytics stored locally on this device.
 ///
 /// Everything shown here lives on this device (SharedPreferences JSON) —
 /// no network, no SDK. Incognito jobs are never recorded.

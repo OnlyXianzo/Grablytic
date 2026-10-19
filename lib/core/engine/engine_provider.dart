@@ -86,7 +86,7 @@ final engineProvider = Provider<EngineService>((ref) {
       } catch (_) {}
     }
 
-    // Offline queue reminders sync (T20).
+    // Sync offline queue reminder settings with the platform scheduler.
     if (previous?.queueReminderEnabled != next.queueReminderEnabled ||
         previous?.queueReminderIntervalMinutes !=
             next.queueReminderIntervalMinutes) {
@@ -104,7 +104,7 @@ final engineProvider = Provider<EngineService>((ref) {
     }
   });
 
-  // Watch offline queue transitions to cancel or schedule reminders (T20).
+  // Watch offline queue transitions to cancel or schedule reminders.
   ref.listen(offlineQueueProvider, (previous, next) {
     final currentSettings = ref.read(settingsProvider);
     if (!currentSettings.queueReminderEnabled) return;
@@ -137,7 +137,7 @@ final engineProvider = Provider<EngineService>((ref) {
     );
   } catch (_) {}
 
-  // Initial queue reminders sync to platform WorkManager (T20).
+  // Publish the initial queue reminder setting to WorkManager.
   try {
     final initialQueue = ref.read(offlineQueueProvider);
     if (settings.queueReminderEnabled && initialQueue.isNotEmpty) {

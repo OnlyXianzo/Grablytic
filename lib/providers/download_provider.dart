@@ -331,10 +331,10 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     _persistRecord(item);
   }
 
-  /// T07: fire-and-forget thumbnail prefetch into app-private storage at job
-  /// creation (async IO, never UI-blocking). Records the path on the item
-  /// and DB only when still missing, so a finished sidecar is never
-  /// clobbered by a late fetch.
+  /// Prefetches the thumbnail into app-private storage when a job is created.
+  /// This runs asynchronously without blocking the UI and records the path on
+  /// the item and database only when still missing, so a finished sidecar is
+  /// never clobbered by a late fetch.
   void _prefetchThumbnail(String id, String? url, String? existingPath) {
     final thumbUrl = url ?? '';
     if (thumbUrl.isEmpty || (existingPath ?? '').isNotEmpty) return;
@@ -517,8 +517,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
               downloadedBytes: filesize,
               totalBytes: filesize,
               filePath: filePath ?? d.filePath,
-              // T07: keep the creation-time app-private cache over the
-              // post-download sidecar (persistent across file deletes).
+              // Keep the creation-time app-private cache over the
+              // post-download sidecar so it survives file deletion.
               thumbnailPath: d.thumbnailPath ?? thumbnailPath,
               speed: 0,
               eta: -1,

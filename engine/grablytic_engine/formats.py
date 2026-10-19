@@ -131,7 +131,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
                 if best_muxed is None or (f.get("height") or 0) > (best_muxed.get("height") or 0):
                     best_muxed = f
 
-        # T08: Select best progressive (muxed) MP4 stream <= 480p from single extraction
+        # Keep previews to one progressive muxed MP4 stream at or below 480p.
         preview_stream = None
         preview_candidates = []
         for f in formats_raw:

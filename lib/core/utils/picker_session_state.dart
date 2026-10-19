@@ -1,4 +1,4 @@
-/// In-memory session state for FormatPickerScreen toggles (T03).
+/// In-memory session state for format picker toggles.
 ///
 /// Retains user customizations across format picker visits within the
 /// same application session without modifying persistent Settings.

@@ -670,7 +670,8 @@ open class MainActivity : FlutterActivity() {
                         downloadId
                     }
 
-                    // T09: Start FGS synchronously on Main thread during user gesture
+                    // Start the foreground service on the main thread during the
+                    // user gesture.
                     try {
                         DownloadService.start(
                             this@MainActivity,
@@ -1152,7 +1153,7 @@ open class MainActivity : FlutterActivity() {
     // skipcq: KT-R1006
     private fun exportFileToDownloads(src: File, displayName: String): String {
         require(src.isFile) { "log file missing" }
-        // T10: Dart passes `grablytic logs - YYYY-MM-DD HH-mm-ss.log` (no
+        // Dart passes `grablytic logs - YYYY-MM-DD HH-mm-ss.log` (no
         // colons). Preserve spaces/dots/dashes; strip path separators and
         // colons; ensure .log. Falls back to a spec-shaped name, never blank.
         var safeName = displayName.replace(Regex("[/\\\\:]"), "_").trim()
