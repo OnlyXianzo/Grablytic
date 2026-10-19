@@ -31,8 +31,7 @@ class _AlwaysAliveThread:
     def join(self, timeout=None):
         self.joined_with = timeout
 
-    @staticmethod
-    def is_alive():
+    def is_alive(self):
         return True
 
 
@@ -45,8 +44,7 @@ class _DeadThread:
     def join(self, timeout=None):
         self.joined_with = timeout
 
-    @staticmethod
-    def is_alive():
+    def is_alive(self):
         return False
 
 

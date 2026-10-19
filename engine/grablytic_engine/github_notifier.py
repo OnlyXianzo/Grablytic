@@ -149,10 +149,12 @@ def log_tail_enabled() -> bool:
     )
 
 
-def _warn_unreachable_repo(repo: str, warned_unreachable_repo: bool) -> bool:
+def _warn_unreachable_repo(repo: str) -> None:
     """Warn ONCE when the report target cannot be reached."""
-    if warned_unreachable_repo:
-        return True
+    global _warned_unreachable_repo
+    if _warned_unreachable_repo:
+        return
+    _warned_unreachable_repo = True
     try:
         from grablytic_engine.logger import get_logger
 
@@ -163,7 +165,6 @@ def _warn_unreachable_repo(repo: str, warned_unreachable_repo: bool) -> bool:
         )
     except Exception:
         pass
-    return True
 
 
 def _token(explicit: str | None = None) -> str | None:

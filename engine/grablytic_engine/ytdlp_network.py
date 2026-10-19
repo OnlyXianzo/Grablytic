@@ -66,14 +66,14 @@ class _PinnedUrllibHTTPHandler(_UrllibHTTPHandler):
         self._trusted_socks_proxies = frozenset(trusted_socks_proxies)
         super().__init__(**kwargs)
 
-    def _make_conn_class(self, base, request, context):
+    def _make_conn_class(self, base, request):
         socks_proxy = _socks_proxy_header(request)
         if socks_proxy:
             if socks_proxy not in self._trusted_socks_proxies:
                 raise urllib.error.URLError("Untrusted SOCKS proxy marker")
-            return super()._make_conn_class(base, request, context)
+            return _UrllibHTTPHandler._make_conn_class(base, request)
         if request.has_proxy():
-            return super()._make_conn_class(base, request, context)
+            return _UrllibHTTPHandler._make_conn_class(base, request)
 
         addresses = getattr(request, _PINNED_REQUEST_ATTR, ())
         if not addresses:
@@ -85,7 +85,7 @@ class _PinnedUrllibHTTPHandler(_UrllibHTTPHandler):
             return functools.partial(_PinnedHTTPSConnection, addresses=addresses)
         if issubclass(base, http.client.HTTPConnection):
             return functools.partial(_PinnedHTTPConnection, addresses=addresses)
-        return super()._make_conn_class(base, request, context)
+        return _UrllibHTTPHandler._make_conn_class(base, request)
 
 
 class _SafeUrllibRedirectHandler(_UrllibRedirectHandler):

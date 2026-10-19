@@ -24,19 +24,15 @@ def _dl():
 
 class _NoopThread:
     def __init__(self, *args, **kwargs):
-        """No-op initializer for NoopThread."""
         pass
 
     def start(self):
-        """No-op; thread start is a no-op."""
         pass
 
-    @staticmethod
-    def is_alive():
+    def is_alive(self):
         return False
 
     def join(self, timeout=None):
-        """No-op; no thread to join."""
         pass
 
 
@@ -84,7 +80,7 @@ def test_backoff_sleeps_the_documented_policy(monkeypatch):
     """The 5s/15s policy stays observable (and is not silently changed)."""
     dl = _dl()
     delays = []
-    monkeypatch.setattr(dl.time, "sleep", delays.append)
+    monkeypatch.setattr(dl.time, "sleep", lambda s: delays.append(s))
     dl.start_download(url="https://example.com/b", download_id="b")
     dl._begin_backoff("b", dl._RETRY_BACKOFF_SECONDS[0], None)
     dl._begin_backoff("b", dl._RETRY_BACKOFF_SECONDS[1], None)

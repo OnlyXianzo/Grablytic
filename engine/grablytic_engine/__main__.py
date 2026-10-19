@@ -120,8 +120,7 @@ class _StdoutFirewall:
         return _StderrBuffer(self._err)
 
     # -- introspection ----------------------------------------------
-    @staticmethod
-    def isatty():
+    def isatty(self):
         return False
 
     def fileno(self):
@@ -142,16 +141,13 @@ class _StdoutFirewall:
     def closed(self):
         return False
 
-    @staticmethod
-    def writable():
+    def writable(self):
         return True
 
-    @staticmethod
-    def readable():
+    def readable(self):
         return False
 
-    @staticmethod
-    def seekable():
+    def seekable(self):
         return False
 
     def __enter__(self):
@@ -207,7 +203,7 @@ def install_stdout_firewall() -> bool:
     try:
         current = sys.stdout
         if isinstance(current, _StdoutFirewall):
-            current = current.real
+            current = current._real
         sys.stdout = _StdoutFirewall(current, sys.stderr)
         return True
     except Exception:
@@ -218,7 +214,7 @@ def restore_stdout() -> None:
     """Undo install_stdout_firewall() (tests + graceful shutdown)."""
     try:
         if isinstance(sys.stdout, _StdoutFirewall):
-            sys.stdout = sys.stdout.real
+            sys.stdout = sys.stdout._real
     except Exception:
         pass
 
@@ -232,7 +228,7 @@ def _out_stream():
     """
     stream = sys.stdout
     if isinstance(stream, _StdoutFirewall):
-        return stream.real
+        return stream._real
     return stream
 
 
@@ -251,26 +247,21 @@ def _write_stdout_line(line_str: str) -> None:
         stream.flush()
 
 
-def _drain_log_queue() -> None:
-    if _log_queue is None:
-        return
-    while True:
-        try:
-            log_entry = _log_queue.get_nowait()
-            _write_stdout_line(json.dumps(log_entry))
-        except _queue_module.Empty:
-            break
-        except Exception as exc:
-            try:
-                log.warn(f"Dropping malformed log entry: {type(exc).__name__}")
-            except Exception:
-                pass
-            break
-
-
 def poll_queues():
     while True:
-        _drain_log_queue()
+        if _log_queue is not None:
+            while True:
+                try:
+                    log_entry = _log_queue.get_nowait()
+                    _write_stdout_line(json.dumps(log_entry))
+                except _queue_module.Empty:
+                    break
+                except Exception as exc:
+                    try:
+                        log.warn(f"Dropping malformed log entry: {type(exc).__name__}")
+                    except Exception:
+                        pass
+                    break
 
         with _downloads_lock:
             active_ids = list(_active_downloads.keys())
@@ -425,11 +416,11 @@ def _negotiate_contract(params):
     return None
 
 
-def _h_engine_bootstrap(_params):
+def _h_engine_bootstrap(params):
     return bootstrap()
 
 
-def _h_engine_contract(_params):
+def _h_engine_contract(params):
     return contract.contract_info()
 
 
@@ -446,7 +437,7 @@ def _h_download_cancel(params):
     return cancel_download(_req(params, "download_id"))
 
 
-def _h_download_queue_status(_params):
+def _h_download_queue_status(params):
     return get_queue_status()
 
 
@@ -492,7 +483,7 @@ def _h_resume_report(params):
     )
 
 
-def _h_update_check(_params):
+def _h_update_check(params):
     return update_check()
 
 
@@ -525,7 +516,8 @@ if set(_METHOD_HANDLERS) != set(contract.METHODS):
     # drift means a host would call a method the contract does not
     # advertise (or the other way round).
     raise RuntimeError(
-        f"IPC contract drift: registry={sorted(_METHOD_HANDLERS)} contract={sorted(contract.METHODS)}"
+        "IPC contract drift: registry=%s contract=%s"
+        % (sorted(_METHOD_HANDLERS), sorted(contract.METHODS))
     )
 
 
@@ -665,7 +657,7 @@ def _execute_parsed_request(req_id, method, params):
         _write_stdout_line(json.dumps(err_res))
 
 
-def _busy_envelope(req_id, _method) -> dict:
+def _busy_envelope(req_id, method) -> dict:
     """Explicit, retryable load-shed envelope (never a silent hang)."""
     return {
         "id": req_id,
@@ -682,27 +674,15 @@ def _busy_envelope(req_id, _method) -> dict:
     }
 
 
-def _handle_cli(argv) -> bool:
-    if len(argv) <= 1:
-        return False
-    command = argv[1]
-    handlers = {
-        "bootstrap": lambda: json.dumps(bootstrap()),
-        "formats": lambda: json.dumps(get_formats(argv[2])) if len(argv) >= 3 else None,
-    }
-    if command in handlers:
-        result = handlers[command]()
-        if result:
-            _write_stdout_line(result)
-        else:
-            _write_stdout_line(f"Unknown CLI command or missing argument: {command}")
-    else:
-        _write_stdout_line(f"Unknown CLI command: {command}")
-    return True
-
-
 def main():
-    if _handle_cli(sys.argv):
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command == "bootstrap":
+            _write_stdout_line(json.dumps(bootstrap()))
+        elif command == "formats" and len(sys.argv) >= 3:
+            _write_stdout_line(json.dumps(get_formats(sys.argv[2])))
+        else:
+            _write_stdout_line(f"Unknown CLI command: {command}")
         return
 
     # Framing firewall first: from here on, only _write_stdout_line() can

@@ -83,64 +83,6 @@ def parse_lcov(path: Path) -> tuple[int, int, int]:
                     raise ValueError(
                         f"lines {record_start}-{end_line}: {source!r} has no DA line data"
                     )
-                files.setdefault(project_path, {}).update(line_hits)
-        source = None
-        line_hits.clear()
-        summary_found = None
-        summary_hit = None
-
-    def handle_sf(data: str, lineno: int) -> None:
-        nonlocal source, line_hits, record_start
-        if source is not None:
-            finish_record(lineno - 1)
-        source = data
-        line_hits = {}
-        record_start = lineno
-
-    def handle_da(data: str, lineno: int) -> None:
-        nonlocal line_hits
-        parts = data.split(",", 1)
-        if len(parts) != 2:
-            raise ValueError(f"line {lineno}: invalid DA record {data!r}")
-        loc_str, count_str = parts
-        loc = _integer(loc_str, "line", lineno)
-        count = _integer(count_str, "hit", lineno)
-        line_hits[loc] = count > 0
-
-    def handle_lf(data: str, lineno: int) -> None:
-        nonlocal summary_found
-        summary_found = _integer(data, "lines found", lineno)
-
-    def handle_lh(data: str, lineno: int) -> None:
-        nonlocal summary_hit
-        summary_hit = _integer(data, "lines hit", lineno)
-
-    handlers = {
-        "SF": handle_sf,
-        "DA": handle_da,
-        "LF": handle_lf,
-        "LH": handle_lh,
-        "end_of_record": lambda _data, lineno: finish_record(lineno),
-    }
-
-    for lineno, row in enumerate(rows, start=1):
-        key, _, rest = row.partition(":")
-        handler = handlers.get(key)
-        if handler:
-            handler(rest, lineno)
-
-    if source is not None:
-        finish_record(len(rows))
-
-    if summary_found is None or summary_hit is None:
-        raise ValueError("LCOV summary missing LF or LH records")
-
-    total_files = len(files)
-    total_lines = sum(len(hits) for hits in files.values())
-    total_hits = sum(
-        sum(1 for hit in hits.values() if hit) for hits in files.values()
-    )
-    return total_files, total_lines, total_hits
                 found = len(line_hits)
                 hit = sum(line_hits.values())
                 if summary_found is not None and summary_found != found:

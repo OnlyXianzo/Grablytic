@@ -83,11 +83,33 @@ def build_playlist_items(selected: list) -> str:
     parser, so a malformed index raises ``ValueError`` instead of silently
     downloading the wrong entries. Duplicates are dropped, order is kept.
     Empty input returns ``""`` (caller should skip the download).
+    """
+    from yt_dlp.utils import PlaylistEntries
+
+    seen: list[int] = []
+    for raw in selected or []:
+        # Strict: only ints and digit-strings. int(2.5) would silently
+        # truncate to 2 and download the WRONG entry — reject instead.
+        if isinstance(raw, bool):
+            raise ValueError(f"Invalid playlist index: {raw!r}")
+        if isinstance(raw, int):
+            idx = raw
+        elif isinstance(raw, str) and raw.strip().isdigit():
+            idx = int(raw.strip())
+        else:
+            raise ValueError(f"Invalid playlist index: {raw!r}")
+        if idx < 1:
+            raise ValueError(f"Invalid playlist index (1-based): {raw!r}")
+        # Validate against yt-dlp's own grammar — single source of truth
+        # for what the downloader will accept.
+        list(PlaylistEntries.parse_playlist_items(str(idx)))
+        if idx not in seen:
+            seen.append(idx)
     return ",".join(str(i) for i in seen)
 
 
-def _validate_playlist_url(url: str) -> dict | None:
-    from grablytic_engine.url_guard import is_safe_media_url
+def get_playlist_info(url: str, config: dict | None = None) -> dict:
+    from grablytic_engine.url_guard import is_safe_media_url, sanitized_proxy
 
     if not is_safe_media_url(url):
         return {
@@ -95,36 +117,23 @@ def _validate_playlist_url(url: str) -> dict | None:
             "error_type": "ERROR_INVALID_PARAM",
             "error_message": "URL must be a public http(s) address",
         }
-    return None
-
-
-def _build_playlist_opts(config: dict | None):
-    from grablytic_engine.opts_builder import _configure_js_runtime
+    log.info(
+        f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}"
+    )
 
     paths = get_paths()
     cfg = coerce_config(config)
+
     opts = {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": True,
         "force_generic_extractor": False,
     }
+
+    from grablytic_engine.opts_builder import _configure_js_runtime
+
     _configure_js_runtime(opts, paths)
-    return opts, cfg, paths
-
-
-def get_playlist_info(url: str, config: dict | None = None) -> dict:
-    from grablytic_engine.url_guard import sanitized_proxy
-
-    error = _validate_playlist_url(url)
-    if error:
-        return error
-
-    log.info(
-        f"Fetching playlist info for {url.split('?', 1)[0] if isinstance(url, str) else '<url>'}"
-    )
-
-    opts, cfg, paths = _build_playlist_opts(config)
 
     if "youtube.com" in url or "youtu.be" in url:
         opts.setdefault("extractor_args", {})

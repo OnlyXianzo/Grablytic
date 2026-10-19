@@ -134,7 +134,7 @@ def load_site_profiles_from_url(url: str) -> dict:
         with _CACHE_LOCK:
             _SITE_PROFILES_CACHE = safe
         return safe
-    except (URLError, OSError, ValueError):
+    except (URLError, json.JSONDecodeError, OSError, ValueError):
         return load_site_profiles()
 
 
@@ -153,11 +153,11 @@ def site_profiles_status() -> dict:
         return {"loaded": False, "count": 0, "source": "builtin"}
 
 
-def reset_site_profiles_cache(site_profiles_cache, cache_lock):
+def reset_site_profiles_cache() -> None:
     """Drop the cached remote profiles (the next load re-reads them)."""
-    with cache_lock:
-        site_profiles_cache = None
-    return site_profiles_cache
+    global _SITE_PROFILES_CACHE
+    with _CACHE_LOCK:
+        _SITE_PROFILES_CACHE = None
 
 
 def load_profiles_from_disk(path: str) -> dict:
@@ -167,7 +167,7 @@ def load_profiles_from_disk(path: str) -> dict:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+    except (OSError, ValueError, json.JSONDecodeError):
         return {}
     return {}
 

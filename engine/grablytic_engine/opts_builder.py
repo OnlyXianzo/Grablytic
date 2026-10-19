@@ -38,23 +38,6 @@ SAFE_COMPAT_OPTIONS = frozenset(
 )
 
 
-def _sanitize_playlist_items_list(
-    val: list | tuple, max_items: int, max_index: int
-) -> str | None:
-    items = []
-    for x in val:
-        try:
-            n = int(x)
-        except (ValueError, TypeError):
-            return None
-        if not 1 <= n <= max_index:
-            return None
-        items.append(str(n))
-    if not items or len(items) > max_items:
-        return None
-    return ",".join(items)
-
-
 def sanitize_playlist_items(
     val: str | list | tuple | None, max_items: int = 500, max_index: int = 10000
 ) -> str | None:
@@ -66,11 +49,21 @@ def sanitize_playlist_items(
     if val is None:
         return None
     if isinstance(val, (list, tuple)):
-        return _sanitize_playlist_items_list(val, max_items, max_index)
-    if isinstance(val, str):
-        parts = val.split(",")
-        return _sanitize_playlist_items_list(parts, max_items, max_index)
-    return None
+        items = []
+        for x in val:
+            try:
+                n = int(x)
+                if 1 <= n <= max_index:
+                    items.append(str(n))
+                else:
+                    return None
+            except (ValueError, TypeError):
+                return None
+        if not items or len(items) > max_items:
+            return None
+        return ",".join(items)
+
+    if not isinstance(val, str):
         return None
 
     val_str = val.strip()
@@ -234,11 +227,12 @@ def _outtmpl_is_collision_safe(tmpl) -> bool:
     return any(f"%({field})" in tmpl for field in _UNIQUE_TMPL_FIELDS)
 
 
-def _warn_collision_unsafe_tmpl(_tmpl) -> None:
+def _warn_collision_unsafe_tmpl(tmpl) -> None:
     """Warn ONCE that the template can overwrite existing downloads."""
-    if getattr(_warn_collision_unsafe_tmpl, "_collision_warned", False):
+    global _collision_warned
+    if _collision_warned:
         return
-    _warn_collision_unsafe_tmpl._collision_warned = True
+    _collision_warned = True
     try:
         from grablytic_engine.logger import get_logger
 
@@ -335,6 +329,7 @@ def apply_aria2c_opts(opts: dict, config: dict) -> dict:
     import os
     import re
     from grablytic_engine.logger import get_logger
+    from grablytic_engine.paths import get_paths
 
     log = get_logger("grablytic_engine.opts_builder")
     aria_path = get_paths().get("aria2c_path")
@@ -556,6 +551,7 @@ def build_ydl_opts(
     # "already recorded in the archive" skip (Seal #2065 trap). Scoped to a
     # single call — never flips the global preference.
     if cfg.get("use_archive") and not cfg.get("ignore_archive"):
+        import os as _os
 
         default_archive = _os.path.join(
             paths.get("data_dir") or ".", "download_archive.txt"
@@ -579,6 +575,8 @@ def build_ydl_opts(
         else:
             opts["download_archive"] = default_archive
             try:
+                from grablytic_engine.logger import get_logger as _get_logger
+
                 _get_logger("grablytic_engine.opts").warn(
                     "Ignoring invalid archive_path; using default"
                 )
@@ -823,7 +821,9 @@ def build_ydl_opts(
     # but never applied (dead settings — verified against yt-dlp's
     # YoutubeDL params: concurrent_fragment_downloads [CLI -N] and
     # socket_timeout). Clamp defensively, same style as aria2c above.
-    _log = get_logger("grablytic_engine.opts_builder")
+    from grablytic_engine.logger import get_logger as _get_logger
+
+    _log = _get_logger("grablytic_engine.opts_builder")
     try:
         frags = max(1, min(16, int(cfg.get("concurrent_fragments", 2))))
     except (ValueError, TypeError):

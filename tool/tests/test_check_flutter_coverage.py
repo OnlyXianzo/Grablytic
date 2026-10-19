@@ -23,7 +23,6 @@ DA:8,2
 LF:1
 LH:1
 end_of_record
-"""
 SF:package:flutter/widgets.dart
 DA:1,0
 LF:1
@@ -33,8 +32,7 @@ end_of_record
         encoding="utf-8",
     )
 
-    if parse_lcov(report) != (2, 3, 2):
-        raise AssertionError
+    assert parse_lcov(report) == (2, 3, 2)
 
 
 def test_parse_lcov_rejects_inconsistent_lf_summary(tmp_path: Path) -> None:
