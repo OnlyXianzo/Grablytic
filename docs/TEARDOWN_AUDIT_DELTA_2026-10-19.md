@@ -652,3 +652,26 @@ addressed rather than waived:
 | `2bb53f1` | `fix(tests)`: the Dart tests follow the corrected behaviour |
 | `fbba6d6` | `fix(tests)`: the widget tests stay off the real engine transport |
 | `ff0dfb6` | `ci(android)`: the full release lint, tolerating the lint tool bug |
+| (this commit) | `docs(audit)`: this record, including the verification matrix result |
+
+---
+
+## 7. Verification matrix result
+
+The `Verification` workflow was run against the tip of this branch.
+The final run is **green in all seven jobs**:
+
+| Job | Result |
+|---|---|
+| Workflow YAML Lint | success |
+| Python Engine Tests (3.11) | success |
+| Python Engine Tests (3.12) | success |
+| Flutter Analyze & Test | success — `flutter analyze` → *No issues found*; `flutter test --coverage` → **658 passed** |
+| Android API 35 — Flutter → Chaquopy → Python IPC | success — the emulator test reports *All tests passed*; the release lint runs and only the lint tool's own crash is downgraded to a warning |
+| Secret Scan (gitleaks) | success |
+| Docs Link Check | success |
+
+Nothing on this branch is blocked on a manual step: the Android job
+installs its own SDK, the emulator image and the Flutter SDK, so the
+Android and Flutter findings are exercised against the real toolchain
+rather than only type-checked here.
