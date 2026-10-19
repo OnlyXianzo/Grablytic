@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""
-Deep Git History & Working Tree Secret Scanner
+"""Deep secret scanner for git history and the working tree.
+
 Part of Grablytic's skills/secret-scan/ pack.
 """
 
+import argparse
 import os
 import re
-import sys
-import json
-import argparse
 import subprocess
+import sys
 
 PATTERNS = [
     ("AWS Access Key ID", re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b")),
@@ -64,7 +63,60 @@ BENIGN_CODE_PATTERNS = [
 ]
 
 
+def _is_benign(matched, line):
+    """Return True when a match is a known fixture or UI code, not a secret."""
+    if any(allow in matched for allow in BENIGN_ALLOWLIST):
+        return True
+    lowered = line.lower()
+    return any(pattern in lowered for pattern in BENIGN_CODE_PATTERNS)
+
+
+def _find_secrets(line):
+    """Yield (name, matched text) for every non-benign pattern hit."""
+    for name, pattern in PATTERNS:
+        for match in pattern.finditer(line):
+            text = match.group(0)
+            if not _is_benign(text, line):
+                yield name, text
+
+
+def _iter_added_lines(repo_path, max_commits=None):
+    """Yield (commit, author, date, file, line) for added lines in git log."""
+    cmd = ["git", "-C", repo_path, "log", "--all", "-p", "--unified=0"]
+    if max_commits:
+        cmd.extend(["-n", str(max_commits)])
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+    )
+
+    commit = "UNKNOWN"
+    author = ""
+    date = ""
+    file = ""
+    for raw in proc.stdout:
+        if raw.startswith("commit "):
+            commit = raw.strip().split()[1]
+        elif raw.startswith("Author: "):
+            author = raw.strip()
+        elif raw.startswith("Date: "):
+            date = raw.strip()
+        elif raw.startswith("+++ b/"):
+            file = raw.strip()[6:]
+        elif raw.startswith("+") and not raw.startswith("+++"):
+            yield commit, author, date, file, raw[1:].strip()
+
+    stderr = proc.stderr.read()
+    if proc.wait() != 0:
+        print(f"[-] git log failed in {repo_path}: {stderr.strip()}")
+
+
 def scan_repo(repo_path, max_commits=None):
+    """Scan added lines in every commit reachable from the repo's refs."""
     repo_path = os.path.abspath(repo_path)
     if not os.path.exists(os.path.join(repo_path, ".git")):
         print(f"[-] Skipped {repo_path} (not a git repository)")
@@ -74,60 +126,27 @@ def scan_repo(repo_path, max_commits=None):
     print(f"Deep scanning Git commit history: {repo_path}")
     print("==========================================")
 
-    cmd = ["git", "-C", repo_path, "log", "--all", "-p", "--unified=0"]
-    if max_commits:
-        cmd.extend(["-n", str(max_commits)])
-
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace"
-    )
-
-    current_commit = "UNKNOWN"
-    current_author = ""
-    current_date = ""
-    current_file = ""
     findings = []
+    for commit, author, date, file, content in _iter_added_lines(
+        repo_path, max_commits
+    ):
+        for name, matched in _find_secrets(content):
+            finding = {
+                "type": name,
+                "commit": commit,
+                "author": author,
+                "date": date,
+                "file": file,
+                "match": matched[:25] + ("..." if len(matched) > 25 else ""),
+                "snippet": content[:90],
+            }
+            findings.append(finding)
+            print(f"[!] Finding: {name}")
+            print(f"    Commit:  {commit[:10]} ({author}, {date})")
+            print(f"    File:    {file}")
+            print(f"    Snippet: {content[:80]}")
+            print("------------------------------------------")
 
-    for line in proc.stdout:
-        if line.startswith("commit "):
-            current_commit = line.strip().split()[1]
-        elif line.startswith("Author: "):
-            current_author = line.strip()
-        elif line.startswith("Date: "):
-            current_date = line.strip()
-        elif line.startswith("+++ b/"):
-            current_file = line.strip()[6:]
-        elif line.startswith("+") and not line.startswith("+++"):
-            content = line[1:].strip()
-            for name, pattern in PATTERNS:
-                matches = pattern.finditer(content)
-                for m in matches:
-                    matched_str = m.group(0)
-                    if any(allow in matched_str for allow in BENIGN_ALLOWLIST):
-                        continue
-                    if any(p in content.lower() for p in BENIGN_CODE_PATTERNS):
-                        continue
-
-                    finding = {
-                        "type": name,
-                        "commit": current_commit,
-                        "author": current_author,
-                        "date": current_date,
-                        "file": current_file,
-                        "match": matched_str[:25]
-                        + ("..." if len(matched_str) > 25 else ""),
-                        "snippet": content[:90],
-                    }
-                    findings.append(finding)
-                    print(f"[!] Finding: {name}")
-                    print(
-                        f"    Commit:  {current_commit[:10]} ({current_author}, {current_date})"
-                    )
-                    print(f"    File:    {current_file}")
-                    print(f"    Snippet: {content[:80]}")
-                    print("------------------------------------------")
-
-    proc.wait()
     if not findings:
         print(
             f"[✓] Zero secrets detected in git history for {os.path.basename(repo_path)}"
@@ -141,51 +160,40 @@ def scan_repo(repo_path, max_commits=None):
 
 
 def scan_working_tree(repo_path):
+    """Scan files that are staged, modified, or untracked."""
     repo_path = os.path.abspath(repo_path)
     print(f"\nScanning uncommitted/working tree files in {repo_path}...")
     findings = []
-    # Untracked or staged files
     cmd = ["git", "-C", repo_path, "status", "--porcelain"]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     for line in res.stdout.splitlines():
         if len(line) < 3:
             continue
         filepath = os.path.join(repo_path, line[3:].strip())
-        if os.path.isfile(filepath):
-            try:
-                with open(filepath, "r", errors="ignore") as f:
-                    for i, fline in enumerate(f, 1):
-                        for name, pattern in PATTERNS:
-                            matches = pattern.finditer(fline)
-                            for m in matches:
-                                matched_str = m.group(0)
-                                if any(
-                                    allow in matched_str for allow in BENIGN_ALLOWLIST
-                                ):
-                                    continue
-                                if any(
-                                    p in fline.lower() for p in BENIGN_CODE_PATTERNS
-                                ):
-                                    continue
-                                findings.append(
-                                    {
-                                        "type": name,
-                                        "file": filepath,
-                                        "line": i,
-                                        "snippet": fline.strip()[:80],
-                                    }
-                                )
-                                print(
-                                    f"[!] Uncommitted finding: {name} in {filepath}:{i}"
-                                )
-            except Exception:
-                pass
+        if not os.path.isfile(filepath):
+            continue
+        try:
+            with open(filepath, "r", errors="ignore") as handle:
+                for number, text in enumerate(handle, 1):
+                    for name, _ in _find_secrets(text):
+                        findings.append(
+                            {
+                                "type": name,
+                                "file": filepath,
+                                "line": number,
+                                "snippet": text.strip()[:80],
+                            }
+                        )
+                        print(f"[!] Uncommitted finding: {name} in {filepath}:{number}")
+        except OSError as exc:
+            print(f"[-] Skipped {filepath}: {exc}")
     if not findings:
         print("[✓] Zero uncommitted secrets detected in working tree.")
     return findings
 
 
 def main():
+    """Scan every path given on the command line and exit non-zero on findings."""
     parser = argparse.ArgumentParser(
         description="Deep secret scanner across git commits and working trees"
     )
@@ -196,26 +204,21 @@ def main():
         "--max-commits", type=int, default=None, help="Limit commit depth"
     )
     parser.add_argument(
-        "--include-working-tree",
-        action="store_true",
-        default=True,
-        help="Scan working tree",
+        "--skip-working-tree", action="store_true", help="Do not scan uncommitted files"
     )
     args = parser.parse_args()
 
     all_findings = {}
-    for p in args.paths:
-        f_commits = scan_repo(p, max_commits=args.max_commits)
-        f_tree = scan_working_tree(p) if args.include_working_tree else []
-        all_findings[p] = f_commits + f_tree
+    for path in args.paths:
+        commit_findings = scan_repo(path, max_commits=args.max_commits)
+        tree_findings = [] if args.skip_working_tree else scan_working_tree(path)
+        all_findings[path] = commit_findings + tree_findings
 
-    total = sum(len(v) for v in all_findings.values())
+    total = sum(len(items) for items in all_findings.values())
     print(
         f"\n>>> SCAN FINISHED: {total} total actionable finding(s) across {len(args.paths)} target(s)."
     )
-    if total > 0:
-        sys.exit(1)
-    sys.exit(0)
+    sys.exit(1 if total else 0)
 
 
 if __name__ == "__main__":
