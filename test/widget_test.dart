@@ -29,6 +29,11 @@ void main() {
         ProviderScope(
           overrides: [
             sharedPreferencesProvider.overrideWithValue(prefs),
+            // The real desktop engine would try to spawn a Python
+            // process and leave its 30 s request timeout pending when the
+            // widget tree is torn down. Every other test in this group
+            // uses the mock engine for the same reason.
+            engineProvider.overrideWith((ref) => MockEngineService()),
           ],
           child: const GrablyticApp(),
         ),

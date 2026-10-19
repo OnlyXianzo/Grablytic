@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grablytic/core/utils/offline_link_queue.dart';
+import 'package:grablytic/core/engine/engine_provider.dart';
+import 'package:grablytic/core/engine/mock_engine_service.dart';
 import 'package:grablytic/features/home/widgets/offline_queue_banner.dart';
 import 'package:grablytic/providers/batch_provider.dart';
 import 'package:grablytic/providers/settings_provider.dart';
@@ -121,6 +123,11 @@ void main() {
             connectivityProvider.overrideWithValue(
               _MockConnectivity([ConnectivityResult.wifi]),
             ),
+            // The real desktop engine would try to spawn a Python
+            // process and leave its 30 s request timeout pending when the
+            // widget tree is torn down. The banner test is about the
+            // queue, not the engine.
+            engineProvider.overrideWith((ref) => MockEngineService()),
           ],
         );
         addTearDown(container.dispose);

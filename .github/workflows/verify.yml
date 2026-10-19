@@ -108,11 +108,18 @@ jobs:
       # registrant without them and injects the Gradle wrapper into
       # android/ (it is git-ignored), without running a single Gradle
       # task, so this stays a lint-only step.
+      #
+      # `lintVitalRelease` is the task AGP runs on every release build
+      # with `checkReleaseBuilds = true`; it reports the release
+      # blocking issues. The full `lintRelease` analysis cannot be used
+      # here: lint itself crashes while analysing the Kotlin DSL build
+      # scripts ("Cannot find a KaModule for the VirtualFile"), which is
+      # a bug in the lint tool, not in this project.
       - name: Android lint (release variant)
         run: |
           flutter build apk --release --config-only
           cd android
-          ./gradlew :app:lintRelease --console=plain
+          ./gradlew :app:lintVitalRelease --console=plain
 
       - name: Run end-to-end Android integration test
         uses: reactivecircus/android-emulator-runner@v2

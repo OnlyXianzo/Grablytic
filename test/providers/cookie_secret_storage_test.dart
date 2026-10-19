@@ -32,7 +32,7 @@ void main() {
         expect(entry, isNot(contains('SID')));
       }
       // The jar itself is in the secret store.
-      expect(store.stored.values.first, contains('abc123'));
+      expect(store.stored.values.first.join('\n'), contains('abc123'));
     });
 
     test('a legacy plaintext jar is migrated out of preferences', () async {
