@@ -148,56 +148,52 @@ def _ip_is_blocked(ip) -> bool:
                 embedded = None
             if embedded is not None and _ip_is_blocked(embedded):
                 return True
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
+        except Exception:
+            # Fail closed: an uninspectable address never counts as public.
             return True
-        # Explicit per-policy pins (redundant with the flags above on most
-        # Pythons, but pinned so behaviour can't drift with ipaddress data):
-        # cloud-metadata endpoint + IPv6 link-local / unique-local / loopback.
-        if ip == _CLOUD_METADATA_IPV4:
-            return True
-        if getattr(ip, "version", 4) == 6:
-            if ip in _IPV6_LINK_LOCAL or ip in _IPV6_UNIQUE_LOCAL:
-                return True
-            if ip == _IPV6_LOOPBACK:
-                return True
-        return False
+
+
+def _is_immediate_block(h: str) -> bool:
+    return (
+        "%" in h
+        or not h
+        or h in _LOCAL_HOSTS
+        or h.endswith(".local")
+        or h.endswith(".localhost")
+    )
+
+
+def _safe_parse_ip(h: str):
+    try:
+        return ipaddress.ip_address(h)
+    except ValueError:
+        return None
+
+
+def _safe_alt_ipv4_to_int(h: str):
+    try:
+        return _alt_ipv4_to_int(h)
     except Exception:
-        # Fail closed: an uninspectable address never counts as public.
+        return None
+
+
+def _safe_block_alt(alt: int) -> bool:
+    try:
+        return _ip_is_blocked(ipaddress.IPv4Address(alt))
+    except Exception:
         return True
 
 
 def _host_is_blocked(host: str, *, fail_closed_dns: bool) -> bool:
     h = (host or "").strip().lower().rstrip(".")
-    # Zone identifiers are unnecessary in user URLs and complicate address checks.
-    if "%" in h:
+    if _is_immediate_block(h):
         return True
-    if not h:
-        return True
-    if h in _LOCAL_HOSTS or h.endswith(".local") or h.endswith(".localhost"):
-        return True
-    # Check ordinary and alternative numeric IP forms before doing DNS.
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        ip = None
+    ip = _safe_parse_ip(h)
     if ip is not None:
         return _ip_is_blocked(ip)
-    try:
-        alt = _alt_ipv4_to_int(h)
-    except Exception:
-        alt = None
+    alt = _safe_alt_ipv4_to_int(h)
     if alt is not None:
-        try:
-            return _ip_is_blocked(ipaddress.IPv4Address(alt))
-        except Exception:
-            return True
+        return _safe_block_alt(alt)
     if h in _METADATA_HOSTNAMES:
         return True
 
@@ -315,30 +311,56 @@ _PINNED_REQUEST_ATTR = "_grablytic_vetted_addresses"
 
 def _validated_socket_addresses(url: str):
     """Resolve one HTTP(S) destination, reject unsafe answers, and retain pins."""
-    if not isinstance(url, str) or not url or len(url) > 2048:
+    if not _is_valid_url_input(url):
         return ()
     try:
         parts = urlparse(url)
-        scheme = parts.scheme.lower()
-        host = parts.hostname or ""
-        port = parts.port or (443 if scheme == "https" else 80)
     except Exception:
         return ()
-    if (
-        scheme not in _ALLOWED_MEDIA_SCHEMES
-        or not host
-        or parts.username
-        or parts.password
-    ):
+    scheme, host, port = _extract_url_parts(parts)
+    if not _is_allowed_scheme(scheme) or not host or parts.username or parts.password:
         return ()
+    normalized = _normalize_host(host)
+    if not _is_clean_host(normalized):
+        return ()
+    return _resolve_and_filter_addresses(normalized, port)
 
-    normalized = host.strip().lower().rstrip(".")
+
+def _is_valid_url_input(url):
+    return isinstance(url, str) and url and len(url) <= 2048
+
+
+def _extract_url_parts(parts):
+    scheme = parts.scheme.lower()
+    host = parts.hostname or ""
+    port = parts.port or (443 if scheme == "https" else 80)
+    return scheme, host, port
+
+
+def _is_allowed_scheme(scheme):
+    return scheme in _ALLOWED_MEDIA_SCHEMES
+
+
+def _normalize_host(host):
+    return host.strip().lower().rstrip('.')
+
+
+def _is_clean_host(normalized):
     if (
         not normalized
-        or "%" in normalized
+        or '%' in normalized
         or normalized in _LOCAL_HOSTS
-        or normalized.endswith(".local")
-        or normalized.endswith(".localhost")
+        or normalized.endswith('.local')
+        or normalized.endswith('.localhost')
+    ):
+        return False
+    return True
+
+
+def _resolve_and_filter_addresses(host, port):
+    answers = _resolve_host(host)
+    vetted = tuple(a for a in answers if not _host_is_blocked(a, fail_closed_dns=True))
+    return vetted[:_MAX_PINNED_DNS_ANSWERS]
         or normalized in _METADATA_HOSTNAMES
     ):
         return ()
@@ -402,6 +424,10 @@ def _validated_socket_addresses(url: str):
     return tuple(vetted)
 
 
+def get_global_default_timeout():
+    return socket._GLOBAL_DEFAULT_TIMEOUT
+
+
 def _connect_vetted_addresses(addresses, timeout, source_address=None):
     """Connect only to vetted addresses within one total connection budget."""
     errors = []
@@ -419,7 +445,7 @@ def _connect_vetted_addresses(addresses, timeout, source_address=None):
             else:
                 remaining = timeout
             connection = socket.socket(family, socktype, protocol)
-            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            if timeout is not get_global_default_timeout():
                 connection.settimeout(remaining)
             if source_address is not None:
                 # This fetcher never supplies a source address. Refuse an
@@ -496,9 +522,8 @@ def _request_addresses(request):
 class _PinnedHTTPHandler(urllib.request.HTTPHandler):
     def http_open(self, request):
         addresses = _request_addresses(request)
-        connection = lambda host, **kwargs: _PinnedHTTPConnection(
-            host, addresses, **kwargs
-        )
+        def connection(host, **kwargs):
+            return _PinnedHTTPConnection(host, addresses, **kwargs)
         return self.do_open(connection, request)
 
 
@@ -515,9 +540,8 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
 
     def https_open(self, request):
         addresses = _request_addresses(request)
-        connection = lambda host, **kwargs: _PinnedHTTPSConnection(
-            host, addresses, **kwargs
-        )
+        def connection(host, **kwargs):
+            return _PinnedHTTPSConnection(host, addresses, **kwargs)
         return self.do_open(connection, request, context=self._context)
 
 

@@ -171,8 +171,6 @@ def _install_ffmpeg_seam_primary() -> str:
                         # Cancellation wins over the busy gate: the
                         # download's normal cancelled path runs.
                         raise KeyboardInterrupt("Download cancelled by user")
-                except KeyboardInterrupt:
-                    raise
                 except Exception:
                     pass
             # NOTE: wording avoids "timeout"/"timed out" so
@@ -191,7 +189,7 @@ def _install_ffmpeg_seam_primary() -> str:
         finally:
             _ffmpeg_gate_release()
 
-    serialized_real_run_ffmpeg._grablytic_ffmpeg_gate = True
+    set_grablytic_ffmpeg_gate(serialized_real_run_ffmpeg, True)
     pp_cls.real_run_ffmpeg = serialized_real_run_ffmpeg
     if getattr(pp_cls, "real_run_ffmpeg", None) is not serialized_real_run_ffmpeg:
         raise RuntimeError(
@@ -207,25 +205,46 @@ def _install_ffmpeg_seam_fallback() -> str:
     ``yt_dlp.utils.Popen.run`` is a core utility used by ALL
     postprocessors, so patching it covers ffmpeg invocations that the
     primary seam misses (e.g. a renamed PP method). Only used when the
-    primary seam is unavailable — never both, or the gate would be
-    acquired twice and deadlock.
+    primary seam is unavailable — never both, or the gate would
+    be acquired twice and deadlock.
     """
     from yt_dlp.utils import Popen
 
+    def _already_installed(descriptor):
+        return isinstance(descriptor, classmethod) and has_grablytic_ffmpeg_gate(descriptor.__func__)
+
+    def _is_valid_classmethod(descriptor):
+        return isinstance(descriptor, classmethod)
+
     orig_descriptor = Popen.__dict__.get("run")
     orig_run = Popen.run
-    if isinstance(orig_descriptor, classmethod) and getattr(
-        orig_descriptor.__func__, "_grablytic_ffmpeg_gate", False
-    ):
-        # Already ours (module reloaded, or a double install).
+
+    if _already_installed(orig_descriptor):
         return "yt_dlp.utils.Popen.run"
-    if not isinstance(orig_descriptor, classmethod):
+    if not _is_valid_classmethod(orig_descriptor):
         raise AttributeError(
             "yt_dlp.utils.Popen.run is no longer a classmethod — the "
             "fallback serialization seam cannot be installed"
         )
 
     _FFMPEG_BINARIES = ("ffmpeg", "ffprobe", "avconv")
+
+    def _is_ffmpeg_command(cmd):
+        return isinstance(cmd, (list, tuple)) and cmd and cmd[0] in _FFMPEG_BINARIES
+
+    @classmethod
+    def serialized_run(cls, *args, **kwargs):
+        cmd = args[1] if len(args) > 1 else kwargs.get("args")
+        if not _is_ffmpeg_command(cmd):
+            return orig_run(*args, **kwargs)
+        _ffmpeg_gate_acquire()
+        try:
+            return orig_run(*args, **kwargs)
+        finally:
+            _ffmpeg_gate_release()
+
+    Popen.run = serialized_run
+    return "yt_dlp.utils.Popen.run"
 
     def _is_ffmpeg_cmd(args) -> bool:
         try:
@@ -243,7 +262,7 @@ def _install_ffmpeg_seam_fallback() -> str:
         except Exception:
             return False
 
-    def _serialized_run_impl(cls, *args, **kwargs):
+    def _serialized_run_impl(_cls, *args, **kwargs):
         if not _is_ffmpeg_cmd(args):
             return orig_run(*args, **kwargs)
         cancel_event = _current_cancel_event()
@@ -252,8 +271,6 @@ def _install_ffmpeg_seam_fallback() -> str:
                 try:
                     if cancel_event.is_set():
                         raise KeyboardInterrupt("Download cancelled by user")
-                except KeyboardInterrupt:
-                    raise
                 except Exception:
                     pass
             msg = (
@@ -268,7 +285,7 @@ def _install_ffmpeg_seam_fallback() -> str:
         finally:
             _ffmpeg_gate_release()
 
-    _serialized_run_impl._grablytic_ffmpeg_gate = True
+    _serialized_run_impl.grablytic_ffmpeg_gate = True
     Popen.run = classmethod(_serialized_run_impl)
     # NOTE: `Popen.run` is a classmethod, so `getattr(Popen, "run")`
     # returns a NEW bound method on every access — an `is` comparison
@@ -1872,14 +1889,7 @@ def download_thread(
                     pass
 
 
-def start_download(
-    url: str,
-    download_id: str,
-    config: dict | None = None,
-    network_type: str = "wifi",
-    event_callback=None,
-) -> dict:
-    # Reject admission if engine is currently shutting down
+def _reject_if_shutting_down(download_id: str) -> dict | None:
     with _shutdown_lock:
         if _is_shutting_down:
             return {
@@ -1888,16 +1898,37 @@ def start_download(
                 "error_type": "ERROR_SHUTTING_DOWN",
                 "error_message": "Engine is shutting down",
             }
+    return None
 
-    # SSRF gate: only public http(s) media URLs reach yt-dlp. Rejects
-    # file://, localhost/LAN/link-local targets, and non-string garbage
-    # before admission, queueing, or thread spawn.
+
+def _is_url_safe(url: str) -> bool:
     try:
         from grablytic_engine.url_guard import is_safe_media_url
 
-        _url_ok = is_safe_media_url(url)
+        return is_safe_media_url(url)
     except Exception:
-        _url_ok = False
+        return False
+
+
+def start_download(
+    url: str,
+    download_id: str,
+    config: dict | None = None,
+    network_type: str = "wifi",
+    event_callback=None,
+) -> dict:
+    # Preliminary checks
+    shutdown_error = _reject_if_shutting_down(download_id)
+    if shutdown_error:
+        return shutdown_error
+
+    if not _is_url_safe(url):
+        return {
+            "success": False,
+            "download_id": download_id,
+            "error_type": "ERROR_URL_NOT_SAFE",
+            "error_message": f"URL not allowed: {url}",
+        }
     if not _url_ok:
         return {
             "success": False,
@@ -2044,32 +2075,52 @@ def start_download(
     }
 
 
+def _cancel_queued_entry(download_id: str, entry: dict) -> dict:
+    _index_remove(
+        download_id,
+        entry.get("url"),
+        _is_audio_mode(entry.get("config")),
+    )
+    return {
+        "success": True,
+        "download_id": download_id,
+        "cancelled": True,
+        "queued": True,
+    }
+
+
+def _cancel_active_entry(download_id: str, info: dict) -> dict:
+    try:
+        info["cancel_event"].set()
+        return {
+            "success": True,
+            "download_id": download_id,
+            "cancelled": True,
+            "queued": False,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error_type": "ERROR_CANCELLATION_FAILED",
+            "error_message": str(e),
+        }
+
+
 def cancel_download(download_id: str) -> dict:
-    queued_entry = None
-    worker_thread = None
-    worker_alive = False
-    active_slot_token = None
-    active_info = None
     with _downloads_lock:
-        parked = _pending_queue.pop(download_id, None)
-        if parked is not None:
-            _index_remove(
-                download_id,
-                parked.get("url"),
-                _is_audio_mode(parked.get("config")),
-            )
-            queued_entry = parked
+        queued_entry = _pending_queue.pop(download_id, None)
         info = _active_downloads.get(download_id)
-        if queued_entry is None and not info:
-            return {
-                "success": False,
-                "error_type": "ERROR_DOWNLOAD_NOT_FOUND",
-                "error_message": f"No active download with ID: {download_id}",
-            }
-        if info and not info.get("finished_at"):
-            try:
-                info["cancel_event"].set()
-            except Exception:
+
+    if queued_entry:
+        return _cancel_queued_entry(download_id, queued_entry)
+    if info and not info.get("finished_at"):
+        return _cancel_active_entry(download_id, info)
+
+    return {
+        "success": False,
+        "error_type": "ERROR_DOWNLOAD_NOT_FOUND",
+        "error_message": f"No active download with ID: {download_id}",
+    }
                 pass
             worker_thread = info.get("thread")
             worker_alive = _worker_thread_alive(info)
@@ -2260,12 +2311,11 @@ def _watchdog_worker(generation: int) -> None:
                     _watchdog_active_ids.discard(download_id)
 
 
-def _ensure_watchdog_pool() -> None:
+def _ensure_watchdog_pool(_watchdog_pool_started, _watchdog_generation):
     """Start the fixed watchdog pool if it is not running."""
-    global _watchdog_pool_started, _watchdog_generation
     with _watchdog_pool_lock:
         if _watchdog_pool_started:
-            return
+            return _watchdog_pool_started, _watchdog_generation
         _watchdog_pool_started = True
         _watchdog_generation += 1
         generation = _watchdog_generation
@@ -2280,17 +2330,17 @@ def _ensure_watchdog_pool() -> None:
             t.start()
         except Exception:
             pass
+    return _watchdog_pool_started, _watchdog_generation
 
 
-def stop_watchdog_pool() -> None:
+def stop_watchdog_pool(watchdog_pool_started, watchdog_generation) -> None:
     """Stop the watchdog pool. Called from `shutdown_downloads`."""
-    global _watchdog_pool_started, _watchdog_generation
     with _watchdog_pool_lock:
-        if not _watchdog_pool_started:
+        if not watchdog_pool_started:
             return
-        _watchdog_pool_started = False
+        watchdog_pool_started = False
         # Retire the workers: each one exits at its next loop check.
-        _watchdog_generation += 1
+        watchdog_generation += 1
     with _watchdog_pool_lock:
         _watchdog_active_ids.clear()
 

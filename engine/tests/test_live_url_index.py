@@ -31,12 +31,15 @@ class _NoopThread:
         self.kwargs = kwargs
 
     def start(self):
+        # No-op: intentionally does nothing to prevent target from running.
         pass
 
-    def is_alive(self):
+    @staticmethod
+    def is_alive():
         return False
 
     def join(self, timeout=None):
+        # No-op: intentionally does nothing as there's nothing to join.
         pass
 
 

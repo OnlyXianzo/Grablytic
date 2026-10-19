@@ -59,6 +59,7 @@ def test_pinned_profile_connection_uses_the_validated_address(monkeypatch):
             self.wfile.write(body)
 
         def log_message(self, *_args):
+            # Intentionally suppress logging during tests
             pass
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
@@ -107,15 +108,18 @@ def test_pinned_connection_shares_one_total_connect_timeout(monkeypatch):
     timeouts = []
 
     class _Socket:
-        def settimeout(self, value):
+        @staticmethod
+        def settimeout(value):
             timeouts.append(value)
 
-        def connect(self, _address):
+        @staticmethod
+        def connect(_address):
             now[0] += 0.6
             raise socket.timeout("mocked connect timeout")
 
-        def close(self):
-            pass
+        @staticmethod
+        def close():
+            pass  # No-op for mock socket close
 
     monkeypatch.setattr(ug.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(ug.socket, "socket", lambda *_args: _Socket())
@@ -151,13 +155,15 @@ def test_https_connection_keeps_original_hostname_for_tls(monkeypatch):
 
     class _Socket:
         def close(self):
+            # Intentionally left empty. No operation for testing.
             pass
 
     class _Context:
         check_hostname = True
         verify_mode = ssl.CERT_REQUIRED
 
-        def wrap_socket(self, raw_socket, *, server_hostname):
+        @staticmethod
+        def wrap_socket(raw_socket, *, server_hostname):
             seen["socket"] = raw_socket
             seen["server_hostname"] = server_hostname
             return raw_socket
@@ -186,6 +192,7 @@ def test_profile_redirect_to_private_address_is_rejected(monkeypatch):
             self.end_headers()
 
         def log_message(self, *_args):
+            """Suppress logging by overriding the base method with no-op."""
             pass
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
@@ -225,7 +232,8 @@ def test_oversized_profile_response_keeps_the_existing_cache(monkeypatch):
     requested_sizes = []
 
     class _Resp:
-        def read(self, size=-1):
+        @staticmethod
+        def read(size=-1):
             requested_sizes.append(size)
             return b" " * size
 
@@ -387,7 +395,8 @@ def test_empty_remote_payload_keeps_the_previous_cache(monkeypatch):
     sp._SITE_PROFILES_CACHE = good
 
     class _Resp:
-        def read(self, size=-1):
+        @staticmethod
+        def read(size=-1):
             return b"{}"
 
         def __enter__(self):
@@ -409,7 +418,8 @@ def test_unsafe_remote_payload_is_not_cached(monkeypatch):
     payload = json.dumps({"Evil": {"format_code": "all"}}).encode()
 
     class _Resp:
-        def read(self, size=-1):
+        @staticmethod
+        def read(size=-1):
             return payload[:size] if size >= 0 else payload
 
         def __enter__(self):

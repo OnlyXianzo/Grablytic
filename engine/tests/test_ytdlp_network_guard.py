@@ -49,6 +49,7 @@ def test_guarded_ytdlp_connects_to_the_vetted_socket_and_keeps_host(monkeypatch)
             self.wfile.write(body)
 
         def log_message(self, *_args):
+            """Override to disable default logging."""
             pass
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
@@ -107,6 +108,7 @@ def test_guarded_ytdlp_preserves_explicit_http_proxy_support():
             self.wfile.write(body)
 
         def log_message(self, *_args):
+            """Suppresses default HTTP request logging."""
             pass
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
@@ -147,7 +149,7 @@ def test_guarded_ytdlp_rejects_private_redirect_before_connect(monkeypatch):
             self.end_headers()
 
         def log_message(self, *_args):
-            pass
+            """Suppress default HTTP request logging."""
 
     server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -174,9 +176,8 @@ def test_guarded_ytdlp_rejects_private_redirect_before_connect(monkeypatch):
         lambda ip: False if ip.is_loopback else original_is_blocked(ip),
     )
     try:
-        with GuardedYoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
-            with pytest.raises(HTTPError):
-                ydl.urlopen(Request(f"http://profiles.example:{port}/redirect"))
+        with GuardedYoutubeDL({"quiet": True, "no_warnings": True}) as ydl, pytest.raises(HTTPError):
+            ydl.urlopen(Request(f"http://profiles.example:{port}/redirect"))
     finally:
         server.shutdown()
         server.server_close()

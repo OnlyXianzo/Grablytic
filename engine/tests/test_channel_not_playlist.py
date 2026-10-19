@@ -105,6 +105,9 @@ def test_a_truncated_playlist_is_reported(monkeypatch):
 
     class _FakeYDL:
         def __init__(self, opts):
+            """
+            Intentionally empty: no initialization needed for fake YDL.
+            """
             pass
 
         def __enter__(self):
@@ -113,7 +116,8 @@ def test_a_truncated_playlist_is_reported(monkeypatch):
         def __exit__(self, *a):
             return False
 
-        def extract_info(self, url, download=False):
+        @staticmethod
+        def extract_info(url, download=False):
             return {
                 "title": "Big list",
                 "entries": [
@@ -141,6 +145,7 @@ def test_a_short_playlist_is_not_marked_truncated(monkeypatch):
 
     class _FakeYDL:
         def __init__(self, opts):
+            """No initialization required for fake YDL."""
             pass
 
         def __enter__(self):
@@ -149,7 +154,8 @@ def test_a_short_playlist_is_not_marked_truncated(monkeypatch):
         def __exit__(self, *a):
             return False
 
-        def extract_info(self, url, download=False):
+        @staticmethod
+        def extract_info(url, download=False):
             return {
                 "title": "Small",
                 "entries": [{"title": "a", "url": "https://x.test/a"}],
