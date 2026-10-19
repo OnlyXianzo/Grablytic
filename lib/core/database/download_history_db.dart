@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../utils/config_secrets.dart';
 
 class DownloadRecord {
   final String id;
@@ -68,7 +69,7 @@ class DownloadRecord {
         'timestamp': timestamp,
         'thumbnailUrl': thumbnailUrl,
         'thumbnailPath': thumbnailPath,
-        'configJson': configJson,
+        'configJson': stripProxyFieldsFromJson(configJson),
         'queuePosition': queuePosition,
         'attempts': attempts,
         'lastErrorType': lastErrorType,
@@ -92,7 +93,7 @@ class DownloadRecord {
         timestamp: map['timestamp'] as String?,
         thumbnailUrl: map['thumbnailUrl'] as String?,
         thumbnailPath: map['thumbnailPath'] as String?,
-        configJson: map['configJson'] as String?,
+        configJson: stripProxyFieldsFromJson(map['configJson'] as String?),
         queuePosition: map['queuePosition'] as int?,
         attempts: map['attempts'] as int? ?? 0,
         lastErrorType: map['lastErrorType'] as String?,
@@ -159,6 +160,10 @@ class DownloadHistoryDb {
   static final DownloadHistoryDb instance = DownloadHistoryDb._();
 
   Database? _db;
+  bool _fts4Enabled = false;
+
+  @visibleForTesting
+  bool get fts4EnabledForTesting => _fts4Enabled;
 
   /// Test-only database path override. When set, [_initDb] skips
   /// path_provider (unavailable in unit tests). Null in production.
@@ -173,6 +178,7 @@ class DownloadHistoryDb {
       await _db?.close();
     } catch (_) {}
     _db = null;
+    _fts4Enabled = false;
   }
 
   Future<Database> get database async {
@@ -186,9 +192,9 @@ class DownloadHistoryDb {
     final path = dbPathForTesting ??
         p.join((await getApplicationDocumentsDirectory()).path,
             'grablytic.db');
-    return openDatabase(
+    final db = await openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE downloads (
@@ -227,6 +233,7 @@ class DownloadHistoryDb {
         ''');
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)');
+        await _createDownloadsFts4(db, rebuild: true);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         // v1 → v2: local thumbnail sidecar path (task 03 thumbnails). PRAGMA
@@ -282,14 +289,121 @@ class DownloadHistoryDb {
           await db.execute(
               'CREATE INDEX IF NOT EXISTS idx_seen_source_url ON seen_source_videos(source_url)');
         }
+        if (oldVersion < 6) {
+          await _createDownloadsFts4(db, rebuild: true);
+        }
       },
     );
+    await _stripLegacyProxyConfigs(db);
+    _fts4Enabled = await _validateDownloadsFts4(db);
+    return db;
+  }
+
+  Future<void> _stripLegacyProxyConfigs(Database db) async {
+    try {
+      final rows = await db.query(
+        'downloads',
+        columns: ['id', 'configJson'],
+        where: 'configJson IS NOT NULL',
+      );
+      final batch = db.batch();
+      var changed = false;
+      for (final row in rows) {
+        final oldValue = row['configJson'] as String?;
+        final safeValue = stripProxyFieldsFromJson(oldValue);
+        if (safeValue != oldValue) {
+          batch.update(
+            'downloads',
+            {'configJson': safeValue},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+          changed = true;
+        }
+      }
+      if (changed) await batch.commit(noResult: true);
+    } catch (_) {
+      // A damaged legacy config must not prevent the history DB from opening.
+    }
+  }
+
+  Future<void> _createDownloadsFts4(Database db, {required bool rebuild}) async {
+    try {
+      await db.execute(
+        'CREATE VIRTUAL TABLE IF NOT EXISTS downloads_fts USING fts4(title, url)',
+      );
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS downloads_fts_after_insert
+        AFTER INSERT ON downloads
+        BEGIN
+          INSERT OR REPLACE INTO downloads_fts(docid, title, url)
+          VALUES (new.rowid, new.title, new.url);
+        END
+      ''');
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS downloads_fts_after_update
+        AFTER UPDATE OF title, url ON downloads
+        BEGIN
+          DELETE FROM downloads_fts WHERE docid = old.rowid;
+          INSERT OR REPLACE INTO downloads_fts(docid, title, url)
+          VALUES (new.rowid, new.title, new.url);
+        END
+      ''');
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS downloads_fts_after_delete
+        AFTER DELETE ON downloads
+        BEGIN
+          DELETE FROM downloads_fts WHERE docid = old.rowid;
+        END
+      ''');
+      if (rebuild) {
+        await db.execute('DELETE FROM downloads_fts');
+        await db.execute('''
+          INSERT INTO downloads_fts(docid, title, url)
+          SELECT rowid, title, url FROM downloads
+        ''');
+      }
+      _fts4Enabled = await _validateDownloadsFts4(db);
+    } catch (_) {
+      _fts4Enabled = false;
+    }
+  }
+
+  Future<bool> _validateDownloadsFts4(Database db) async {
+    try {
+      final objects = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','trigger')",
+      );
+      final names = objects.map((r) => r['name'] as String?).whereType<String>().toSet();
+      if (!names.contains('downloads_fts') ||
+          !names.contains('downloads_fts_after_insert') ||
+          !names.contains('downloads_fts_after_update') ||
+          !names.contains('downloads_fts_after_delete')) {
+        return false;
+      }
+      final mismatches = await db.rawQuery('''
+        SELECT COUNT(*) AS n
+        FROM downloads d LEFT JOIN downloads_fts f ON f.docid = d.rowid
+        WHERE f.docid IS NULL OR f.title IS NOT d.title OR f.url IS NOT d.url
+      ''');
+      final orphans = await db.rawQuery('''
+        SELECT COUNT(*) AS n
+        FROM downloads_fts f LEFT JOIN downloads d ON d.rowid = f.docid
+        WHERE d.rowid IS NULL
+      ''');
+      return (mismatches.first['n'] as int? ?? 1) == 0 &&
+          (orphans.first['n'] as int? ?? 1) == 0;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<int> insert(DownloadRecord record) async {
     final db = await database;
-    return db.insert('downloads', record.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    return db.transaction((txn) async {
+      await txn.delete('downloads', where: 'id = ?', whereArgs: [record.id]);
+      return txn.insert('downloads', record.toMap());
+    });
   }
 
   Future<int> update(DownloadRecord record) async {
@@ -380,9 +494,34 @@ class DownloadHistoryDb {
     int? offset,
   }) async {
     final db = await database;
+    if (search != null && search.isNotEmpty && _fts4Enabled) {
+      final escaped = search.replaceAll('"', '""');
+      final match = '"$escaped"';
+      final where = <String>['downloads_fts MATCH ?'];
+      final args = <dynamic>[match];
+      if (statusFilter != null) {
+        where.add('d.status = ?');
+        args.add(statusFilter);
+      }
+      final limitSql = limit != null ? ' LIMIT ?' : (offset != null ? ' LIMIT -1' : '');
+      final offsetSql = offset == null ? '' : ' OFFSET ?';
+      if (limit != null) args.add(limit);
+      if (offset != null) args.add(offset);
+      try {
+        final rows = await db.rawQuery('''
+          SELECT d.* FROM downloads d
+          JOIN downloads_fts f ON f.docid = d.rowid
+          WHERE ${where.join(' AND ')}
+          ORDER BY d.timestamp DESC$limitSql$offsetSql
+        ''', args);
+        return rows.map((r) => DownloadRecord.fromMap(r)).toList();
+      } catch (_) {
+        _fts4Enabled = false;
+      }
+    }
+
     final where = <String>[];
     final args = <dynamic>[];
-
     if (search != null && search.isNotEmpty) {
       where.add('(title LIKE ? OR url LIKE ?)');
       args.addAll(['%$search%', '%$search%']);
@@ -391,7 +530,6 @@ class DownloadHistoryDb {
       where.add('status = ?');
       args.add(statusFilter);
     }
-
     final rows = await db.query(
       'downloads',
       where: where.isNotEmpty ? where.join(' AND ') : null,
