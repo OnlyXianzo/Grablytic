@@ -530,15 +530,32 @@ class DesktopEngineService implements EngineService {
       'Installing yt-dlp ${EngineContract.ytDlpVersion} into venv...',
       tag: 'engine-deps',
     );
-    result = await Process.run(uvPath, [
-      'pip',
-      'install',
-      // Pinned, and no dependency resolution from the index: yt-dlp has
-      // no runtime dependencies, so an unpinned install would only add
-      // supply-chain surface.
-      'yt-dlp==${EngineContract.ytDlpVersion}',
-      '--no-deps',
-    ], workingDirectory: venvDir).timeout(const Duration(seconds: 120));
+    // Hash-locked, not just version-locked (#18). The requirement goes
+    // through a temporary file because `--hash` is only accepted in a
+    // requirements file, and `--require-hashes` makes uv refuse anything
+    // whose digest is not listed. `--no-deps` keeps the lock consistent:
+    // yt-dlp has no runtime dependency we would otherwise have to hash.
+    final reqFile = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      'grablytic-ytdlp-requirements.txt',
+    );
+    try {
+      await reqFile.writeAsString(EngineContract.ytDlpHashedRequirement);
+      result = await Process.run(uvPath, [
+        'pip',
+        'install',
+        '--require-hashes',
+        '--no-deps',
+        '-r',
+        reqFile.path,
+      ], workingDirectory: venvDir).timeout(const Duration(seconds: 120));
+    } finally {
+      try {
+        if (await reqFile.exists()) await reqFile.delete();
+      } on FileSystemException {
+        // A leftover temp file is not a reason to fail the install.
+      }
+    }
 
     if (result.exitCode != 0) {
       throw Exception('Failed to install yt-dlp: ${result.stderr}');

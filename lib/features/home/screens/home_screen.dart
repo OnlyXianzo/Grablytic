@@ -1,8 +1,9 @@
 import 'dart:async' show unawaited;
-import 'dart:io' show File;
 import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/thumb.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
@@ -789,12 +790,11 @@ class _DownloadCard extends StatelessWidget {
     if (cached.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(cached),
+        child: CachedThumb(
           width: 112,
           height: 68,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _remoteOrPlaceholder(),
+          filePath: cached,
+          fallback: _remoteOrPlaceholder(),
         ),
       );
     }
@@ -806,12 +806,11 @@ class _DownloadCard extends StatelessWidget {
     if (remote.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Image.network(
-          remote,
+        child: CachedThumb(
           width: 112,
           height: 68,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _statusPlaceholder(),
+          url: remote,
+          fallback: _statusPlaceholder(),
         ),
       );
     }

@@ -1,5 +1,7 @@
 // ignore_for_file: unused_element, curly_braces_in_flow_control_structures, unnecessary_underscores
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/thumb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import 'package:uuid/uuid.dart';
@@ -316,7 +318,12 @@ class _ShareIntentSheetState extends ConsumerState<ShareIntentSheet> {
               fit: StackFit.expand,
               children: [
                 hasThumb
-                    ? Image.network(_thumbnailUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHigh, child: Icon(Icons.movie_outlined, color: cs.outline)))
+                    ? Image.network(
+                        _thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        cacheWidth: fullWidthCacheWidth(context),
+                        errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHigh, child: Icon(Icons.movie_outlined, color: cs.outline)),
+                      )
                     : Container(color: cs.surfaceContainerHigh, child: Icon(Icons.movie_outlined, size: 36, color: cs.outline)),
                 if (_isPreviewInitializing || _isLoadingPreview)
                   Container(color: Colors.black45, child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))))

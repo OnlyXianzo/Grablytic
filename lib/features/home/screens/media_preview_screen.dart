@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/thumb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/engine/engine_provider.dart';
@@ -72,6 +74,7 @@ class MediaPreviewScreen extends ConsumerWidget {
                     width: double.infinity,
                     height: 200,
                     fit: BoxFit.cover,
+                    cacheWidth: fullWidthCacheWidth(context),
                     errorBuilder: (_, _, _) => _thumbnailPlaceholder(colorScheme),
                     loadingBuilder: (_, child, progress) {
                       if (progress == null) return child;

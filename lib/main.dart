@@ -1,4 +1,4 @@
-import 'dart:async' show runZonedGuarded, unawaited;
+import 'dart:async' show FutureRecord2, runZonedGuarded, unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -62,17 +62,27 @@ Future<void> _bootstrap() async {
     databaseFactory = databaseFactoryFfi;
   }
   final prefs = await SharedPreferences.getInstance();
-  final appDir = await getApplicationDocumentsDirectory();
+  // Both lookups are independent platform-channel round trips; awaiting
+  // them in series made the first frame wait for the SUM of the two.
+  final (appDir, cacheDir) = await (
+    getApplicationDocumentsDirectory(),
+    getTemporaryDirectory(),
+  ).wait;
   await AppLogger.init(appDir.path, prefs);
 
   // Initialize in-memory log buffer and wire to AppLogger
-  final logBuffer = LogBuffer(maxEntries: 5000);
+  final logBuffer = LogBuffer.forThisPlatform();
   AppLogger.initBuffer(logBuffer);
   AppLogger.info(
     'App opened/started (build ${const String.fromEnvironment('GRABLYTIC_GIT_SHA', defaultValue: 'dev')})',
   );
 
-  final cacheDir = await getTemporaryDirectory();
+  // Cap decoded-image memory. Flutter's default is 100 MiB of decoded
+  // bytes — on a 2 GB phone that is a fifth of the heap held by cover art.
+  // 40 MiB keeps a screenful of 360 px thumbs plus the open preview.
+  PaintingBinding.instance.imageCache
+    ..maximumSizeBytes = 40 << 20
+    ..maximumSize = 250;
 
   final isWindows = !kIsWeb && Platform.isWindows;
   final ext = isWindows ? '.exe' : '';
@@ -88,7 +98,10 @@ Future<void> _bootstrap() async {
         : null,
   );
 
-  // Set professional industrial-grade download path if unset or using the dummy path
+  // Resolved BEFORE runApp on purpose: settingsProvider reads the whole
+  // preference set once, so writing it afterwards would leave this session
+  // on the legacy placeholder until the next launch. It only runs on a
+  // fresh install, where the write is a one-off.
   if (!prefs.containsKey('downloadPath') ||
       prefs.getString('downloadPath') == '/Internal/Videos') {
     final defaultPath = await getDefaultDownloadPath();

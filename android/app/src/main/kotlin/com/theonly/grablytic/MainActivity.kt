@@ -132,6 +132,10 @@ open class MainActivity : FlutterActivity() {
     private val sharedUrls = java.util.concurrent.ConcurrentLinkedQueue<String>()
     private var py: Python? = null
 
+    /** Latched after a failed `Python.start`: Chaquopy forbids a retry. */
+    @Volatile
+    private var pyStartFailed = false
+
     private var dataDir: String? = null
     private var outputDir: String? = null
     private var ffmpegPath: String? = null
@@ -448,12 +452,51 @@ open class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(applicationContext))
-        }
-        py = Python.getInstance()
+        // Python.start() is deliberately NOT called here any more.
+        //
+        // It ran on the platform thread during engine configuration, so
+        // every launch paid for the interpreter before the first frame —
+        // and the first engine call after it (`paths/set`) imports
+        // `grablytic_engine`, which pulls in yt-dlp: measured 40.5 MiB
+        // RSS and ~480 modules for a launch that may only show
+        // onboarding. The VM now starts on the first native engine call
+        // (see ensurePython), which is the first moment anything
+        // actually needs it.
         setupChannels(flutterEngine)
         handleSendText(intent)
+    }
+
+    /**
+     * Starts the Chaquopy VM on demand and returns the handle.
+     *
+     * Every handler that needs Python runs inside
+     * `scope.launch(Dispatchers.IO)`, so this is where the cost belongs;
+     * none of them can be reached without a Dart caller asking for
+     * engine work. `Python.start` is itself synchronized, and every
+     * other entry point (the poll worker, DownloadService) guards on
+     * `Python.isStarted()`, so concurrent first calls are safe.
+     *
+     * Returns null only if the interpreter could not be started at all —
+     * the caller answers with ERR_ENGINE_UNAVAILABLE, which is the same
+     * contract the old `py ?:` checks had.
+     */
+    @Synchronized
+    private fun ensurePython(): Python? {
+        // Chaquopy does not allow retrying a failed start ("startNative
+        // will cause a native crash if called more than once"), so the
+        // failure is latched: every later call answers unavailable
+        // instead of re-attempting a start that cannot succeed.
+        if (pyStartFailed) return null
+        return try {
+            if (!Python.isStarted()) {
+                Python.start(AndroidPlatform(applicationContext))
+            }
+            Python.getInstance().also { py = it }
+        } catch (e: Exception) {
+            pyStartFailed = true
+            android.util.Log.e("GrablyticEngine", "Python.start failed: ${e.message}")
+            null
+        }
     }
 
     private fun pyJson(obj: PyObject): String {
@@ -764,7 +807,7 @@ open class MainActivity : FlutterActivity() {
                             )
                         }
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -791,7 +834,7 @@ open class MainActivity : FlutterActivity() {
                 "engine/bootstrap" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -872,7 +915,7 @@ open class MainActivity : FlutterActivity() {
 
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -906,7 +949,7 @@ open class MainActivity : FlutterActivity() {
                 "download/clear_archive" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -927,7 +970,7 @@ open class MainActivity : FlutterActivity() {
                 "download/queue_status" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -949,7 +992,7 @@ open class MainActivity : FlutterActivity() {
                     val maxConcurrent = call.argument<Int>("max_concurrent") ?: 2
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -971,7 +1014,7 @@ open class MainActivity : FlutterActivity() {
                     val downloadId = call.argument<String>("download_id")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -994,7 +1037,7 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -1017,7 +1060,7 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -1042,7 +1085,7 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -1064,7 +1107,7 @@ open class MainActivity : FlutterActivity() {
                     val cacheDir = call.argument<String>("cache_dir")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -1088,7 +1131,7 @@ open class MainActivity : FlutterActivity() {
                     val success = call.argument<Boolean>(KEY_SUCCESS) ?: false
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -1207,7 +1250,7 @@ open class MainActivity : FlutterActivity() {
                 "engine/update_check" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart
@@ -1229,7 +1272,7 @@ open class MainActivity : FlutterActivity() {
                     val channel = call.argument<String>("channel")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: run {
+                            val python = ensurePython() ?: run {
                                 // The engine is not up. The old code did
                                 // `return@launch` here, which left the
                                 // MethodChannel.Result unanswered: the Dart

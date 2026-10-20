@@ -1,8 +1,9 @@
 import json
 import queue as _queue
+import threading
 import time as _time
 
-from grablytic_engine.logger import get_logger
+from grablytic_engine.logger import get_logger, notify_poll
 
 
 _log = get_logger("grablytic_engine.hooks")
@@ -27,20 +28,87 @@ def _put_bounded(q: _queue.Queue, item: str) -> None:
 
     Rare terminal events (stream_finished/error) must not wedge behind a
     full queue of progress ticks: evict oldest and retry. Never raises.
+
+    Every path wakes the drain thread. That is the contract the event-driven
+    `poll_queues` depends on: a producer that forgets means a progress tick
+    waits for the 1 s safety timeout, and a terminal event waits with it.
     """
     try:
         q.put_nowait(item)
+        notify_poll()
         return
-    except Exception:
+    except _queue.Full:
+        # Evict the oldest tick and try once more. Both are the only
+        # failures a Queue can raise here, so the handler is narrow on
+        # purpose: a bug elsewhere must not be swallowed into silence.
         pass
     try:
         q.get_nowait()
-    except Exception:
+    except _queue.Empty:
         pass
     try:
         q.put_nowait(item)
-    except Exception:
+        notify_poll()
+    except _queue.Full:
         pass
+
+
+def _put_result(q: _queue.Queue, payload: dict) -> None:
+    """Hand a terminal result to the drain thread and wake it.
+
+    The result queue carries dicts (the progress queue carries JSON
+    strings), and it is what tells the client a download finished. It used
+    to be written directly at five call sites, none of which signalled, so
+    a finished download could sit for a full poll interval.
+    """
+    q.put(payload)
+    notify_poll()
+
+
+# Last bytes/filename seen per download, independent of the queue.
+#
+# The terminal "finished" event derives `filesize_bytes` by draining the
+# progress queue. That made the size contract depend on the queue still
+# holding the events at finish time — true only while one consumer exists.
+# The drain thread now wakes the instant a producer writes, and any second
+# consumer (a test calling download_thread while a poll thread is alive, a
+# retry, a future second reader) empties the queue first, so the field came
+# back as 0. The hook is the only place that sees every sample, so it
+# records the last one here and the terminal path falls back to it.
+_last_sample: dict[str, tuple[int, str | None]] = {}
+_last_sample_lock = threading.Lock()
+_LAST_SAMPLE_MAX = 256
+
+
+def remember_last_sample(download_id: str, size: int, filename) -> None:
+    """Record the newest size/filename for [download_id]. Never raises."""
+    if not download_id:
+        return
+    try:
+        size_value = max(int(size or 0), 0)
+    except (TypeError, ValueError):
+        # yt-dlp occasionally reports a non-numeric size for a live
+        # stream. A size we cannot read is not a size; keep the previous.
+        size_value = 0
+    with _last_sample_lock:
+        prev_size, prev_file = _last_sample.get(download_id, (0, None))
+        name = filename if isinstance(filename, str) and filename else prev_file
+        _last_sample[download_id] = (max(size_value, prev_size), name)
+        if len(_last_sample) > _LAST_SAMPLE_MAX:
+            # Oldest-first is insertion order: drop the front.
+            for stale in list(_last_sample)[: len(_last_sample) - _LAST_SAMPLE_MAX]:
+                _last_sample.pop(stale, None)
+
+
+def last_sample(download_id: str) -> tuple[int, str | None]:
+    """Newest recorded (size, filename) for [download_id]. Never raises."""
+    with _last_sample_lock:
+        return _last_sample.get(download_id, (0, None))
+
+
+def forget_last_sample(download_id: str) -> None:
+    with _last_sample_lock:
+        _last_sample.pop(download_id, None)
 
 
 # Set on the first failed callback delivery per process. Every delivery
@@ -159,6 +227,11 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
             # filesize contract) even on the live-callback path; the
             # callback feeds Kotlin/Flutter. Bounded drop-oldest (Loop-2):
             # never blocks, never grows without bound.
+            remember_last_sample(
+                download_id,
+                d.get("downloaded_bytes") or 0,
+                d.get("filename"),
+            )
             _put_bounded(queue, event_json)
             _emit_event(event_callback, event_json)
 
@@ -184,6 +257,7 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
             # filesize contract) even on the live-callback path; the
             # callback feeds Kotlin/Flutter. Bounded drop-oldest (Loop-2):
             # never blocks, never grows without bound.
+            remember_last_sample(download_id, final_bytes, d.get("filename"))
             _put_bounded(queue, event_json)
             _emit_event(event_callback, event_json)
 

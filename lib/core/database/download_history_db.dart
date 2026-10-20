@@ -227,7 +227,10 @@ class DownloadHistoryDb {
   Future<void> closeForTesting() async {
     try {
       await _db?.close();
-    } catch (_) {}
+    } on DatabaseException {
+      // Closing a database that is already gone (a failed migration) is
+      // the only way this throws, and the field is cleared either way.
+    }
     _db = null;
     _fts4Enabled = false;
   }
@@ -487,7 +490,9 @@ class DownloadHistoryDb {
         ''');
       }
       _fts4Enabled = await _validateDownloadsFts4(db);
-    } catch (_) {
+    } on DatabaseException {
+      // FTS4 is optional: a SQLite build without the module cannot create
+      // the virtual table, and history still works on the LIKE fallback.
       _fts4Enabled = false;
     }
   }
@@ -516,7 +521,9 @@ class DownloadHistoryDb {
       ''');
       return (mismatches.first['n'] as int? ?? 1) == 0 &&
           (orphans.first['n'] as int? ?? 1) == 0;
-    } catch (_) {
+    } on DatabaseException {
+      // The shadow tables are inconsistent: treat FTS as unusable rather
+      // than answering search from a half-built index.
       return false;
     }
   }

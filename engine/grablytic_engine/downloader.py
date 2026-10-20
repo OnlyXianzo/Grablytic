@@ -11,7 +11,14 @@ from grablytic_engine.ytdlp_network import GuardedYoutubeDL as YoutubeDL
 
 from grablytic_engine.opts_builder import build_ydl_opts
 from grablytic_engine.errors import classify_error, GrablyticError
-from grablytic_engine.hooks import _QUEUE_MAXSIZE, _emit_event, _put_bounded
+from grablytic_engine.hooks import (
+    _QUEUE_MAXSIZE,
+    _emit_event,
+    _put_bounded,
+    _put_result,
+    forget_last_sample,
+    last_sample,
+)
 from grablytic_engine.paths import get_paths
 from grablytic_engine.playlist import detect_playlist
 from grablytic_engine.config import coerce_config
@@ -708,13 +715,14 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                     pass
             else:
                 try:
-                    entry["result_queue"].put(
+                    _put_result(
+                        entry["result_queue"],
                         {
                             "success": False,
                             "download_id": download_id,
                             "error_type": "ERROR_CANCELLED",
                             "error_message": "Download cancelled by user",
-                        }
+                        },
                     )
                 except Exception:
                     pass
@@ -809,7 +817,8 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                 pass
         else:
             try:
-                entry["result_queue"].put(
+                _put_result(
+                    entry["result_queue"],
                     {
                         "success": False,
                         "download_id": download_id,
@@ -817,7 +826,7 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                         "error_message": f"Could not start downloader thread: {exc}",
                         "recoverable": True,
                         "suggests_vpn": False,
-                    }
+                    },
                 )
             except Exception:
                 pass
@@ -996,6 +1005,7 @@ def _cleanup_loop():
                             info.get("url"),
                             info.get("audio_only"),
                         )
+                    forget_last_sample(did)
                 # Hard cap: a client that never drains the result queue
                 # could otherwise grow the active map without bound. Drop
                 # the OLDEST terminal entries first (live ones are never
@@ -1017,6 +1027,7 @@ def _cleanup_loop():
                                 info.get("url"),
                                 info.get("audio_only"),
                             )
+                        forget_last_sample(did)
         except Exception:
             pass
         _cleanup_stop_event.wait(1.0)
@@ -1216,8 +1227,17 @@ def _drain_public(prog_q) -> list:
     return items
 
 
-def _last_known_file_info(prog_q) -> tuple[int, str | None]:
-    """Best-effort final size and file path from buffered progress-hook events."""
+def _last_known_file_info(
+    prog_q, download_id: str | None = None
+) -> tuple[int, str | None]:
+    """Best-effort final size and file path for a finished download.
+
+    Two sources, because neither alone is reliable. The queue holds the
+    events only until SOME consumer drains it — normally the poll thread,
+    which is exactly what it is for — so at finish time it is often empty.
+    The hook-side sample (hooks.remember_last_sample) survives that, and is
+    kept per download id. The queue still wins when it has something newer.
+    """
     last_bytes = 0
     last_file = None
     items = _drain_public(prog_q)
@@ -1238,12 +1258,17 @@ def _last_known_file_info(prog_q) -> tuple[int, str | None]:
         fn = ev.get("filename")
         if isinstance(fn, str) and fn:
             last_file = fn
+    if download_id:
+        seen_bytes, seen_file = last_sample(download_id)
+        last_bytes = max(last_bytes, seen_bytes)
+        if last_file is None:
+            last_file = seen_file
     return last_bytes, last_file
 
 
-def _last_known_bytes(prog_q) -> int:
-    """Best-effort final size from buffered progress-hook events."""
-    bytes_val, _ = _last_known_file_info(prog_q)
+def _last_known_bytes(prog_q, download_id: str | None = None) -> int:
+    """Best-effort final size from buffered events and the hook-side sample."""
+    bytes_val, _ = _last_known_file_info(prog_q, download_id)
     return bytes_val
 
 
@@ -1546,7 +1571,7 @@ def _send_terminal_result(
     if event_callback is not None:
         _emit_event(event_callback, json.dumps(event))
     else:
-        result_queue.put(result)
+        _put_result(result_queue, result)
 
 
 def _log_effective_download_config(opts: dict, config: dict, download_id: str) -> None:
@@ -1734,7 +1759,7 @@ def _report_download_success(
     ydl_logger: YDLogger,
     attempts_made: int,
 ) -> None:
-    final_bytes, progress_file = _last_known_file_info(progress_queue)
+    final_bytes, progress_file = _last_known_file_info(progress_queue, download_id)
     final_path = _select_output_path(ydl_logger, progress_file)
     final_bytes = _reconcile_output_size(final_path, final_bytes)
     _delete_infojson_sidecars(final_path)
@@ -2167,7 +2192,7 @@ def _deliver_cancel_terminal(download_id: str, info: dict) -> None:
             pass
         return
     try:
-        info["result_queue"].put(result)
+        _put_result(info["result_queue"], result)
     except Exception:
         pass
 
@@ -2450,13 +2475,14 @@ def _run_watchdog_job(job: dict) -> None:
             pass
     elif res_q is not None:
         try:
-            res_q.put(
+            _put_result(
+                res_q,
                 {
                     "success": False,
                     "download_id": download_id,
                     "error_type": "ERROR_CANCELLED",
                     "error_message": presumed_message,
-                }
+                },
             )
         except Exception:
             pass

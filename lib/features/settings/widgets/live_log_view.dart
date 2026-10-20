@@ -3,9 +3,17 @@ import 'package:flutter/material.dart';
 import '../../../core/utils/notification_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/utils/log_buffer.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../providers/log_provider.dart';
+
+/// Rows this screen keeps in memory at once.
+///
+/// The ring retains more (and the export paths use all of it); this is the
+/// render budget. Two thousand rows is ~4 screens of history at a glance,
+/// and the filter pass over them is cheap enough to run per keystroke.
+const int kLiveLogRowBudget = 2000;
 
 class LiveLogView extends ConsumerStatefulWidget {
   const LiveLogView({super.key});
@@ -67,7 +75,7 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
 
   void _exportLiveLogs() {
     final buffer = ref.read(logBufferProvider);
-    final entries = _filtered(buffer.entries);
+    final entries = _filteredAll(buffer.view);
     final text = entries.map((e) => e.formattedLine).join('\n');
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -78,24 +86,36 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
     );
   }
 
-  List<LogEntry> _filtered(List<LogEntry> entries) {
-    return entries.where((e) {
-      if (_levelFilter != null && e.level != _levelFilter) return false;
-      if (_sourceFilter != null && e.source != _sourceFilter) return false;
-      if (_searchQuery.isNotEmpty &&
-          !e.message.toLowerCase().contains(_searchQuery.toLowerCase())) {
-        return false;
-      }
-      return true;
-    }).toList();
+  /// One pass, one lowercased needle, no intermediate list.
+  ///
+  /// The old version called `toLowerCase()` on both the entry and the query
+  /// for every entry, and ran over the whole 5,000-entry ring on every
+  /// keystroke AND on every log line (via the 500 ms rebuild timer).
+  List<LogEntry> _filteredAll(Iterable<LogEntry> entries) {
+    final needle = _searchQuery.toLowerCase();
+    return [
+      for (final e in entries)
+        if ((_levelFilter == null || e.level == _levelFilter) &&
+            (_sourceFilter == null || e.source == _sourceFilter) &&
+            (needle.isEmpty || e.matches(needle)))
+          e,
+    ];
   }
+
+  /// What the list renders: the newest [kLiveLogRowBudget] entries only.
+  ///
+  /// A `ListView.builder` over 5,000 rows is fine while scrolling but not
+  /// fine while filtering, and nobody scrolls back 5,000 rows in a live
+  /// tail. Export still covers everything.
+  List<LogEntry> _visible(LogBuffer buffer) =>
+      _filteredAll(buffer.snapshot(limit: kLiveLogRowBudget));
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final buffer = ref.read(logBufferProvider);
-    final entries = _filtered(buffer.entries);
+    final entries = _visible(buffer);
 
     return Column(
       children: [

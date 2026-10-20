@@ -64,6 +64,86 @@ class PlatformChannelEngineService implements EngineService {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Lazy engine start
+  // ---------------------------------------------------------------------
+  //
+  // `setPaths` used to cross the bridge the moment the provider graph was
+  // built. On Android that call is what starts the work: `paths/set` runs
+  // `BinaryPackageManager.init()` and `getModule("grablytic_engine")`,
+  // which imports `downloader` -> `yt_dlp` — 40.5 MiB RSS and ~480
+  // modules on the first frame of every launch, including launches that
+  // never download anything.
+  //
+  // So the paths are now HELD here and applied by the first call that
+  // actually needs the engine. Everything the UI does before that (log
+  // streaming, settings, history) never touches Python.
+  Map<String, dynamic>? _pendingPaths;
+  bool _pathsApplied = false;
+  Future<void>? _startup;
+
+  /// Calls that reach into Python, and so must wait for the engine.
+  ///
+  /// The rest of the bridge is pure Kotlin (notifications, intents, icon
+  /// switching, the WorkManager schedule, the battery/metered probes).
+  /// Making those wait for a 40 MiB interpreter would have been a
+  /// regression in the opposite direction: a queue reminder is scheduled
+  /// from a settings toggle without the user downloading anything.
+  static const Set<String> _pythonMethods = {
+    EngineMethods.bootstrap,
+    EngineMethods.startDownload,
+    EngineMethods.cancelDownload,
+    EngineMethods.queueStatus,
+    EngineMethods.setConcurrency,
+    EngineMethods.clearArchive,
+    EngineMethods.getFormats,
+    EngineMethods.playlistInfo,
+    EngineMethods.searchQuery,
+    EngineMethods.scanResume,
+    EngineMethods.resumeReport,
+    EngineMethods.updateCheck,
+    EngineMethods.setUpdateChannel,
+  };
+
+  /// Configuration call that can arrive before the engine is up.
+  ///
+  /// The settings listener fires on a preference change, which may happen
+  /// on a screen the user opened without downloading anything. Handing it
+  /// to native before `paths/set` answered `ERR_ENGINE_UNAVAILABLE` and the
+  /// value was lost for the session. It is parked here instead and
+  /// replayed once the paths are in.
+  final Map<String, Object?> _deferredConfig = <String, Object?>{};
+
+  /// Applies the held paths exactly once, then replays parked config.
+  Future<void> _ensureStarted() {
+    if (_pathsApplied) return Future<void>.value();
+    final inFlight = _startup;
+    if (inFlight != null) return inFlight;
+    final paths = _pendingPaths;
+    if (paths == null) return Future<void>.value();
+    final future = _applyPaths(paths);
+    _startup = future;
+    return future;
+  }
+
+  Future<void> _applyPaths(Map<String, dynamic> paths) async {
+    try {
+      await _channel.invokeMethod(EngineMethods.setPaths, paths);
+      _pathsApplied = true;
+      _pendingPaths = null;
+    } finally {
+      // Cleared in `finally`: a failed start must be retryable by the next
+      // call rather than pinning every later call to a dead future.
+      _startup = null;
+    }
+    if (_deferredConfig.isEmpty) return;
+    final pending = Map<String, Object?>.of(_deferredConfig);
+    _deferredConfig.clear();
+    for (final entry in pending.entries) {
+      await _invokeEnvelope(entry.key, entry.value);
+    }
+  }
+
   /// Invokes a native method and returns a well-formed envelope.
   ///
   /// Never throws: every failure mode becomes an envelope with
@@ -79,6 +159,33 @@ class PlatformChannelEngineService implements EngineService {
     String method, [
     Object? arguments,
   ]) async {
+    if (_pythonMethods.contains(method)) {
+      // Park the concurrency setting until the engine exists instead of
+      // letting native answer "engine not up" and losing it.
+      //
+      // Only when paths are actually WAITING: with no paths at all there is
+      // nothing to start the engine with, so the call goes through and
+      // native's ERR_ENGINE_UNAVAILABLE is the honest answer.
+      if (!_pathsApplied &&
+          _pendingPaths != null &&
+          method == EngineMethods.setConcurrency) {
+        _deferredConfig[method] = arguments;
+        final parked = <String, dynamic>{'success': true, 'deferred': true};
+        if (arguments is Map && arguments['max_concurrent'] is int) {
+          parked['max_concurrent'] = arguments['max_concurrent'];
+        }
+        return parked;
+      }
+      try {
+        await _ensureStarted();
+      } catch (e) {
+        AppLogger.warn('Engine paths could not be applied: $e', tag: 'engine');
+        return EngineEnvelope.error(
+          errorType: 'ERROR_ENGINE_UNAVAILABLE',
+          message: 'Engine paths could not be applied: $e',
+        );
+      }
+    }
     final String? raw;
     try {
       raw = await _channel
@@ -140,9 +247,19 @@ class PlatformChannelEngineService implements EngineService {
     return decoded;
   }
 
+  /// Holds the paths until the engine is first actually used.
+  ///
+  /// Deliberately does NOT cross the bridge: see the lazy-start block
+  /// above. A later call replaces the held map, so the newest paths win —
+  /// the same "last write is what the engine gets" semantics the eager
+  /// version had, without paying for the import at first frame.
   @override
   Future<void> setPaths(Map<String, dynamic> paths) async {
-    await _channel.invokeMethod(EngineMethods.setPaths, paths);
+    if (_pathsApplied) {
+      await _channel.invokeMethod(EngineMethods.setPaths, paths);
+      return;
+    }
+    _pendingPaths = paths;
   }
 
   @override
@@ -201,6 +318,10 @@ class PlatformChannelEngineService implements EngineService {
   @override
   void dispose() {
     try {
+      _pendingPaths = null;
+      _pathsApplied = false;
+      _startup = null;
+      _deferredConfig.clear();
       _progressCache = null;
       if (!_intentController.isClosed) _intentController.close();
     } catch (_) {}

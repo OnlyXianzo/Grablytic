@@ -172,8 +172,17 @@ chaquopy {
             // Pinned, like the desktop bootstrap. An unpinned install
             // makes the packaged engine depend on whatever PyPI serves
             // at build time, with no review of the change.
-            // Keep in step with EngineContract.ytDlpVersion.
-            install("yt-dlp==2026.08.19")
+            // Keep in step with wheel_pin.PINNED_VERSION,
+            // EngineContract.ytDlpVersion and engine/requirements.txt
+            // (engine/tests/test_wheel_pin.py fails on drift).
+            //
+            // Chaquopy's pip DSL has no per-requirement hash option, so
+            // the digest pin (#18) is enforced at runtime instead:
+            // `bootstrap._install_yt_dlp_via_uv` downloads the wheel,
+            // checks it against wheel_pin.PINNED_SHA256 and installs only
+            // verified bytes. The APK copy comes from this Gradle
+            // resolution at build time, from the hash-locked runner.
+            install("yt-dlp==2026.8.19")
             // python-quickjs requires native Android wheel not yet available via Chaquopy pip.
             // QuickJS on Android will be bridged via Kotlin JNI in a future milestone.
         }

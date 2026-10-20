@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'log_entry.dart';
 
 class LogBuffer {
@@ -22,28 +24,78 @@ class LogBuffer {
   String? _searchFilter;
   String? _sourceFilter; // 'engine', 'ui', or null (all)
 
+  /// Ceiling, written down because it is a product and not a bound:
+  /// `maxEntries + maxRetainedDownloads * maxEntriesPerDownload`
+  /// = 30,000 objects with the desktop defaults, 4,000 on Android.
+  ///
+  /// The per-download queues are what made the old numbers add up to
+  /// something no single constant described.
   LogBuffer({
     this.maxEntries = 5000,
     this.maxEntriesPerDownload = 500,
     this.maxRetainedDownloads = 50,
   });
 
+  /// Mobile default: a phone does not need a 5,000-line ring, and the
+  /// per-download queues are the ones that multiply. ~4,000 entries here
+  /// against ~30,000 on desktop.
+  factory LogBuffer.forThisPlatform() {
+    // `defaultTargetPlatform` instead of `Platform.isAndroid`: it is pure
+    // Dart (no dart:io probe that throws on hosts without a platform),
+    // and it is overridable in tests.
+    final mobile =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+    return mobile
+        ? LogBuffer(
+            maxEntries: 2000,
+            maxEntriesPerDownload: 200,
+            maxRetainedDownloads: 10,
+          )
+        : LogBuffer();
+  }
+
   Stream<LogEntry> get stream => _controller.stream;
-  List<LogEntry> get entries => List.unmodifiable(_entries);
+
+  /// Live, unmodifiable view — no copy.
+  ///
+  /// `List.unmodifiable(_entries)` allocated a fresh 5,000-element list on
+  /// every read, and the log screen reads it on every rebuild.
+  Iterable<LogEntry> get view => UnmodifiableListView(_entries);
+
+  /// Bounded copy, newest [limit] entries, oldest-first.
+  ///
+  /// For callers that render: they get at most [limit] entries no matter
+  /// how large the ring has grown.
+  List<LogEntry> snapshot({int limit = 500}) {
+    if (_entries.length <= limit) return List<LogEntry>.of(_entries);
+    return List<LogEntry>.of(_entries.skip(_entries.length - limit));
+  }
+
+  /// Read-only copy of every retained entry.
+  ///
+  /// Unmodifiable on purpose (a caller that appends to this would be
+  /// writing into a copy and silently losing the write). Allocates — use
+  /// [view] or [snapshot] on any path a user can trigger.
+  List<LogEntry> get entries => List<LogEntry>.unmodifiable(_entries);
 
   void add(LogEntry entry) {
+    // Gate FIRST. This used to record into the per-download queues before
+    // the level/tag/search/source filters ran, so an entry the user had
+    // explicitly filtered out was retained anyway — the filters changed
+    // what you saw, not what the app kept in memory.
+    if (entry.level.index < _minLevel.index) return;
+    if (_tagFilter != null && !entry.logger.contains(_tagFilter!)) return;
+    if (_searchFilter != null && !entry.matches(_searchFilter!.toLowerCase())) {
+      return;
+    }
+    if (_sourceFilter != null && entry.source != _sourceFilter) return;
+
     final did = entry.downloadId;
     if (did != null) {
       _recordForDownload(did, entry);
     }
-
-    if (entry.level.index < _minLevel.index) return;
-    if (_tagFilter != null && !entry.logger.contains(_tagFilter!)) return;
-    if (_searchFilter != null &&
-        !entry.message.toLowerCase().contains(_searchFilter!.toLowerCase())) {
-      return;
-    }
-    if (_sourceFilter != null && entry.source != _sourceFilter) return;
 
     if (_entries.length >= maxEntries) {
       _entries.removeFirst();
@@ -147,8 +199,7 @@ class LogBuffer {
     var result = sourceList.where((e) {
       if (minLevel != null && e.level.index < minLevel.index) return false;
       if (tag != null && !e.logger.contains(tag)) return false;
-      if (search != null &&
-          !e.message.toLowerCase().contains(search.toLowerCase())) {
+      if (search != null && !e.matches(search.toLowerCase())) {
         return false;
       }
       if (source != null && e.source != source) return false;

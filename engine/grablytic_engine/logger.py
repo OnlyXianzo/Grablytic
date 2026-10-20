@@ -151,6 +151,15 @@ class EngineLogger:
         Sink failures are suppressed, but record construction and JSON
         serialization errors propagate to the caller.
         """
+        # Cheapest possible early exit. Building the record costs a copied
+        # dict, a strftime'd timestamp, a 10-key event dict and a json.dumps
+        # — measured at 11.4 us with no sink at all — and yt-dlp's DEBUG
+        # flood under `verbose` hits this path thousands of times per
+        # download. Each sink below re-checks its own floor; this only
+        # answers "would ANY of them take it", with the same floors.
+        if not self._wants(level):
+            return
+
         ctx = (
             getattr(self._context, "data", {}).copy()
             if hasattr(self._context, "data")
@@ -210,6 +219,7 @@ class EngineLogger:
         if level >= self._min_level and self._queue is not None:
             try:
                 self._queue.put(event)
+                notify_poll()
             except Exception:
                 pass
 
@@ -245,6 +255,26 @@ class EngineLogger:
             )
         except Exception:
             pass
+
+    def _wants(self, level: int) -> bool:
+        """True when at least one sink would accept a record at [level].
+
+        Mirrors the per-sink floors exactly: file/stderr/queue on
+        `_min_level`, the UI bridge on `_bridge_min_level`, and the
+        persistent rotating handler on its own configured level. Getting
+        this wrong in either direction is a bug — too permissive wastes the
+        work it exists to avoid, too strict silently swallows records.
+        """
+        if level >= self._min_level and (
+            self._stderr_enabled or self._log_dir or self._queue is not None
+        ):
+            return True
+        if level >= self._bridge_min_level and (
+            self._event_callback is not None or _global_event_callback is not None
+        ):
+            return True
+        floor = _persistent_bridge_level
+        return floor is not None and level >= floor
 
     def debug(
         self,
@@ -388,6 +418,43 @@ _file_sinks_lock = threading.Lock()
 _FILE_FLUSH_INTERVAL_S = 5.0
 
 
+# (log_dir, day) -> resolved path. `realpath` walks every component with a
+# syscall each, and `makedirs` + `strftime` are equally invariant inside one
+# calendar day: together they were 48% of a written record's cost.
+_sink_path_cache: dict[tuple[str, str], str] = {}
+_sink_path_lock = threading.Lock()
+
+
+def _day_stamp(now: datetime) -> str:
+    """`YYYY-MM-DD` without strftime's format-string machinery."""
+    return f"{now.year:04d}-{now.month:02d}-{now.day:02d}"
+
+
+def _daily_sink_path(log_dir: str, now: datetime) -> str:
+    """Absolute path of today's engine log file, memoised per day.
+
+    The cache is keyed by (log_dir, day) and pruned to the current day on
+    every miss, so one stale entry cannot accumulate. A directory that is
+    moved or re-symlinked mid-session keeps writing to the old path until
+    the day rolls over — which is also what an already-open file handle
+    does, so nothing is lost that was not already lost.
+    """
+    day = _day_stamp(now)
+    key = (log_dir, day)
+    with _sink_path_lock:
+        cached = _sink_path_cache.get(key)
+    if cached is not None:
+        return cached
+
+    os.makedirs(log_dir, exist_ok=True)
+    path = os.path.realpath(os.path.join(log_dir, f"engine_{day}.txt"))
+    with _sink_path_lock:
+        for stale in [k for k in _sink_path_cache if k[0] == log_dir and k[1] != day]:
+            _sink_path_cache.pop(stale, None)
+        _sink_path_cache[key] = path
+    return path
+
+
 def _write_daily_line(
     log_dir: str,
     now: datetime,
@@ -402,9 +469,7 @@ def _write_daily_line(
     # Either way there is exactly one write syscall per line and no open/close
     # churn (the old code paid open+write+close per line).
     try:
-        date_str = now.strftime("%Y-%m-%d")
-        os.makedirs(log_dir, exist_ok=True)
-        path = os.path.realpath(os.path.join(log_dir, f"engine_{date_str}.txt"))
+        path = _daily_sink_path(log_dir, now)
         with _file_sinks_lock:
             sink = _file_sinks.get(path)
             if sink is None or sink.get("closed", False):
@@ -493,6 +558,51 @@ _global_log_dir: str | None = None
 
 # Module-global bridge floor (see EngineLogger._bridge_min_level).
 _global_bridge_min_level: int = INFO
+
+# Wake flag for the background drain thread (see __main__.poll_queues).
+# Producers — the log queue here, and the progress/result queues via
+# hooks._put_bounded — set it so the drain runs on demand instead of on a
+# 10 Hz timer. Lives here because hooks already imports this module.
+_poll_wakeup = threading.Event()
+
+
+def notify_poll() -> None:
+    """Tell the drain thread there is work. Never raises.
+
+    ``threading.Event.set`` has no failure mode of its own, so there is no
+    handler to write here: a producer on a download thread must not pay a
+    try/except for a call that cannot throw.
+    """
+    _poll_wakeup.set()
+
+
+def wait_for_poll(timeout: float) -> bool:
+    """Block until a producer signals, or [timeout]. Clears the flag."""
+    try:
+        fired = _poll_wakeup.wait(timeout=timeout)
+    except (TypeError, ValueError):
+        # A caller passed a nonsense timeout. Falling back to the idle
+        # interval keeps the drain alive instead of killing the thread.
+        return False
+    _poll_wakeup.clear()
+    return bool(fired)
+
+
+# Floor of the rotating server_logs handler, tracked so the early gate in
+# _log() can skip records no sink would take. None = not installed.
+_persistent_bridge_level: int | None = None
+
+
+def set_persistent_bridge_level(level: int | None) -> None:
+    """Record the persistent bridge's floor (called by persistent.init).
+
+    ``None`` means "no rotating handler installed". The gate must know this
+    or it would drop records that only the persistent bridge would have
+    written — the exact class of bug that makes a log file empty when a
+    user needs it most.
+    """
+    global _persistent_bridge_level
+    _persistent_bridge_level = level
 
 
 def get_logger(name: str) -> EngineLogger:
