@@ -57,8 +57,10 @@ build/
 /android/app/profile
 /android/app/release
 
-# Agent private workspace — never commit
-.agents/
+# Agent workspace. The vault is tracked; everything else stays local.
+.agents/*
+!.agents/vault/
+!.agents/vault/**
 session_app_work
 session_*
 graphify-out/

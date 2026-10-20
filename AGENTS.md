@@ -68,11 +68,13 @@ Do not describe a run you did not perform.
 | `android/app/src/main/kotlin/com/theonly/grablytic/` | Kotlin native layer |
 | `docs/` | Product docs |
 | `skills/` | Published agent skills |
-| `.agents/` | Local agent workspace, ignored by git |
+| `.agents/vault/` | Project knowledge notes, tracked; read before large changes |
+| `.agents/` (rest) | Local agent workspace, ignored by git |
 
 Useful docs: [architecture](docs/architecture.md),
 [contributing](docs/contributing.md), [building](docs/building.md),
-[security](docs/security.md), [troubleshooting](docs/troubleshooting.md).
+[security](docs/security.md), [troubleshooting](docs/troubleshooting.md),
+[knowledge vault](.agents/vault/index.md).
 
 ## Hard rules
 
@@ -135,8 +137,9 @@ Useful docs: [architecture](docs/architecture.md),
 - Shared state goes through Riverpod. `setState()` is only for short-lived
   widget state such as a loading flag or a text controller.
 - Colors come from `GrablyticColors`. Do not write hex literals in widgets.
-- Body text uses InstrumentSans. Numbers, URLs, and format codes use
-  IosevkaCharonMono through the text theme.
+- Headings use Bricolage Grotesque, body text uses Figtree. Numbers, URLs, and
+  format codes use IosevkaCharonMono through the text theme. InstrumentSans
+  remains only in legacy settings screens; migrate it when you touch them.
 - Interactive targets are at least 48x48. Add semantic labels to icon-only
   controls.
 - Use `const` constructors where they fit. Keep widgets free of business logic.
@@ -149,8 +152,9 @@ Useful docs: [architecture](docs/architecture.md),
 - Conventional commits: `type(scope): summary`. One logical change per commit.
 - Open a pull request. Do not push directly to `main` and do not force-push a
   shared branch.
-- Stage only product files. `.agents/`, local notes, logs, `.env`,
-  `key.properties`, keystores, and build output stay out.
+- Stage only product files. Private `.agents/` files, local notes, logs,
+  `.env`, `key.properties`, keystores, and build output stay out. The tracked
+  vault at `.agents/vault/` is the exception.
 - Run `git status --short` before every commit and read the list.
 - Do not commit secrets. If a credential ever lands in a commit, rotate it
   first, then clean history with the maintainer.
@@ -162,7 +166,9 @@ Useful docs: [architecture](docs/architecture.md),
 - Run `python3 tool/check_doc_links.py` after editing Markdown.
 - Write for a new contributor. Concrete file names and commands beat abstract
   advice.
-- Do not add internal audits, scratch notes, or work logs to tracked docs.
+- Do not add internal audits, scratch notes, or work logs to `docs/`.
+- The vault at `.agents/vault/` is tracked project knowledge. Keep it free of
+  secrets, personal paths, and stale working-state notes.
 
 ## Writing style
 
@@ -191,7 +197,7 @@ Published skills live in [`skills/`](skills/README.md). Read the relevant
 Skills use placeholders for machine-specific paths:
 
 - `$REPO_ROOT` defaults to `~/grablytic`.
-- `$VAULT_ROOT` defaults to `$REPO_ROOT/.agents`.
+- `$VAULT_ROOT` defaults to `$REPO_ROOT/.agents/vault`.
 
 If a skill needs a path you do not know, ask the user. Record the answer in
 `.agents/local-paths.md` (ignored by git) and use it locally. Do not hardcode
@@ -206,5 +212,6 @@ personal paths into tracked files, and do not push a local path file.
 - [ ] `python3 tool/check_broad_catches.py` passes (broad handlers did not
       grow). Reduce, then record the new number with `--update`.
 - [ ] New behavior has a test.
-- [ ] No secrets, logs, build output, or `.agents/` files are staged.
+- [ ] No secrets, logs, build output, or private `.agents/` files are staged.
+      The tracked vault at `.agents/vault/` is the exception.
 - [ ] The PR description says what changed, why, and what you ran.

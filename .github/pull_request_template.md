@@ -38,7 +38,7 @@ What did you test, and on what platform?
 
 - [ ] No hardcoded paths — all paths injected via `set_paths()`
 - [ ] No hex color literals — all colors from DESIGN.md tokens
-- [ ] No system fonts — body `GoogleFonts.instrumentSans()`, mono `Theme.of(context).textTheme.mono`
+- [ ] No system fonts — headings use Bricolage Grotesque, body uses Figtree, mono uses `Theme.of(context).textTheme.mono`
 - [ ] No `setState()` for shared state — Riverpod only
 - [ ] No `subprocess.run()` with yt-dlp — `YoutubeDL` class API only
 - [ ] No new yt-dlp options that conflict with `merge_output_format` + `remux_video` together

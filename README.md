@@ -197,6 +197,11 @@ A few rules keep that honest:
 - The engine speaks a versioned contract (`1.0`); a major mismatch is refused
   instead of half-understood.
 
+Typography is Bricolage Grotesque for headings and Figtree for body text, with
+Iosevka Charon Mono for anything that reads like code — format ids, URLs, byte
+counts. InstrumentSans survives only in older settings screens and goes away
+when those are touched.
+
 The IPC methods are listed in
 [`docs/architecture.md`](docs/architecture.md), along with the provider graph
 and the event flow from yt-dlp hooks to a progress bar.
@@ -310,6 +315,7 @@ Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).
 | [JS runtimes](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Why Deno comes first, and what the alternatives cost |
 | [Audit record](docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md) | The 61-finding review, one row per finding |
 | [Second-pass record](docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md) | What the ten follow-up findings were, and what was done with them |
+| [Knowledge vault](.agents/vault/index.md) | Project notes on architecture, IPC, storage and open questions |
 | [Agent skills](skills/README.md) | The reusable review and verification procedures |
 | [Changelog](docs/CHANGELOG.md) | Release notes |
 
