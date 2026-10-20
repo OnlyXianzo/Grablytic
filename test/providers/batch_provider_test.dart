@@ -68,9 +68,9 @@ class _ThrowingEngine extends MockEngineService {
 
 Future<ProviderContainer> _container(
   MockEngineService engine, {
-  Map<String, Object> prefs = const {},
+  Map<String, Object> mockPrefs = const {},
 }) async {
-  SharedPreferences.setMockInitialValues(prefs);
+  SharedPreferences.setMockInitialValues(mockPrefs);
   final prefs = await SharedPreferences.getInstance();
   final container = ProviderContainer(
     overrides: [
@@ -290,7 +290,7 @@ void main() {
     // whatever day the suite runs on.
     final container = await _container(
       engine,
-      prefs: {'scheduleEnabled': true, 'scheduleDays': <String>[]},
+      mockPrefs: {'scheduleEnabled': true, 'scheduleDays': <String>[]},
     );
 
     container.read(batchProvider.notifier).startBatch([_item('A'), _item('B')]);
@@ -316,7 +316,7 @@ void main() {
     final engine = _RecordingEngine();
     final container = await _container(
       engine,
-      prefs: {'scheduleEnabled': true, 'scheduleDays': <String>[]},
+      mockPrefs: {'scheduleEnabled': true, 'scheduleDays': <String>[]},
     );
 
     container.read(batchProvider.notifier).startBatch([_item('A')]);

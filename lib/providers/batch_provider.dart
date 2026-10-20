@@ -141,7 +141,7 @@ class BatchState {
   /// True when [BatchNotifier.processNext] hit the quiet-hours schedule
   /// gate and parked the queue instead of dispatching. The item it was
   /// about to start is back to `pending`; the UI can say "paused until
-  /// <window>" rather than showing a spinner that never moves.
+  /// `<window>`" rather than showing a spinner that never moves.
   final bool scheduleBlocked;
 
   const BatchState({
