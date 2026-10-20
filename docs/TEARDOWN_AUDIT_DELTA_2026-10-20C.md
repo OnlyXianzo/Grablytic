@@ -73,6 +73,8 @@ behaviour for same-day windows is unchanged.
   expired-slot path, two for the coverage-completeness rules).
 * `ruff check --select F engine tool` → clean.
 * `tool/check_broad_catches.py` → holds at 168 Dart / 237 Python.
+* Real report: **59.08%** line coverage over 89 `lib/` files; the gate is
+  `--max-unloaded 0 --allow-unloaded core/engine/engine_service.dart`.
 * Dart is source-verified here (no Flutter SDK); the two new batch tests
   need a hanging engine so the item is still `downloading` when it is
   cancelled, and the three schedule tests pin the midnight spill.
@@ -82,6 +84,6 @@ behaviour for same-day windows is unchanged.
 
 | Item | Why it stays |
 |---|---|
-| `--max-unloaded` needs a seeded number | The budget is set from one real report; until it is, the flag reports without failing. |
+| The unloaded budget is `0` with one allowed file | Seeded from a real run: 89 of 90 `lib/` files carry coverage data, and the one that does not is `engine_service.dart`, a pure interface with no executable lines. A new file appearing there fails the gate. |
 | `scheduleWindowMinutes` has no Settings control | It is read from preferences and defaults to four hours. A UI knob is a separate change with its own tests. |
 | WAL adds `-wal`/`-shm` files next to the database | They are in the same app-private directory and SQLite reclaims them on close. |

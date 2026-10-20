@@ -51,29 +51,16 @@ jobs:
       - name: Run widget & unit tests with coverage
         run: flutter test --coverage
 
-      # TEMPORARY: failing-test detail as check annotations (logs are
-      # unreachable from one review environment). Removed before merge.
-      - name: Test diagnostics
-        if: failure()
-        run: |
-          flutter test --reporter expanded 2>&1 \
-            | grep -A12 -E '\[E\]' \
-            | head -45 \
-            | while IFS= read -r line; do echo "::error::$line"; done
-
       - name: Enforce Flutter project-lib coverage floor
-        run: python3 tool/check_flutter_coverage.py coverage/lcov.info --fail-under 30
-
-      # TEMPORARY: the coverage-completeness numbers as check annotations.
-      # Actions logs are unreachable from one review environment; removed
-      # once the --max-unloaded budget is seeded.
-      - name: Coverage completeness report
-        if: success()
+        # --max-unloaded 0 plus the allow-list: one file, `engine_service.dart`,
+        # is a pure interface with no executable lines, so LCOV emits no
+        # record for it. Everything else must be instrumented, which is what
+        # stops a deleted import from quietly raising the percentage.
         run: |
           python3 tool/check_flutter_coverage.py coverage/lcov.info \
-            --fail-under 0 2>&1 \
-            | head -40 \
-            | while IFS= read -r line; do echo "::warning::$line"; done
+            --fail-under 30 \
+            --max-unloaded 0 \
+            --allow-unloaded core/engine/engine_service.dart
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
