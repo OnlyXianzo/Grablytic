@@ -213,7 +213,7 @@ def test_auto_report_is_queued_not_run_inline(monkeypatch):
 
     monkeypatch.setattr(notifier, "notify_exception", _fake_notify)
     monkeypatch.setattr(main_mod, "_report_state", {"sent": 0, "last_monotonic": 0.0})
-    monkeypatch.setattr(main_mod, "_report_pool", None)
+    main_mod._report_pool.shutdown()
 
     t0 = time.monotonic()
     accepted = main_mod._report_async(RuntimeError("boom"), "formats/get")
@@ -231,7 +231,7 @@ def test_auto_report_is_rate_limited(monkeypatch):
     import grablytic_engine.__main__ as main_mod
 
     monkeypatch.setattr(main_mod, "_report_state", {"sent": 0, "last_monotonic": 0.0})
-    monkeypatch.setattr(main_mod, "_report_pool", None)
+    main_mod._report_pool.shutdown()
     monkeypatch.setattr(main_mod, "_deliver_report", lambda exc, method: None)
     try:
         assert main_mod._report_async(RuntimeError("a"), "m") is True
@@ -249,7 +249,7 @@ def test_auto_report_caps_reports_per_session(monkeypatch):
         "_report_state",
         {"sent": main_mod._REPORT_MAX_PER_SESSION, "last_monotonic": 0.0},
     )
-    monkeypatch.setattr(main_mod, "_report_pool", None)
+    main_mod._report_pool.shutdown()
     assert main_mod._report_async(RuntimeError("a"), "m") is False
 
 

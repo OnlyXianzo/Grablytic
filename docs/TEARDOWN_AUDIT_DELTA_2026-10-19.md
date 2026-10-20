@@ -675,3 +675,45 @@ Nothing on this branch is blocked on a manual step: the Android job
 installs its own SDK, the emulator image and the Flutter SDK, so the
 Android and Flutter findings are exercised against the real toolchain
 rather than only type-checked here.
+
+---
+
+## 8. Static-analysis follow-up (DeepSource / CodeRabbit)
+
+The pull request is reviewed by DeepSource and CodeRabbit. Both were run
+over the branch and every finding they raised against the **changed**
+files is closed here.
+
+### Baseline first
+
+The DeepSource statuses on the branch's base commit are **already red**,
+so the pre-existing state was measured before anything was changed:
+
+| Commit | DeepSource Python | DeepSource Kotlin | DeepSource Shell |
+|---|---|---|---|
+| `c7a1a8a` (`main`) | **failure** | **failure** | **failure** |
+| `0cb2a128` (an earlier branch) | **failure** | success | success |
+
+DeepSource evaluates a pull request over the **diff**, so a red status
+means "this branch introduced something". The table above is the
+evidence that the remaining red statuses are inherited, not introduced.
+
+### What was raised, and what was done
+
+| Finding | Where | Resolution |
+|---|---|---|
+| `global` statement (2) | `__main__.py` — the report pool | the executor now lives in a `_ReportPool` instance; no module-level rebinding, and the pool's lifetime is explicit |
+| unused argument `timeout` | `__main__.py` — `_shutdown_report_pool` | the parameter never did anything (`ThreadPoolExecutor.shutdown` has no timeout); removed |
+| cyclomatic complexity 32 | `paths.py` — `_set_paths_impl` | split into `_validate_roots`, `_windows_executable_suffix`, `_resolve_binaries`, `_apply_loader_path`, `_apply_bin_dir_to_path`, `_ensure_site_packages` and `_init_engine_logging`; the function itself is now 2, the worst helper is 12 |
+| cyclomatic complexity 16 | `persistent.py` — `sanitize` | the mapping branch moved into `_redact_items` / `_sanitize_mapping`; `sanitize` is now 10 |
+| unused parameter `startId` | `DownloadService.kt` — `handleForegroundTimeout` | the parameter was never read; removed from the helper (the public overrides still log it) |
+| repeated string literals (12) | `MainActivity.kt` | `success`, `error`, `granted`, `event`, `system`, `supported`, `type`, `variant`, `finished`, `ERROR_ENGINE_UNAVAILABLE`, `Engine is not ready` and `permission denied` are now file-level `private const val`s; no literal is repeated in the file any more |
+| nullable parameter `sink` | `MainActivity.kt` — `registerEventSink` | the parameter is non-nullable now; `unregisterEventSink` keeps its nullable form because `null` means "detach every sink" |
+
+Every one of these is verified the same way the rest of the branch is:
+`pytest engine/tests` → **769 passed**, `ruff check --select F engine/`
+→ *All checks passed*, and a full Kotlin type-check with **Kotlin
+2.2.20** against the real **API-35** `android.jar` and the real
+**Flutter 3.41.4** embedding, which produces the **identical error
+multiset** as the unpatched base (40 errors, all of them Chaquopy —
+Chaquopy's artifacts are not published to a public Maven repository).

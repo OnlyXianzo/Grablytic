@@ -169,6 +169,36 @@ def scrub_text(text: str) -> str:
     return _scrub_string(text)
 
 
+def _redact_items(pairs, _stack: tuple[int, ...]) -> dict[Any, Any]:
+    """Redact one mapping's items, recursing into the non-sensitive ones.
+
+    Shared by the `dict` branch and the duck-typed mapping branch so
+    both redact exactly the same way.
+    """
+    redacted: dict[Any, Any] = {}
+    for k, v in pairs:
+        if is_sensitive_key(k):
+            redacted[k] = "***REDACTED***"
+        else:
+            redacted[k] = sanitize(v, _stack)
+    return redacted
+
+
+def _sanitize_mapping(obj: Any, _stack: tuple[int, ...]) -> Any:
+    """Redact a duck-typed mapping (e.g. a Chaquopy Java-map proxy).
+
+    Returns *obj* unchanged when it is not mapping-like at all.
+    """
+    items = getattr(obj, "items", None)
+    if not callable(items):
+        return obj
+    try:
+        pairs = list(items())
+    except Exception:
+        return obj
+    return _redact_items(pairs, _stack + (id(obj),))
+
+
 def sanitize(obj: Any, _stack: tuple[int, ...] = ()) -> Any:
     """Deep-copy *obj* with sensitive values replaced by ***REDACTED***.
 
@@ -188,13 +218,7 @@ def sanitize(obj: Any, _stack: tuple[int, ...] = ()) -> Any:
     if isinstance(obj, dict):
         if id(obj) in _stack:
             return "***CYCLIC***"
-        redacted: dict[Any, Any] = {}
-        for k, v in obj.items():
-            if is_sensitive_key(k):
-                redacted[k] = "***REDACTED***"
-            else:
-                redacted[k] = sanitize(v, _stack + (id(obj),))
-        return redacted
+        return _redact_items(obj.items(), _stack + (id(obj),))
     if isinstance(obj, (list, tuple)):
         if id(obj) in _stack:
             return "***CYCLIC***"
@@ -205,20 +229,7 @@ def sanitize(obj: Any, _stack: tuple[int, ...] = ()) -> Any:
     if isinstance(obj, (bytes, bytearray)):
         return obj
     # Duck-typed mappings (e.g. Chaquopy Java-map proxies).
-    items = getattr(obj, "items", None)
-    if callable(items):
-        try:
-            pairs = list(items())
-        except Exception:
-            return obj
-        out: dict[Any, Any] = {}
-        for k, v in pairs:
-            if is_sensitive_key(k):
-                out[k] = "***REDACTED***"
-            else:
-                out[k] = sanitize(v, _stack + (id(obj),))
-        return out
-    return obj
+    return _sanitize_mapping(obj, _stack)
 
 
 def format_traceback(exc: BaseException, limit: int = 40) -> str:

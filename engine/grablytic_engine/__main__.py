@@ -715,19 +715,50 @@ def _run_guarded_request(req_id, method, params, inflight) -> None:
 # per-session cap so a crash loop cannot spam a public repository.
 _REPORT_MIN_INTERVAL_S = 60.0
 _REPORT_MAX_PER_SESSION = 5
-_report_pool: _futures.ThreadPoolExecutor | None = None
 _report_pool_lock = threading.Lock()
 _report_state = {"sent": 0, "last_monotonic": 0.0}
 
 
+class _ReportPool:
+    """The single worker that performs the opt-in auto-reports.
+
+    The executor lives in an instance attribute rather than a module
+    global: a `global` rebinding is a data race between the reader
+    thread and the worker, and it hides the pool's lifetime inside the
+    module namespace. One instance owns the whole lifecycle.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pool: _futures.ThreadPoolExecutor | None = None
+
+    def get(self) -> _futures.ThreadPoolExecutor:
+        """Return the worker, starting it on first use."""
+        with self._lock:
+            if self._pool is None:
+                self._pool = _futures.ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="gh-report"
+                )
+            return self._pool
+
+    def shutdown(self) -> None:
+        """Detach and stop the worker. Never blocks the caller."""
+        with self._lock:
+            pool = self._pool
+            self._pool = None
+        if pool is None:
+            return
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
+
+_report_pool = _ReportPool()
+
+
 def _report_pool_get() -> _futures.ThreadPoolExecutor:
-    global _report_pool
-    with _report_pool_lock:
-        if _report_pool is None:
-            _report_pool = _futures.ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="gh-report"
-            )
-        return _report_pool
+    return _report_pool.get()
 
 
 def _report_async(exc: BaseException, method: str) -> bool:
@@ -768,17 +799,8 @@ def _deliver_report(exc: BaseException, method: str) -> None:
         pass
 
 
-def _shutdown_report_pool(timeout: float = 5.0) -> None:
-    global _report_pool
-    with _report_pool_lock:
-        pool = _report_pool
-        _report_pool = None
-    if pool is None:
-        return
-    try:
-        pool.shutdown(wait=False, cancel_futures=True)
-    except Exception:
-        pass
+def _shutdown_report_pool() -> None:
+    _report_pool.shutdown()
 
 
 def _report_ipc_parse_error(exc: Exception, method: str, req_id) -> None:

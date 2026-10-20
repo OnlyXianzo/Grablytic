@@ -198,6 +198,186 @@ def set_paths(
         )
 
 
+def _paths_logger():
+    """The engine logger for this module, or None when it is unavailable."""
+    try:
+        from grablytic_engine.logger import get_logger as _get_logger
+
+        return _get_logger("grablytic_engine.paths")
+    except Exception:
+        return None
+
+
+def _validate_roots(
+    data_dir: str, output_dir: str, cache_dir: str, warn
+) -> dict | None:
+    """Fail closed when a directory root is not absolute.
+
+    The roots are the trust anchor for everything below (bin_dir
+    construction, site-packages containment). A non-absolute root makes
+    every derived path cwd-relative — NLTK #3642 shape — so this runs
+    BEFORE any process-global state is touched. Returns the error
+    answer, or None when every root is acceptable.
+    """
+    for label, root in (
+        ("data_dir", data_dir),
+        ("output_dir", output_dir),
+        ("cache_dir", cache_dir),
+    ):
+        if not _is_abs(root):
+            warn(f"Rejecting paths/set: {label} is not absolute: {root!r:.80}")
+            return {"success": False, "error": f"{label} must be an absolute path"}
+    return None
+
+
+def _windows_executable_suffix() -> str:
+    """The executable suffix for this platform (".exe" on Windows)."""
+    import os
+
+    if os.name == "nt":
+        return ".exe"
+    env_os = os.environ.get("OS")
+    if isinstance(env_os, str) and "windows" in env_os.lower():
+        return ".exe"
+    return ""
+
+
+def _resolve_binaries(bin_dir: str, ext: str, log, explicit: dict) -> None:
+    """Resolve ffmpeg/aria2c/deno/node: explicit → bundled → system.
+
+    Every leg is X_OK-gated (explicit + bundled via _resolve_bin; system
+    via shutil.which's own F_OK|X_OK gate).
+    """
+    _paths["ffmpeg_path"] = _resolve_bin(
+        explicit["ffmpeg"], bin_dir, f"ffmpeg{ext}", log
+    )
+    _paths["aria2c_path"] = _resolve_bin(
+        explicit["aria2c"], bin_dir, f"aria2c{ext}", log
+    )
+    _paths["deno_path"] = _resolve_bin(explicit["deno"], bin_dir, f"deno{ext}", log)
+    # (Android primary JS runtime; links cleanly on Bionic.)
+    _paths["nodejs_path"] = _resolve_bin(explicit["node"], bin_dir, f"node{ext}", log)
+
+
+def _apply_loader_path(ffmpeg_ld_path: str | None) -> None:
+    """Make the bundled loader trees visible to the child processes.
+
+    Bundled jniLibs .so files ship no RUNPATH: their shared-library tree
+    must be visible via LD_LIBRARY_PATH or every ffmpeg/deno child
+    process fails to start. Applied process-wide here (Chaquopy runs
+    in-process, so this covers the whole app); harmless on desktop when
+    unset. The value may carry SEVERAL dirs (ffmpeg tree + deno tree +
+    nativeLibraryDir, colon-joined by the caller) — every bundled binary
+    needs every tree (CANNOT LINK EXECUTABLE otherwise). Order preserved.
+    """
+    import os
+
+    _paths["ffmpeg_ld_path"] = None
+    if not ffmpeg_ld_path:
+        return
+    entries = [p.strip() for p in str(ffmpeg_ld_path).split(os.pathsep)]
+    # Absolute-only. A cwd-relative entry would resolve against an
+    # unpredictable working directory into the loader search path.
+    entries = [d for d in entries if d and os.path.isabs(d) and os.path.isdir(d)]
+    if not entries:
+        return
+    _paths["ffmpeg_ld_path"] = entries[0]
+    # Prepend in reverse so final PATH order matches input order.
+    for d in reversed(entries):
+        existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        parts = existing_ld.split(os.pathsep) if existing_ld else []
+        if d not in parts:
+            os.environ["LD_LIBRARY_PATH"] = d + (
+                os.pathsep + existing_ld if existing_ld else ""
+            )
+    # Remember what WE added so a later set_paths() with a different data
+    # dir can drop the old entry instead of accumulating one
+    # LD_LIBRARY_PATH entry per reconfiguration (the loader search path
+    # grew on every call).
+    _remember_env_prefix("LD_LIBRARY_PATH", entries)
+
+
+def _apply_bin_dir_to_path(bin_dir: str) -> None:
+    """Put our own bin_dir at the front of PATH — and only ours.
+
+    PATH carries ONLY our own constructed bin_dir — never the dirname of
+    an explicitly-supplied binary. The old code prepended every
+    `dirname(explicit)` (so `aria2c_path=/evil/dir/x` injected
+    `/evil/dir` into the search order of all later `which()` fallbacks)
+    and tested membership as a SUBSTRING of the joined string (so a
+    pre-existing `<bin>_evil` entry silently suppressed the legit
+    prepend). Every consumer uses absolute paths now (ffmpeg_location,
+    js_runtimes path, absolute aria2c downloader value — verified against
+    yt-dlp downloader/__init__.py + external.py: basename→class lookup,
+    full path exec'd directly), so nothing legitimate needs explicit
+    dirs on PATH. Membership is per-component (split on pathsep,
+    normalized) — never a substring search on the joined string
+    (CWE-426).
+    """
+    import os
+
+    existing = os.environ.get("PATH", "")
+    on_path = [
+        os.path.normcase(os.path.normpath(p)) for p in existing.split(os.pathsep) if p
+    ]
+    if bin_dir not in on_path:
+        os.environ["PATH"] = bin_dir + os.pathsep + existing
+    _remember_env_prefix("PATH", [bin_dir])
+
+
+def _ensure_site_packages(data_dir: str) -> None:
+    """Prepend the IPC-provided site-packages to sys.path, if it is ours.
+
+    Prepends site-packages to sys.path to load dynamically updated
+    yt-dlp modules. The directory is IPC-derived, so gate it —
+    realpath containment strictly inside data_dir (kills symlink escape:
+    a site-packages symlink pointing outside resolves outside and is
+    rejected), isdir, and list membership (already correct — `in
+    sys.path` is per-element, unlike the old PATH substring test).
+    Position 0 keeps update precedence; shadowing stdlib from here
+    requires write access to app-private data_dir, which is the platform
+    sandbox's job to prevent.
+    """
+    import os
+    import sys
+
+    site_packages = os.path.join(data_dir, "site-packages")
+    if not _is_contained(site_packages, data_dir):
+        return
+    if not os.path.isdir(os.path.realpath(site_packages)):
+        return
+    if site_packages in sys.path:
+        return
+    real = os.path.realpath(site_packages)
+    if real in [os.path.realpath(p) for p in sys.path if p and os.path.isdir(p)]:
+        return
+    sys.path.insert(0, site_packages)
+
+
+def _init_engine_logging(data_dir: str) -> None:
+    """Point the engine's file loggers at data_dir/logs (never raises).
+
+    Engine file logging must work on every platform — including Android,
+    where Chaquopy calls set_paths directly and __main__ never runs.
+    Both helpers are idempotent per directory and never raise, so a
+    logging failure can never break path configuration.
+    """
+    import os
+
+    try:
+        from grablytic_engine.logger import set_global_log_dir
+
+        set_global_log_dir(os.path.join(data_dir, "logs"))
+    except Exception:
+        pass
+    try:
+        from grablytic_engine.persistent import init_persistent_logging
+
+        init_persistent_logging(os.path.join(data_dir, "logs"))
+    except Exception:
+        pass
+
+
 def _set_paths_impl(
     data_dir: str,
     output_dir: str,
@@ -211,14 +391,8 @@ def _set_paths_impl(
     nodejs_path: str | None = None,
 ) -> dict:
     import os
-    import sys
 
-    try:
-        from grablytic_engine.logger import get_logger as _get_logger
-
-        _log = _get_logger("grablytic_engine.paths")
-    except Exception:
-        _log = None
+    _log = _paths_logger()
 
     def _warn(msg):
         try:
@@ -227,125 +401,34 @@ def _set_paths_impl(
         except Exception:
             pass
 
-    # Directory roots are the trust anchor for everything below
-    # (bin_dir construction, site-packages containment). A non-absolute
-    # root makes every derived path cwd-relative — NLTK #3642 shape — so
-    # fail closed BEFORE mutating any process-global state.
-    for _label, _root in (
-        ("data_dir", data_dir),
-        ("output_dir", output_dir),
-        ("cache_dir", cache_dir),
-    ):
-        if not _is_abs(_root):
-            _warn(f"Rejecting paths/set: {_label} is not absolute: {_root!r:.80}")
-            return {"success": False, "error": f"{_label} must be an absolute path"}
+    error = _validate_roots(data_dir, output_dir, cache_dir, _warn)
+    if error is not None:
+        return error
 
     _paths["data_dir"] = data_dir
     _paths["output_dir"] = output_dir
     _paths["cache_dir"] = cache_dir
 
     bin_dir = os.path.join(data_dir, "bin")
-    is_windows = os.name == "nt" or (
-        isinstance(os.environ.get("OS"), str)
-        and "windows" in os.environ.get("OS").lower()
+    _resolve_binaries(
+        bin_dir,
+        _windows_executable_suffix(),
+        _log,
+        {
+            "ffmpeg": ffmpeg_path,
+            "aria2c": aria2c_path,
+            "deno": deno_path,
+            "node": nodejs_path,
+        },
     )
-    ext = ".exe" if is_windows else ""
-
-    # Resolve ffmpeg/aria2c/deno/node: explicit → bundled → system →
-    # placeholder. Every leg is X_OK-gated (explicit + bundled via
-    # _resolve_bin; system via shutil.which's own F_OK|X_OK gate).
-    _paths["ffmpeg_path"] = _resolve_bin(ffmpeg_path, bin_dir, f"ffmpeg{ext}", _log)
-    _paths["aria2c_path"] = _resolve_bin(aria2c_path, bin_dir, f"aria2c{ext}", _log)
-    _paths["deno_path"] = _resolve_bin(deno_path, bin_dir, f"deno{ext}", _log)
-    # (Android primary JS runtime; links cleanly on Bionic.)
-    _paths["nodejs_path"] = _resolve_bin(nodejs_path, bin_dir, f"node{ext}", _log)
 
     _paths["cookies_path"] = cookies_path
     _paths["po_token"] = po_token
 
-    # Bundled jniLibs .so files ship no RUNPATH: their shared-library tree
-    # must be visible via LD_LIBRARY_PATH or every ffmpeg/deno child process
-    # fails to start. Applied process-wide here (Chaquopy runs in-process,
-    # so this covers the whole app); harmless on desktop when unset.
-    # The value may carry SEVERAL dirs (ffmpeg tree + deno tree +
-    # nativeLibraryDir, colon-joined by the caller) — every bundled binary
-    # needs every tree (CANNOT LINK EXECUTABLE otherwise). Order preserved.
-    _paths["ffmpeg_ld_path"] = None
-    if ffmpeg_ld_path:
-        valid = [p.strip() for p in str(ffmpeg_ld_path).split(os.pathsep)]
-        # Absolute-only. A cwd-relative entry would resolve against an
-        # unpredictable working directory into the loader search path.
-        valid = [d for d in valid if d and os.path.isabs(d) and os.path.isdir(d)]
-        if valid:
-            _paths["ffmpeg_ld_path"] = valid[0]
-            # Prepend in reverse so final PATH order matches input order.
-            for d in reversed(valid):
-                existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-                parts = existing_ld.split(os.pathsep) if existing_ld else []
-                if d not in parts:
-                    os.environ["LD_LIBRARY_PATH"] = d + (
-                        os.pathsep + existing_ld if existing_ld else ""
-                    )
-            # Remember what WE added so a later set_paths() with a
-            # different data dir can drop the old entry instead of
-            # accumulating one LD_LIBRARY_PATH entry per reconfiguration
-            # (the loader search path grew on every call).
-            _remember_env_prefix("LD_LIBRARY_PATH", valid)
-
-    # PATH carries ONLY our own constructed bin_dir — never the
-    # dirname of an explicitly-supplied binary. The old code prepended every
-    # `dirname(explicit)` (so `aria2c_path=/evil/dir/x` injected `/evil/dir`
-    # into the search order of all later `which()` fallbacks) and tested
-    # membership as a SUBSTRING of the joined string (so a pre-existing
-    # `<bin>_evil` entry silently suppressed the legit prepend). Every
-    # consumer uses absolute paths now (ffmpeg_location, js_runtimes path,
-    # absolute aria2c downloader value — verified against yt-dlp
-    # downloader/__init__.py + external.py: basename→class lookup, full path
-    # exec'd directly), so nothing legitimate needs explicit dirs on PATH.
-    # Membership is per-component (split on pathsep, normalized) — never a
-    # substring search on the joined string (CWE-426).
-    if bin_dir not in [
-        os.path.normcase(os.path.normpath(p))
-        for p in os.environ.get("PATH", "").split(os.pathsep)
-        if p
-    ]:
-        os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
-    _remember_env_prefix("PATH", [bin_dir])
-
-    # Prepends site-packages to sys.path to load dynamically updated yt-dlp
-    # modules. The directory is IPC-derived, so gate it — realpath
-    # containment strictly inside data_dir (kills symlink escape: a
-    # site-packages symlink pointing outside resolves outside and is
-    # rejected), isdir, and list membership (already correct — `in sys.path`
-    # is per-element, unlike the old PATH substring test). Position 0 keeps
-    # update precedence; shadowing stdlib from here requires write access to
-    # app-private data_dir, which is the platform sandbox's job to prevent.
-    site_packages = os.path.join(data_dir, "site-packages")
-    if (
-        _is_contained(site_packages, data_dir)
-        and os.path.isdir(os.path.realpath(site_packages))
-        and os.path.realpath(site_packages)
-        not in [os.path.realpath(p) for p in sys.path if p and os.path.isdir(p)]
-        and site_packages not in sys.path
-    ):
-        sys.path.insert(0, site_packages)
-
-    # Engine file logging must work on every platform — including Android,
-    # where Chaquopy calls set_paths directly and __main__ never runs.
-    # Both helpers are idempotent per directory and never raise, so a
-    # logging failure can never break path configuration.
-    try:
-        from grablytic_engine.logger import set_global_log_dir
-
-        set_global_log_dir(os.path.join(data_dir, "logs"))
-    except Exception:
-        pass
-    try:
-        from grablytic_engine.persistent import init_persistent_logging
-
-        init_persistent_logging(os.path.join(data_dir, "logs"))
-    except Exception:
-        pass
+    _apply_loader_path(ffmpeg_ld_path)
+    _apply_bin_dir_to_path(bin_dir)
+    _ensure_site_packages(data_dir)
+    _init_engine_logging(data_dir)
 
     return {"success": True}
 

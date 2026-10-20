@@ -286,16 +286,16 @@ class DownloadService : Service() {
      */
     override fun onTimeout(startId: Int, fgsType: Int) {
         android.util.Log.w(TAG, "ForegroundService timeout (startId=$startId, fgsType=$fgsType)")
-        handleForegroundTimeout(startId)
+        handleForegroundTimeout()
     }
 
     /** Short-service overload (API 29+). Kept for the shortService type. */
     override fun onTimeout(startId: Int) {
         android.util.Log.w(TAG, "ForegroundService shortService timeout (startId=$startId)")
-        handleForegroundTimeout(startId)
+        handleForegroundTimeout()
     }
 
-    private fun handleForegroundTimeout(startId: Int) {
+    private fun handleForegroundTimeout() {
         try {
             // Cancel active engine workers BEFORE alerts/sweep/stop.
             // Without this the Chaquopy/Python threads keep downloading with

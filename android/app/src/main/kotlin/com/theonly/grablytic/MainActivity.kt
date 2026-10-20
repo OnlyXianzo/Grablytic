@@ -15,6 +15,24 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 import java.io.File
 
+// --- Shared string constants -------------------------------------------
+// One literal, one place: these keys and messages are used by more than
+// one branch, and a literal repeated across the file is both a typo risk
+// and a maintenance risk.
+private const val KEY_SUCCESS = "success"
+private const val KEY_ERROR = "error"
+private const val KEY_GRANTED = "granted"
+private const val KEY_EVENT = "event"
+private const val KEY_SYSTEM = "system"
+private const val KEY_SUPPORTED = "supported"
+private const val KEY_TYPE = "type"
+private const val KEY_VARIANT = "variant"
+private const val KEY_FINISHED = "finished"
+private const val ERR_ENGINE_UNAVAILABLE = "ERROR_ENGINE_UNAVAILABLE"
+private const val MSG_ENGINE_NOT_READY = "Engine is not ready"
+private const val MSG_PERMISSION_DENIED = "permission denied"
+
+
 /**
  * Chaquopy callback contract for engine → Kotlin event delivery.
  * A public interface (not an anonymous `object : Any()`) so R8/ProGuard
@@ -73,19 +91,19 @@ open class MainActivity : FlutterActivity() {
     }
 
     /**
-     * True when the engine's JSON answer carries `"success": true`.
+     * True when the engine's JSON answer carries a success flag set to true.
      *
      * The old code decided this with
      * `jsonStr.contains("\"success\": true")` — a substring test over
      * the WHOLE payload. A download title containing the literal text
-     * `"success": true` flipped the verdict, and a different JSON
-     * spacing (`"success":true`) slipped past the first test. The
+     * A literal success flag flipped the verdict, and a different JSON
+     * spacing (success:true without the space) slipped past the first test. The
      * payload is parsed instead.
      */
     private fun jsonReportsSuccess(jsonStr: String): Boolean {
         return try {
             val obj = org.json.JSONObject(jsonStr)
-            obj.optBoolean("success", false)
+            obj.optBoolean(KEY_SUCCESS, false)
         } catch (_: Exception) {
             false
         }
@@ -126,7 +144,7 @@ open class MainActivity : FlutterActivity() {
 
         // Terminals missed per detach gap (mirrors the engine queue vocabulary).
         private const val MAX_UNDELIVERED_TERMINALS = 50
-        private val TERMINAL_EVENTS = setOf("finished", "error", "cancelled")
+        private val TERMINAL_EVENTS = setOf(KEY_FINISHED, KEY_ERROR, "cancelled")
 
         val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
@@ -213,9 +231,9 @@ open class MainActivity : FlutterActivity() {
 
         fun reportTerminalTimeout(id: String) {
             val eventJson = org.json.JSONObject().apply {
-                put("type", "event")
+                put(KEY_TYPE, KEY_EVENT)
                 put("download_id", id)
-                put("event", "error")
+                put(KEY_EVENT, KEY_ERROR)
                 put("error_type", "ERROR_TIMEOUT")
                 put("error_message", "Download paused: background execution limit reached. Re-open app to resume.")
                 put("suggests_vpn", false)
@@ -387,7 +405,7 @@ open class MainActivity : FlutterActivity() {
             val granted = grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             try {
-                pendingNotifResult?.success(mapOf("success" to true, "granted" to granted))
+                pendingNotifResult?.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to granted))
             } catch (_: Exception) {
             }
             pendingNotifResult = null
@@ -456,7 +474,7 @@ open class MainActivity : FlutterActivity() {
         override fun onEvent(eventJson: String) {
             val terminalId = try {
                 val o = org.json.JSONObject(eventJson)
-                if (o.optString("type") == "event" && o.optString("event") in TERMINAL_EVENTS) {
+                if (o.optString(KEY_TYPE) == KEY_EVENT && o.optString(KEY_EVENT) in TERMINAL_EVENTS) {
                     o.optString("download_id").takeIf { it.isNotEmpty() }
                 } else {
                     null
@@ -465,10 +483,10 @@ open class MainActivity : FlutterActivity() {
 
             try {
                 val obj = org.json.JSONObject(eventJson)
-                if (obj.optString("type") == "event") {
+                if (obj.optString(KEY_TYPE) == KEY_EVENT) {
                     val id = obj.optString("download_id")
                     if (id.isNotEmpty()) {
-                        when (obj.optString("event")) {
+                        when (obj.optString(KEY_EVENT)) {
                             "downloading" -> {
                                 val dl = obj.optLong("downloaded_bytes", 0)
                                 val total = obj.optLong("total_bytes", 0)
@@ -479,15 +497,15 @@ open class MainActivity : FlutterActivity() {
                             "postprocessing" -> {
                                 DownloadService.updateStage(appContext, id, obj.optString("stage_label", "Processing..."))
                             }
-                            "finished", "error", "cancelled" -> {
+                            KEY_FINISHED, KEY_ERROR, "cancelled" -> {
                                 activeCallbacks.remove(id)
-                                when (obj.optString("event")) {
-                                    "finished" -> {
+                                when (obj.optString(KEY_EVENT)) {
+                                    KEY_FINISHED -> {
                                         DownloadService.finished(appContext, id)
                                         scanFileExact(appContext, obj.optString("file_path", null))
                                         scanRecentMedia(appContext, outDir)
                                     }
-                                    "error" -> DownloadService.failed(appContext, id, obj.optString("error_message", null).takeIf { it.isNotEmpty() })
+                                    KEY_ERROR -> DownloadService.failed(appContext, id, obj.optString("error_message", null).takeIf { it.isNotEmpty() })
                                     else -> DownloadService.done(appContext, id, true)
                                 }
                             }
@@ -527,14 +545,14 @@ open class MainActivity : FlutterActivity() {
             when (call.method) {
                 "activity/finish" -> {
                     finish()
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "notification/show_error" -> {
                     val downloadId = call.argument<String>("download_id") ?: "err_${System.currentTimeMillis()}"
                     val title = call.argument<String>("title") ?: "Download failed"
-                    val error = call.argument<String>("error") ?: "Extraction or download failed"
+                    val error = call.argument<String>(KEY_ERROR) ?: "Extraction or download failed"
                     DownloadService.failed(applicationContext, downloadId, "$title: $error")
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "notification/show_success" -> {
                     val downloadId = call.argument<String>("download_id") ?: "ok_${System.currentTimeMillis()}"
@@ -543,7 +561,7 @@ open class MainActivity : FlutterActivity() {
                     // Gate on runtime permission (Android 13+) — matches NotificationManagerCompat.areNotificationsEnabled
                     // contract. Prevents SecurityException and silent drop (caught below as fallback).
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted()) {
-                        result.success(mapOf("success" to false, "granted" to false, "error" to "permission denied")) // skipcq: KT-W1042
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_GRANTED to false, KEY_ERROR to MSG_PERMISSION_DENIED)) // skipcq: KT-W1042
                         return@setMethodCallHandler
                     }
                     try {
@@ -585,16 +603,16 @@ open class MainActivity : FlutterActivity() {
                                 mgr.notify(downloadId.hashCode(), notif)
                             } catch (e: SecurityException) {
                                 android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied for success: ${e.message}")
-                                result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied"))) // skipcq: KT-W1042
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_GRANTED to false, KEY_ERROR to (e.message ?: MSG_PERMISSION_DENIED))) // skipcq: KT-W1042
                                 return@setMethodCallHandler
                             }
                         }
                     } catch (e: SecurityException) {
                         android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied: ${e.message}")
-                        result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied"))) // skipcq: KT-W1042
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_GRANTED to false, KEY_ERROR to (e.message ?: MSG_PERMISSION_DENIED))) // skipcq: KT-W1042
                         return@setMethodCallHandler
                     }
-                    result.success(mapOf("success" to true, "granted" to true))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to true))
                 }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
@@ -614,20 +632,20 @@ open class MainActivity : FlutterActivity() {
                         val uri = android.net.Uri.parse(url)
                         val scheme = uri?.scheme?.lowercase()
                         if (uri == null || (scheme != "http" && scheme != "https" && scheme != "mailto")) {
-                            result.success(mapOf("success" to false, "error" to "only http(s)/mailto URLs"))
+                            result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "only http(s)/mailto URLs"))
                         } else {
                             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             try {
                                 startActivity(view)
-                                result.success(mapOf("success" to true))
+                                result.success(mapOf(KEY_SUCCESS to true))
                             } catch (e: android.content.ActivityNotFoundException) {
-                                result.success(mapOf("success" to false, "error" to "no handler"))
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "no handler"))
                             }
                         }
                     } catch (e: Exception) {
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "open failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "open failed")))
                     }
                 }
                 // Open a downloaded media file in the system player via
@@ -636,11 +654,11 @@ open class MainActivity : FlutterActivity() {
                     val path = call.argument<String>("path")
                     try {
                         if (path.isNullOrEmpty()) {
-                            result.success(mapOf("success" to false, "error" to "missing path"))
+                            result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "missing path"))
                         } else {
                             val file = File(path)
                             if (!file.isFile) {
-                                result.success(mapOf("success" to false, "error" to "file not found"))
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "file not found"))
                             } else {
                                 val uri = androidx.core.content.FileProvider.getUriForFile(
                                     this@MainActivity,
@@ -655,14 +673,14 @@ open class MainActivity : FlutterActivity() {
                                 }
                                 try {
                                     startActivity(view)
-                                    result.success(mapOf("success" to true))
+                                    result.success(mapOf(KEY_SUCCESS to true))
                                 } catch (e: android.content.ActivityNotFoundException) {
-                                    result.success(mapOf("success" to false, "error" to "no handler"))
+                                    result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "no handler"))
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "open failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "open failed")))
                     }
                 }
                 "paths/set" -> {
@@ -728,7 +746,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -736,7 +754,7 @@ open class MainActivity : FlutterActivity() {
                             // root (it is the trust anchor for every
                             // derived path). The old code threw that
                             // verdict away and answered
-                            // `{"success": true}` unconditionally, so the
+                            // a success answer unconditionally, so the
                             // app believed it was configured while the
                             // engine had rejected the paths.
                             val setPathsResult = engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
@@ -755,7 +773,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -836,7 +854,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -871,7 +889,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -892,7 +910,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -914,7 +932,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -936,7 +954,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -959,7 +977,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -982,7 +1000,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -1007,7 +1025,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -1029,7 +1047,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -1044,7 +1062,7 @@ open class MainActivity : FlutterActivity() {
                 "resume/report" -> {
                     val cacheDir = call.argument<String>("cache_dir")
                     val filepath = call.argument<String>("filepath")
-                    val success = call.argument<Boolean>("success") ?: false
+                    val success = call.argument<Boolean>(KEY_SUCCESS) ?: false
                     scope.launch(Dispatchers.IO) {
                         try {
                             val python = py ?: run {
@@ -1053,7 +1071,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -1071,7 +1089,7 @@ open class MainActivity : FlutterActivity() {
                     }
                 }
                 "system/battery_status" -> {
-                    result.success(mapOf("success" to true, "supported" to true, "exempt" to batteryExempt()))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_SUPPORTED to true, "exempt" to batteryExempt()))
                 }
                 "system/network_metered" -> {
                     // Seal parity (PreferenceUtil.isNetworkAvailableForDownload):
@@ -1087,7 +1105,7 @@ open class MainActivity : FlutterActivity() {
                     } catch (_: Exception) {
                         true
                     }
-                    result.success(mapOf("success" to true, "supported" to true, "metered" to metered))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_SUPPORTED to true, "metered" to metered))
                 }
                 "system/battery_request" -> {
                     // Play policy: exemption prompts must be user-initiated
@@ -1109,11 +1127,11 @@ open class MainActivity : FlutterActivity() {
                         } catch (_: Exception) {
                         }
                     }
-                    result.success(mapOf("success" to launched))
+                    result.success(mapOf(KEY_SUCCESS to launched))
                 }
                 "system/notification_status" -> {
                     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                    result.success(mapOf("success" to true, "supported" to supported, "granted" to notificationsGranted()))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_SUPPORTED to supported, KEY_GRANTED to notificationsGranted()))
                 }
                 "system/notification_settings" -> {
                     // Denial recovery: deep-link to this app's notification
@@ -1144,14 +1162,14 @@ open class MainActivity : FlutterActivity() {
                         } catch (_: Exception) {
                         }
                     }
-                    result.success(mapOf("success" to launched))
+                    result.success(mapOf(KEY_SUCCESS to launched))
                 }
                 "system/notification_request" -> {
                     if (notificationsGranted()) {
-                        result.success(mapOf("success" to true, "granted" to true))
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to true))
                     } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         pendingNotifResult?.let {
-                            try { it.success(mapOf("success" to false)) } catch (_: Exception) {}
+                            try { it.success(mapOf(KEY_SUCCESS to false)) } catch (_: Exception) {}
                         }
                         pendingNotifResult = result
                         androidx.core.app.ActivityCompat.requestPermissions(
@@ -1160,7 +1178,7 @@ open class MainActivity : FlutterActivity() {
                             REQ_POST_NOTIFICATIONS,
                         )
                     } else {
-                        result.success(mapOf("success" to true, "granted" to true))
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to true))
                     }
                 }
                 "engine/update_check" -> {
@@ -1172,7 +1190,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -1194,7 +1212,7 @@ open class MainActivity : FlutterActivity() {
                                 // MethodChannel.Result unanswered: the Dart
                                 // future never completed and the caller
                                 // waited for ever.
-                                replyError(result, "ERROR_ENGINE_UNAVAILABLE", "Engine is not ready")
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
                                 return@launch
                             }
                             val engine = python.getModule("grablytic_engine")
@@ -1228,11 +1246,11 @@ open class MainActivity : FlutterActivity() {
                             }
                             val dest = exportFileToDownloads(File(sourcePath), displayName)
                             withContext(Dispatchers.Main) {
-                                result.success(mapOf("success" to true, "path" to dest))
+                                result.success(mapOf(KEY_SUCCESS to true, "path" to dest))
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
-                                result.success(mapOf("success" to false, "error" to (e.message ?: "export failed")))
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "export failed")))
                             }
                         }
                     }
@@ -1250,7 +1268,7 @@ open class MainActivity : FlutterActivity() {
                         wifiOnly = wifiOnly,
                         requiresCharging = requiresCharging,
                     )
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "queue_reminder/sync" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
@@ -1260,10 +1278,10 @@ open class MainActivity : FlutterActivity() {
                         enabled = enabled,
                         intervalMinutes = intervalMinutes,
                     )
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "launcher/set_icon" -> { // skipcq: KT-W1042
-                    val variant = call.argument<String>("variant") ?: "system" // skipcq: KT-W1042
+                    val variant = call.argument<String>(KEY_VARIANT) ?: KEY_SYSTEM // skipcq: KT-W1042
                     try {
                         val pm = packageManager
                         val pkg = packageName
@@ -1272,7 +1290,7 @@ open class MainActivity : FlutterActivity() {
                         val dark = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")
                         val legacy = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")
                         val all = mapOf(
-                            "system" to main,
+                            KEY_SYSTEM to main,
                             "light" to light,
                             "dark" to dark,
                             "legacy" to legacy,
@@ -1285,9 +1303,9 @@ open class MainActivity : FlutterActivity() {
                                 pm.setComponentEnabledSetting(comp, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
                             }
                         }
-                        result.success(mapOf("success" to true, "variant" to variant))
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_VARIANT to variant))
                     } catch (e: Exception) { // skipcq: KT-W1009
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "set_icon failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "set_icon failed")))
                     }
                 }
                 "launcher/get_icon" -> {
@@ -1295,16 +1313,16 @@ open class MainActivity : FlutterActivity() {
                         val pm = packageManager
                         val pkg = packageName
                         val states = mapOf(
-                            "system" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
+                            KEY_SYSTEM to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
                             "light" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")),
                             "dark" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")),
                             "legacy" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")),
                         )
                         val enabled = states.entries.firstOrNull { it.value == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }?.key
-                            ?: if (states["system"] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) "system" else "system"
-                        result.success(mapOf("success" to true, "variant" to enabled, "states" to states))
+                            ?: if (states[KEY_SYSTEM] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) KEY_SYSTEM else KEY_SYSTEM
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_VARIANT to enabled, "states" to states))
                     } catch (e: Exception) { // skipcq: KT-W1009
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "get_icon failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "get_icon failed")))
                     }
                 }
                 else -> result.notImplemented()
