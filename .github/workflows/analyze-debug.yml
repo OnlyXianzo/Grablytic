@@ -1,8 +1,9 @@
 name: Analyze Debug
 
-# TEMPORARY: mirrors the verify workflow's analyze step but in GitHub
-# annotation format, so the exact diagnostics are visible on the PR. Deleted
-# before this branch merges.
+# TEMPORARY: mirrors the verify workflow's analyze step but re-emits every
+# diagnostic as an error-level annotation, so the exact text is visible on
+# the PR (job logs are not reachable from this environment). Deleted before
+# this branch merges.
 
 on:
   push:
@@ -19,5 +20,13 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
-      - name: Analyze (annotations)
-        run: flutter analyze --format=github || true
+      - name: Analyze
+        run: |
+          set +e
+          flutter analyze > analyze.txt 2>&1
+          code=$?
+          echo "::error::flutter analyze exited $code"
+          head -c 4000 analyze.txt | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
+          done
+          exit 0
