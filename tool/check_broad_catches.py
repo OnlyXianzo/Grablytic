@@ -62,6 +62,12 @@ TARGETS = {
 
 
 def _count_files(root: str, suffix: str, pattern: re.Pattern[str]) -> int:
+    """Count literal regex matches in matching files beneath ``root``.
+
+    Skip paths containing ``__pycache__`` and files that raise OSError on
+    read. Matches in comments and strings count too; UTF-8 decoding errors
+    propagate.
+    """
     total = 0
     for dirpath, _dirnames, filenames in os.walk(root):
         if "__pycache__" in dirpath:
@@ -80,6 +86,7 @@ def _count_files(root: str, suffix: str, pattern: re.Pattern[str]) -> int:
 
 
 def _current_counts() -> dict[str, int]:
+    """Return literal broad-handler counts for each configured target."""
     return {
         key: _count_files(spec["root"], spec["suffix"], spec["pattern"])
         for key, spec in TARGETS.items()
@@ -87,6 +94,10 @@ def _current_counts() -> dict[str, int]:
 
 
 def _load_budget() -> dict[str, int]:
+    """Load integer budgets, or return {} on read, parse, or conversion errors.
+
+    A JSON value without an ``items`` method raises AttributeError.
+    """
     try:
         with open(BUDGET_PATH, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -96,6 +107,11 @@ def _load_budget() -> dict[str, int]:
 
 
 def main() -> int:
+    """Check counts against budgets, or overwrite the budget with --update.
+
+    Print results and return 1 for missing or exceeded budgets, otherwise 0.
+    Argument errors exit through argparse; budget-write errors propagate.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--update",

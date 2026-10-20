@@ -144,6 +144,7 @@ class BatchState {
   /// `<window>`" rather than showing a spinner that never moves.
   final bool scheduleBlocked;
 
+  /// Create batch state; [scheduleBlocked] marks a pause outside allowed hours.
   const BatchState({
     required this.items,
     this.currentIndex = 0,
@@ -154,6 +155,7 @@ class BatchState {
     this.scheduleBlocked = false,
   });
 
+  /// Copy the state, retaining existing values for omitted or null arguments.
   BatchState copyWith({
     List<BatchItem>? items,
     int? currentIndex,
@@ -240,6 +242,8 @@ class BatchNotifier extends StateNotifier<BatchState> {
     }
   }
 
+  /// Mark pending and dispatching items failed and invalidate async results.
+  /// Clears the schedule pause; does not send cancellation to the engine.
   void cancelAll() {
     _generation++;
     final updated = state.items.map((item) {
@@ -278,6 +282,12 @@ class BatchNotifier extends StateNotifier<BatchState> {
     processNext();
   }
 
+  /// Dispatch the first pending item, or stop when no pending items remain.
+  ///
+  /// Outside the schedule window, park the batch with items still pending;
+  /// another call is needed to resume. URLs already active in the download
+  /// provider are marked completed and skipped. Completion here means accepted
+  /// by the engine, including queued work; media completion is tracked there.
   void processNext() {
     // A loop, not recursion: an item whose URL is already downloading used
     // to recurse synchronously, so a long playlist of duplicates (or one
@@ -343,6 +353,12 @@ class BatchNotifier extends StateNotifier<BatchState> {
     }
   }
 
+  /// Submit an item with secure settings merged over [baseConfig], then advance.
+  ///
+  /// Ignore results for an obsolete [generation] or a disposed notifier. Apply
+  /// results only while [index] is still downloading, preserving cancellation.
+  /// Rejections and caught errors mark that item failed; accepted work is added
+  /// to downloads and the optional playlist before marking the batch item done.
   Future<void> _dispatchBatchItem({
     required EngineService engine,
     required String downloadId,

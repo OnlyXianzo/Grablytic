@@ -555,6 +555,12 @@ open class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Register Flutter method handlers and the engine event stream.
+     * Engine calls run on IO coroutines; download/start retains a bounded
+     * callback reference for delivery. Stream listeners receive buffered
+     * terminal events when attached.
+     */
     // skipcq: KT-R1006
     private fun setupChannels(flutterEngine: FlutterEngine) {
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)

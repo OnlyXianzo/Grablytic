@@ -72,6 +72,12 @@ def download_context(download_id: str | None):
 
 class EngineLogger:
     def __init__(self, name: str):
+        """Create a named logger with no file, queue, or instance callback sink.
+
+        File, queue, and stderr delivery default to DEBUG and above; the
+        Android callback defaults to INFO and above. Stderr defaults to
+        the environment override or terminal detection.
+        """
         self.name = name
         self._context = threading.local()
         self._queue: queue.Queue | None = None
@@ -137,6 +143,14 @@ class EngineLogger:
         exception: BaseException | None = None,
         duration_ms: int | None = None,
     ) -> None:
+        """Deliver a contextual record to configured sinks.
+
+        File, queue, and stderr use the minimum level; the Android callback
+        uses its separate bridge floor. The persistent logging bridge applies
+        its own filtering. ``duration_ms`` is elapsed time in milliseconds.
+        Sink failures are suppressed, but record construction and JSON
+        serialization errors propagate to the caller.
+        """
         ctx = (
             getattr(self._context, "data", {}).copy()
             if hasattr(self._context, "data")

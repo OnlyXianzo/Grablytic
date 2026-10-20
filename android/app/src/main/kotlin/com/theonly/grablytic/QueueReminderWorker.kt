@@ -82,6 +82,11 @@ class QueueReminderWorker(
         }
     }
 
+    /**
+     * Remind for a positive queue count; cancel periodic work when disabled or empty.
+     * Unknown counts keep the worker scheduled without notifying. Caught failures
+     * return success so the next periodic run can check again.
+     */
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
             val prefs = applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
@@ -117,8 +122,9 @@ class QueueReminderWorker(
     }
 
     /**
-     * Number of queued offline links, or -1 when the preference cannot be
-     * read.
+     * Read the count hint first, otherwise count a stored set or JSON array.
+     * Missing/blank queue values and unsupported queue storage types return 0;
+     * malformed arrays and unrecognized nonblank encodings return -1.
      *
      * Two rules this follows, both learned the hard way:
      *
@@ -177,7 +183,11 @@ class QueueReminderWorker(
         }
     }
 
-    /** Reads the count hint as Int, Long or String; null when absent. */
+    /**
+     * Read the count hint as Int, Long or a trimmed integer String.
+     * Long values narrow to Int without range checks; null on missing,
+     * unsupported, invalid string values, or read errors.
+     */
     private fun readCountHint(prefs: SharedPreferences): Int? = try {
         when (val value = prefs.all[KEY_OFFLINE_QUEUE_COUNT]) {
             null -> null

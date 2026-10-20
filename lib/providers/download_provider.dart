@@ -391,7 +391,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   /// Prefetches the thumbnail into app-private storage when a job is created.
   /// This runs asynchronously without blocking the UI and records the path on
   /// the item and database only when still missing, so a finished sidecar is
-  /// never clobbered by a late fetch.
+  /// never clobbered by a late fetch. After a fetch attempt, also schedules
+  /// cache pruning against the current download IDs. Errors are suppressed.
   void _prefetchThumbnail(String id, String? url, String? existingPath) {
     final thumbUrl = url ?? '';
     if (thumbUrl.isEmpty || (existingPath ?? '').isNotEmpty) return;

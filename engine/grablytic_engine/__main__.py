@@ -882,11 +882,10 @@ def _parse_ipc_request(line: str):
 def _run_inline(req_id, method, params) -> None:
     """Execute an inline-lane request and report over-budget latency.
 
-    The handler itself is responsible for writing its envelope; this
-    wrapper only measures. It never raises (a handler already reports
-    through `_execute_parsed_request`), and it cannot be moved to a
-    worker without breaking the ordering contract documented on
-    `_FAST_IPC_METHODS`.
+    The handler writes its own response envelope. Running on the reader
+    thread preserves the ordering contract documented on
+    `_FAST_IPC_METHODS`. Errors escaping `_execute_parsed_request`
+    propagate; failures while reporting latency are suppressed.
     """
     started = time.monotonic()
     try:
@@ -905,6 +904,12 @@ def _run_inline(req_id, method, params) -> None:
 
 
 def _dispatch_ipc_request(req_id, method, params, pool, inflight, futures=None) -> None:
+    """Run fast methods and paths/set inline; submit other work to the pool.
+
+    Write an ERROR_BUSY response if no in-flight permit is available or
+    submission fails. If supplied, ``futures`` tracks submitted work until
+    completion for shutdown. Errors from inline execution propagate.
+    """
     if method in _FAST_IPC_METHODS or method == "paths/set":
         _run_inline(req_id, method, params)
         return

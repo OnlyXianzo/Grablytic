@@ -230,6 +230,10 @@ class DownloadHistoryDb {
     return _db!;
   }
 
+  /// Open schema version 7, create or migrate tables, and probe FTS4 support.
+  ///
+  /// Uses [dbPathForTesting] when set, otherwise the app documents directory.
+  /// Directory lookup and database-open errors propagate to the caller.
   Future<Database> _initDb() async {
     // ?? short-circuits: path_provider is never touched in unit tests.
     final path = dbPathForTesting ??
@@ -378,7 +382,7 @@ class DownloadHistoryDb {
   /// listings; the composite one serves the filtered variant (status
   /// first, then the sort key) without a temporary sort. Both are
   /// `CREATE INDEX` only — no table rewrite, so the migration is cheap
-  /// even on a large history.
+  /// even on a large history. Index creation errors are suppressed.
   Future<void> _createListingIndexes(Database db) async {
     try {
       await db.execute(
@@ -655,6 +659,13 @@ class DownloadHistoryDb {
       .replaceAll('%', '\\%')
       .replaceAll('_', '\\_');
 
+  /// Return history ordered by newest timestamp, optionally filtered and paged.
+  ///
+  /// A nonempty [search] uses an FTS phrase when available, otherwise a literal
+  /// substring of the title or URL. An FTS failure re-probes availability and
+  /// uses the substring fallback for this call. [statusFilter] matches exactly;
+  /// [limit] and [offset] count rows. Database-open and fallback-query errors
+  /// propagate to the caller.
   Future<List<DownloadRecord>> getAll({
     String? search,
     String? statusFilter,

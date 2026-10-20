@@ -60,6 +60,12 @@ def _integer(value: str, field: str, line_number: int) -> int:
 def _merge_lcov_project_record(
     files: dict, state: dict, end_line: int, source: str
 ) -> None:
+    """Merge a project's line hits into ``files``, OR-ing duplicate lines.
+
+    Ignore external sources and records without DA rows whose LF/LH totals
+    are absent or zero. Raise ValueError when present summaries disagree
+    with line data; ``end_line`` identifies the record end in diagnostics.
+    """
     project_path = project_source(source)
     if project_path is None:
         return

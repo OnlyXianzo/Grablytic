@@ -80,6 +80,8 @@ class AppLogger {
   /// Hot path: formatting + in-memory buffer push are synchronous and cheap.
   /// Disk I/O is batched — lines go to [_pending] and are flushed every 30s
   /// by the background worker, or instantly for ERROR/FATAL.
+  /// The in-memory buffer still receives entries when logging is disabled;
+  /// console output requires enabled logging and a debug build.
   static void log(
     String level,
     String message, {
@@ -161,6 +163,11 @@ class AppLogger {
     return _flushChain;
   }
 
+  /// Append pending lines to daily and rolling logs, rotating as needed.
+  ///
+  /// On failure, re-queue the batch up to the 10,000-line cap unless
+  /// [_isPermanentWriteFailure] classifies it for disposal. A partial write
+  /// can cause duplicate lines on retry. Write errors are caught.
   static Future<void> _drainPending() async {
     if (_pending.isEmpty || _flushInProgress) return;
     if (_logsDirPath == null) return;
@@ -548,6 +555,9 @@ class AppLogger {
   /// mojibake in crash reports, exports and the log viewer's search. The
   /// file is UTF-8 everywhere else; this is the one place that disagreed.
   /// `allowMalformed` covers a seek that lands mid-codepoint.
+  /// [len] is the file length in bytes and must be at least [maxBytes].
+  /// Drops text through the first newline if it occurs before character 4096.
+  /// File open, seek, read, and close errors propagate to the caller.
   static Future<String> _readTailUtf8(
     File file, {
     required int len,
@@ -571,6 +581,8 @@ class AppLogger {
   /// Reads the tail of `app_logs.txt` (or newest daily log as fallback),
   /// capped at [maxBytes]. Used by the GitHub reporter — never loads the
   /// whole file into memory on low-end devices.
+  /// Flushes pending logs first. A capped tail includes a truncation banner;
+  /// no file or a read failure returns an explanatory string.
   static Future<String> readLogTail({int maxBytes = 100 * 1024}) async {
     try {
       await flushNow(); // ensure the crash line itself is on disk first
@@ -760,6 +772,8 @@ class AppLogger {
   /// capped at [maxBytes] (default 512KB). Used when the user opts into
   /// "full log" reports/exports — the default tail stays small for AI
   /// context limits and GitHub body limits.
+  /// Flushes pending logs first. Above the cap, returns a UTF-8 tail with a
+  /// truncation banner. No file or a read failure returns an explanatory string.
   static Future<String> readFullLog({int maxBytes = 512 * 1024}) async {
     try {
       await flushNow();

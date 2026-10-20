@@ -25,6 +25,8 @@ const _youtubeHosts = {
 /// Two links to the same page that differ only in a `#t=30` timestamp used
 /// to compare unequal, so the "already have" guard missed them for every
 /// non-YouTube host (YouTube fell through to the video-id check).
+/// Also trims whitespace and trailing path slashes, including a lone root
+/// slash. Preserves the query; parse failures return the trimmed input.
 String _normalizeUrl(String url) {
   Uri? uri;
   try {
@@ -53,6 +55,10 @@ String _normalizeUrl(String url) {
 }
 
 /// Canonical video id for YouTube URLs, else null.
+///
+/// Accepts any nonempty ID without length or character validation. Short links
+/// use the first path segment; other recognized hosts prefer `v` over a
+/// `/shorts/`, `/embed/`, or `/live/` path. Parse failures return null.
 ///
 /// Hosts are matched exactly (plus the known `www.`/`m.`/`music.` prefixes)
 /// rather than with `contains`: `youtube.com.example.net/watch?v=X` used to

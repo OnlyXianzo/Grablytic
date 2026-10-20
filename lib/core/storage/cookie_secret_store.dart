@@ -118,6 +118,10 @@ class FileCookieSecretStore implements CookieSecretStore {
     return result;
   }
 
+  /// Replace [id]'s cookie lines using a flushed sibling temp file and rename.
+  ///
+  /// Applies owner-only permissions where supported. Write failures are
+  /// suppressed and leftover temp files are removed on a best-effort basis.
   @override
   Future<void> write(String id, List<String> lines) async {
     File? tmp;

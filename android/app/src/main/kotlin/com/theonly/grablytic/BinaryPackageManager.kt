@@ -68,12 +68,12 @@ object BinaryPackageManager {
 
     /**
      * Extract support trees and resolve executables. Safe to call on every
-     * `paths/set`: a cache hit requires the archive/tree identity recorded
-     * in the stamp, a mismatch triggers a fresh atomic extraction, and a
-     * full SHA-256 verification runs at most once a week (or immediately
-     * when the archive's size or mtime changed). Pass [forceVerify] to
-     * hash everything now — that is what a "Verify installation" action
-     * should do. Call off the main thread (does file I/O + version probes).
+     * `paths/set`: matching archive size/mtime and a verification age below
+     * seven days reuse the tree without hashing. Otherwise verify the tree;
+     * hash the archive too if its size or mtime changed. [forceVerify] forces
+     * tree verification even for a fresh stamp. A hash mismatch triggers
+     * extraction. Failed packages are omitted from the returned path map.
+     * Call off the main thread because this performs file I/O.
      */
     fun init(context: Context, forceVerify: Boolean = false): Map<String, NativeBinPaths> {
         val out = mutableMapOf<String, NativeBinPaths>()
@@ -171,6 +171,7 @@ object BinaryPackageManager {
         val kind: ZipEntryKind,
     )
 
+    /** Read a v5/v6 regular-file stamp of at most 1024 bytes; null on invalid data or errors. */
     private fun readStamp(file: File): Stamp? {
         return try {
             val stat = android.system.Os.lstat(file.absolutePath)
@@ -198,6 +199,11 @@ object BinaryPackageManager {
         }
     }
 
+    /**
+     * Write a v6 stamp, replacing an existing regular file.
+     * Throws [IllegalStateException] for an existing non-regular entry;
+     * filesystem errors other than an initially missing file propagate.
+     */
     private fun writeStamp(file: File, stamp: Stamp) {
         try {
             val existing = android.system.Os.lstat(file.absolutePath)
@@ -405,6 +411,12 @@ object BinaryPackageManager {
         deleteQuietly(backup)
     }
 
+    /**
+     * Reuse a verified support tree or stage and swap a fresh extraction.
+     * A missing archive is a no-op. [forceVerify] bypasses the stamp age cache.
+     * Extraction, hashing, and stamp errors propagate. A failed swap returns,
+     * attempting rollback if the original tree was moved.
+     */
     private fun extractTree(zipSo: File, target: File, forceVerify: Boolean = false) {
         if (!zipSo.isFile) return // packages without a support tree (none today)
         val packagesDir = target.parentFile
@@ -449,7 +461,7 @@ object BinaryPackageManager {
     }
 
     /**
-     * Is the extracted tree still exactly what we extracted?
+     * Whether the stamp permits reuse of the extracted tree.
      *
      * The old version hashed the whole archive AND the whole tree before
      * looking at the recorded length/mtime, so the "quick reject hint"
@@ -457,17 +469,20 @@ object BinaryPackageManager {
      * hundreds of megabytes of package data that the app itself had
      * written and never modifies.
      *
-     * Now: same size and mtime as the last verification, and that
-     * verification is younger than [DEEP_VERIFY_INTERVAL_MS] -> trust it.
-     * Anything else costs a hash, and a full mismatch costs a re-extract.
+     * Matching archive size and mtime plus a verification age in
+     * `0 until DEEP_VERIFY_INTERVAL_MS` reuse the tree without hashing,
+     * unless [forceVerify] is set. Otherwise hash the tree; hash the archive
+     * too only if size or mtime changed. Missing trees/stamps or hash
+     * mismatches return false. Successful verification refreshes [marker];
+     * filesystem and tree-validation errors propagate.
      *
      * This is trust-on-first-use, and deliberately so: the stamp itself
      * is excluded from the tree hash (it is the root marker), so the
      * thing being protected is not "an attacker with write access to
      * app-private storage" — that boundary is the sandbox. It is
      * "a package that was installed correctly is not re-read on every
-     * launch", with the archive hash still running whenever the archive
-     * identity changes and at least once a week regardless.
+     * launch". An unchanged archive is not re-hashed, even when
+     * [forceVerify] is true; the periodic verification hashes the tree.
      */
     private fun isCurrentExtraction(
         zipSo: File,

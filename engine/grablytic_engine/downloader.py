@@ -545,7 +545,7 @@ def _notify_slot_change() -> None:
 
 
 def _begin_backoff(download_id: str, delay: float, cancel) -> None:
-    """Release the concurrency slot for `delay` seconds, then re-acquire one.
+    """Pause work for `delay` seconds while reserving the download's slot.
 
     While it sleeps the entry is flagged `backing_off`, so
     `_running_count()` stops counting it as working — but
@@ -555,10 +555,11 @@ def _begin_backoff(download_id: str, delay: float, cancel) -> None:
     a retry that lost its slot to a queued item could be starved for as
     long as the queue kept completing, which looked exactly like a hang.
 
-    After the sleep the download takes its reservation back. The wait is
-    bounded by `_MAX_BACKOFF_SLOT_WAIT_S`; it can only be denied if the
-    limit was lowered mid-sleep, and expiring is logged rather than
-    silent.
+    After the sleep, wait up to 300 additional seconds for a working
+    slot. A set `cancel` event skips this additional wait, not the sleep.
+    If the deadline expires, clear the backoff flag and return even if
+    doing so exceeds the concurrency limit; mark the entry as expired.
+    Sleep failures are suppressed and slot acquisition still proceeds.
     """
     with _downloads_lock:
         info = _active_downloads.get(download_id)
@@ -2002,6 +2003,13 @@ def _admit_download(
     network_type: str,
     event_callback,
 ) -> dict:
+    """Register a download as active or pending without starting its thread.
+
+    Return ``queued``, its one-based pending ``position`` (None if active),
+    and an ``entry`` holding queues and cancellation state. Return an
+    ``error`` result instead for a duplicate ID/URL or a full pending queue.
+    Retry reservations consume capacity just like working downloads.
+    """
     with _downloads_lock:
         audio_only = _is_audio_mode(config)
         conflict = _admission_conflict(download_id, url, audio_only)

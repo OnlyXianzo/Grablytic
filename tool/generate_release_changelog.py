@@ -140,6 +140,12 @@ def categorize(subject: str) -> str:
 
 
 def main() -> int:
+    """Print release notes for the base ref and version in command-line args.
+
+    Include changes through HEAD and today's UTC date. Return 0 on success
+    or 2 for the wrong argument count. Git failures propagate as
+    subprocess.CalledProcessError.
+    """
     if len(sys.argv) != 3:
         print(__doc__.strip().splitlines()[3].strip())
         return 2

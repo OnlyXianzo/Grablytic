@@ -33,6 +33,11 @@ class ThumbnailCache {
 
   /// Fetch [url] into the cache dir for [id]; returns the file path or null.
   /// Fire-and-forget from the provider via [unawaited] (async IO only).
+  ///
+  /// Reuses an existing destination without validating it. New downloads must
+  /// use HTTP(S), return status 200, fit within [maxBytes], and start with a
+  /// JPEG header. A supplied content type must be an image type. Writes to a
+  /// sibling `.part` file before renaming; returns null on rejection or error.
   static Future<String?> fetchToCache({
     required String cacheDir,
     required String id,
@@ -120,11 +125,8 @@ class ThumbnailCache {
 
   /// True when [file] starts with the JPEG SOI marker.
   ///
-  /// A truncated download either has no header at all or stops mid-stream;
-  /// either way it fails this check before it can claim a cache slot. A
-  /// cover served as PNG/WebP fails too — that is intended, the UI already
-  /// falls back to a placeholder and a wrong-format file in a `.jpg` slot
-  /// only breaks the decoder later.
+  /// Checks only the first three bytes, not whether the image is complete
+  /// or decodable. Returns false for unreadable files and non-JPEG headers.
   static Future<bool> _looksLikeJpeg(File file) async {
     RandomAccessFile? raf;
     try {
@@ -146,6 +148,7 @@ class ThumbnailCache {
     }
   }
 
+  /// Delete [file] if present, suppressing filesystem errors.
   static Future<void> _deleteQuietly(File file) async {
     try {
       if (await file.exists()) await file.delete();
@@ -155,16 +158,15 @@ class ThumbnailCache {
     }
   }
 
-  /// Deletes cached thumbnails that no longer belong to a live download.
+  /// Prune `.jpg` files in [cacheDir], ignoring subdirectories and other files.
   ///
-  /// Nothing used to remove these files: deleting a download dropped the
-  /// DB row and the media file, and the thumbnail stayed for ever, in
-  /// app-private storage the user cannot see or clear. [liveIds] is the
-  /// set of download ids still referenced; [maxTotalBytes] is a hard
-  /// budget applied afterwards, oldest first, so a long history cannot
-  /// grow without bound.
+  /// Retain names whose stem is in [liveIds], then evict by oldest modification
+  /// time toward [maxTotalBytes] (default 64 MiB). Stems are compared directly,
+  /// so IDs must match the sanitized, capped names produced by [fileNameFor].
   ///
-  /// Returns the number of files removed. Never throws.
+  /// Returns the number of deletion attempts, including suppressed failures.
+  /// Unreadable files and failed deletions can leave the cache above budget.
+  /// A missing directory returns zero; errors return the count reached so far.
   static Future<int> prune({
     required String cacheDir,
     required Set<String> liveIds,

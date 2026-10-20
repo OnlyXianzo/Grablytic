@@ -215,6 +215,11 @@ class DownloadService : Service() {
         ensureChannel()
     }
 
+    /**
+     * Apply download lifecycle commands and return [START_NOT_STICKY].
+     * STOP clears tracked jobs, requests engine cancellation, releases their
+     * alert IDs and locks, and stops the service. A null intent is a no-op.
+     */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
@@ -672,7 +677,11 @@ class DownloadService : Service() {
         private val alertIdLock = Any()
         private var nextAlertId = ALERT_ID_BASE
 
-        /** Stable per-download alert ID that never collides with NOTIF_ID. */
+        /**
+         * Stable per-download alert ID until released; never equals NOTIF_ID.
+         * Avoids allocated IDs while the 100,000-slot pool has room. If every
+         * slot is allocated, reuses a slot even though it remains in use.
+         */
         fun alertNotifId(downloadId: String): Int = synchronized(alertIdLock) {
             val existing = alertIds[downloadId]
             if (existing != null) {
