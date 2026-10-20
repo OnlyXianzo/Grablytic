@@ -51,6 +51,14 @@ jobs:
       - name: Run widget & unit tests with coverage
         run: flutter test --coverage
 
+      # TEMPORARY: failing-test detail as check annotations (logs are
+      # unreachable from one review environment). Removed before merge.
+      - name: Test diagnostics
+        if: failure()
+        run: |
+          flutter test 2>&1 | tail -45 \
+            | while IFS= read -r line; do echo "::error::$line"; done
+
       - name: Enforce Flutter project-lib coverage floor
         run: python3 tool/check_flutter_coverage.py coverage/lcov.info --fail-under 30
 
