@@ -21,7 +21,9 @@ def _read(rel):
 
 
 def test_pin_constants_are_consistent():
-    assert wheel_pin.PINNED_WHEEL == f"yt_dlp-{wheel_pin.PINNED_VERSION}-py3-none-any.whl"
+    assert (
+        wheel_pin.PINNED_WHEEL == f"yt_dlp-{wheel_pin.PINNED_VERSION}-py3-none-any.whl"
+    )
     assert len(wheel_pin.PINNED_SHA256) == 64
     int(wheel_pin.PINNED_SHA256, 16)  # hex, not a placeholder
     assert wheel_pin.requirement_line() == (
@@ -88,7 +90,8 @@ def test_install_refuses_unverified_bytes(monkeypatch, tmp_path):
     monkeypatch.setattr(
         bootstrap.subprocess,
         "run",
-        lambda *a, **k: ran.append(a) or (_ for _ in ()).throw(AssertionError("uv ran")),
+        lambda *a, **k: ran.append(a)
+        or (_ for _ in ()).throw(AssertionError("uv ran")),
     )
 
     assert bootstrap._install_yt_dlp_via_uv("/usr/bin/uv", str(tmp_path)) is False

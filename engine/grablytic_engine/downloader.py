@@ -722,7 +722,7 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                             "download_id": download_id,
                             "error_type": "ERROR_CANCELLED",
                             "error_message": "Download cancelled by user",
-                        }
+                        },
                     )
                 except Exception:
                     pass
@@ -826,7 +826,7 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                         "error_message": f"Could not start downloader thread: {exc}",
                         "recoverable": True,
                         "suggests_vpn": False,
-                    }
+                    },
                 )
             except Exception:
                 pass
@@ -1227,7 +1227,9 @@ def _drain_public(prog_q) -> list:
     return items
 
 
-def _last_known_file_info(prog_q, download_id: str | None = None) -> tuple[int, str | None]:
+def _last_known_file_info(
+    prog_q, download_id: str | None = None
+) -> tuple[int, str | None]:
     """Best-effort final size and file path for a finished download.
 
     Two sources, because neither alone is reliable. The queue holds the
@@ -2480,7 +2482,7 @@ def _run_watchdog_job(job: dict) -> None:
                     "download_id": download_id,
                     "error_type": "ERROR_CANCELLED",
                     "error_message": presumed_message,
-                }
+                },
             )
         except Exception:
             pass

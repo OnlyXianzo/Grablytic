@@ -60,9 +60,17 @@ def test_paths_set_runs_on_the_maintenance_thread(monkeypatch):
     futures = set()
     with (
         ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipc") as pool,
-        ThreadPoolExecutor(max_workers=1, thread_name_prefix="engine-maintenance") as maintenance,
+        ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="engine-maintenance"
+        ) as maintenance,
     ):
-        _dispatch('{"id":"1","method":"paths/set","params":{}}', pool, maintenance, inflight, futures)
+        _dispatch(
+            '{"id":"1","method":"paths/set","params":{}}',
+            pool,
+            maintenance,
+            inflight,
+            futures,
+        )
         engine_main._maintenance_tail.result(timeout=5)
 
     assert recorder.threads["paths/set"].startswith("engine-maintenance")
@@ -75,9 +83,17 @@ def test_reader_thread_still_runs_the_fast_lane(monkeypatch):
     inflight = threading.BoundedSemaphore(4)
     with (
         ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipc") as pool,
-        ThreadPoolExecutor(max_workers=1, thread_name_prefix="engine-maintenance") as maintenance,
+        ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="engine-maintenance"
+        ) as maintenance,
     ):
-        _dispatch('{"id":"1","method":"download/cancel","params":{}}', pool, maintenance, inflight, set())
+        _dispatch(
+            '{"id":"1","method":"download/cancel","params":{}}',
+            pool,
+            maintenance,
+            inflight,
+            set(),
+        )
 
     assert recorder.threads["download/cancel"] == threading.current_thread().name
 
@@ -91,11 +107,19 @@ def test_slow_lane_waits_for_preceding_maintenance_work(monkeypatch):
     futures = set()
     with (
         ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipc") as pool,
-        ThreadPoolExecutor(max_workers=1, thread_name_prefix="engine-maintenance") as maintenance,
+        ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="engine-maintenance"
+        ) as maintenance,
     ):
         # paths/set sleeps 200 ms; the download submitted right after it
         # must not be admitted until it has finished.
-        _dispatch('{"id":"1","method":"paths/set","params":{}}', pool, maintenance, inflight, futures)
+        _dispatch(
+            '{"id":"1","method":"paths/set","params":{}}',
+            pool,
+            maintenance,
+            inflight,
+            futures,
+        )
         _dispatch(
             '{"id":"2","method":"download/start","params":{}}',
             pool,
@@ -119,9 +143,17 @@ def test_maintenance_lane_is_fifo(monkeypatch):
     futures = set()
     with (
         ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipc") as pool,
-        ThreadPoolExecutor(max_workers=1, thread_name_prefix="engine-maintenance") as maintenance,
+        ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="engine-maintenance"
+        ) as maintenance,
     ):
-        _dispatch('{"id":"1","method":"paths/set","params":{}}', pool, maintenance, inflight, futures)
+        _dispatch(
+            '{"id":"1","method":"paths/set","params":{}}',
+            pool,
+            maintenance,
+            inflight,
+            futures,
+        )
         _dispatch(
             '{"id":"2","method":"download/clear_archive","params":{}}',
             pool,

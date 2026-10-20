@@ -950,9 +950,7 @@ def _submit_maintenance(req_id, method, params, maintenance, inflight, futures=N
         _report_busy(req_id, method)
         return False
     try:
-        fut = maintenance.submit(
-            _run_guarded_request, req_id, method, params, inflight
-        )
+        fut = maintenance.submit(_run_guarded_request, req_id, method, params, inflight)
     except RuntimeError:
         # The executor is shut down (EOF already seen): the request can no
         # longer run, so hand the permit back and answer retryable.
@@ -1057,7 +1055,9 @@ def _dispatch_ipc_request(
             pass
 
 
-def _process_ipc_line(line: str, pool, inflight, futures=None, maintenance=None) -> None:
+def _process_ipc_line(
+    line: str, pool, inflight, futures=None, maintenance=None
+) -> None:
     req_id = None
     method = "<unparsed>"
     params = {}
@@ -1066,9 +1066,7 @@ def _process_ipc_line(line: str, pool, inflight, futures=None, maintenance=None)
     except Exception as exc:
         _report_ipc_parse_error(exc, method, req_id)
         return
-    _dispatch_ipc_request(
-        req_id, method, params, pool, inflight, futures, maintenance
-    )
+    _dispatch_ipc_request(req_id, method, params, pool, inflight, futures, maintenance)
 
 
 def main():
