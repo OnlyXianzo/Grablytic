@@ -28,97 +28,26 @@ def run(cmd: list[str]) -> str:
 
 
 CATEGORIES: list[tuple[str, list[str]]] = [
-    (
-        "Security & Trust Boundaries",
-        [
-            "sec(",
-            "trust",
-            "sanitiz",
-            "boundary",
-            "injection",
-            "fail-closed",
-            "ssrf",
-            "digest",
-            "shasum",
-            "checksum",
-            "semaphore",
-        ],
-    ),
-    (
-        "Resume & Artifact Hygiene",
-        ["resume", "strike", "sidecar", "infojson", ".part", "opts_builder"],
-    ),
-    (
-        "Android Native & OS Integration",
-        [
-            "android",
-            "wakelock",
-            "service",
-            "activity",
-            "sqlite",
-            "sweep",
-            "bootreceiver",
-            "fileprovider",
-            "fgs",
-            "kotlin",
-        ],
-    ),
-    (
-        "Core Engine & yt-dlp",
-        [
-            "engine",
-            "downloader",
-            "queue",
-            "concurrency",
-            "extractor",
-            "po_token",
-            "js_runtime",
-            "formats",
-            "playlist",
-            "yt-dlp",
-            "ipc",
-            "ffmpeg",
-            "aria2",
-            "opts",
-            "url_guard",
-        ],
-    ),
-    (
-        "UI & Client State",
-        [
-            "flutter",
-            "screen",
-            "settings",
-            "library",
-            "onboarding",
-            "player",
-            "grid",
-            "log viewer",
-            "log_viewer",
-            "media_preview",
-            "theme",
-        ],
-    ),
-    (
-        "CI/CD, Build & Install",
-        [
-            "ci(",
-            "ci:",
-            "build",
-            "nightly",
-            "workflow",
-            "install.sh",
-            "publish",
-            "lint",
-            "ruff",
-            "winget",
-            "release",
-        ],
-    ),
-    (
-        "Performance & Resources",
-        ["perf", "throttle", "memory", "leak", "sparkline", "rebuild"],
-    ),
+    ("Security & Trust Boundaries",
+     ["sec(", "trust", "sanitiz", "boundary", "injection", "fail-closed",
+      "ssrf", "digest", "shasum", "checksum", "semaphore"]),
+    ("Resume & Artifact Hygiene",
+     ["resume", "strike", "sidecar", "infojson", ".part", "opts_builder"]),
+    ("Android Native & OS Integration",
+     ["android", "wakelock", "service", "activity", "sqlite", "sweep",
+      "bootreceiver", "fileprovider", "fgs", "kotlin"]),
+    ("Core Engine & yt-dlp",
+     ["engine", "downloader", "queue", "concurrency", "extractor",
+      "po_token", "js_runtime", "formats", "playlist", "yt-dlp", "ipc",
+      "ffmpeg", "aria2", "opts", "url_guard"]),
+    ("UI & Client State",
+     ["flutter", "screen", "settings", "library", "onboarding", "player",
+      "grid", "log viewer", "log_viewer", "media_preview", "theme"]),
+    ("CI/CD, Build & Install",
+     ["ci(", "ci:", "build", "nightly", "workflow", "install.sh",
+      "publish", "lint", "ruff", "winget", "release"]),
+    ("Performance & Resources",
+     ["perf", "throttle", "memory", "leak", "sparkline", "rebuild"]),
 ]
 
 AREA_PREFIXES = {
@@ -146,7 +75,8 @@ def main() -> int:
     base, version = sys.argv[1], sys.argv[2]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    log = run(["git", "log", f"{base}..HEAD", "--no-merges", "--format=%H %s"])
+    log = run(["git", "log", f"{base}..HEAD", "--no-merges",
+               "--format=%H %s"])
     commits = []
     for line in log.splitlines():
         sha, _, subject = line.partition(" ")
@@ -180,14 +110,12 @@ def main() -> int:
             other_add += a
             other_del += d
 
-    out = [
-        f"## v{version} — {today} ({len(commits)} commits since {base})",
-        "",
-        f"Diff vs {base}: {shortstat}.",
-        "",
-        "### Lines of code by area (+added / -removed)",
-        "",
-    ]
+    out = [f"## v{version} — {today} ({len(commits)} commits since {base})",
+           "",
+           f"Diff vs {base}: {shortstat}.",
+           "",
+           "### Lines of code by area (+added / -removed)",
+           ""]
     for area in AREA_PREFIXES:
         out.append(f"- {area}: +{area_add[area]} / -{area_del[area]}")
     if other_add or other_del:

@@ -5,7 +5,6 @@ import 'dart:io'
         FileStat,
         FileSystemException,
         HttpClient,
-        IOSink,
         RandomAccessFile;
 
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -67,12 +66,11 @@ class ThumbnailCache {
       // piece of a 40 KB thumbnail is indistinguishable from the real
       // thing once it is named `.jpg`.
       final tmp = File('${dest.path}.part');
-      IOSink? sink;
+      final sink = tmp.openWrite();
       var bytes = 0;
       var tooBig = false;
       var failed = false;
       try {
-        sink = tmp.openWrite();
         await for (final chunk in res) {
           bytes += chunk.length;
           if (bytes > maxBytes) {
@@ -82,8 +80,6 @@ class ThumbnailCache {
           sink.add(chunk);
         }
         await sink.flush();
-        await sink.close();
-        sink = null;
       } on Object catch (error) {
         // Deliberately broad: the body awaits a socket AND a file, so a
         // failure can be SocketException, HttpException, TimeoutException
@@ -92,9 +88,9 @@ class ThumbnailCache {
         failed = true;
       } finally {
         try {
-          await sink?.close();
+          await sink.close();
         } on FileSystemException {
-          // Already failed; closing twice must not mask that.
+          // Already in the failure path; a close error must not mask it.
         }
       }
 

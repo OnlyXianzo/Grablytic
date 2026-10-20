@@ -54,16 +54,16 @@ void main() {
       if (await dir.exists()) await dir.delete(recursive: true);
     });
 
-    Future<File> _write(String name, int bytes) async {
+    Future<File> writeThumb(String name, int bytes) async {
       final file = File('${dir.path}/$name');
       await file.writeAsBytes(List<int>.filled(bytes, 0x41));
       return file;
     }
 
     test('drops thumbnails whose download is gone', () async {
-      await _write('keep.jpg', 4);
-      await _write('gone.jpg', 4);
-      await _write('also-gone.jpg', 4);
+      await writeThumb('keep.jpg', 4);
+      await writeThumb('gone.jpg', 4);
+      await writeThumb('also-gone.jpg', 4);
 
       final removed = await ThumbnailCache.prune(
         cacheDir: dir.path,
@@ -79,9 +79,9 @@ void main() {
     });
 
     test('enforces the byte budget oldest-first', () async {
-      final old = await _write('old.jpg', 400);
-      final mid = await _write('mid.jpg', 400);
-      final fresh = await _write('fresh.jpg', 400);
+      final old = await writeThumb('old.jpg', 400);
+      final mid = await writeThumb('mid.jpg', 400);
+      final fresh = await writeThumb('fresh.jpg', 400);
       // Deterministic order: the sort reads FileStat.modified.
       old.setLastModifiedSync(DateTime(2020, 1, 1));
       mid.setLastModifiedSync(DateTime(2021, 1, 1));
@@ -109,7 +109,7 @@ void main() {
     });
 
     test('non-image leftovers are left alone', () async {
-      final stray = await _write('notes.txt', 4);
+      final stray = await writeThumb('notes.txt', 4);
       await ThumbnailCache.prune(cacheDir: dir.path, liveIds: const {});
       expect(await stray.exists(), isTrue);
     });
