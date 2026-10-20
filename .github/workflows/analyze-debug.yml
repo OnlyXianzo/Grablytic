@@ -33,11 +33,8 @@ jobs:
           set +e
           flutter test > test.txt 2>&1
           echo "::error::flutter test exited $?"
-          grep -n "To run this test again" test.txt | head -5 | cut -d: -f1 | while read -r n; do
-            start=$((n - 30)); [ "$start" -lt 1 ] && start=1
-            sed -n "${start},$((n + 6))p" test.txt | while IFS= read -r line; do
-              [ -n "$line" ] && echo "::error::CTX $line"
-            done
+          tail -150 test.txt | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::TAIL $line"
           done
           grep -n "Some tests failed\|tests passed" test.txt | tail -3 | while IFS= read -r line; do
             echo "::error::SUM $line"
