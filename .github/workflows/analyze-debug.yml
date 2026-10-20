@@ -1,8 +1,8 @@
 name: Analyze Debug
 
-# TEMPORARY: mirrors the verify workflow's analyze + test steps but re-emits
-# the failures as annotations (job logs are unreachable from this
-# environment). Deleted before this branch merges.
+# TEMPORARY: mirrors the verify workflow's analyze + test steps but reports
+# through the JSON reporter and re-emits failures as annotations (job logs
+# are unreachable from this environment). Deleted before this branch merges.
 
 on:
   push:
@@ -31,12 +31,28 @@ jobs:
       - name: Test
         run: |
           set +e
-          flutter test > test.txt 2>&1
+          flutter test --reporter=json > test.json 2>&1
           echo "::error::flutter test exited $?"
-          tail -150 test.txt | while IFS= read -r line; do
-            [ -n "$line" ] && echo "::error::TAIL $line"
-          done
-          grep -n "Some tests failed\|tests passed" test.txt | tail -3 | while IFS= read -r line; do
-            echo "::error::SUM $line"
-          done
+          python3 - <<'PARSE' || true
+          import json
+
+          names = {}
+          for raw in open("test.json", encoding="utf-8", errors="replace"):
+              raw = raw.strip()
+              if not raw.startswith("{"):
+                  continue
+              try:
+                  event = json.loads(raw)
+              except Exception:
+                  continue
+              kind = event.get("type")
+              if kind == "testStart":
+                  test = event.get("test", {})
+                  names[test.get("id")] = test.get("name", "")
+              elif kind == "testDone" and event.get("result") != "success" and not event.get("hidden"):
+                  print("::error::FAILED " + str(names.get(event.get("testID"), "?")))
+              elif kind == "error":
+                  message = (event.get("error") or "").replace("\n", " | ")
+                  print("::error::ERR " + message[:900])
+          PARSE
           exit 0
