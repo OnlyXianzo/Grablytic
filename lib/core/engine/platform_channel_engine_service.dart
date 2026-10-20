@@ -162,7 +162,13 @@ class PlatformChannelEngineService implements EngineService {
     if (_pythonMethods.contains(method)) {
       // Park the concurrency setting until the engine exists instead of
       // letting native answer "engine not up" and losing it.
-      if (!_pathsApplied && method == EngineMethods.setConcurrency) {
+      //
+      // Only when paths are actually WAITING: with no paths at all there is
+      // nothing to start the engine with, so the call goes through and
+      // native's ERR_ENGINE_UNAVAILABLE is the honest answer.
+      if (!_pathsApplied &&
+          _pendingPaths != null &&
+          method == EngineMethods.setConcurrency) {
         _deferredConfig[method] = arguments;
         final parked = <String, dynamic>{'success': true, 'deferred': true};
         if (arguments is Map && arguments['max_concurrent'] is int) {

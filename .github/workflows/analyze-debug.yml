@@ -33,8 +33,8 @@ jobs:
           set +e
           flutter test > test.txt 2>&1
           echo "::error::flutter test exited $?"
-          grep -E "^[0-9:]+ \+[0-9]+.*\[E\]|^Expected:|^  Actual:|^    Which:|Error: |^[A-Za-z0-9_/]+\.dart [0-9]+:[0-9]+" test.txt | head -60 | while IFS= read -r line; do
-            echo "::error::$line"
+          grep -A22 "\[E\]" test.txt | head -120 | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
           done
           grep -n "Some tests failed\|tests passed" test.txt | tail -3 | while IFS= read -r line; do
             echo "::error::SUM $line"

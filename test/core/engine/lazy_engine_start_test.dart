@@ -105,14 +105,26 @@ void main() {
 
     await engine.queueStatus();
 
+    // The replayed config goes out as soon as the paths land — before the
+    // call that triggered the start — so the engine is configured for the
+    // work it is about to be asked to do.
     final order = calls.map((c) => c.method).toList();
     expect(order, [
       'paths/set',
-      'download/queue_status',
       'download/set_concurrency',
+      'download/queue_status',
     ]);
-    final args = Map<String, dynamic>.from(calls.last.arguments as Map);
+    final args = Map<String, dynamic>.from(calls[1].arguments as Map);
     expect(args['max_concurrent'], 4);
+  });
+
+  test('with no paths at all the call goes through to native', () async {
+    final engine = PlatformChannelEngineService();
+    final res = await engine.setConcurrency(4);
+    // Nothing to start the engine with, so native's own verdict (here: a
+    // mocked success) is what the caller sees.
+    expect(res['deferred'], isNull);
+    expect(calls.map((c) => c.method), ['download/set_concurrency']);
   });
 
   test('only the newest parked concurrency value is replayed', () async {
