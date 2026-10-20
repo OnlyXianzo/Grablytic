@@ -790,7 +790,7 @@ class _DownloadCard extends StatelessWidget {
     if (cached.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Thumb(
+        child: CachedThumb(
           width: 112,
           height: 68,
           filePath: cached,
@@ -806,7 +806,7 @@ class _DownloadCard extends StatelessWidget {
     if (remote.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Thumb(
+        child: CachedThumb(
           width: 112,
           height: 68,
           url: remote,

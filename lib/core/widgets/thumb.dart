@@ -50,11 +50,15 @@ int fullWidthCacheWidth(BuildContext context) {
 
 /// One thumbnail widget, so no screen can forget `cacheWidth` again.
 ///
+/// Named `CachedThumb`, not `Thumb`: Material exports a `Thumb` of its own
+/// (the slider thumb shape), and importing both makes every call site an
+/// ambiguous-import error.
+///
 /// Prefers the app-private cached file (offline, no tracking pixel) and
 /// falls back to the network URL, then [fallback]. Sized by the caller;
 /// the decode size is derived, never guessed at the call site.
-class Thumb extends StatelessWidget {
-  const Thumb({
+class CachedThumb extends StatelessWidget {
+  const CachedThumb({
     super.key,
     required this.width,
     this.height,

@@ -18,7 +18,7 @@ class LogEntry {
       (context['download_id'] as String?) ??
       (extra['download_id'] as String?);
 
-  const LogEntry({
+  LogEntry({
     required this.timestamp,
     required this.level,
     required this.logger,

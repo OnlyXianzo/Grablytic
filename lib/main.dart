@@ -1,7 +1,6 @@
 import 'dart:async' show FutureRecord2, runZonedGuarded, unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
