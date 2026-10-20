@@ -57,10 +57,17 @@ pip install -e engine/    # install grablytic-engine in editable mode
 `engine/requirements.txt` currently pins:
 
 ```
-yt-dlp>=2025.11.12
+yt-dlp==2026.8.19
 yt-dlp-ejs>=0.8.0
 # python-quickjs>=0.8.0  # uncomment for Android/QuickJS PO Token support
 ```
+
+The version pin above is only half the story. At bootstrap the engine
+downloads the pinned yt-dlp wheel itself and checks it against the SHA-256
+in `engine/grablytic_engine/wheel_pin.py` before handing it to `uv`. A
+version number says which release we tested; the digest says the bytes are
+that release. Bumping yt-dlp means updating that file, `requirements.txt`,
+and the Chaquopy pin in `android/app/build.gradle.kts` together.
 
 ## Build Commands
 

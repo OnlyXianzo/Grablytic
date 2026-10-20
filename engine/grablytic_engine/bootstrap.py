@@ -682,17 +682,36 @@ def _create_venv_via_uv(uv_bin: str, data_dir: str) -> bool:
 
 
 def _install_yt_dlp_via_uv(uv_bin: str, data_dir: str) -> bool:
-    engine_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    req_path = os.path.join(engine_dir, "requirements.txt")
-    if not os.path.isfile(req_path):
-        req_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "requirements.txt"
+    """Install yt-dlp from the HASH-PINNED wheel (#18).
+
+    The version pin alone was not an integrity guarantee: it said which
+    release we tested, not that the bytes are that release. The wheel is
+    now fetched here, hashed against `wheel_pin.PINNED_SHA256`, and only
+    the verified file is handed to uv.
+
+    Failure stays a soft failure — bootstrap still reports a usable
+    engine on a device where an already-installed yt-dlp is fine and the
+    network is not. What must never happen is installing bytes that did
+    not match, so a digest mismatch aborts this attempt instead of
+    falling back to an unresolved `pip install`.
+    """
+    from grablytic_engine.wheel_pin import (
+        PINNED_WHEEL,
+        PINNED_VERSION,
+        download_verified_wheel,
+    )
+
+    cache_dir = os.path.join(data_dir, "cache", "wheels")
+    wheel_path = download_verified_wheel(cache_dir)
+    if not wheel_path:
+        log.warn(
+            f"yt-dlp {PINNED_VERSION}: no wheel verified against the pinned "
+            f"sha256 ({PINNED_WHEEL}); refusing to install unverified bytes"
         )
-    if not os.path.isfile(req_path):
         return False
     try:
         subprocess.run(
-            [uv_bin, "pip", "install", "-r", req_path],
+            [uv_bin, "pip", "install", wheel_path],
             check=True,
             timeout=120,
             capture_output=True,

@@ -1,3 +1,11 @@
-yt-dlp>=2025.11.12
+# Contributor install (pip install -r engine/requirements.txt).
+#
+# The VERSION pins here are for humans and for `uv` resolution. The
+# INTEGRITY pin lives in grablytic_engine/wheel_pin.py: bootstrap fetches
+# the wheel itself, checks its SHA-256, and installs only verified bytes.
+# Hashes are deliberately not repeated here — a partial hash set would
+# switch pip into --require-hashes mode and then fail on every transitive
+# dependency of yt-dlp.
+yt-dlp==2026.8.19
 yt-dlp-ejs>=0.8.0
 # python-quickjs>=0.8.0  # uncomment for Android/QuickJS PO Token support

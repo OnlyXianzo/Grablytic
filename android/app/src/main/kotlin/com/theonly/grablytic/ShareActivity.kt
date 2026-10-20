@@ -2,17 +2,16 @@ package com.theonly.grablytic
 
 import android.content.Intent
 import android.os.Bundle
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs
 
 class ShareActivity : MainActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Chaquopy Invariant (§0.7): Ensure Python is started on every Activity entry path
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(applicationContext))
-        }
+        // The Chaquopy invariant ("the VM is up before the engine is
+        // touched") is now enforced by MainActivity.ensurePython(), which
+        // every engine handler calls. Starting it here as well would put
+        // the interpreter back on the share-overlay's cold path for a
+        // sheet that may be dismissed without ever calling the engine.
     }
 
     override fun getDartEntrypointFunctionName(): String = "shareMain"

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/thumb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../providers/search_provider.dart';
@@ -381,6 +383,8 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
                                       Image.network(
                                         item.thumbnailUrl!,
                                         fit: BoxFit.cover,
+                                        cacheWidth:
+                                            thumbCacheWidth(context, 100),
                                         errorBuilder:
                                             (context, error, stackTrace) =>
                                                 Icon(

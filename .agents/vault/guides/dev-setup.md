@@ -26,7 +26,7 @@ pip install -r engine/requirements.txt
 pip install -e engine/
 ```
 
-`engine/requirements.txt` pins `yt-dlp>=2025.11.12`, `yt-dlp-ejs>=0.8.0` (QuickJS line commented unless needed). CI installs via `uv pip install --system yt-dlp pytest -e engine/`.
+`engine/requirements.txt` pins `yt-dlp==2026.8.19`, `yt-dlp-ejs>=0.8.0` (QuickJS line commented unless needed). CI installs via `uv pip install --system yt-dlp pytest -e engine/`.
 
 **If pytest collection fails with `ModuleNotFoundError: No module named 'grablytic_engine'`**, either install the package (`pip install -e engine/`) or run with `PYTHONPATH=engine python3 -m pytest engine/tests/`. The bare `pytest engine/tests/` form works in CI because CI installs `-e engine/`.
 

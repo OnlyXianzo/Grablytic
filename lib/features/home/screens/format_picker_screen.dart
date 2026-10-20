@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/thumb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:uuid/uuid.dart';
@@ -2184,6 +2186,9 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                     ? Image.network(
                         _thumbnailUrl,
                         fit: BoxFit.cover,
+                        // Decoded at the tile's real size (112 logical px),
+                        // not the source resolution: 3.52 MiB -> 27.6 KiB.
+                        cacheWidth: thumbCacheWidthFor(112),
                         errorBuilder: (_, _, _) => _thumbFallback(colorScheme),
                       )
                     : _thumbFallback(colorScheme),
@@ -2322,6 +2327,7 @@ class _FormatPickerScreenState extends ConsumerState<FormatPickerScreen> {
                   child: Image.network(
                     _thumbnailUrl,
                     fit: BoxFit.cover,
+                    cacheWidth: thumbCacheWidthFor(360),
                     errorBuilder: (_, _, _) =>
                         const Icon(Icons.broken_image_outlined, size: 48),
                   ),

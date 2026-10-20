@@ -24,7 +24,12 @@ from grablytic_engine import (
     shutdown_downloads,
 )
 from grablytic_engine.downloader import _active_downloads, _downloads_lock
-from grablytic_engine.logger import get_logger, set_global_queue, set_global_log_dir
+from grablytic_engine.logger import (
+    get_logger,
+    set_global_log_dir,
+    set_global_queue,
+    wait_for_poll,
+)
 from grablytic_engine.persistent import (
     init_persistent_logging,
     get_std_logger,
@@ -33,6 +38,10 @@ from grablytic_engine.persistent import (
 )
 
 log = get_logger("grablytic_engine.main")
+
+# Safety-net interval for the event-driven drain. Producers wake it
+# immediately; this bounds the damage from a missed signal.
+_POLL_IDLE_TIMEOUT_S = 1.0
 _log_queue: _queue_module.Queue | None = None
 _stdout_lock = threading.Lock()
 
@@ -54,35 +63,46 @@ _MAX_IPC_INFLIGHT = 24
 # Inline lane. These run on the reader thread so a 30s extraction queued
 # behind the pool can never delay a cancel or a status poll.
 #
-# The invariant is weaker than "never blocks", and it is worth stating
-# precisely so nobody builds on a promise this code does not make:
+#   * every method here does BOUNDED, IN-MEMORY work and touches neither
+#     the network nor the filesystem: cancel arms a watchdog,
+#     queue_status takes a snapshot, set_concurrency writes an int and
+#     pumps the queue;
+#   * they run inline because ORDERING matters and because they are
+#     already cheaper than a thread hand-off.
 #
-#   * every method here does BOUNDED LOCAL WORK and never touches the
-#     network: cancel arms a watchdog, queue_status takes a snapshot,
-#     set_concurrency writes an int and pumps, clear_archive resolves one
-#     path and unlinks one file, paths/set resolves binaries and opens
-#     the log files;
-#   * they run inline because ORDERING matters. `paths/set` is a barrier:
-#     the host sends it before the first download, and moving it to a
-#     worker while `download/start` goes to the pool would let a download
-#     be admitted against unmapped paths. Same for set_concurrency and
-#     clear_archive, which the client may follow immediately with another
-#     request that depends on them.
+# Filesystem-touching mutators are NOT here any more. `paths/set`
+# resolves binaries and opens the log files; `download/clear_archive`
+# resolves a path and unlinks a file. Both can stall for as long as the
+# filesystem wants (FUSE mounts, adopted storage, a sleeping SD card),
+# and running them on the reader meant a cancel could not be read for
+# the duration of that stall. They now run on the MAINTENANCE LANE below.
 #
-# What is bounded is bounded by construction, not by a clock: a
-# pathological filesystem (a FUSE mount, adopted storage) can still make
-# `paths/set` slow. Rather than silently eating that, the dispatcher
-# measures the inline call and logs an over-budget warning, so such a
-# device leaves a diagnosable trace instead of a vague "cancels are slow".
+# The ordering invariant is preserved without blocking the reader: the
+# lane is single-threaded (FIFO), and every slow-lane request is wrapped
+# so it first waits for the maintenance work that was submitted before
+# it (see `_run_after_maintenance`). `download/start` still cannot be
+# admitted against unmapped paths, but the wait happens on a pool worker,
+# not on the reader.
 _INLINE_SLOW_WARN_S = 0.25
 _FAST_IPC_METHODS = frozenset(
     {
         "download/cancel",
         "download/queue_status",
         "download/set_concurrency",
-        "download/clear_archive",
     }
 )
+# Maintenance lane: multi-millisecond local mutators, serialized so their
+# relative order is preserved, off the reader thread.
+_MAINTENANCE_METHODS = frozenset({"paths/set", "download/clear_archive"})
+# How long a slow-lane request will wait for pending maintenance work
+# before proceeding. A hung filesystem must not turn into a hung engine:
+# past this the request runs anyway and the engine log says so.
+_MAINTENANCE_WAIT_S = 10.0
+# Tail of the maintenance lane, read by slow-lane submissions to know
+# which maintenance work must finish first. Guarded because `submit`
+# happens on the reader thread while workers only ever *wait* on it.
+_maintenance_lock = threading.Lock()
+_maintenance_tail = None
 # A single IPC line longer than this is refused instead of being read
 # into memory. Legit envelopes (a 200-format preview) are far smaller;
 # a runaway writer must not be able to OOM the engine.
@@ -378,13 +398,29 @@ def _poll_download_queues(download_id: str) -> None:
 
 
 def poll_queues():
+    """Drain progress, results and log lines for the life of the process.
+
+    This used to spin: `time.sleep(0.1)` forever, i.e. **864,000 thread
+    wakeups a day** for an engine whose queues are empty almost all of
+    that time. Each wakeup also took `_downloads_lock`, the same lock the
+    cancel path and the queue pump use, and a thread that wakes 10x a
+    second never lets the process reach a deep C-state.
+
+    Producers now set the flag (see `logger.notify_poll`, called from
+    `hooks._put_bounded` / `_put_result` and from the log queue), and the
+    1 s timeout is only a safety net for a signal that was missed.
+
+    Order matters: clear BEFORE draining, so a producer that fires during
+    the drain leaves the flag set and the next wait returns at once.
+    """
     while True:
+        wait_for_poll(0.0)
         _drain_log_queue()
         with _downloads_lock:
             active_ids = list(_active_downloads)
         for download_id in active_ids:
             _poll_download_queues(download_id)
-        time.sleep(0.1)
+        wait_for_poll(_POLL_IDLE_TIMEOUT_S)
 
 
 class _InvalidParam(Exception):
@@ -903,34 +939,113 @@ def _run_inline(req_id, method, params) -> None:
                 pass
 
 
-def _dispatch_ipc_request(req_id, method, params, pool, inflight, futures=None) -> None:
-    """Run fast methods and paths/set inline; submit other work to the pool.
+def _submit_maintenance(req_id, method, params, maintenance, inflight, futures=None):
+    """Queue a mutating request on the serialized maintenance lane.
+
+    Returns True when it was submitted, False when the engine is saturated
+    (an ERROR_BUSY envelope has then already been written).
+    """
+    global _maintenance_tail
+    if not inflight.acquire(blocking=False):
+        _report_busy(req_id, method)
+        return False
+    try:
+        fut = maintenance.submit(
+            _run_guarded_request, req_id, method, params, inflight
+        )
+    except RuntimeError:
+        # The executor is shut down (EOF already seen): the request can no
+        # longer run, so hand the permit back and answer retryable.
+        try:
+            inflight.release()
+        except ValueError:
+            pass
+        _report_busy(req_id, method)
+        return False
+    with _maintenance_lock:
+        _maintenance_tail = fut
+    if futures is not None:
+        futures.add(fut)
+        fut.add_done_callback(futures.discard)
+    return True
+
+
+def _run_after_maintenance(tail, fn, *args) -> None:
+    """Run ``fn`` after the maintenance work that preceded it, then submit.
+
+    A wait rather than a barrier on the reader thread: the reader must
+    keep reading (cancels, status polls) while a slow `paths/set` runs.
+    Bounded by ``_MAINTENANCE_WAIT_S`` so a wedged filesystem degrades
+    into a logged ordering violation instead of a dead engine.
+    """
+    if tail is not None:
+        try:
+            tail.result(timeout=_MAINTENANCE_WAIT_S)
+        except Exception:
+            # Deliberately broad: the maintenance task can fail with any
+            # exception, and a failed `paths/set` must degrade into "this
+            # request runs anyway, and the log says the ordering was lost"
+            # rather than into a dropped response envelope.
+            log.warn(
+                "Maintenance work did not finish before a dependent "
+                f"request; continuing after {_MAINTENANCE_WAIT_S:.0f}s"
+            )
+    fn(*args)
+
+
+def _report_busy(req_id, method) -> None:
+    """Write the retryable ERROR_BUSY envelope for a shed request."""
+    log.warn(
+        f"IPC load shed: {method} rejected, "
+        f"{_MAX_IPC_INFLIGHT} requests already in flight"
+    )
+    _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+
+
+def _dispatch_ipc_request(
+    req_id, method, params, pool, inflight, futures=None, maintenance=None
+) -> None:
+    """Route one request to the lane that suits it.
+
+    Inline (reader thread): cancel / status / concurrency — in-memory and
+    order-critical. Maintenance lane: filesystem mutators, serialized off
+    the reader. Pool: extractions and everything else.
 
     Write an ERROR_BUSY response if no in-flight permit is available or
     submission fails. If supplied, ``futures`` tracks submitted work until
     completion for shutdown. Errors from inline execution propagate.
     """
-    if method in _FAST_IPC_METHODS or method == "paths/set":
+    if method in _FAST_IPC_METHODS:
         _run_inline(req_id, method, params)
         return
-    if not inflight.acquire(blocking=False):
-        try:
-            log.warn(
-                f"IPC load shed: {method} rejected, "
-                f"{_MAX_IPC_INFLIGHT} requests already in flight"
-            )
-        except Exception:
-            pass
-        _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+    if method in _MAINTENANCE_METHODS and maintenance is not None:
+        _submit_maintenance(req_id, method, params, maintenance, inflight, futures)
         return
+    if not inflight.acquire(blocking=False):
+        _report_busy(req_id, method)
+        return
+    # Ordered behind any maintenance work submitted before this request,
+    # but waited on a worker rather than on the reader.
+    with _maintenance_lock:
+        tail = _maintenance_tail
     try:
-        fut = pool.submit(_run_guarded_request, req_id, method, params, inflight)
-    except Exception:
+        fut = pool.submit(
+            _run_after_maintenance,
+            tail,
+            _run_guarded_request,
+            req_id,
+            method,
+            params,
+            inflight,
+        )
+    except RuntimeError:
+        # Executor already shut down (EOF): answer retryable, hand the
+        # permit back.
         try:
             inflight.release()
-        except Exception:
+        except ValueError:
             pass
-        _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+        _report_busy(req_id, method)
         return
     # Track the future so EOF can cancel the queued ones and drain the
     # running ones with a deadline instead of waiting for all of them.
@@ -942,7 +1057,7 @@ def _dispatch_ipc_request(req_id, method, params, pool, inflight, futures=None) 
             pass
 
 
-def _process_ipc_line(line: str, pool, inflight, futures=None) -> None:
+def _process_ipc_line(line: str, pool, inflight, futures=None, maintenance=None) -> None:
     req_id = None
     method = "<unparsed>"
     params = {}
@@ -951,7 +1066,9 @@ def _process_ipc_line(line: str, pool, inflight, futures=None) -> None:
     except Exception as exc:
         _report_ipc_parse_error(exc, method, req_id)
         return
-    _dispatch_ipc_request(req_id, method, params, pool, inflight, futures)
+    _dispatch_ipc_request(
+        req_id, method, params, pool, inflight, futures, maintenance
+    )
 
 
 def main():
@@ -970,13 +1087,19 @@ def main():
     pool = _futures.ThreadPoolExecutor(
         max_workers=_MAX_IPC_WORKERS, thread_name_prefix="ipc"
     )
+    # One worker, FIFO: filesystem mutators keep their relative order
+    # without ever occupying the reader thread.
+    maintenance = _futures.ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="engine-maintenance"
+    )
     futures: set[_futures.Future] = set()
     try:
         for line in sys.stdin:
             line = line.strip()
             if line:
-                _process_ipc_line(line, pool, inflight, futures)
+                _process_ipc_line(line, pool, inflight, futures, maintenance)
     finally:
+        _shutdown_ipc_pool(maintenance, futures, drain_timeout=5.0)
         _shutdown_ipc_pool(pool, futures)
         _shutdown_report_pool()
     try:

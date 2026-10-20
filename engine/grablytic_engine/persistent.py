@@ -294,6 +294,14 @@ def init_persistent_logging(
         _configured_dir = log_dir
         _std_logger = logger
         _ensure_flush_worker_locked()
+        # Tell the logger module this sink exists, so its early gate does
+        # not drop records only the rotating handler would have written.
+        try:
+            from grablytic_engine.logger import set_persistent_bridge_level
+
+            set_persistent_bridge_level(logger.level)
+        except Exception:
+            pass
         return logger
 
 

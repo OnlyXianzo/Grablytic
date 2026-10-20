@@ -77,6 +77,17 @@ class LogEntry {
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}.${d.millisecond.toString().padLeft(3, '0')}';
   }
 
+  /// Lowercased `message` + logger, computed once.
+  ///
+  /// Search used to call `toLowerCase()` per entry per keystroke, on up to
+  /// 5,000 entries — an allocation storm on the UI isolate every time the
+  /// user typed a character. Lazy, so an entry nobody searches costs
+  /// nothing.
+  late final String searchBlob = '$message $logger'.toLowerCase();
+
+  /// True when [needle] (already lowercased) appears in this entry.
+  bool matches(String needle) => searchBlob.contains(needle);
+
   String get formattedLine {
     final dlTag = downloadId != null ? ' [$downloadId]' : '';
     return '[$formattedTimestamp] [${level.name.toUpperCase()}] [$logger]$dlTag: $message${exception != null ? "\n  ⚠ $exception" : ""}';
