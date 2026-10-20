@@ -168,7 +168,10 @@ void main() {
     );
     expect(hits.map((record) => record.id), containsAll(['pre-index', 'pre-index-zoned']));
     // v7 normalises the timestamps to UTC ISO-8601 with an offset.
-    expect(await (await DownloadHistoryDb.instance.database).getVersion(), 7);
+    expect(
+      await (await DownloadHistoryDb.instance.database).getVersion(),
+      DownloadHistoryDb.schemaVersion,
+    );
     // The zone-less local timestamp is read as local time and stored
     // as UTC; the already-zoned one is not shifted.
     final rows = await (await DownloadHistoryDb.instance.database).query(
