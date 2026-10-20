@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -12,10 +13,18 @@ import 'package:path_provider/path_provider.dart';
 /// any process with the app's uid (a debuggable build, a rooted device,
 /// a vendor ROM that syncs the app's data directory) can read.
 ///
-/// The jar now lives in an app-private file with 0600 permissions —
-/// the same pattern the WebView login flow already uses for
-/// `cookies.txt`. SharedPreferences keeps only the profile METADATA
-/// (id, url, description, enabled flag); the content never touches it.
+/// The jar now lives in an app-private file, written atomically (temp
+/// file + fsync + rename), with owner-only permissions applied where the
+/// platform actually allows it. SharedPreferences keeps only the profile
+/// METADATA (id, url, description, enabled flag); the content never
+/// touches it.
+///
+/// A note on those permissions: on Android there is no `chmod` binary on
+/// `PATH`, so the 0600 flag cannot be applied from Dart. The protection
+/// there is the app sandbox (`/data/data/<pkg>` is 0700 and no other app
+/// can traverse it), which is the stronger control anyway. On desktop the
+/// `chmod` call is real, and a failure is logged rather than swallowed —
+/// a security claim that silently does nothing is worse than no claim.
 ///
 /// Implementations must never throw for a missing directory or a
 /// missing profile: an unavailable store means "no content", not a
@@ -109,28 +118,73 @@ class FileCookieSecretStore implements CookieSecretStore {
     return result;
   }
 
+  /// Replace [id]'s cookie lines using a flushed sibling temp file and rename.
+  ///
+  /// Applies owner-only permissions where supported. Write failures are
+  /// suppressed and leftover temp files are removed on a best-effort basis.
   @override
   Future<void> write(String id, List<String> lines) async {
+    File? tmp;
     try {
       final file = await _fileFor(id);
       final parent = file.parent;
       if (!await parent.exists()) {
         await parent.create(recursive: true);
+        await _restrictToOwner(parent.path);
       }
-      await file.writeAsString(lines.join('\n'));
-      if (!Platform.isWindows) {
-        try {
-          await Process.run('chmod', ['0600', file.path]);
-        } catch (_) {
-          // chmod is unavailable on some platforms; the app-private
-          // directory is the primary protection.
-        }
-      }
+      // Atomic replace. `writeAsString` on the target truncates first, so
+      // a process kill between truncate and flush left a PARTIAL jar that
+      // `readAll()` handed back as if it were complete: the next session
+      // logged in half-way, and the next write persisted the damaged
+      // version. Write a sibling temp file, fsync it, then rename: the
+      // rename is atomic within a directory, so a reader sees the old jar
+      // or the new one and never a mixture.
+      tmp = File('${file.path}.tmp');
+      await tmp.writeAsString('${lines.join('\n')}\n', flush: true);
+      await _restrictToOwner(tmp.path);
+      await tmp.rename(file.path);
+      tmp = null;
     } catch (_) {
       // A failed write means the cookie jar is not persisted. The
       // in-memory state still holds it for this session.
+    } finally {
+      if (tmp != null) {
+        try {
+          if (await tmp.exists()) await tmp.delete();
+        } catch (_) {
+          // Best effort: a stray .tmp is harmless (readAll ignores it).
+        }
+      }
     }
   }
+
+  /// Applies owner-only permissions where the platform has a `chmod`.
+  ///
+  /// Android has none: spawning `chmod` there always fails, which is why
+  /// the previous version silently did nothing while the class
+  /// documentation claimed 0600. The sandbox is the real control on
+  /// Android, so the call is skipped explicitly rather than attempted and
+  /// swallowed. On desktop a failure is logged — the file does contain a
+  /// bearer credential there.
+  static Future<void> _restrictToOwner(String path) async {
+    if (Platform.isWindows || Platform.isAndroid) return;
+    try {
+      final result = await Process.run('chmod', ['0600', path]);
+      if (result.exitCode != 0) {
+        _warn('chmod 0600 failed on $path: ${result.stderr}');
+      }
+    } catch (error) {
+      _warn('chmod unavailable for $path: $error');
+    }
+  }
+
+  /// Diagnostics for a permission failure.
+  ///
+  /// `debugPrint` rather than `AppLogger`: this file is a storage
+  /// primitive, and importing the logging stack (which touches
+  /// SharedPreferences and the file system) would couple the two in a
+  /// cycle. One line about a failed `chmod` does not need the pipeline.
+  static void _warn(String message) => debugPrint('[cookies] $message');
 
   @override
   Future<void> delete(String id) async {

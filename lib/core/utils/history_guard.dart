@@ -7,7 +7,63 @@ import '../database/download_history_db.dart';
 /// match second (covers watch?v=X vs youtu.be/X vs shorts/X, and the
 /// downloaded-as-audio vs downloaded-as-video case).
 
+/// Hosts that serve the same catalogue, keyed by "this is a short link".
+const _youtuShortHosts = {'youtu.be', 'www.youtu.be', 'm.youtu.be'};
+
+/// Hosts where the video id comes from `?v=` or a `/shorts|embed|live/` path.
+const _youtubeHosts = {
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'music.youtube.com',
+  'youtube-nocookie.com',
+  'www.youtube-nocookie.com',
+};
+
+/// Collapses scheme/host case, `www.`, a default port and the fragment.
+///
+/// Two links to the same page that differ only in a `#t=30` timestamp used
+/// to compare unequal, so the "already have" guard missed them for every
+/// non-YouTube host (YouTube fell through to the video-id check).
+/// Also trims whitespace and trailing path slashes, including a lone root
+/// slash. Preserves the query; parse failures return the trimmed input.
+String _normalizeUrl(String url) {
+  Uri? uri;
+  try {
+    uri = Uri.parse(url.trim());
+  } catch (_) {
+    return url.trim();
+  }
+  var host = uri.host.toLowerCase();
+  if (host.startsWith('www.')) host = host.substring(4);
+  final scheme = uri.scheme.toLowerCase();
+  final defaultPort = (scheme == 'http' && uri.port == 80) ||
+      (scheme == 'https' && uri.port == 443);
+  var path = uri.path;
+  while (path.length > 1 && path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  if (path == '/') path = '';
+  final rebuilt = Uri(
+    scheme: scheme,
+    host: host,
+    port: defaultPort ? null : (uri.hasPort ? uri.port : null),
+    path: path,
+    query: uri.hasQuery ? uri.query : null,
+  );
+  return rebuilt.toString();
+}
+
 /// Canonical video id for YouTube URLs, else null.
+///
+/// Accepts any nonempty ID without length or character validation. Short links
+/// use the first path segment; other recognized hosts prefer `v` over a
+/// `/shorts/`, `/embed/`, or `/live/` path. Parse failures return null.
+///
+/// Hosts are matched exactly (plus the known `www.`/`m.`/`music.` prefixes)
+/// rather than with `contains`: `youtube.com.example.net/watch?v=X` used to
+/// yield the id `X`, so a look-alike URL was reported as "already have" and
+/// the user's download was silently skipped.
 String? extractVideoId(String url) {
   Uri? uri;
   try {
@@ -16,27 +72,29 @@ String? extractVideoId(String url) {
     return null;
   }
   final host = uri.host.toLowerCase();
-  if (host.contains('youtu.be')) {
-    final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    return seg.isEmpty ? null : seg.first;
+  final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+
+  // No length validation: real YouTube ids are eleven characters, but
+  // enforcing that here would turn every short/degenerate id in an
+  // existing history record into "not the same video" and silently
+  // re-download it. The defect being fixed is the host match, not the id.
+  String? checked(String? candidate) =>
+      candidate == null || candidate.isEmpty ? null : candidate;
+
+  if (_youtuShortHosts.contains(host)) {
+    return segments.isEmpty ? null : checked(segments.first);
   }
-  if (host.contains('youtube.com') || host.contains('youtube-nocookie.com')) {
-    final v = uri.queryParameters['v'];
-    if (v != null && v.isNotEmpty) return v;
-    final seg = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (seg.length >= 2 && (seg[0] == 'shorts' || seg[0] == 'embed' || seg[0] == 'live')) {
-      return seg[1];
+  if (_youtubeHosts.contains(host)) {
+    final v = checked(uri.queryParameters['v']);
+    if (v != null) return v;
+    if (segments.length >= 2 &&
+        (segments[0] == 'shorts' ||
+            segments[0] == 'embed' ||
+            segments[0] == 'live')) {
+      return checked(segments[1]);
     }
   }
   return null;
-}
-
-String _normalizeUrl(String url) {
-  var u = url.trim();
-  while (u.endsWith('/')) {
-    u = u.substring(0, u.length - 1);
-  }
-  return u;
 }
 
 /// True when [a] and [b] point at the same video.

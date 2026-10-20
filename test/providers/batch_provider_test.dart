@@ -66,8 +66,11 @@ class _ThrowingEngine extends MockEngineService {
   }
 }
 
-Future<ProviderContainer> _container(MockEngineService engine) async {
-  SharedPreferences.setMockInitialValues({});
+Future<ProviderContainer> _container(
+  MockEngineService engine, {
+  Map<String, Object> mockPrefs = const {},
+}) async {
+  SharedPreferences.setMockInitialValues(mockPrefs);
   final prefs = await SharedPreferences.getInstance();
   final container = ProviderContainer(
     overrides: [
@@ -278,5 +281,73 @@ void main() {
     await Future.delayed(const Duration(milliseconds: 50));
     expect(engine.configs, hasLength(1));
     expect(container.read(batchProvider).isRunning, isFalse);
+  });
+
+  test('outside the schedule window the queue parks without a spinner',
+      () async {
+    final engine = _RecordingEngine();
+    // Enabled with no permitted weekdays: isWithinScheduleWindow is false
+    // whatever day the suite runs on.
+    final container = await _container(
+      engine,
+      mockPrefs: {'scheduleEnabled': true, 'scheduleDays': <String>[]},
+    );
+
+    container.read(batchProvider.notifier).startBatch([_item('A'), _item('B')]);
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    expect(engine.configs, isEmpty, reason: 'nothing may start off-window');
+    final state = container.read(batchProvider);
+    expect(state.isRunning, isFalse);
+    expect(state.scheduleBlocked, isTrue);
+    // The old code marked the first item downloading and then bailed, so it
+    // hung as a spinner that retryFailed would not touch.
+    expect(
+      state.items.map((i) => i.status),
+      everyElement(BatchItemStatus.pending),
+    );
+
+    container.read(batchProvider.notifier).retryFailed();
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect(engine.configs, isEmpty);
+  });
+
+  test('leaving the window then ticking resumes the parked queue', () async {
+    final engine = _RecordingEngine();
+    final container = await _container(
+      engine,
+      mockPrefs: {'scheduleEnabled': true, 'scheduleDays': <String>[]},
+    );
+
+    container.read(batchProvider.notifier).startBatch([_item('A')]);
+    await Future.delayed(const Duration(milliseconds: 100));
+    expect(engine.configs, isEmpty);
+
+    container.read(settingsProvider.notifier).setScheduleEnabled(false);
+    container.read(batchProvider.notifier).processNext();
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    expect(engine.configs, hasLength(1));
+    expect(container.read(batchProvider).scheduleBlocked, isFalse);
+  });
+
+  test('a cancel during the skip-existing pre-filter wins over dispatch',
+      () async {
+    final engine = _RecordingEngine();
+    final container = await _container(engine);
+
+    // startBatch → _prefilterAlreadyHave is async, so the first dispatch has
+    // not happened yet. Cancelling in that gap must stick: the pre-filter
+    // rewrites state.items afterwards, and a cancel it dropped would send a
+    // URL the user had just removed to the engine.
+    container.read(batchProvider.notifier).startBatch([_item('A')]);
+    container.read(batchProvider.notifier).cancelItem(0);
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    expect(engine.configs, isEmpty);
+    expect(
+      container.read(batchProvider).items.single.status,
+      BatchItemStatus.failed,
+    );
   });
 }

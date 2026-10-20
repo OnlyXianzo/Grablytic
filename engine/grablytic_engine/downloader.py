@@ -502,6 +502,35 @@ def _running_count() -> int:
     return count
 
 
+# A retrying download may not find a free slot for a while. If it has not
+# got one back by then, the wait is reported instead of being silent: the
+# reservation is released and the retry proceeds, which can over-admit by
+# exactly one thread for one retry (logged). Nothing else can make the
+# wait unbounded, because a reservation is now honoured by the queue.
+_MAX_BACKOFF_SLOT_WAIT_S = 300.0
+
+
+def _backoff_reservations() -> int:
+    """Downloads parked in retry backoff that still hold a slot.
+
+    Caller holds `_downloads_lock` (or accepts a best-effort snapshot).
+
+    `_running_count()` deliberately excludes these entries so they do not
+    consume a *working* slot while asleep. They still own a place in the
+    concurrency budget, though: without that, `_pump_queue()` could hand
+    the slot to the next queued entry on every terminal transition, and a
+    retrying download in a deep queue could be starved forever — it would
+    wake up, find the engine full, and go back to waiting.
+    """
+    count = 0
+    for info in _active_downloads.values():
+        if info.get("finished_at"):
+            continue
+        if info.get("backing_off"):
+            count += 1
+    return count
+
+
 def _notify_slot_change() -> None:
     """Wake any download waiting for a free concurrency slot.
 
@@ -516,16 +545,21 @@ def _notify_slot_change() -> None:
 
 
 def _begin_backoff(download_id: str, delay: float, cancel) -> None:
-    """Release the concurrency slot for `delay` seconds, then re-acquire one.
+    """Pause work for `delay` seconds while reserving the download's slot.
 
-    The slot is handed back to the engine for the duration of the sleep
-    (the entry is flagged `backing_off`, so `_running_count` ignores it)
-    and the pending queue is pumped so a waiting download can start
-    immediately.
+    While it sleeps the entry is flagged `backing_off`, so
+    `_running_count()` stops counting it as working — but
+    `_backoff_reservations()` still does, and admission (both
+    `_pump_queue()` and `start_download()`) subtracts reservations from
+    the budget. The slot is therefore RESERVED, not handed to the queue:
+    a retry that lost its slot to a queued item could be starved for as
+    long as the queue kept completing, which looked exactly like a hang.
 
-    After the sleep the download waits for a free slot again. It does NOT
-    barge past a live download: the wait ends only when the engine is
-    actually below the concurrency limit (or the download is cancelled).
+    After the sleep, wait up to 300 additional seconds for a working
+    slot. A set `cancel` event skips this additional wait, not the sleep.
+    If the deadline expires, clear the backoff flag and return even if
+    doing so exceeds the concurrency limit; mark the entry as expired.
+    Sleep failures are suppressed and slot acquisition still proceeds.
     """
     with _downloads_lock:
         info = _active_downloads.get(download_id)
@@ -540,7 +574,12 @@ def _begin_backoff(download_id: str, delay: float, cancel) -> None:
         time.sleep(delay)
     except Exception:
         pass
-    # Re-acquire a slot (interruptible by cancellation).
+    # Re-acquire the slot this download reserved for itself. The wait is
+    # bounded: a reservation can only be denied when the limit was lowered
+    # while the sleep ran, and an unbounded wait here is indistinguishable
+    # from a hang to the user.
+    deadline = time.monotonic() + _MAX_BACKOFF_SLOT_WAIT_S
+    expired = False
     with _slot_cv:
         while True:
             if cancel is not None:
@@ -551,10 +590,26 @@ def _begin_backoff(download_id: str, delay: float, cancel) -> None:
                     pass
             if _running_count() < _max_concurrent:
                 break
-            _slot_cv.wait(timeout=0.5)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                expired = True
+                break
+            _slot_cv.wait(timeout=min(0.5, remaining))
         info = _active_downloads.get(download_id)
         if isinstance(info, dict):
             info["backing_off"] = False
+            if expired:
+                info["backoff_slot_wait_expired"] = True
+    if expired:
+        # Proceeding is the lesser evil: the alternative is a download that
+        # never retries and never fails. The flag keeps it visible.
+        try:
+            log.warn(
+                "Retry slot wait expired; resuming without a free slot "
+                f"(download_id={download_id})"
+            )
+        except Exception:
+            pass
     _notify_slot_change()
 
 
@@ -767,10 +822,21 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
 
 def _pump_queue() -> None:
     """Promote FIFO-parked entries while slots are free. Runs after any
-    terminal transition and after limit increases."""
+    terminal transition and after limit increases.
+
+    "Free" excludes slots reserved by downloads sleeping through a retry
+    backoff (`_backoff_reservations`), so the queue can never drain past
+    a retry that is about to come back.
+    """
     while True:
         with _downloads_lock:
-            if _running_count() >= _max_concurrent or not _pending_queue:
+            # A slot on loan to a retrying download is NOT free: the retry
+            # is coming back for it. Admitting queue entries into it is
+            # what let a busy queue starve a retry indefinitely.
+            if (
+                _running_count() + _backoff_reservations() >= _max_concurrent
+                or not _pending_queue
+            ):
                 return
             entry = _pending_pop_first()
             if entry is None:
@@ -1937,12 +2003,22 @@ def _admit_download(
     network_type: str,
     event_callback,
 ) -> dict:
+    """Register a download as active or pending without starting its thread.
+
+    Return ``queued``, its one-based pending ``position`` (None if active),
+    and an ``entry`` holding queues and cancellation state. Return an
+    ``error`` result instead for a duplicate ID/URL or a full pending queue.
+    Retry reservations consume capacity just like working downloads.
+    """
     with _downloads_lock:
         audio_only = _is_audio_mode(config)
         conflict = _admission_conflict(download_id, url, audio_only)
         if conflict is not None:
             return {"error": conflict}
-        queued = _running_count() >= _max_concurrent
+        # Reservations count against admission here as well; otherwise a
+        # NEW start walks past the queue straight into the slot a retrying
+        # download is holding.
+        queued = _running_count() + _backoff_reservations() >= _max_concurrent
         if queued and len(_pending_queue) >= _MAX_PENDING_QUEUE:
             return {
                 "error": {

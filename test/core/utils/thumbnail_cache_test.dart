@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grablytic/core/utils/thumbnail_cache.dart';
 
@@ -38,6 +40,78 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  group('ThumbnailCache.prune', () {
+    late Directory dir;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('grablytic-thumbs-');
+    });
+
+    tearDown(() async {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    });
+
+    Future<File> writeThumb(String name, int bytes) async {
+      final file = File('${dir.path}/$name');
+      await file.writeAsBytes(List<int>.filled(bytes, 0x41));
+      return file;
+    }
+
+    test('drops thumbnails whose download is gone', () async {
+      await writeThumb('keep.jpg', 4);
+      await writeThumb('gone.jpg', 4);
+      await writeThumb('also-gone.jpg', 4);
+
+      final removed = await ThumbnailCache.prune(
+        cacheDir: dir.path,
+        liveIds: {'keep'},
+      );
+
+      expect(removed, 2);
+      final names = await dir
+          .list()
+          .map((e) => e.uri.pathSegments.last)
+          .toList();
+      expect(names, ['keep.jpg']);
+    });
+
+    test('enforces the byte budget oldest-first', () async {
+      final old = await writeThumb('old.jpg', 400);
+      final mid = await writeThumb('mid.jpg', 400);
+      final fresh = await writeThumb('fresh.jpg', 400);
+      // Deterministic order: the sort reads FileStat.modified.
+      old.setLastModifiedSync(DateTime(2020, 1, 1));
+      mid.setLastModifiedSync(DateTime(2021, 1, 1));
+      fresh.setLastModifiedSync(DateTime(2022, 1, 1));
+
+      final removed = await ThumbnailCache.prune(
+        cacheDir: dir.path,
+        liveIds: {'old', 'mid', 'fresh'},
+        maxTotalBytes: 800,
+      );
+
+      expect(removed, 1);
+      expect(await File('${dir.path}/old.jpg').exists(), isFalse);
+      expect(await File('${dir.path}/fresh.jpg').exists(), isTrue);
+    });
+
+    test('a missing directory is not an error', () async {
+      expect(
+        await ThumbnailCache.prune(
+          cacheDir: '${dir.path}/does-not-exist',
+          liveIds: const {},
+        ),
+        0,
+      );
+    });
+
+    test('non-image leftovers are left alone', () async {
+      final stray = await writeThumb('notes.txt', 4);
+      await ThumbnailCache.prune(cacheDir: dir.path, liveIds: const {});
+      expect(await stray.exists(), isTrue);
     });
   });
 }

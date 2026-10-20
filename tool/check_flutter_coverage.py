@@ -60,18 +60,33 @@ def _integer(value: str, field: str, line_number: int) -> int:
 def _merge_lcov_project_record(
     files: dict, state: dict, end_line: int, source: str
 ) -> None:
+    """Merge a project's line hits into ``files``, OR-ing duplicate lines.
+
+    Ignore external sources and records without DA rows whose LF/LH totals
+    are absent or zero. Raise ValueError when present summaries disagree
+    with line data; ``end_line`` identifies the record end in diagnostics.
+    """
     project_path = project_source(source)
     if project_path is None:
         return
     line_hits = state["line_hits"]
-    if not line_hits:
-        raise ValueError(
-            f"lines {state['record_start']}-{end_line}: {source!r} has no DA line data"
-        )
-    found = len(line_hits)
-    hit = sum(line_hits.values())
     summary_found = state["summary_found"]
     summary_hit = state["summary_hit"]
+    if not line_hits:
+        # LCOV emits a bare SF/end_of_record pair for a file with no
+        # executable lines — a barrel library of `export` directives, an
+        # `abstract interface class` with only signatures, a `part` holder.
+        # That is a valid record, and treating it as corruption made the
+        # gate exit 2 (a hard error, not a coverage failure) for files that
+        # simply cannot be covered.
+        if summary_found not in (None, 0) or summary_hit not in (None, 0):
+            raise ValueError(
+                f"lines {state['record_start']}-{end_line}: {source!r} has no DA "
+                f"line data but claims LF:{summary_found} LH:{summary_hit}"
+            )
+        return
+    found = len(line_hits)
+    hit = sum(line_hits.values())
     if summary_found is not None and summary_found != found:
         raise ValueError(
             f"line {end_line}: LF:{summary_found} disagrees with {found} DA lines in {source!r}"

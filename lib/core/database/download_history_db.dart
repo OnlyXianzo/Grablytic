@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../utils/app_logger.dart';
 import '../utils/config_secrets.dart';
 
 class DownloadRecord {
@@ -202,6 +203,11 @@ class DownloadHistoryDb {
   @visibleForTesting
   bool get fts4EnabledForTesting => _fts4Enabled;
 
+  /// Forces the search backend, so the LIKE fallback is testable without
+  /// having to corrupt an FTS index first.
+  @visibleForTesting
+  set fts4EnabledForTesting(bool value) => _fts4Enabled = value;
+
   /// Test-only database path override. When set, [_initDb] skips
   /// path_provider (unavailable in unit tests). Null in production.
   @visibleForTesting
@@ -224,6 +230,10 @@ class DownloadHistoryDb {
     return _db!;
   }
 
+  /// Open schema version 7, create or migrate tables, and probe FTS4 support.
+  ///
+  /// Uses [dbPathForTesting] when set, otherwise the app documents directory.
+  /// Directory lookup and database-open errors propagate to the caller.
   Future<Database> _initDb() async {
     // ?? short-circuits: path_provider is never touched in unit tests.
     final path = dbPathForTesting ??
@@ -260,6 +270,7 @@ class DownloadHistoryDb {
         ''');
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status)');
+        await _createListingIndexes(db);
         await db.execute('''
           CREATE TABLE seen_source_videos (
             source_url TEXT NOT NULL,
@@ -350,11 +361,42 @@ class DownloadHistoryDb {
           }
           await _normalizeTimestampsToUtc(db);
         }
+        if (oldVersion < 8) {
+          // v7 -> v8: index the listing sort key. `timestamp` is the
+          // ORDER BY of the history list, the completed list and every
+          // paged query, and the v7 schema indexed only `status` — so
+          // each page was a full scan plus a temporary B-tree sort of
+          // the whole table, i.e. cost that grows with history.
+          await _createListingIndexes(db);
+        }
       },
     );
     await _stripLegacyProxyConfigs(db);
     _fts4Enabled = await _validateDownloadsFts4(db);
     return db;
+  }
+
+  /// Indexes behind every ordered listing.
+  ///
+  /// `idx_downloads_timestamp` serves the plain `ORDER BY timestamp DESC`
+  /// listings; the composite one serves the filtered variant (status
+  /// first, then the sort key) without a temporary sort. Both are
+  /// `CREATE INDEX` only — no table rewrite, so the migration is cheap
+  /// even on a large history. Index creation errors are suppressed.
+  Future<void> _createListingIndexes(Database db) async {
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_downloads_timestamp '
+        'ON downloads(timestamp DESC)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_downloads_status_timestamp '
+        'ON downloads(status, timestamp DESC)',
+      );
+    } catch (_) {
+      // An index is an optimisation: a build whose SQLite refuses the
+      // DESC form must still open the database.
+    }
   }
 
   Future<void> _stripLegacyProxyConfigs(Database db) async {
@@ -605,6 +647,25 @@ class DownloadHistoryDb {
     );
   }
 
+  /// Escapes the LIKE metacharacters in a user-supplied search term.
+  ///
+  /// Without this, `%` matched every row and `a_b` matched `axb`: the
+  /// FTS path escaped its input and the fallback did not, so the same
+  /// search box behaved differently depending on which backend answered.
+  /// The backslash must be escaped first, or it would double-escape the
+  /// escapes added afterwards.
+  static String _escapeLikePattern(String term) => term
+      .replaceAll('\\', '\\\\')
+      .replaceAll('%', '\\%')
+      .replaceAll('_', '\\_');
+
+  /// Return history ordered by newest timestamp, optionally filtered and paged.
+  ///
+  /// A nonempty [search] uses an FTS phrase when available, otherwise a literal
+  /// substring of the title or URL. An FTS failure re-probes availability and
+  /// uses the substring fallback for this call. [statusFilter] matches exactly;
+  /// [limit] and [offset] count rows. Database-open and fallback-query errors
+  /// propagate to the caller.
   Future<List<DownloadRecord>> getAll({
     String? search,
     String? statusFilter,
@@ -633,16 +694,29 @@ class DownloadHistoryDb {
           ORDER BY d.timestamp DESC$limitSql$offsetSql
         ''', args);
         return rows.map((r) => DownloadRecord.fromMap(r)).toList();
-      } catch (_) {
-        _fts4Enabled = false;
+      } catch (error, stack) {
+        // Two bugs lived here. Disabling FTS for the whole session made
+        // a TRANSIENT failure (SQLITE_BUSY, a lock during a concurrent
+        // write) permanently downgrade search to a full scan, silently.
+        // And the fallback did not escape the user's string, so `%` and
+        // `_` stayed wildcards — a second grammar for the same search
+        // box, whose FTS twin escapes correctly.
+        AppLogger.error(
+          'FTS4 search failed, re-probing the index: $error',
+          tag: 'db',
+          error: error,
+          stackTrace: stack,
+        );
+        _fts4Enabled = await _validateDownloadsFts4(db);
       }
     }
 
     final where = <String>[];
     final args = <dynamic>[];
     if (search != null && search.isNotEmpty) {
-      where.add('(title LIKE ? OR url LIKE ?)');
-      args.addAll(['%$search%', '%$search%']);
+      where.add("(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')");
+      final like = '%${_escapeLikePattern(search)}%';
+      args.addAll([like, like]);
     }
     if (statusFilter != null) {
       where.add('status = ?');

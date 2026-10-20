@@ -138,6 +138,13 @@ class BatchState {
   /// Engine archive semantics are unchanged — this only avoids dispatch.
   final bool skipExisting;
 
+  /// True when [BatchNotifier.processNext] hit the quiet-hours schedule
+  /// gate and parked the queue instead of dispatching. The item it was
+  /// about to start is back to `pending`; the UI can say "paused until
+  /// `<window>`" rather than showing a spinner that never moves.
+  final bool scheduleBlocked;
+
+  /// Create batch state; [scheduleBlocked] marks a pause outside allowed hours.
   const BatchState({
     required this.items,
     this.currentIndex = 0,
@@ -145,8 +152,10 @@ class BatchState {
     this.playlistId,
     this.qualityCeiling,
     this.skipExisting = true,
+    this.scheduleBlocked = false,
   });
 
+  /// Copy the state, retaining existing values for omitted or null arguments.
   BatchState copyWith({
     List<BatchItem>? items,
     int? currentIndex,
@@ -154,6 +163,7 @@ class BatchState {
     String? playlistId,
     String? qualityCeiling,
     bool? skipExisting,
+    bool? scheduleBlocked,
   }) {
     return BatchState(
       items: items ?? this.items,
@@ -162,6 +172,7 @@ class BatchState {
       playlistId: playlistId ?? this.playlistId,
       qualityCeiling: qualityCeiling ?? this.qualityCeiling,
       skipExisting: skipExisting ?? this.skipExisting,
+      scheduleBlocked: scheduleBlocked ?? this.scheduleBlocked,
     );
   }
 }
@@ -231,6 +242,8 @@ class BatchNotifier extends StateNotifier<BatchState> {
     }
   }
 
+  /// Mark pending and dispatching items failed and invalidate async results.
+  /// Clears the schedule pause; does not send cancellation to the engine.
   void cancelAll() {
     _generation++;
     final updated = state.items.map((item) {
@@ -240,7 +253,11 @@ class BatchNotifier extends StateNotifier<BatchState> {
       }
       return item;
     }).toList();
-    state = state.copyWith(items: updated, isRunning: false);
+    state = state.copyWith(
+      items: updated,
+      isRunning: false,
+      scheduleBlocked: false,
+    );
   }
 
   /// Retry failed items only: completed items are kept, failed items go
@@ -265,49 +282,83 @@ class BatchNotifier extends StateNotifier<BatchState> {
     processNext();
   }
 
+  /// Dispatch the first pending item, or stop when no pending items remain.
+  ///
+  /// Outside the schedule window, park the batch with items still pending;
+  /// another call is needed to resume. URLs already active in the download
+  /// provider are marked completed and skipped. Completion here means accepted
+  /// by the engine, including queued work; media completion is tracked there.
   void processNext() {
-    final pendingIndex = state.items
-        .indexWhere((item) => item.status == BatchItemStatus.pending);
+    // A loop, not recursion: an item whose URL is already downloading used
+    // to recurse synchronously, so a long playlist of duplicates (or one
+    // long enough that every entry hits) burned a stack frame per skip.
+    while (true) {
+      final pendingIndex = state.items
+          .indexWhere((item) => item.status == BatchItemStatus.pending);
 
-    if (pendingIndex == -1) {
-      state = state.copyWith(isRunning: false);
+      if (pendingIndex == -1) {
+        state = state.copyWith(isRunning: false, scheduleBlocked: false);
+        return;
+      }
+
+      final item = state.items[pendingIndex];
+
+      // Schedule gate (headless runner has no dialog): pause the batch and
+      // leave remaining items pending instead of starting silently. This
+      // check runs BEFORE the item is marked downloading — it used to run
+      // after, so parking outside quiet hours left one item spinning
+      // "downloading" for ever while `retryFailed` refused to touch it
+      // (not failed) and `processNext` refused to advance (not pending).
+      if (!isWithinScheduleWindow(
+        _ref.read(settingsProvider),
+        DateTime.now(),
+      )) {
+        state = state.copyWith(isRunning: false, scheduleBlocked: true);
+        return;
+      }
+
+      if (_ref.read(downloadProvider.notifier).isDownloading(item.url)) {
+        _updateItem(
+          pendingIndex,
+          status: BatchItemStatus.completed,
+          progress: 1.0,
+        );
+        continue;
+      }
+
+      final updated = [...state.items];
+      updated[pendingIndex] = item.copyWith(
+        status: BatchItemStatus.downloading,
+      );
+      state = state.copyWith(
+        items: updated,
+        currentIndex: pendingIndex,
+        scheduleBlocked: false,
+      );
+
+      final engine = _ref.read(engineProvider);
+      final downloadId = _uuid.v4();
+      final activePreset = _ref.read(presetsProvider).activePreset;
+      final ceiling = state.qualityCeiling ?? activePreset.qualityCeiling;
+      final baseConfig = <String, dynamic>{
+        'container': activePreset.preferredContainer,
+        'quality_ceiling': ceiling,
+        'audio_only': activePreset.audioOnly,
+      };
+      unawaited(_dispatchBatchItem(
+        engine: engine, downloadId: downloadId, item: item,
+        index: pendingIndex, generation: _generation, baseConfig: baseConfig,
+      ));
       return;
     }
-
-    final updated = [...state.items];
-    updated[pendingIndex] = updated[pendingIndex].copyWith(
-      status: BatchItemStatus.downloading,
-    );
-    state = state.copyWith(items: updated, currentIndex: pendingIndex);
-
-    final item = state.items[pendingIndex];
-    // Schedule gate (headless runner has no dialog): pause the batch and
-    // leave remaining items pending instead of starting silently.
-    if (!isWithinScheduleWindow(_ref.read(settingsProvider), DateTime.now())) {
-      state = state.copyWith(isRunning: false);
-      return;
-    }
-    if (_ref.read(downloadProvider.notifier).isDownloading(item.url)) {
-      _updateItem(pendingIndex, status: BatchItemStatus.completed, progress: 1.0);
-      processNext();
-      return;
-    }
-
-    final engine = _ref.read(engineProvider);
-    final downloadId = _uuid.v4();
-    final activePreset = _ref.read(presetsProvider).activePreset;
-    final ceiling = state.qualityCeiling ?? activePreset.qualityCeiling;
-    final baseConfig = <String, dynamic>{
-      'container': activePreset.preferredContainer,
-      'quality_ceiling': ceiling,
-      'audio_only': activePreset.audioOnly,
-    };
-    unawaited(_dispatchBatchItem(
-      engine: engine, downloadId: downloadId, item: item,
-      index: pendingIndex, generation: _generation, baseConfig: baseConfig,
-    ));
   }
 
+  /// Submit an item with secure settings merged over [baseConfig], then advance.
+  ///
+  /// Ignore results for an obsolete [generation] or a disposed notifier. Apply
+  /// results only while [index] is still downloading, preserving cancellation.
+  /// Rejections and caught errors mark that item failed; accepted work is added
+  /// to downloads and the optional playlist before marking the batch item done.
   Future<void> _dispatchBatchItem({
     required EngineService engine,
     required String downloadId,
@@ -325,26 +376,51 @@ class BatchNotifier extends StateNotifier<BatchState> {
       );
       if (!mounted || generation != _generation) return;
       if (result['success'] == true) {
-        _ref.read(downloadProvider.notifier).addDownload(DownloadItem(
-          id: downloadId, title: item.title, url: item.url,
-          status: result['queued'] == true ? 'queued' : 'downloading',
-          thumbnailUrl: item.thumbnailUrl, config: config,
-        ));
-        final playlistId = state.playlistId;
-        if (playlistId != null) {
-          _ref.read(playlistProvider.notifier).addDownloadToPlaylist(playlistId, downloadId);
+        // The user may have cancelled this item while the engine was
+        // starting. A cancel marks it failed; without this guard the
+        // success branch flipped it back to completed and the row claimed
+        // a download the user had just cancelled.
+        // (No early return: falling through still advances the queue.)
+        if (_isStillDownloading(index)) {
+          _ref.read(downloadProvider.notifier).addDownload(DownloadItem(
+            id: downloadId, title: item.title, url: item.url,
+            status: result['queued'] == true ? 'queued' : 'downloading',
+            thumbnailUrl: item.thumbnailUrl, config: config,
+          ));
+          final playlistId = state.playlistId;
+          if (playlistId != null) {
+            _ref.read(playlistProvider.notifier).addDownloadToPlaylist(playlistId, downloadId);
+          }
+          _updateItem(index, status: BatchItemStatus.completed, progress: 1.0);
         }
-        _updateItem(index, status: BatchItemStatus.completed, progress: 1.0);
-      } else {
+      } else if (_isStillDownloading(index)) {
         _updateItem(index, status: BatchItemStatus.failed,
-          lastErrorType: result['error_type'] as String?,
-          lastErrorMessage: result['error_message'] as String?);
+          lastErrorType: _stringOrNull(result['error_type']),
+          lastErrorMessage: _stringOrNull(result['error_message']));
       }
     } catch (error) {
       if (!mounted || generation != _generation) return;
-      _updateItem(index, status: BatchItemStatus.failed, lastErrorMessage: '$error');
+      if (_isStillDownloading(index)) {
+        _updateItem(index, status: BatchItemStatus.failed,
+            lastErrorMessage: '$error');
+      }
     }
     if (mounted && generation == _generation) processNext();
+  }
+
+  /// True when [index] still points at an item the batch owns as
+  /// `downloading` — i.e. nobody cancelled or replaced it meanwhile.
+  bool _isStillDownloading(int index) {
+    if (index < 0 || index >= state.items.length) return false;
+    return state.items[index].status == BatchItemStatus.downloading;
+  }
+
+  /// Engine results are typed `dynamic`; an integer code used to throw a
+  /// cast error inside the success branch and lose the real message.
+  static String? _stringOrNull(Object? value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    return value.toString();
   }
 
   void _updateItem(

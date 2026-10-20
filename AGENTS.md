@@ -28,6 +28,7 @@ pytest engine/tests/ -v
 pytest engine/tests/test_format_selector.py -v
 python3 tool/check_doc_links.py
 ruff check --select F engine/
+python3 tool/check_broad_catches.py
 ```
 
 Python setup for the engine:
@@ -208,6 +209,8 @@ personal paths into tracked files, and do not push a local path file.
 - [ ] `flutter test` passes.
 - [ ] `pytest engine/tests/ -v` passes.
 - [ ] `python3 tool/check_doc_links.py` passes if Markdown changed.
+- [ ] `python3 tool/check_broad_catches.py` passes (broad handlers did not
+      grow). Reduce, then record the new number with `--update`.
 - [ ] New behavior has a test.
 - [ ] No secrets, logs, build output, or private `.agents/` files are staged.
       The tracked vault at `.agents/vault/` is the exception.

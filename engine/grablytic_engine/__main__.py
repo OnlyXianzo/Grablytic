@@ -51,9 +51,30 @@ _MAX_IPC_WORKERS = 8
 # envelope instead of silently queueing — the client learns immediately
 # that the engine is saturated rather than hanging until timeout.
 _MAX_IPC_INFLIGHT = 24
-# Fast local-only methods bypass the pool entirely and run inline in the
-# reader thread: a 30s extraction must never delay cancel/queue-status.
-# All are in-memory + lock-guarded (no network), so inline is safe.
+# Inline lane. These run on the reader thread so a 30s extraction queued
+# behind the pool can never delay a cancel or a status poll.
+#
+# The invariant is weaker than "never blocks", and it is worth stating
+# precisely so nobody builds on a promise this code does not make:
+#
+#   * every method here does BOUNDED LOCAL WORK and never touches the
+#     network: cancel arms a watchdog, queue_status takes a snapshot,
+#     set_concurrency writes an int and pumps, clear_archive resolves one
+#     path and unlinks one file, paths/set resolves binaries and opens
+#     the log files;
+#   * they run inline because ORDERING matters. `paths/set` is a barrier:
+#     the host sends it before the first download, and moving it to a
+#     worker while `download/start` goes to the pool would let a download
+#     be admitted against unmapped paths. Same for set_concurrency and
+#     clear_archive, which the client may follow immediately with another
+#     request that depends on them.
+#
+# What is bounded is bounded by construction, not by a clock: a
+# pathological filesystem (a FUSE mount, adopted storage) can still make
+# `paths/set` slow. Rather than silently eating that, the dispatcher
+# measures the inline call and logs an over-budget warning, so such a
+# device leaves a diagnosable trace instead of a vague "cancels are slow".
+_INLINE_SLOW_WARN_S = 0.25
 _FAST_IPC_METHODS = frozenset(
     {
         "download/cancel",
@@ -858,9 +879,39 @@ def _parse_ipc_request(line: str):
     return req_id, method, params
 
 
-def _dispatch_ipc_request(req_id, method, params, pool, inflight, futures=None) -> None:
-    if method in _FAST_IPC_METHODS or method == "paths/set":
+def _run_inline(req_id, method, params) -> None:
+    """Execute an inline-lane request and report over-budget latency.
+
+    The handler writes its own response envelope. Running on the reader
+    thread preserves the ordering contract documented on
+    `_FAST_IPC_METHODS`. Errors escaping `_execute_parsed_request`
+    propagate; failures while reporting latency are suppressed.
+    """
+    started = time.monotonic()
+    try:
         _execute_parsed_request(req_id, method, params)
+    finally:
+        elapsed = time.monotonic() - started
+        if elapsed >= _INLINE_SLOW_WARN_S:
+            try:
+                log.warn(
+                    f"Inline IPC method {method} held the reader for "
+                    f"{elapsed * 1000:.0f}ms (budget "
+                    f"{_INLINE_SLOW_WARN_S * 1000:.0f}ms)"
+                )
+            except Exception:
+                pass
+
+
+def _dispatch_ipc_request(req_id, method, params, pool, inflight, futures=None) -> None:
+    """Run fast methods and paths/set inline; submit other work to the pool.
+
+    Write an ERROR_BUSY response if no in-flight permit is available or
+    submission fails. If supplied, ``futures`` tracks submitted work until
+    completion for shutdown. Errors from inline execution propagate.
+    """
+    if method in _FAST_IPC_METHODS or method == "paths/set":
+        _run_inline(req_id, method, params)
         return
     if not inflight.acquire(blocking=False):
         try:

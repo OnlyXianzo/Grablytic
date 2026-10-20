@@ -14,7 +14,6 @@ Deterministic and stdlib-only: rerunning on the same history yields the
 same notes. Merge commits are folded (their contents are the commits).
 """
 
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -29,26 +28,97 @@ def run(cmd: list[str]) -> str:
 
 
 CATEGORIES: list[tuple[str, list[str]]] = [
-    ("Security & Trust Boundaries",
-     ["sec(", "trust", "sanitiz", "boundary", "injection", "fail-closed",
-      "ssrf", "digest", "shasum", "checksum", "semaphore"]),
-    ("Resume & Artifact Hygiene",
-     ["resume", "strike", "sidecar", "infojson", ".part", "opts_builder"]),
-    ("Android Native & OS Integration",
-     ["android", "wakelock", "service", "activity", "sqlite", "sweep",
-      "bootreceiver", "fileprovider", "fgs", "kotlin"]),
-    ("Core Engine & yt-dlp",
-     ["engine", "downloader", "queue", "concurrency", "extractor",
-      "po_token", "js_runtime", "formats", "playlist", "yt-dlp", "ipc",
-      "ffmpeg", "aria2", "opts", "url_guard"]),
-    ("UI & Client State",
-     ["flutter", "screen", "settings", "library", "onboarding", "player",
-      "grid", "log viewer", "log_viewer", "media_preview", "theme"]),
-    ("CI/CD, Build & Install",
-     ["ci(", "ci:", "build", "nightly", "workflow", "install.sh",
-      "publish", "lint", "ruff", "winget", "release"]),
-    ("Performance & Resources",
-     ["perf", "throttle", "memory", "leak", "sparkline", "rebuild"]),
+    (
+        "Security & Trust Boundaries",
+        [
+            "sec(",
+            "trust",
+            "sanitiz",
+            "boundary",
+            "injection",
+            "fail-closed",
+            "ssrf",
+            "digest",
+            "shasum",
+            "checksum",
+            "semaphore",
+        ],
+    ),
+    (
+        "Resume & Artifact Hygiene",
+        ["resume", "strike", "sidecar", "infojson", ".part", "opts_builder"],
+    ),
+    (
+        "Android Native & OS Integration",
+        [
+            "android",
+            "wakelock",
+            "service",
+            "activity",
+            "sqlite",
+            "sweep",
+            "bootreceiver",
+            "fileprovider",
+            "fgs",
+            "kotlin",
+        ],
+    ),
+    (
+        "Core Engine & yt-dlp",
+        [
+            "engine",
+            "downloader",
+            "queue",
+            "concurrency",
+            "extractor",
+            "po_token",
+            "js_runtime",
+            "formats",
+            "playlist",
+            "yt-dlp",
+            "ipc",
+            "ffmpeg",
+            "aria2",
+            "opts",
+            "url_guard",
+        ],
+    ),
+    (
+        "UI & Client State",
+        [
+            "flutter",
+            "screen",
+            "settings",
+            "library",
+            "onboarding",
+            "player",
+            "grid",
+            "log viewer",
+            "log_viewer",
+            "media_preview",
+            "theme",
+        ],
+    ),
+    (
+        "CI/CD, Build & Install",
+        [
+            "ci(",
+            "ci:",
+            "build",
+            "nightly",
+            "workflow",
+            "install.sh",
+            "publish",
+            "lint",
+            "ruff",
+            "winget",
+            "release",
+        ],
+    ),
+    (
+        "Performance & Resources",
+        ["perf", "throttle", "memory", "leak", "sparkline", "rebuild"],
+    ),
 ]
 
 AREA_PREFIXES = {
@@ -70,14 +140,19 @@ def categorize(subject: str) -> str:
 
 
 def main() -> int:
+    """Print release notes for the base ref and version in command-line args.
+
+    Include changes through HEAD and today's UTC date. Return 0 on success
+    or 2 for the wrong argument count. Git failures propagate as
+    subprocess.CalledProcessError.
+    """
     if len(sys.argv) != 3:
         print(__doc__.strip().splitlines()[3].strip())
         return 2
     base, version = sys.argv[1], sys.argv[2]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    log = run(["git", "log", f"{base}..HEAD", "--no-merges",
-               "--format=%H %s"])
+    log = run(["git", "log", f"{base}..HEAD", "--no-merges", "--format=%H %s"])
     commits = []
     for line in log.splitlines():
         sha, _, subject = line.partition(" ")
@@ -111,12 +186,14 @@ def main() -> int:
             other_add += a
             other_del += d
 
-    out = [f"## v{version} — {today} ({len(commits)} commits since {base})",
-           "",
-           f"Diff vs {base}: {shortstat}.",
-           "",
-           "### Lines of code by area (+added / -removed)",
-           ""]
+    out = [
+        f"## v{version} — {today} ({len(commits)} commits since {base})",
+        "",
+        f"Diff vs {base}: {shortstat}.",
+        "",
+        "### Lines of code by area (+added / -removed)",
+        "",
+    ]
     for area in AREA_PREFIXES:
         out.append(f"- {area}: +{area_add[area]} / -{area_del[area]}")
     if other_add or other_del:

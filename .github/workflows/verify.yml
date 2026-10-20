@@ -226,6 +226,15 @@ jobs:
           src: "engine/"
           args: "check --select F --output-format=github"
 
+      # Finding #61 of the teardown review: the count of deliberately
+      # broad handlers kept rising while the audit record called the work
+      # complete. Deleting them is not the fix (most are load-bearing in
+      # logging and storage paths), so this gate holds the two counts at
+      # their current values and fails only when one grows. Reduce them
+      # with `python3 tool/check_broad_catches.py --update`.
+      - name: Broad-catch ratchet
+        run: python3 tool/check_broad_catches.py
+
   docs_links:
     name: Docs Link Check
     runs-on: ubuntu-latest

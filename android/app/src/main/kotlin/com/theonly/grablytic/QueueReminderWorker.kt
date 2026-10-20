@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
-import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -20,8 +19,6 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import java.io.ByteArrayInputStream
-import java.io.ObjectInputStream
 import java.util.concurrent.TimeUnit
 
 /**
@@ -85,6 +82,11 @@ class QueueReminderWorker(
         }
     }
 
+    /**
+     * Remind for a positive queue count; cancel periodic work when disabled or empty.
+     * Unknown counts keep the worker scheduled without notifying. Caught failures
+     * return success so the next periodic run can check again.
+     */
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
             val prefs = applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
@@ -96,9 +98,17 @@ class QueueReminderWorker(
             }
 
             val queueCount = readQueueCount(prefs)
-            if (queueCount <= 0) {
+            if (queueCount == 0) {
                 Log.i(TAG, "Offline link queue is empty, cancelling worker per spec")
                 WorkManager.getInstance(applicationContext).cancelUniqueWork(WORK_NAME)
+                return@withContext Result.success()
+            }
+            if (queueCount < 0) {
+                // Unreadable preference. That is NOT "the queue is empty":
+                // cancelling here would disable reminders for the install
+                // because one write was interrupted or one encoding changed.
+                // Stay scheduled and try again next interval.
+                Log.w(TAG, "Offline queue unreadable; keeping the worker scheduled")
                 return@withContext Result.success()
             }
 
@@ -111,57 +121,90 @@ class QueueReminderWorker(
         }
     }
 
+    /**
+     * Read the count hint first, otherwise count a stored set or JSON array.
+     * Missing/blank queue values and unsupported queue storage types return 0;
+     * malformed arrays and unrecognized nonblank encodings return -1.
+     *
+     * Two rules this follows, both learned the hard way:
+     *
+     * 1. **No Java deserialisation, ever.** This used to fall back to
+     *    `ObjectInputStream.readObject()` on a Base64 blob taken out of
+     *    SharedPreferences. That is a CWE-502 primitive: `readObject()`
+     *    instantiates whatever class the stream names and runs its
+     *    `readObject`/`readResolve` hooks, and app-private prefs are
+     *    writable by the app itself, restorable from a device backup, and
+     *    readable over `adb` on a debuggable build. It was a fallback for
+     *    an encoding the Flutter plugin no longer produces, so the whole
+     *    branch is gone.
+     * 2. **"Unreadable" is not "empty".** Returning 0 for a value that
+     *    could not be parsed made `doWork()` cancel the periodic work,
+     *    which silently disabled reminders until the app rescheduled it.
+     *    The sentinel for that case is -1.
+     *
+     * The fast path reads the count hint as whatever type is actually
+     * stored: Dart's `setInt` arrives over the platform channel as a
+     * `Long`, so `getInt` throws `ClassCastException` and never worked.
+     */
     private fun readQueueCount(prefs: SharedPreferences): Int {
-        // Direct integer count if written by Dart
-        if (prefs.contains(KEY_OFFLINE_QUEUE_COUNT)) {
-            try {
-                return prefs.getInt(KEY_OFFLINE_QUEUE_COUNT, 0)
-            } catch (_: ClassCastException) {}
-        }
+        readCountHint(prefs)?.let { return it }
 
-        // Check raw offline queue preference
+        // The plugin has written this key in more than one shape over the
+        // years: a Set<String>, a JSON array, and a JSON array behind the
+        // legacy list prefix. All three are plain data; none of them needs
+        // to be deserialised as a Java object.
         try {
-            prefs.getStringSet(KEY_OFFLINE_LINK_QUEUE, null)?.let { set ->
-                return set.size
-            }
-        } catch (_: ClassCastException) {}
+            prefs.getStringSet(KEY_OFFLINE_LINK_QUEUE, null)?.let { return it.size }
+        } catch (_: ClassCastException) {
+            // stored as a String — handled below
+        }
 
         val raw = try {
             prefs.getString(KEY_OFFLINE_LINK_QUEUE, null)
         } catch (_: ClassCastException) {
             null
         }
-
         if (raw.isNullOrBlank()) return 0
 
         val text = raw.trim()
-        if (text.startsWith("[")) {
-            return try {
-                JSONArray(text).length()
-            } catch (_: Exception) {
-                0
+        return when {
+            text.startsWith("[") -> countJsonArray(text)
+            text.startsWith(LIST_IDENTIFIER) -> {
+                val payload = text.substring(LIST_IDENTIFIER.length)
+                val body = if (payload.startsWith("!")) payload.substring(1) else payload
+                countJsonArray(body)
+            }
+            // Unknown encoding: report it rather than guessing, and never
+            // deserialise it.
+            else -> {
+                Log.w(TAG, "Unrecognised offline-queue encoding; skipping this run")
+                -1
             }
         }
+    }
 
-        if (text.startsWith(LIST_IDENTIFIER)) {
-            val payload = text.substring(LIST_IDENTIFIER.length)
-            if (payload.startsWith("!")) {
-                return try {
-                    JSONArray(payload.substring(1)).length()
-                } catch (_: Exception) {
-                    0
-                }
-            }
-            try {
-                val bytes = Base64.decode(payload, Base64.DEFAULT)
-                ObjectInputStream(ByteArrayInputStream(bytes)).use { ois ->
-                    val obj = ois.readObject()
-                    if (obj is List<*>) return obj.size
-                }
-            } catch (_: Exception) {}
+    /**
+     * Read the count hint as Int, Long or a trimmed integer String.
+     * Long values narrow to Int without range checks; null on missing,
+     * unsupported, invalid string values, or read errors.
+     */
+    private fun readCountHint(prefs: SharedPreferences): Int? = try {
+        when (val value = prefs.all[KEY_OFFLINE_QUEUE_COUNT]) {
+            null -> null
+            is Int -> value
+            is Long -> value.toInt()
+            is String -> value.trim().toIntOrNull()
+            else -> null
         }
+    } catch (_: Exception) {
+        null
+    }
 
-        return 0
+    /** Array length, or -1 when [text] is not a JSON array. */
+    private fun countJsonArray(text: String): Int = try {
+        JSONArray(text).length()
+    } catch (_: Exception) {
+        -1
     }
 
     private fun ensureReminderChannel() {
