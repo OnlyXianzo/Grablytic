@@ -114,7 +114,9 @@ def test_cli_fails_when_too_many_files_have_no_record(
     from tool import check_flutter_coverage
 
     report = tmp_path / "coverage.info"
-    report.write_text("SF:lib/a.dart\nDA:1,1\nLF:1\nLH:1\nend_of_record\n", encoding="utf-8")
+    report.write_text(
+        "SF:lib/a.dart\nDA:1,1\nLF:1\nLH:1\nend_of_record\n", encoding="utf-8"
+    )
 
     original = sys.argv
     try:
