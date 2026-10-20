@@ -81,8 +81,10 @@ parked and replayed (newest value only) once the paths are in.
 
 **#85 — five thumbnails decoded at source resolution.** `lib/core/widgets/thumb.dart`
 adds `thumbCacheWidth`, `thumbCacheWidthFor` (for build helpers that have no
-`BuildContext`), `fullWidthCacheWidth` and a `Thumb` widget, and all five
-bare call sites now go through it. A 1280×720 cover at `cacheWidth: 112` is
+`BuildContext`), `fullWidthCacheWidth` and a `CachedThumb` widget (not `Thumb`
+— Material exports a slider `Thumb` of its own, and both at once makes every
+call site an ambiguous import), and all five bare call sites now go through
+it. A 1280×720 cover at `cacheWidth: 112` is
 27.6 KiB instead of 3.52 MiB. The device pixel ratio is applied but clamped
 to `[1, 2]`: a 3× screen gains nothing visible from a 3× bitmap and pays 9×
 in pixels. `imageCache.maximumSizeBytes` is also capped at 40 MiB (from
@@ -141,7 +143,14 @@ runs on a fresh install.
 * `ruff check --select F engine tool` → clean.
 * `tool/check_broad_catches.py` → holds at **165 Dart / 234 Python** (was
   168 / 237).
-* Dart and Kotlin are source-verified only — no Flutter or Android SDK in
+* `flutter analyze` → no issues; `flutter test` → **688 passed** (687 + the
+  new lazy-start file). Both were run in CI, not here: this workspace has no
+  Flutter SDK, and the first CI runs are what caught the three analyze errors
+  and the two test expectations this round fixed (the redundant `painting`
+  import, the `late final` field on a `const` constructor, the `Thumb` name
+  clash, parking a concurrency change when no paths exist to start the engine
+  with, and `entries` no longer being read-only).
+* Dart and Kotlin are otherwise source-verified only — no Flutter or Android SDK in
   this workspace, so CI is the gate. `lazy_engine_start_test.dart` pins the
   ordering contract: `setPaths` alone sends nothing, the first Python-bound
   call sends `paths/set` first, a parked concurrency change is replayed once,
