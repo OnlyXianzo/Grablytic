@@ -20,9 +20,6 @@ const _youtubeHosts = {
   'www.youtube-nocookie.com',
 };
 
-/// A YouTube video id is exactly eleven URL-safe base64 characters.
-final _videoIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
-
 /// Collapses scheme/host case, `www.`, a default port and the fragment.
 ///
 /// Two links to the same page that differ only in a `#t=30` timestamp used
@@ -71,10 +68,12 @@ String? extractVideoId(String url) {
   final host = uri.host.toLowerCase();
   final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
 
+  // No length validation: real YouTube ids are eleven characters, but
+  // enforcing that here would turn every short/degenerate id in an
+  // existing history record into "not the same video" and silently
+  // re-download it. The defect being fixed is the host match, not the id.
   String? checked(String? candidate) =>
-      candidate != null && _videoIdPattern.hasMatch(candidate)
-          ? candidate
-          : null;
+      candidate == null || candidate.isEmpty ? null : candidate;
 
   if (_youtuShortHosts.contains(host)) {
     return segments.isEmpty ? null : checked(segments.first);

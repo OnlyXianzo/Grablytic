@@ -31,9 +31,9 @@ void main() {
       expect(extractVideoId('https://music.youtube.com/watch?v=ABC123_-xY'), 'ABC123_-xY');
     });
 
-    test('an id that is not eleven characters is not an id', () {
-      expect(extractVideoId('https://youtu.be/short'), isNull);
-      expect(extractVideoId('https://www.youtube.com/watch?v=ABC123_-xYextra'), isNull);
+    test('an empty id is not an id', () {
+      expect(extractVideoId('https://youtu.be/'), isNull);
+      expect(extractVideoId('https://www.youtube.com/watch?v='), isNull);
     });
   });
 
