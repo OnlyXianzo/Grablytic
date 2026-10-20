@@ -28,7 +28,7 @@ event bridge) between Flutter and Python.
 | Persistence | SharedPreferences + SQLite | Settings/presets/playlists/auth in prefs; download history in SQLite (`sqflite` + `sqflite_common_ffi` on desktop). |
 | Logging | `AppLogger` (Dart) + `logger`/`persistent` (Python) | Buffered 30 s flush, `app_logs.txt` mirror, `RotatingFileHandler` (`server_logs.log`), traced IPC, global handlers, Riverpod/nav/engine observers. |
 | Crash reporting | `GithubReporter` (Dart) + `github_notifier` (Python) | Search-based dedup so the same crash isn't filed twice. |
-| Fonts | Instrument Sans (body) / Iosevka Charon Mono (mono) | Typography via Google Fonts + GrablyticTextStyles extension. |
+| Fonts | Bricolage Grotesque (headings) / Figtree (body) / Iosevka Charon Mono (mono) | Bundled in `assets/fonts/`, no runtime fetch. InstrumentSans remains only in legacy settings screens. |
 
 ## Layered Architecture
 
@@ -452,7 +452,7 @@ Colors follow the "Earth & Ethos" palette defined in DESIGN.md tokens.
 `GrablyticColors` provides light and dark color constants used by `AppTheme`.
 
 - `AppTheme.light()` and `AppTheme.dark()` build Material 3 `ThemeData` from `ColorScheme`
-- Typography applies the bundled InstrumentSans family to `base` for body text
+- Typography applies bundled Bricolage Grotesque to headings and Figtree to body text
 - Monospace text uses `GrablyticTextStyles.mono` extension on `TextTheme` (Iosevka Charon Mono)
 
 ## Accessibility

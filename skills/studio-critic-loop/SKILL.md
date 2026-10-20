@@ -61,11 +61,12 @@ Do not use it for:
 - A deterministic capture test. If the repo does not already have one, create
   `test/capture_<screen>_test.dart` using the template in section 4.
 
-For Grablytic specifically, the bundled families are InstrumentSans (body) and
-IosevkaCharonMono (numbers and telemetry). Load them from `assets/fonts/` in the
-test; do not rely on a system font. The sample below imports Grablytic's
-package. If you use this skill in another Flutter app, swap the import and the
-provider override for that app's equivalents.
+For Grablytic specifically, the bundled families are Bricolage Grotesque
+(headings), Figtree (body), and IosevkaCharonMono (numbers and telemetry).
+Load them from `assets/fonts/` in the test; do not rely on a system font. The
+sample below imports Grablytic's package. If you use this skill in another
+Flutter app, swap the import and the provider override for that app's
+equivalents.
 
 ---
 
