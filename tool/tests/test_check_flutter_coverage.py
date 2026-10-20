@@ -89,9 +89,7 @@ def test_parse_lcov_still_rejects_an_empty_record_claiming_lines(
     tmp_path: Path,
 ) -> None:
     report = tmp_path / "coverage.info"
-    report.write_text(
-        "SF:lib/a.dart\nLF:3\nLH:2\nend_of_record\n", encoding="utf-8"
-    )
+    report.write_text("SF:lib/a.dart\nLF:3\nLH:2\nend_of_record\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="no DA line data but claims"):
         parse_lcov(report)
