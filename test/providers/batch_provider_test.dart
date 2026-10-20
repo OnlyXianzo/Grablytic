@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -63,6 +65,28 @@ class _ThrowingEngine extends MockEngineService {
     calls++;
     if (throwUrls.contains(url)) throw Exception('engine boom');
     return {'success': true};
+  }
+}
+
+/// Starts a download that never settles, so the item stays `downloading`
+/// for the duration of the test.
+class _HangingEngine extends MockEngineService {
+  final List<String> cancelled = [];
+
+  @override
+  Future<Map<String, dynamic>> startDownload({
+    required String url,
+    required String downloadId,
+    required Map<String, dynamic> config,
+    required String networkType,
+  }) {
+    return Completer<Map<String, dynamic>>().future;
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelDownload(String downloadId) async {
+    cancelled.add(downloadId);
+    return {'success': true, 'download_id': downloadId, 'cancelled': true};
   }
 }
 
@@ -349,5 +373,45 @@ void main() {
       container.read(batchProvider).items.single.status,
       BatchItemStatus.failed,
     );
+  });
+
+  test('cancelling a downloading item also stops the engine', () async {
+    final engine = _HangingEngine();
+    final container = await _container(engine);
+
+    container.read(batchProvider.notifier).startBatch([_item('A')]);
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    final item = container.read(batchProvider).items.single;
+    expect(item.status, BatchItemStatus.downloading);
+    final engineId = item.downloadId;
+    expect(engineId, isNotNull);
+
+    container.read(batchProvider.notifier).cancelItem(0);
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    // The engine id is reserved before the status change, so a cancel that
+    // lands here can still reach the running transfer.
+    expect(engine.cancelled, [engineId]);
+    expect(
+      container.read(batchProvider).items.single.status,
+      BatchItemStatus.failed,
+    );
+  });
+
+  test('retryFailed clears the stale engine id', () async {
+    final engine = _HangingEngine();
+    final container = await _container(engine);
+
+    container.read(batchProvider.notifier).startBatch([_item('A')]);
+    await Future.delayed(const Duration(milliseconds: 100));
+    container.read(batchProvider.notifier).cancelItem(0);
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    container.read(batchProvider.notifier).retryFailed();
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    final item = container.read(batchProvider).items.single;
+    expect(item.downloadId, isNot(engine.cancelled.first));
   });
 }

@@ -29,10 +29,13 @@ List<BatchItem> markAlreadyHaveItems(
   List<DownloadRecord> completedRecords,
 ) {
   if (items.isEmpty || completedRecords.isEmpty) return items;
+  // One pass over the history instead of one pass per item: the pre-filter
+  // runs before the first dispatch, so its cost was on the critical path.
+  final index = CompletedVideoIndex.fromRecords(completedRecords);
   return items.map((item) {
     if (item.status != BatchItemStatus.pending) return item;
     if (item.title.endsWith(alreadyHaveSuffix)) return item;
-    if (findDuplicate(completedRecords, item.url) == null) return item;
+    if (!index.contains(item.url)) return item;
     return item.copyWith(
       title: '${item.title}$alreadyHaveSuffix',
       status: BatchItemStatus.completed,
@@ -50,6 +53,13 @@ class BatchItem {
   final double progress;
   final String? thumbnailUrl;
 
+  /// Download id handed to the engine for this item, once it is dispatched.
+  ///
+  /// Null while the item is pending. Kept so a cancel can reach the engine:
+  /// stopping the queue row alone left the engine downloading a file the
+  /// user had just cancelled.
+  final String? downloadId;
+
   /// Engine-classified failure reason (see engine/grablytic_engine/errors.py
   /// via startDownload's error_type/error_message result keys). Null unless
   /// this item has failed at least once.
@@ -62,6 +72,7 @@ class BatchItem {
     this.status = BatchItemStatus.pending,
     this.progress = 0,
     this.thumbnailUrl,
+    this.downloadId,
     this.lastErrorType,
     this.lastErrorMessage,
   });
@@ -71,8 +82,12 @@ class BatchItem {
     BatchItemStatus? status,
     double? progress,
     String? thumbnailUrl,
+    String? downloadId,
     String? lastErrorType,
     String? lastErrorMessage,
+
+    /// Set to clear the engine id (e.g. when an item goes back to pending).
+    bool clearDownloadId = false,
 
     /// Set to clear a previous failure reason (e.g. on retry).
     /// Needed because null [lastErrorType]/[lastErrorMessage] means "keep".
@@ -84,6 +99,7 @@ class BatchItem {
       status: status ?? this.status,
       progress: progress ?? this.progress,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      downloadId: clearDownloadId ? null : (downloadId ?? this.downloadId),
       lastErrorType: clearError ? null : (lastErrorType ?? this.lastErrorType),
       lastErrorMessage:
           clearError ? null : (lastErrorMessage ?? this.lastErrorMessage),
@@ -234,6 +250,7 @@ class BatchNotifier extends StateNotifier<BatchState> {
         item.status == BatchItemStatus.downloading) {
       updated[index] = item.copyWith(status: BatchItemStatus.failed);
       state = state.copyWith(items: updated);
+      _cancelInEngine(item);
     }
     final remaining =
         state.items.where((i) => i.status == BatchItemStatus.pending).length;
@@ -246,6 +263,11 @@ class BatchNotifier extends StateNotifier<BatchState> {
   /// Clears the schedule pause; does not send cancellation to the engine.
   void cancelAll() {
     _generation++;
+    for (final item in state.items) {
+      if (item.status == BatchItemStatus.downloading) {
+        _cancelInEngine(item);
+      }
+    }
     final updated = state.items.map((item) {
       if (item.status == BatchItemStatus.pending ||
           item.status == BatchItemStatus.downloading) {
@@ -274,6 +296,7 @@ class BatchNotifier extends StateNotifier<BatchState> {
           status: BatchItemStatus.pending,
           progress: 0,
           clearError: true,
+          clearDownloadId: true,
         );
       }
       return item;
@@ -326,9 +349,14 @@ class BatchNotifier extends StateNotifier<BatchState> {
         continue;
       }
 
+      // Reserve the engine id BEFORE the item is marked downloading, so a
+      // cancel that lands between the state change and the dispatch still
+      // has an id to send to the engine.
+      final downloadId = _uuid.v4();
       final updated = [...state.items];
       updated[pendingIndex] = item.copyWith(
         status: BatchItemStatus.downloading,
+        downloadId: downloadId,
       );
       state = state.copyWith(
         items: updated,
@@ -337,7 +365,6 @@ class BatchNotifier extends StateNotifier<BatchState> {
       );
 
       final engine = _ref.read(engineProvider);
-      final downloadId = _uuid.v4();
       final activePreset = _ref.read(presetsProvider).activePreset;
       final ceiling = state.qualityCeiling ?? activePreset.qualityCeiling;
       final baseConfig = <String, dynamic>{
@@ -406,6 +433,18 @@ class BatchNotifier extends StateNotifier<BatchState> {
       }
     }
     if (mounted && generation == _generation) processNext();
+  }
+
+  /// Ask the engine to stop an item that is already dispatched.
+  ///
+  /// Cancelling the queue row alone used to leave the engine running: the
+  /// user saw "cancelled", the transfer kept going, and the file landed
+  /// anyway. [DownloadNotifier.cancelDownload] owns the engine call and the
+  /// not-found reconciliation, so the batch just forwards the id.
+  void _cancelInEngine(BatchItem item) {
+    final id = item.downloadId;
+    if (id == null || id.isEmpty) return;
+    _ref.read(downloadProvider.notifier).cancelDownload(id);
   }
 
   /// True when [index] still points at an item the batch owns as

@@ -93,3 +93,38 @@ def test_parse_lcov_still_rejects_an_empty_record_claiming_lines(
 
     with pytest.raises(ValueError, match="no DA line data but claims"):
         parse_lcov(report)
+
+
+def test_unloaded_sources_lists_files_the_report_never_mentions() -> None:
+    from tool.check_flutter_coverage import lib_sources, unloaded_sources
+
+    everything = lib_sources()
+    assert "core/utils/history_guard.dart" in everything
+    seen = {"core/utils/history_guard.dart"}
+    missing = unloaded_sources(seen)
+    assert "core/utils/history_guard.dart" not in missing
+    assert len(missing) == len(everything) - 1
+
+
+def test_cli_fails_when_too_many_files_have_no_record(
+    tmp_path: Path, capsys: "pytest.CaptureFixture[str]"
+) -> None:
+    import sys
+
+    from tool import check_flutter_coverage
+
+    report = tmp_path / "coverage.info"
+    report.write_text(
+        "SF:lib/a.dart\nDA:1,1\nLF:1\nLH:1\nend_of_record\n", encoding="utf-8"
+    )
+
+    original = sys.argv
+    try:
+        sys.argv = ["check_flutter_coverage.py", str(report), "--max-unloaded", "0"]
+        assert check_flutter_coverage.main() == 1
+        sys.argv = ["check_flutter_coverage.py", str(report), "--max-unloaded", "10000"]
+        assert check_flutter_coverage.main() == 0
+    finally:
+        sys.argv = original
+    captured = capsys.readouterr()
+    assert "lib/ files with coverage data: 1" in captured.out

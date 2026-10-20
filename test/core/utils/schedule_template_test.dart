@@ -60,6 +60,54 @@ void main() {
       expect(isWithinScheduleWindow(s2, DateTime(2026, 9, 12, 23, 0)), isFalse);
     });
 
+    test('a 22:00 window stays open past midnight for its duration', () {
+      // 2026-09-12 is a Saturday (weekday 6). 240 minutes from 22:00 is
+      // 02:00 Sunday — the point of an overnight schedule.
+      const s = AppSettings(
+        scheduleEnabled: true,
+        scheduleTime: '22:00',
+        scheduleDays: [6],
+      );
+      expect(
+        isWithinScheduleWindow(s, DateTime(2026, 9, 13, 1, 30)),
+        isTrue,
+        reason: 'the window spilled over from Saturday',
+      );
+      expect(
+        isWithinScheduleWindow(s, DateTime(2026, 9, 13, 2, 0)),
+        isFalse,
+        reason: 'the window is exactly 240 minutes',
+      );
+      expect(
+        isWithinScheduleWindow(s, DateTime(2026, 9, 13, 3, 0)),
+        isFalse,
+      );
+    });
+
+    test('the spill belongs to the scheduled day, not the clock day', () {
+      // Sunday is not scheduled, so its own 22:00 never opens; but the
+      // early hours of Sunday still belong to Saturday.
+      const s = AppSettings(
+        scheduleEnabled: true,
+        scheduleTime: '22:00',
+        scheduleDays: [7],
+      );
+      expect(isWithinScheduleWindow(s, DateTime(2026, 9, 13, 1, 0)), isFalse);
+      expect(isWithinScheduleWindow(s, DateTime(2026, 9, 13, 22, 30)), isTrue);
+      // Monday 01:00 belongs to Sunday's window.
+      expect(isWithinScheduleWindow(s, DateTime(2026, 9, 14, 1, 0)), isTrue);
+    });
+
+    test('a window can be widened to cover the day', () {
+      const s = AppSettings(
+        scheduleEnabled: true,
+        scheduleTime: '06:00',
+        scheduleDays: [1],
+        scheduleWindowMinutes: 24 * 60,
+      );
+      expect(isWithinScheduleWindow(s, DateTime(2026, 9, 14, 2, 0)), isTrue);
+    });
+
     test('malformed time fails open, never blocks', () {
       const s = AppSettings(scheduleEnabled: true, scheduleTime: 'xx', scheduleDays: [6]);
       expect(isWithinScheduleWindow(s, DateTime(2026, 9, 12, 3, 0)), isTrue);

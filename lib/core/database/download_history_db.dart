@@ -194,6 +194,14 @@ String utcNowIso() => DateTime.now().toUtc().toIso8601String();
 String toUtcIso(DateTime value) => value.toUtc().toIso8601String();
 
 class DownloadHistoryDb {
+  /// Current schema version. **Bump this in the same commit as any new
+  /// `oldVersion < N` migration block** — the version that `openDatabase`
+  /// is given is what makes the block run. They drifted once already:
+  /// the v8 indexes existed in `onUpgrade` while `version` still said 7,
+  /// so an existing install never migrated and only fresh installs got
+  /// the indexes (which is exactly what the new test suite measured).
+  static const int schemaVersion = 8;
+
   DownloadHistoryDb._();
   static final DownloadHistoryDb instance = DownloadHistoryDb._();
 
@@ -230,7 +238,7 @@ class DownloadHistoryDb {
     return _db!;
   }
 
-  /// Open schema version 7, create or migrate tables, and probe FTS4 support.
+  /// Open schema [schemaVersion], create or migrate tables, probe FTS4.
   ///
   /// Uses [dbPathForTesting] when set, otherwise the app documents directory.
   /// Directory lookup and database-open errors propagate to the caller.
@@ -241,7 +249,22 @@ class DownloadHistoryDb {
             'grablytic.db');
     final db = await openDatabase(
       path,
-      version: 7,
+      version: schemaVersion,
+      // WAL lets the UI thread read while a writer (progress updates, the
+      // history prune) is mid-transaction instead of blocking on the
+      // rollback journal. busy_timeout is the retry window when two
+      // connections do collide: without it SQLite fails the statement
+      // immediately with SQLITE_BUSY, which surfaces as a missing row.
+      onConfigure: (db) async {
+        try {
+          await db.execute('PRAGMA journal_mode = WAL');
+          await db.execute('PRAGMA busy_timeout = 5000');
+          await db.execute('PRAGMA synchronous = NORMAL');
+        } on DatabaseException {
+          // A build whose SQLite refuses a pragma still has to open the
+          // database; the defaults are slower, not wrong.
+        }
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE downloads (
