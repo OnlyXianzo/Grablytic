@@ -43,14 +43,16 @@ class TestSearch:
         assert res["error_type"] == "ERROR_INVALID_PARAM"
         assert "exceeds maximum length" in res["error_message"]
 
-
     def test_successful_search_with_entry_normalization(self, monkeypatch):
         def sample_entries():
             yield {
                 "title": "Never Gonna Give You Up",
                 "url": "dQw4w9WgXcQ",
                 "duration": 212,
-                "thumbnails": [{"url": "https://img.youtube.com/small.jpg"}, {"url": "https://img.youtube.com/large.jpg"}],
+                "thumbnails": [
+                    {"url": "https://img.youtube.com/small.jpg"},
+                    {"url": "https://img.youtube.com/large.jpg"},
+                ],
                 "uploader": "Rick Astley",
                 "availability": "public",
             }
@@ -200,6 +202,7 @@ class TestSearch:
         """Loop-4: search used a dead import name, silently running with no
         JS runtime (slower/missing formats). Must match the download path."""
         from grablytic_engine.paths import _paths
+
         deno_file = tmp_path / "deno"
         deno_file.touch()
         deno_file.chmod(0o755)

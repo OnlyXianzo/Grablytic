@@ -8,7 +8,6 @@ Expected behavior (Verified Approach):
 - Queued cancel dequeues without spawning a thread.
 """
 
-
 import grablytic_engine.downloader as dl_mod
 
 

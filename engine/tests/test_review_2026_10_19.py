@@ -232,9 +232,7 @@ def test_auto_report_is_rate_limited(monkeypatch):
 
     monkeypatch.setattr(main_mod, "_report_state", {"sent": 0, "last_monotonic": 0.0})
     monkeypatch.setattr(main_mod, "_report_pool", None)
-    monkeypatch.setattr(
-        main_mod, "_deliver_report", lambda exc, method: None
-    )
+    monkeypatch.setattr(main_mod, "_deliver_report", lambda exc, method: None)
     try:
         assert main_mod._report_async(RuntimeError("a"), "m") is True
         # Second report inside the window is suppressed.

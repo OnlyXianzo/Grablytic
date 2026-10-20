@@ -19,7 +19,6 @@ def _fake_ffmpeg(tmp_path):
 
 @pytest.fixture()
 def _env(tmp_path, monkeypatch):
-
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
     set_paths(
         data_dir=str(tmp_path),
