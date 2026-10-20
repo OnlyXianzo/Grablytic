@@ -717,3 +717,32 @@ Every one of these is verified the same way the rest of the branch is:
 **Flutter 3.41.4** embedding, which produces the **identical error
 multiset** as the unpatched base (40 errors, all of them Chaquopy —
 Chaquopy's artifacts are not published to a public Maven repository).
+
+### CodeRabbit's review
+
+CodeRabbit reviewed the branch and raised twenty findings. Eighteen
+were real and are fixed here; two are deliberate decisions, recorded
+below with the reason.
+
+| Finding | Where | Resolution |
+|---|---|---|
+| **Major** — `$EngineContract.ytDlpVersion` interpolates the *type*, not the value | `desktop_engine_service.dart` | **a real bug, caught and fixed.** In Dart, `$EngineContract.ytDlpVersion` interpolates the identifier `EngineContract` and leaves `.ytDlpVersion` as literal text, so the install request was `yt-dlp==EngineContract.ytDlpVersion` — no such version exists, and the desktop engine could not start on any host without yt-dlp. All four occurrences now use `${...}` |
+| **Major** — the request timeout started before the engine was up | `desktop_engine_service.dart` | the budget now starts after `_ensureRunning()`, with its own five-minute start-up watchdog; the timer no longer eats a first-run yt-dlp install |
+| **Major** — a timeout error completed before the caller attached escaped to the zone | `desktop_engine_service.dart` | `completer.future.ignore()` marks the future handled; `main.dart` no longer logs an ordinary timeout as a FATAL uncaught zone error |
+| **Major** — `unregisterEventSink(null)` removed *every* listener | `MainActivity.kt` | a null sink means "this activity never had a listener"; it no longer clears the registry, so a destroyed share overlay cannot steal the main activity's sink |
+| **Major** — the cancelled row was never persisted | `download_provider.dart` | the locally closed cancel is written to the database; before, the next start swept it to `interrupted` and resumed the download the user had just cancelled |
+| **Major** — the post-admission write could undo a terminal event | `download_provider.dart` | the state is only moved on while the item is still `pending`; a `finished`/`error`/`cancelled` event that arrived first wins |
+| **Major** — the stored jar was overwritten with an empty one | `settings_provider.dart` | a profile without loaded content means "unchanged", not "empty" — the stored jar is left alone |
+| **Major** — the secret store had no ordering | `settings_provider.dart` | every write, delete and clear goes through one queue, so a write cannot land after the `clear()` the user asked for |
+| **Minor** — profile ids were sanitised into file names | `cookie_secret_store.dart` | file names are a reversible base64url encoding of the id; the sanitised form was lossy (`a.b` and `a_b` shared one file, and a persisted id loaded empty) |
+| **Minor** — the preview lost its key-based redaction | `persistent.py` | the bounded preview redacts sensitive mapping keys in the repr shape again, so a cookie header cannot reach the log |
+| **Minor** — raw URLs in three log lines | `formats.py`, `playlist.py` | all three now use `redact_url(url)` |
+| **Minor** — a published but not started worker counted as dead | `downloader.py` | a thread with `ident is None` counts as active, which closes the window between publishing the handle and `start()` |
+| **Minor** — the report pool could be recreated after shutdown | `__main__.py` | the pool has a closed state; no new worker is started after the shutdown |
+| **Minor** — the engine could outlive its parent | `__main__.py` | the executable entry point flushes and leaves hard after the IPC drain deadline |
+| **Minor** — the aggregate Gradle tasks bypassed the signing guard | `build.gradle.kts` | `assemble`, `bundle` and `build` are guarded too, so they cannot produce a debug-signed release artifact |
+| **Minor** — the manifest comment misdescribed the guard | `AndroidManifest.xml` | the comment now says what actually guards the receiver: the action check inside `BootReceiver` |
+| **Major** — the lint gate could hide a real finding | `verify.yml` | the verdict comes from the lint **report**, not from the log text: the job fails for every Error/Fatal finding whose id is not `LintError` |
+| **Minor** — the preview test could not tell the two implementations apart | `test_review_2026_10_19.py` | a spy on the sanitizer proves the bounded slice is what gets sanitized |
+| **Minor** — the migration test only asserted the schema version | `download_history_fts_test.dart` | the test now asserts the migrated timestamp, for a zone-less and for an already-zoned value |
+| **Major** — "remove the internal audit from tracked docs" (×2) | `docs/` | **not applied, deliberately.** The audit record is the deliverable of this review: it is what makes the 61 outcomes, the upstream evidence and the deferrals reviewable. It is a tracked, linked document — not scratch notes — and the findings it records are the reason each change is here. |

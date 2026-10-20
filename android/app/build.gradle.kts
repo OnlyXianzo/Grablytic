@@ -114,6 +114,14 @@ android {
                     "packagerelease",
                     "signrelease",
                     "installrelease",
+                    // The aggregate tasks build the release variant too.
+                    // Without them `./gradlew assemble` (or `bundle`,
+                    // or `build`) produced a DEBUG-SIGNED release
+                    // artifact with no warning — the exact outcome this
+                    // guard exists to prevent.
+                    "assemble",
+                    "bundle",
+                    "build",
                 )
                 val buildingRelease = gradle.startParameter.taskNames.any { raw ->
                     val task = raw.substringAfterLast(':').lowercase()

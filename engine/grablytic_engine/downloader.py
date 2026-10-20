@@ -2227,6 +2227,15 @@ def _worker_thread_alive(info) -> bool:
     is_alive = getattr(th, "is_alive", None)
     if not callable(is_alive):
         return False
+    # A thread that has been PUBLISHED into the slot but has not been
+    # started yet reports is_alive() == False (and ident is None). It
+    # is going to run, so it must count as active: treating it as dead
+    # let a cancel in that window close the slot and admit the next
+    # entry while this worker was about to start — over-admission past
+    # _max_concurrent. A thread that already ran keeps its ident, so
+    # only the published-but-not-started case is caught here.
+    if hasattr(th, "ident") and getattr(th, "ident", None) is None:
+        return True
     try:
         return bool(is_alive())
     except Exception:

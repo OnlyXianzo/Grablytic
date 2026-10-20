@@ -161,17 +161,18 @@ open class MainActivity : FlutterActivity() {
         /** Sinks that are currently attached, for a broadcast dispatch. */
         fun currentEventSinks(): List<EventChannel.EventSink> = eventSinks.toList()
 
-        fun registerEventSink(sink: EventChannel.EventSink?) {
-            if (sink == null) return
+        fun registerEventSink(sink: EventChannel.EventSink) {
             if (!eventSinks.contains(sink)) eventSinks.add(sink)
         }
 
         fun unregisterEventSink(sink: EventChannel.EventSink?) {
-            if (sink == null) {
-                eventSinks.clear()
-            } else {
-                eventSinks.remove(sink)
-            }
+            // A null sink means "this activity never had a listener".
+            // It must NOT clear the registry: the other activity's
+            // listener would lose its sink and stop receiving events —
+            // exactly the cross-activity theft the registry exists to
+            // prevent.
+            if (sink == null) return
+            eventSinks.remove(sink)
         }
         private val terminalLock = Any()
         private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -1338,8 +1339,10 @@ open class MainActivity : FlutterActivity() {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     this.events = events
                     myEventSink = events
-                    registerEventSink(events)
-                    events?.let { flushTerminals(it) }
+                    events?.let {
+                        registerEventSink(it)
+                        flushTerminals(it)
+                    }
                 }
 
                 override fun onCancel(arguments: Any?) {

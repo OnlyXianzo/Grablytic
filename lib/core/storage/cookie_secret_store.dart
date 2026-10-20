@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -49,17 +50,40 @@ class FileCookieSecretStore implements CookieSecretStore {
     return dir;
   }
 
-  /// Profile ids come from the app, but they are used as file names.
-  /// Anything outside this alphabet is replaced so a crafted id can
-  /// never escape the profile directory.
-  static String _safeName(String id) {
-    final cleaned = id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    return cleaned.isEmpty ? 'profile' : cleaned;
+  /// File names are a REVERSIBLE encoding of the profile id.
+  ///
+  /// The first version sanitised the id (`a.b` became `a_b`), which is
+  /// lossy: `readAll()` returned the sanitised name, the settings layer
+  /// looked the ORIGINAL id up, found nothing and hydrated the profile
+  /// with an empty jar — which the next write then persisted, destroying
+  /// the cookies. Two different ids could also collide on one file.
+  /// Base64url is reversible, cannot collide, and cannot escape the
+  /// profile directory (the alphabet is `A-Za-z0-9-_`).
+  static const String _encodingPrefix = 'v1-';
+
+  static String _encodeName(String id) {
+    final encoded = base64Url.encode(utf8.encode(id)).replaceAll('=', '');
+    return '$_encodingPrefix$encoded';
+  }
+
+  static String _decodeName(String name) {
+    if (!name.startsWith(_encodingPrefix)) {
+      // A file written by the first version of this store: its name was
+      // the sanitised id, so the best that can be done is to return it.
+      return name;
+    }
+    final raw = name.substring(_encodingPrefix.length);
+    try {
+      final padded = raw.padRight((raw.length + 3) ~/ 4 * 4, '=');
+      return utf8.decode(base64Url.decode(padded));
+    } catch (_) {
+      return name;
+    }
   }
 
   Future<File> _fileFor(String id) async {
     final dir = await _baseDir();
-    return File(p.join(dir.path, '${_safeName(id)}.txt'));
+    return File(p.join(dir.path, '${_encodeName(id)}.txt'));
   }
 
   @override
@@ -74,7 +98,7 @@ class FileCookieSecretStore implements CookieSecretStore {
         final name = p.basenameWithoutExtension(entity.path);
         try {
           final lines = await entity.readAsLines();
-          result[name] = lines;
+          result[_decodeName(name)] = lines;
         } catch (_) {
           // Unreadable profile: skip it.
         }

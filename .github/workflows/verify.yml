@@ -110,15 +110,18 @@ jobs:
       # task, so this stays a lint-only step.
       #
       # `lintVitalRelease` is the task AGP runs on every release build
-      # with `checkReleaseBuilds = true`; it reports the release
-      # blocking issues. The full `lintRelease` analysis is run as well
-      # so that every lint finding in the app sources is reported, but
-      # lint itself crashes while analysing the Kotlin DSL build scripts
+      # with `checkReleaseBuilds = true` — but AGP SKIPS it for the app
+      # module (only plugin and library modules are analysed by it), so
+      # it cannot be the gate. The full `lintRelease` analysis is the
+      # gate: it reports every lint finding in the app sources.
+      #
+      # Lint itself crashes while analysing the Kotlin DSL build scripts
       # ("Cannot find a KaModule for the VirtualFile"). That is a bug in
-      # the lint tool, not a finding in this project, so a crash with
-      # that signature is reported as a warning and does not fail the
-      # job. Any other lint failure — a real finding, with
-      # `abortOnError = true` — still fails the job.
+      # the lint tool, not a finding in this project. The verdict is
+      # therefore taken from the lint REPORT, not from the log text: a
+      # real finding and the tool's own crash can land in the same run,
+      # and a log-text match would hide the finding. The job fails for
+      # every Error/Fatal finding whose id is not `LintError`.
       - name: Android lint (release variant)
         run: |
           flutter build apk --release --config-only
@@ -127,11 +130,44 @@ jobs:
           ./gradlew :app:lintRelease --console=plain 2>&1 | tee "$RUNNER_TEMP/lint-release.log"
           lint_status=${PIPESTATUS[0]}
           set -e
-          if [ "$lint_status" -ne 0 ] &&
-             grep -q "Cannot find a KaModule for the VirtualFile" "$RUNNER_TEMP/lint-release.log"; then
+          report=app/build/reports/lint-results-release.xml
+          if [ "$lint_status" -eq 0 ]; then
+            echo "Android lint passed."
+            exit 0
+          fi
+          # The lint task failed. Decide from the REPORT: a real finding
+          # and the lint tool's own crash can land in the same run, and
+          # a log-text match would hide the finding.
+          if [ -f "$report" ]; then
+            real_findings=$(python3 - "$report" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          try:
+              root = ET.parse(sys.argv[1]).getroot()
+          except Exception:
+              print("unknown")
+              raise SystemExit(0)
+          issues = root.findall("issue")
+          real = [
+              i for i in issues
+              if (i.get("severity") or "").lower() in ("error", "fatal")
+              and (i.get("id") or "") != "LintError"
+          ]
+          print(len(real))
+          PY
+          )
+            if [ "$real_findings" = "0" ]; then
+              echo "::warning::Android lint aborted inside the lint tool (LintError only). No finding in this project was reported - see $report"
+              exit 0
+            fi
+            echo "::error::Android lint reported $real_findings error/fatal finding(s) in this project - see $report"
+            exit 1
+          fi
+          if grep -q "Cannot find a KaModule for the VirtualFile" "$RUNNER_TEMP/lint-release.log"; then
             echo "::warning::Android lint aborted inside the lint tool while analysing the Kotlin DSL build scripts (Cannot find a KaModule for the VirtualFile). That is a lint bug, not a finding in this project, so the release lint could not produce a report."
             exit 0
           fi
+          echo "::error::Android lint failed with status $lint_status and produced no report."
           exit "$lint_status"
 
       - name: Run end-to-end Android integration test

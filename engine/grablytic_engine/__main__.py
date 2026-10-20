@@ -1,4 +1,5 @@
 from grablytic_engine import contract
+import os
 import sys
 import json
 import concurrent.futures as _futures
@@ -731,10 +732,26 @@ class _ReportPool:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._pool: _futures.ThreadPoolExecutor | None = None
+        self._closed = False
+
+    @property
+    def closed(self) -> bool:
+        """True once shutdown() ran: no new work may be scheduled."""
+        with self._lock:
+            return self._closed
 
     def get(self) -> _futures.ThreadPoolExecutor:
-        """Return the worker, starting it on first use."""
+        """Return the worker, starting it on first use.
+
+        Raises after shutdown: recreating the pool here would start a
+        FRESH non-daemon worker during interpreter shutdown, and
+        Python joins it — so a report that was scheduled after the
+        engine was told to stop would keep the process alive for the
+        length of an HTTPS call.
+        """
         with self._lock:
+            if self._closed:
+                raise RuntimeError("report pool is closed")
             if self._pool is None:
                 self._pool = _futures.ThreadPoolExecutor(
                     max_workers=1, thread_name_prefix="gh-report"
@@ -744,6 +761,7 @@ class _ReportPool:
     def shutdown(self) -> None:
         """Detach and stop the worker. Never blocks the caller."""
         with self._lock:
+            self._closed = True
             pool = self._pool
             self._pool = None
         if pool is None:
@@ -768,6 +786,8 @@ def _report_async(exc: BaseException, method: str) -> bool:
     it was suppressed (rate limit, session cap, pool unavailable).
     """
     now = time.monotonic()
+    if _report_pool.closed:
+        return False
     with _report_pool_lock:
         if _report_state["sent"] >= _REPORT_MAX_PER_SESSION:
             return False
@@ -941,3 +961,19 @@ def _shutdown_ipc_pool(pool, futures, drain_timeout: float = 10.0) -> None:
 if __name__ == "__main__":
     log.info("Engine started")
     main()
+    # The IPC drain deadline in main() is a DEADLINE. Python joins the
+    # executor's worker threads during interpreter shutdown, so a worker
+    # that is still running keeps the process alive long after its
+    # parent went away — the engine would outlive the app by minutes.
+    # Flush what matters, then leave hard. (Only the executable entry
+    # point does this: the test suite calls main() in-process.)
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    try:
+        persistent_flush()
+    except Exception:
+        pass
+    os._exit(0)

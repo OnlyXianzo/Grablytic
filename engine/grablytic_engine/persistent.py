@@ -452,6 +452,32 @@ def traced_request(
     return result
 
 
+_REPR_KV_RE = re.compile(
+    r"""(['"])([^'"]{1,64})\1(\s*:\s*)(['"])((?:(?!\4).){0,4096})\4"""
+)
+
+
+def _redact_repr_pairs(text: str) -> str:
+    """Redact sensitive mapping keys inside a repr()ed structure.
+
+    The bounded preview works on repr() TEXT, so the key-based
+    redaction that :func:`sanitize` applies to real structures has to
+    be reapplied to the repr shape. A cookie header reaches the log as
+    ``'Cookie': 'SID=...'`` — the text patterns cannot match that
+    (the quote sits between the key and the colon), so without this the
+    cookie value would be written to the daily JSONL and to
+    server_logs.log. Reuses :func:`is_sensitive_key`, so the rule stays
+    "exact key or secret suffix" — never a substring match.
+    """
+
+    def _sub(m):
+        if is_sensitive_key(m.group(2)):
+            return f"{m.group(1)}{m.group(2)}{m.group(1)}{m.group(3)}'***REDACTED***'"
+        return m.group(0)
+
+    return _REPR_KV_RE.sub(_sub, text)
+
+
 def _preview(result, limit: int = 500) -> str:
     """Bounded, sanitized preview of a response payload.
 
@@ -460,9 +486,13 @@ def _preview(result, limit: int = 500) -> str:
     formats, or a 500-entry playlist, was copied in full on every request
     just to print 500 characters of it. Bound first, then sanitize the
     bounded slice.
+
+    The bounded slice is still redacted BY KEY: a repr() of a response
+    carries the cookie header inside ``headers``, and only the key tells
+    us it is a secret.
     """
     try:
         head = repr(result)[: limit * 4]
-        return str(sanitize(head))[:limit]
+        return str(sanitize(_redact_repr_pairs(head)))[:limit]
     except Exception:
         return "<unserializable>"

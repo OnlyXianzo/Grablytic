@@ -64,6 +64,11 @@ bool isFastLaneMethod(String method) =>
 class DesktopEngineService implements EngineService {
   final String _pythonPath;
   final String? _workingDirectory;
+
+  /// How long the engine may take to come up before a waiting request
+  /// gives up. Far larger than any request budget: the first run may
+  /// install yt-dlp (uv venv + uv pip install), which is minutes.
+  static const Duration _startupBudget = Duration(minutes: 5);
   Process? _process;
   StreamSubscription<String>? _stdoutSubscription;
   StreamSubscription<String>? _stderrSubscription;
@@ -522,7 +527,7 @@ class DesktopEngineService implements EngineService {
     }
 
     AppLogger.info(
-      'Installing yt-dlp $EngineContract.ytDlpVersion into venv...',
+      'Installing yt-dlp ${EngineContract.ytDlpVersion} into venv...',
       tag: 'engine-deps',
     );
     result = await Process.run(uvPath, [
@@ -531,7 +536,7 @@ class DesktopEngineService implements EngineService {
       // Pinned, and no dependency resolution from the index: yt-dlp has
       // no runtime dependencies, so an unpinned install would only add
       // supply-chain surface.
-      'yt-dlp==$EngineContract.ytDlpVersion',
+      'yt-dlp==${EngineContract.ytDlpVersion}',
       '--no-deps',
     ], workingDirectory: venvDir).timeout(const Duration(seconds: 120));
 
@@ -555,13 +560,13 @@ class DesktopEngineService implements EngineService {
     final uvPath = await _findUv();
     if (uvPath == null) {
       throw Exception(
-        'yt-dlp $EngineContract.ytDlpVersion is required but uv was not found. '
+        'yt-dlp ${EngineContract.ytDlpVersion} is required but uv was not found. '
         'Run the bootstrap process first.',
       );
     }
 
     AppLogger.info(
-      'Installing yt-dlp $EngineContract.ytDlpVersion via uv...',
+      'Installing yt-dlp ${EngineContract.ytDlpVersion} via uv...',
       tag: 'engine-deps',
     );
     final venvPython = await _installYtDlpViaUv(uvPath);
@@ -596,21 +601,59 @@ class DesktopEngineService implements EngineService {
       },
     );
 
-    // The budget covers the WHOLE exchange, including the write. The
-    // old code armed the timer only after the write returned, so a
-    // wedged engine (a full stdout pipe, a stuck native handler) left
-    // the request pending for ever with no timeout at all.
+    // An error that completes the completer BEFORE the caller attaches
+    // its listener would escape to the zone: main.dart logs an uncaught
+    // zone error as FATAL, and the opt-in GitHub auto-report could fire
+    // for an ordinary timeout. Mark the future as handled here; the
+    // caller still gets the error through the chain returned below.
+    completer.future.ignore();
+
+    // The budget covers the exchange (the queue wait, the write and the
+    // answer) but NOT the start-up. The first run may have to install
+    // yt-dlp (uv venv + uv pip install), which takes minutes; arming
+    // the request timer before that made every first-run request time
+    // out even though the engine came up a moment later. The start-up
+    // gets its own, much larger, watchdog below.
     final timeoutBudget = requestTimeoutForMethod(method);
-    final timeout = Timer(timeoutBudget, () {
+    Timer? timeout;
+    void armTimeout() {
+      timeout ??= Timer(timeoutBudget, () {
+        if (!completer.isCompleted) {
+          _pending.remove(id);
+          _rememberTimedOut(id);
+          completer.completeError(Exception('Request $method timed out'));
+        }
+      });
+    }
+
+    // A start-up that never finishes (a wedged uv, a pipe that stays
+    // open) must not leave the request pending for ever either. The
+    // watchdog is deliberately far larger than the request budget: it
+    // only fires when the engine never came up at all.
+    final startupWatchdog = Timer(_startupBudget, () {
       if (!completer.isCompleted) {
         _pending.remove(id);
-        _rememberTimedOut(id);
-        completer.completeError(Exception('Request $method timed out'));
+        completer.completeError(
+          Exception(
+            'Engine did not start within ${_startupBudget.inSeconds}s',
+          ),
+        );
       }
     });
 
-    Future<void> writeRequest() async {
+    // The engine must be UP before the request budget starts.
+    try {
       await _ensureRunning();
+    } catch (e) {
+      startupWatchdog.cancel();
+      _pending.remove(id);
+      if (!completer.isCompleted) completer.completeError(e);
+      rethrow;
+    }
+    startupWatchdog.cancel();
+    armTimeout();
+
+    Future<void> writeRequest() async {
       final proc = _process;
       if (proc == null) throw StateError('engine process died before write');
       proc.stdin.writeln(request);
@@ -625,7 +668,7 @@ class DesktopEngineService implements EngineService {
         // Do not leak the pending entry on a dead transport; the timer
         // would otherwise fire on a zombie id and desync by id.
         _pending.remove(id);
-        timeout.cancel();
+        timeout?.cancel();
         if (!completer.isCompleted) completer.completeError(e);
         rethrow;
       }
@@ -645,7 +688,7 @@ class DesktopEngineService implements EngineService {
         await currentTask;
       } catch (e) {
         _pending.remove(id);
-        timeout.cancel();
+        timeout?.cancel();
         if (!completer.isCompleted) completer.completeError(e);
         rethrow;
       }
@@ -653,11 +696,11 @@ class DesktopEngineService implements EngineService {
 
     return completer.future
         .then((result) {
-          timeout.cancel();
+          timeout?.cancel();
           return result;
         })
         .catchError((error) {
-          timeout.cancel();
+          timeout?.cancel();
           throw error;
         });
   }

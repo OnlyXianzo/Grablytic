@@ -1044,13 +1044,18 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     }
 
     final queued = result['queued'] == true;
-    state = [
-      for (final d in state)
-        if (d.id != id)
-          d
-        else
-          d.copyWith(status: queued ? 'queued' : 'downloading'),
-    ];
+    // The engine's events travel on the EventChannel and the reply
+    // travels on the MethodChannel; the order between the two is not
+    // guaranteed. If a terminal event was handled first, this write
+    // would turn a completed or failed item back into 'downloading',
+    // and no further event would correct it. Only a still-pending
+    // item may be moved on.
+    _replaceItem(
+      id,
+      (d) => d.status == 'pending'
+          ? d.copyWith(status: queued ? 'queued' : 'downloading')
+          : d,
+    );
   }
 
   /// Transition an item to a local failure state and persist it.
@@ -1060,6 +1065,16 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
   void _failLocally(String id, String errorType, String errorMessage) {
     final index = state.indexWhere((d) => d.id == id);
     if (index == -1) return;
+    // Same race as the post-admission write: an event may already have
+    // moved the item on. A terminal status wins over a late reply.
+    if (state[index].status != 'pending') {
+      AppLogger.warn(
+        'Local failure for $id ignored: item is already '
+        '${state[index].status}',
+        tag: 'download',
+      );
+      return;
+    }
     final updated = state[index].copyWith(
       status: 'error',
       errorType: errorType,
@@ -1286,7 +1301,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
       'Cancel not honoured for $id ($errorType); closing locally',
       tag: 'download',
     );
-    _applyTerminal(
+    final item = _applyTerminal(
       id,
       (d) => d.copyWith(
         status: 'cancelled',
@@ -1299,6 +1314,12 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
         clearStageLabel: true,
       ),
     );
+    if (item == null) return;
+    // The row is closed here, so it has to be persisted here. Without
+    // it the database still says 'downloading', the next start sweeps
+    // it to 'interrupted' and the resume logic starts it again — the
+    // very download the user just cancelled.
+    _persistRecord(item);
     _dropSmoother(id);
     AppLogger.endLogSession(id);
   }

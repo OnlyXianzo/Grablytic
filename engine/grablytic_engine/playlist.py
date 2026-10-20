@@ -250,7 +250,7 @@ def get_playlist_info(url: str, config: dict | None = None) -> dict:
         with YoutubeDL(opts) as ydl:
             data = ydl.extract_info(url, download=False)
         if data is None:
-            log.warn(f"No data returned for playlist {url}")
+            log.warn(f"No data returned for playlist {redact_url(url)}")
             return {
                 "success": False,
                 "error_type": "ERROR_UNAVAILABLE",

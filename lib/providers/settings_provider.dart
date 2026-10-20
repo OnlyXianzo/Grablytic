@@ -411,7 +411,51 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         tag: 'settings',
       );
     }
-    if (mounted) state = state.copyWith(cookieProfiles: hydrated);
+    if (mounted) {
+      // MERGE, do not replace. The user can add, toggle or delete a
+      // profile while the store is being read; a wholesale replace
+      // dropped that change (the startup snapshot is the older one).
+      // The content always comes from the store; everything else from
+      // the newer in-memory copy.
+      final current = <String, Map<String, dynamic>>{
+        for (final profile in state.cookieProfiles)
+          if (profile['id']?.toString() != null)
+            profile['id']!.toString(): profile,
+      };
+      final startupIds = <String>{
+        for (final profile in profiles)
+          if (profile['id']?.toString() != null) profile['id']!.toString(),
+      };
+      final currentIds = current.keys.toSet();
+      final deleted = startupIds.difference(currentIds);
+
+      final merged = <Map<String, dynamic>>[];
+      final mergedIds = <String>{};
+      for (final profile in hydrated) {
+        final id = profile['id']?.toString();
+        if (id != null && deleted.contains(id)) continue;
+        final newer = id == null ? null : current[id];
+        if (newer == null) {
+          merged.add(profile);
+        } else {
+          merged.add({
+            ...profile,
+            ...newer,
+            'content': newer.containsKey('content')
+                ? newer['content']
+                : profile['content'],
+          });
+        }
+        if (id != null) mergedIds.add(id);
+      }
+      // Profiles added while the store was being read.
+      for (final profile in state.cookieProfiles) {
+        final id = profile['id']?.toString();
+        if (id == null || mergedIds.contains(id)) continue;
+        merged.add(profile);
+      }
+      state = state.copyWith(cookieProfiles: merged);
+    }
   }
 
   Future<void> _initializeProxy() async {
@@ -720,13 +764,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final metadata = <Map<String, dynamic>>[];
     for (final profile in profiles) {
       final copy = Map<String, dynamic>.from(profile);
+      final hasContent = copy.containsKey('content');
       final content = copy.remove('content');
       metadata.add(copy);
       final id = copy['id']?.toString();
       if (id == null || id.isEmpty) continue;
-      final lines = content is List
-          ? content.map((e) => e.toString()).toList()
-          : const <String>[];
+      // A profile WITHOUT loaded content means "unchanged", not "empty".
+      // Writing [] here replaced every stored jar with an empty file:
+      // after the migration the profiles are metadata-only until the
+      // store has been read, so any persist during that window wiped
+      // the user's session cookies.
+      if (!hasContent || content is! List) continue;
+      final lines = content.map((e) => e.toString()).toList();
       unawaited(_writeCookieContent(id, lines));
     }
     _prefs.setStringList(
@@ -736,12 +785,29 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(cookieProfiles: profiles);
   }
 
-  Future<void> _writeCookieContent(String id, List<String> lines) async {
-    try {
-      await _cookieSecretStore.write(id, lines);
-    } catch (_) {
-      // The jar stays in memory for this session only.
-    }
+  /// Every secret-store operation goes through ONE queue.
+  ///
+  /// The store has no ordering of its own: a write started by an
+  /// earlier toggle can land AFTER a clear() listed the directory, and
+  /// the file the user asked to clear comes back — and is then never
+  /// read or deleted again. One chain keeps the operations in the
+  /// order they were requested.
+  Future<void> _storeQueue = Future<void>.value();
+
+  Future<void> _enqueueStore(Future<void> Function() op) {
+    final next = _storeQueue.then((_) => op()).catchError((Object _) {});
+    _storeQueue = next;
+    return next;
+  }
+
+  Future<void> _writeCookieContent(String id, List<String> lines) {
+    return _enqueueStore(() async {
+      try {
+        await _cookieSecretStore.write(id, lines);
+      } catch (_) {
+        // The jar stays in memory for this session only.
+      }
+    });
   }
 
   /// Insert or replace the profile for [url] (matched case-insensitively
@@ -792,16 +858,20 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     unawaited(_clearCookieContent());
   }
 
-  Future<void> _deleteCookieContent(String id) async {
-    try {
-      await _cookieSecretStore.delete(id);
-    } catch (_) {}
+  Future<void> _deleteCookieContent(String id) {
+    return _enqueueStore(() async {
+      try {
+        await _cookieSecretStore.delete(id);
+      } catch (_) {}
+    });
   }
 
-  Future<void> _clearCookieContent() async {
-    try {
-      await _cookieSecretStore.clear();
-    } catch (_) {}
+  Future<void> _clearCookieContent() {
+    return _enqueueStore(() async {
+      try {
+        await _cookieSecretStore.clear();
+      } catch (_) {}
+    });
   }
 
   void setYoutubeLoggedIn(bool value) {

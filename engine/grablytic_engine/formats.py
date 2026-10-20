@@ -64,7 +64,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             info = ydl.extract_info(url, download=False)
 
         if info is None:
-            log.warn(f"No info extracted for {url}")
+            log.warn(f"No info extracted for {redact_url(url)}")
             return {
                 "success": False,
                 "error_type": "ERROR_UNAVAILABLE",
@@ -222,7 +222,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             }
 
         log.info(
-            f"Found {len(parsed)} formats for {url} (preview: {preview_stream is not None})"
+            f"Found {len(parsed)} formats for {redact_url(url)} (preview: {preview_stream is not None})"
         )
         thumb = info.get("thumbnail")
         if not thumb and info.get("thumbnails"):

@@ -213,7 +213,7 @@ def test_auto_report_is_queued_not_run_inline(monkeypatch):
 
     monkeypatch.setattr(notifier, "notify_exception", _fake_notify)
     monkeypatch.setattr(main_mod, "_report_state", {"sent": 0, "last_monotonic": 0.0})
-    main_mod._report_pool.shutdown()
+    monkeypatch.setattr(main_mod, "_report_pool", main_mod._ReportPool())
 
     t0 = time.monotonic()
     accepted = main_mod._report_async(RuntimeError("boom"), "formats/get")
@@ -231,7 +231,7 @@ def test_auto_report_is_rate_limited(monkeypatch):
     import grablytic_engine.__main__ as main_mod
 
     monkeypatch.setattr(main_mod, "_report_state", {"sent": 0, "last_monotonic": 0.0})
-    main_mod._report_pool.shutdown()
+    monkeypatch.setattr(main_mod, "_report_pool", main_mod._ReportPool())
     monkeypatch.setattr(main_mod, "_deliver_report", lambda exc, method: None)
     try:
         assert main_mod._report_async(RuntimeError("a"), "m") is True
@@ -249,7 +249,7 @@ def test_auto_report_caps_reports_per_session(monkeypatch):
         "_report_state",
         {"sent": main_mod._REPORT_MAX_PER_SESSION, "last_monotonic": 0.0},
     )
-    main_mod._report_pool.shutdown()
+    monkeypatch.setattr(main_mod, "_report_pool", main_mod._ReportPool())
     assert main_mod._report_async(RuntimeError("a"), "m") is False
 
 
@@ -378,9 +378,43 @@ def test_child_env_does_not_mutate_the_process_environment(tmp_path):
 # ── traced_request: the preview is bounded before it is sanitized ──────
 
 
-def test_preview_does_not_sanitize_the_whole_payload():
-    from grablytic_engine.persistent import _preview
+def test_preview_does_not_sanitize_the_whole_payload(monkeypatch):
+    """The sanitizer must see the BOUNDED slice, not the whole payload.
+
+    A spy is used on purpose: the old implementation sanitized the
+    whole structure and then threw away everything past 500 characters,
+    so the OUTPUT was short too and only the input can tell the two
+    apart.
+    """
+    import grablytic_engine.persistent as persistent
 
     big = {"k%d" % i: "v" * 100 for i in range(5000)}
-    out = _preview(big, limit=500)
+    seen = []
+    real_sanitize = persistent.sanitize
+
+    def _spy(value):
+        seen.append(value)
+        return real_sanitize(value)
+
+    monkeypatch.setattr(persistent, "sanitize", _spy)
+    out = persistent._preview(big, limit=500)
+
     assert len(out) <= 500
+    assert len(seen) == 1
+    # The payload repr is ~500 KB; the bounded slice is at most
+    # limit * 4 characters.
+    assert len(seen[0]) <= 500 * 4
+
+
+def test_preview_redacts_sensitive_keys():
+    """A cookie header reaches the log inside a repr(): the KEY decides."""
+    from grablytic_engine.persistent import _preview
+
+    payload = {
+        "headers": {"Cookie": "SID=super-secret; HSID=also-secret"},
+        "url": "https://video.test/watch",
+    }
+    out = _preview(payload)
+    assert "super-secret" not in out
+    assert "also-secret" not in out
+    assert "***REDACTED***" in out
