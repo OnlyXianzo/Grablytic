@@ -218,7 +218,7 @@ download.
 
 ### ♿ Accessibility & theming
 - ✅ **WCAG 2.2 AA** — semantic labels, 48×48 touch targets, full TalkBack/VoiceOver support.
-- 🎨 **Earth & Ethos theme** — `GrablyticColors` tokens (no hex literals), Material 3 light/dark, Instrument Sans body + Iosevka Charon mono.
+- 🎨 **Earth & Ethos theme** — `GrablyticColors` tokens (no hex literals), Material 3 light/dark, Bricolage Grotesque headings, Figtree body, Iosevka Charon Mono.
 
 ---
 
@@ -362,7 +362,7 @@ correlation, 30 s timeout, auto-restart (≤3).
 | JS runtimes | Deno (bundled `.so` on Android / bootstrapped on desktop) · Node fallback · QuickJS (`python-quickjs`) |
 | Media | FFmpeg (static / jniLibs) · aria2c (static, native only for DASH/HLS) |
 | Persistence | SharedPreferences (settings/presets/playlists) · SQLite (history) |
-| Fonts | Instrument Sans (body) · Iosevka Charon Mono |
+| Fonts | Bricolage Grotesque (headings) · Figtree (body) · Iosevka Charon Mono |
 | Tests | `flutter_test` · `pytest` (engine suite) |
 
 ### 🐍 Engine modules (16 + entry point)
@@ -480,6 +480,7 @@ Deeper guides: [`docs/troubleshooting.md`](docs/troubleshooting.md) ·
 | Doc | Contents |
 |---|---|
 | [Architecture](docs/architecture.md) | Stack, layers, IPC contract, providers, data flow, performance |
+| [Knowledge vault](.agents/vault/index.md) | Project notes on architecture, IPC, storage, and open questions |
 | [Building](docs/building.md) | Prerequisites, clone/setup, per-platform builds, tests, CI |
 | [Features](docs/features.md) | Full capability catalog with settings map |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → fix table, log locations, FAQ |

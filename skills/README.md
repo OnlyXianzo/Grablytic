@@ -19,8 +19,10 @@ can read a file and follow instructions can use them.
 
 One pack stays local and is not published:
 
-- `doc-workflow` writes to a private notes vault. It lives in `.agents/skills/`
-  and is never committed. The published skills below are the reusable ones.
+- `doc-workflow` maintains the project knowledge vault. It lives in
+  `.agents/skills/` and is not part of the published pack. The vault itself is
+  tracked at `.agents/vault/`; the skill still does not commit or push on its
+  own.
 
 ## Path placeholders
 
@@ -28,14 +30,15 @@ Skills that touch local files use two variables:
 
 ```bash
 REPO_ROOT="${REPO_ROOT:-$HOME/grablytic}"
-VAULT_ROOT="${VAULT_ROOT:-$REPO_ROOT/.agents}"
+VAULT_ROOT="${VAULT_ROOT:-$REPO_ROOT/.agents/vault}"
 ```
 
-The default vault path stays inside the repo's ignored `.agents/` folder. Some
-people keep notes elsewhere, including directly in `$REPO_ROOT`. If the path is
-wrong, the agent should ask you where the repo or vault lives and continue with
-your answer. It should not guess or write your personal path into a tracked
-file. Local answers go in `.agents/local-paths.md`, which is ignored by git.
+The default vault path is `.agents/vault`, which is tracked in this repository.
+Other `.agents/` contents stay local and ignored. Some people keep notes
+elsewhere, including directly in `$REPO_ROOT`. If the path is wrong, the agent
+should ask you where the repo or vault lives and continue with your answer. It
+should not guess or write your personal path into a tracked file. Local answers
+go in `.agents/local-paths.md`, which is ignored by git.
 
 ## Install
 
