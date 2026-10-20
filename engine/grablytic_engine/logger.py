@@ -18,6 +18,32 @@ FATAL = 50
 
 LEVEL_NAMES = {10: "DEBUG", 20: "INFO", 30: "WARN", 40: "ERROR", 50: "FATAL"}
 
+
+def _default_stderr_mirror() -> bool:
+    """Whether ``_log()`` should echo a human-readable line to stderr.
+
+    The mirror used to be unconditional, which made the level knob a lie
+    on desktop: ``DesktopEngineService`` pipes the child's stderr straight
+    into ``AppLogger.warn``, so every DEBUG record arrived in the user's
+    own log as a WARNING, at every verbosity. The structured record
+    already reaches the host over the framed stdout channel, so the
+    mirror is only useful when a human is watching a terminal.
+
+    Default: on for a TTY, off when stderr is a pipe or a file. Set
+    ``GRABLYTIC_LOG_STDERR=1`` to force it on (a shell redirect to a log
+    file, a container that collects stderr), or ``=0`` to force it off.
+    """
+    override = os.environ.get("GRABLYTIC_LOG_STDERR", "").strip().lower()
+    if override in ("1", "true", "yes", "on"):
+        return True
+    if override in ("0", "false", "no", "off"):
+        return False
+    try:
+        return bool(sys.stderr.isatty())
+    except Exception:
+        return False
+
+
 _current_download_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_download_id", default=None
 )
@@ -63,6 +89,11 @@ class EngineLogger:
         # concurrent downloads. Verbose users read DEBUG via Diagnostics →
         # File Logs (same bytes, zero UI cost).
         self._bridge_min_level: int = INFO
+        # Human-readable stderr mirror. Off unless a person is watching:
+        # on desktop the host treats every stderr line as a WARNING, so an
+        # unconditional mirror re-levelled DEBUG records (see
+        # _default_stderr_mirror).
+        self._stderr_enabled: bool = _default_stderr_mirror()
 
     def set_context(self, **kwargs: Any) -> None:
         if not hasattr(self._context, "data"):
@@ -92,6 +123,10 @@ class EngineLogger:
     def set_bridge_min_level(self, level: int) -> None:
         """Floor for the UI bridge callback (file + queue unaffected)."""
         self._bridge_min_level = level
+
+    def set_stderr_enabled(self, enabled: bool) -> None:
+        """Force the human-readable stderr mirror on or off."""
+        self._stderr_enabled = bool(enabled)
 
     def _log(
         self,
@@ -133,13 +168,27 @@ class EngineLogger:
             "exception": repr(exception) if exception else None,
         }
 
-        print(f"[{level_name}] [{self.name}] {message}", file=sys.stderr)
+        # Serialize ONCE. The daily file, the queue and the bridge all
+        # carry the same bytes; this used to be two json.dumps per record
+        # on the hot path (thousands of lines per download).
+        payload = json.dumps(event, default=str)
+
+        # The human-readable mirror obeys the SAME level gate as every
+        # other sink. It used to run first and unconditionally, before
+        # the `_min_level` checks, so a host that pipes stderr into its
+        # own logger (the desktop transport does exactly that) promoted
+        # every DEBUG record to a WARNING and made set_min_level a no-op.
+        if level >= self._min_level and self._stderr_enabled:
+            try:
+                print(f"[{level_name}] [{self.name}] {message}", file=sys.stderr)
+            except Exception:
+                pass
 
         if level >= self._min_level and self._log_dir:
             _write_daily_line(
                 self._log_dir,
                 now,
-                json.dumps(event, default=str) + "\n",
+                payload + "\n",
                 level=level,
                 force_flush=level >= ERROR,
             )
@@ -164,7 +213,7 @@ class EngineLogger:
         )
         if cb is not None and level >= self._bridge_min_level:
             try:
-                cb.onEvent(json.dumps(event, default=str))
+                cb.onEvent(payload)
             except Exception:
                 pass
 
@@ -215,6 +264,28 @@ class EngineLogger:
         exception: BaseException | None = None,
         duration_ms: int | None = None,
     ) -> None:
+        self._log(
+            WARN, message, extra=extra, exception=exception, duration_ms=duration_ms
+        )
+
+    def warning(
+        self,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        """stdlib-compatible alias for :meth:`warn`.
+
+        `warn` is the historical spelling and stays. `warning` is what
+        every other logging facade exposes — Python's own `logging`, and
+        the yt-dlp adapter in `downloader.py` — so a caller who reaches
+        for it must not get an AttributeError *inside an except block*.
+        That is precisely how this class once took the engine down at
+        import time: `log.warning(...)` in the FFmpeg guard replaced the
+        real error with an AttributeError.
+        """
         self._log(
             WARN, message, extra=extra, exception=exception, duration_ms=duration_ms
         )

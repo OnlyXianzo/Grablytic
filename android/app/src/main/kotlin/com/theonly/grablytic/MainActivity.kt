@@ -33,6 +33,22 @@ private const val MSG_ENGINE_NOT_READY = "Engine is not ready"
 private const val MSG_PERMISSION_DENIED = "permission denied"
 
 /**
+ * Hard cap on [MainActivity.activeCallbacks].
+ *
+ * Entries are removed on a terminal event, but a download whose terminal
+ * never arrives (the engine process killed by the LMK, a Chaquopy crash,
+ * a dropped event) used to keep its listener — and the Python callback it
+ * holds — for the rest of the session. `ownedCallbackIds` only tracks what
+ * THIS activity registered, so it cannot bound a process-wide map.
+ */
+private const val MAX_ACTIVE_CALLBACKS = 64
+
+/** Insertion order of [MainActivity.activeCallbacks], oldest first. */
+private val callbackOrder = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+private val callbackLock = Any()
+
+/**
  * Chaquopy callback contract for engine → Kotlin event delivery.
  * A public interface (not an anonymous `object : Any()`) so R8/ProGuard
  * cannot obfuscate or strip `onEvent` in release builds (re-audit #2).
@@ -864,8 +880,7 @@ open class MainActivity : FlutterActivity() {
                             val eventCallback = ProcessEngineEventListener(applicationContext, outputDir)
                             val ownedId = downloadId
                             if (ownedId != null) {
-                                activeCallbacks[ownedId] = eventCallback
-                                ownedCallbackIds.add(ownedId)
+                                registerActiveCallback(ownedId, eventCallback)
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
@@ -1353,6 +1368,35 @@ open class MainActivity : FlutterActivity() {
                 }
             },
         )
+    }
+
+    /**
+     * Tracks this activity's engine callback for [id], evicting the oldest
+     * entry when the process-wide map is full.
+     *
+     * Eviction also drops the id from [ownedCallbackIds]: the activity no
+     * longer holds a callback for it, so `onDestroy` must not try to
+     * remove it again on someone else's behalf.
+     */
+    private fun registerActiveCallback(id: String, callback: Any) {
+        synchronized(callbackLock) {
+            activeCallbacks[id] = callback
+            ownedCallbackIds.add(id)
+            // Re-registering an id must not leave a second queue entry
+            // behind, or the first eviction would drop a live download.
+            callbackOrder.remove(id)
+            callbackOrder.add(id)
+            while (activeCallbacks.size > MAX_ACTIVE_CALLBACKS) {
+                val oldest = callbackOrder.poll() ?: break
+                if (oldest == id) {
+                    // Never evict the entry we are adding; it is the newest.
+                    callbackOrder.add(oldest)
+                    break
+                }
+                activeCallbacks.remove(oldest)
+                ownedCallbackIds.remove(oldest)
+            }
+        }
     }
 
     override fun onDestroy() {

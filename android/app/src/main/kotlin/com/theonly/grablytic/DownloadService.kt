@@ -261,6 +261,10 @@ class DownloadService : Service() {
                 // and the process was killed later with the downloads half
                 // written.
                 cancelActiveDownloads(stoppedIds)
+                // Their alerts are gone with the service, so the ids are
+                // reusable; release them or the allocator's slot set grows
+                // for the life of the process.
+                stoppedIds.forEach { releaseAlertNotifId(it) }
                 releaseLocks()
                 stopSelf()
             }
@@ -654,10 +658,51 @@ class DownloadService : Service() {
 
         fun isRunning(): Boolean = instance != null
 
+        // Alert ids are allocated from a real counter rather than folded
+        // out of String.hashCode. The old `2000 + (hash and 0xFFFFFF) %
+        // 200000` mapped a 24-bit hash space onto 200k slots: ~84 distinct
+        // hashes shared every id, so two terminal alerts visible at the
+        // same time could collide and `notify()` would silently replace
+        // the first one — a finished download whose notification never
+        // appeared, or a failure the user never saw.
+        private const val ALERT_ID_BASE = 2000
+        private const val ALERT_ID_SPAN = 100_000
+        private val alertIds = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        private val usedAlertIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+        private val alertIdLock = Any()
+        private var nextAlertId = ALERT_ID_BASE
+
         /** Stable per-download alert ID that never collides with NOTIF_ID. */
-        fun alertNotifId(downloadId: String): Int {
-            val h = downloadId.hashCode() and 0x00FFFFFF
-            return 2000 + (h % 200000)
+        fun alertNotifId(downloadId: String): Int = synchronized(alertIdLock) {
+            val existing = alertIds[downloadId]
+            if (existing != null) {
+                existing
+            } else {
+                var candidate = nextAlertId
+                var attempts = 0
+                while (candidate in usedAlertIds && attempts < ALERT_ID_SPAN) {
+                    candidate = ALERT_ID_BASE +
+                        (candidate - ALERT_ID_BASE + 1) % ALERT_ID_SPAN
+                    attempts++
+                }
+                usedAlertIds.add(candidate)
+                alertIds[downloadId] = candidate
+                nextAlertId = ALERT_ID_BASE +
+                    (candidate - ALERT_ID_BASE + 1) % ALERT_ID_SPAN
+                candidate
+            }
+        }
+
+        /**
+         * Returns a finished download's alert slot for reuse.
+         *
+         * Call when the alert is dismissed or the service stops; the same
+         * download id keeps the id it already had while it is tracked.
+         */
+        fun releaseAlertNotifId(downloadId: String) {
+            synchronized(alertIdLock) {
+                alertIds.remove(downloadId)?.let { usedAlertIds.remove(it) }
+            }
         }
 
         fun start(ctx: Context, downloadId: String, title: String, showAlert: Boolean = true) {

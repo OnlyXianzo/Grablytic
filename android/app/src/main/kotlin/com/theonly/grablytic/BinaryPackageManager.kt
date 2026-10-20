@@ -44,6 +44,20 @@ object BinaryPackageManager {
     private const val MAX_SYMLINK_TARGET_BYTES = 4096
     private const val ZIP_STAMP_FILE = ".zipsize"
 
+    // Stamp schema. v6 adds `verified_at_ms`, which is what makes the
+    // cheap path possible; v5 stamps are still readable and are upgraded
+    // in place the first time they are re-verified.
+    private const val STAMP_HEADER = "v6-sha256-tree-atomic"
+    private const val STAMP_HEADER_V5 = "v5-sha256-tree-atomic"
+
+    // How long a stat-verified package is trusted before the tree is
+    // re-hashed anyway. The package is installed by us, in app-private
+    // storage, and never mutated by the app; re-reading hundreds of
+    // megabytes on every launch buys nothing. A WEEKLY re-hash still
+    // catches a tampered tree, and any size/mtime change forces a full
+    // verify immediately.
+    private const val DEEP_VERIFY_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
+
     private data class Spec(val name: String, val zipSo: String, val exeSo: String)
 
     private val SPECS = listOf(
@@ -54,11 +68,14 @@ object BinaryPackageManager {
 
     /**
      * Extract support trees and resolve executables. Safe to call on every
-     * `paths/set`: a cache hit requires archive and extracted-tree SHA-256
-     * verification; a mismatch triggers a fresh atomic extraction. Call off
-     * the main thread (does file I/O + version probes).
+     * `paths/set`: a cache hit requires the archive/tree identity recorded
+     * in the stamp, a mismatch triggers a fresh atomic extraction, and a
+     * full SHA-256 verification runs at most once a week (or immediately
+     * when the archive's size or mtime changed). Pass [forceVerify] to
+     * hash everything now — that is what a "Verify installation" action
+     * should do. Call off the main thread (does file I/O + version probes).
      */
-    fun init(context: Context): Map<String, NativeBinPaths> {
+    fun init(context: Context, forceVerify: Boolean = false): Map<String, NativeBinPaths> {
         val out = mutableMapOf<String, NativeBinPaths>()
         val libDir = File(context.applicationInfo.nativeLibraryDir)
         for (spec in SPECS) {
@@ -69,7 +86,7 @@ object BinaryPackageManager {
                     continue
                 }
                 val target = File(File(context.noBackupFilesDir, "packages"), spec.name)
-                extractTree(File(libDir, spec.zipSo), target)
+                extractTree(File(libDir, spec.zipSo), target, forceVerify)
                 val ldDir = File(target, "usr/lib").takeIf { it.isDirectory }
                 out[spec.name] = NativeBinPaths(exe.absolutePath, ldDir?.absolutePath)
             } catch (e: Exception) {
@@ -143,6 +160,8 @@ object BinaryPackageManager {
         val mtime: Long,
         val archiveSha256: String,
         val treeSha256: String,
+        /** When the tree was last fully hashed (0 for a v5 stamp). */
+        val verifiedAtMs: Long = 0L,
     )
 
     private enum class ZipEntryKind { DIRECTORY, FILE, SYMLINK }
@@ -157,7 +176,8 @@ object BinaryPackageManager {
             val stat = android.system.Os.lstat(file.absolutePath)
             if (!android.system.OsConstants.S_ISREG(stat.st_mode) || stat.st_size > 1024L) return null
             val lines = file.readLines()
-            if (lines.isEmpty() || lines[0].trim() != "v5-sha256-tree-atomic") return null
+            val header = lines.firstOrNull()?.trim()
+            if (header != STAMP_HEADER && header != STAMP_HEADER_V5) return null
             val map = lines.drop(1).associate {
                 val parts = it.split("=", limit = 2)
                 parts[0].trim() to parts.getOrNull(1)?.trim()
@@ -168,7 +188,11 @@ object BinaryPackageManager {
             val treeHash = map["tree_sha256"]?.lowercase() ?: return null
             val hashPattern = Regex("[0-9a-f]{64}")
             if (!archiveHash.matches(hashPattern) || !treeHash.matches(hashPattern)) return null
-            Stamp(len, mtime, archiveHash, treeHash)
+            // v5 stamps carry no verification time: treat them as stale so
+            // the first launch after the upgrade re-hashes once and writes
+            // a v6 stamp.
+            val verifiedAt = map["verified_at_ms"]?.toLongOrNull() ?: 0L
+            Stamp(len, mtime, archiveHash, treeHash, verifiedAt)
         } catch (_: Exception) {
             null
         }
@@ -184,8 +208,9 @@ object BinaryPackageManager {
             if (e.errno != android.system.OsConstants.ENOENT) throw e
         }
         file.writeText(
-            "v5-sha256-tree-atomic\nlength=${stamp.length}\nmtime=${stamp.mtime}" +
-                "\narchive_sha256=${stamp.archiveSha256}\ntree_sha256=${stamp.treeSha256}\n",
+            "$STAMP_HEADER\nlength=${stamp.length}\nmtime=${stamp.mtime}" +
+                "\narchive_sha256=${stamp.archiveSha256}\ntree_sha256=${stamp.treeSha256}" +
+                "\nverified_at_ms=${stamp.verifiedAtMs}\n",
         )
     }
 
@@ -380,7 +405,7 @@ object BinaryPackageManager {
         deleteQuietly(backup)
     }
 
-    private fun extractTree(zipSo: File, target: File) {
+    private fun extractTree(zipSo: File, target: File, forceVerify: Boolean = false) {
         if (!zipSo.isFile) return // packages without a support tree (none today)
         val packagesDir = target.parentFile
             ?: throw IllegalStateException("no parent for ${target.absolutePath}")
@@ -391,8 +416,7 @@ object BinaryPackageManager {
         val currentStamp = readStamp(marker)
         val zipLength = zipSo.length()
         val zipMtime = zipSo.lastModified()
-        // Metadata is only a quick reject hint, never the integrity proof.
-        if (isCurrentExtraction(zipSo, target, marker, currentStamp, zipLength, zipMtime)) return
+        if (isCurrentExtraction(zipSo, target, marker, currentStamp, zipLength, zipMtime, forceVerify)) return
 
         // Extract to a clean staging directory so the current package remains available until swap.
         val (tmp, backup) = createStagingDirectories(packagesDir, target)
@@ -405,7 +429,13 @@ object BinaryPackageManager {
 
         markExecutableNoFollow(tmp)
         val treeSha256 = computeTreeSha256(tmp)
-        val newStamp = Stamp(zipLength, zipMtime, archiveSha256, treeSha256)
+        val newStamp = Stamp(
+            zipLength,
+            zipMtime,
+            archiveSha256,
+            treeSha256,
+            System.currentTimeMillis(),
+        )
         writeStamp(File(tmp, ZIP_STAMP_FILE), newStamp)
 
         if (!swapStagedTree(tmp, target, backup)) return
@@ -418,6 +448,27 @@ object BinaryPackageManager {
         )
     }
 
+    /**
+     * Is the extracted tree still exactly what we extracted?
+     *
+     * The old version hashed the whole archive AND the whole tree before
+     * looking at the recorded length/mtime, so the "quick reject hint"
+     * in its comment was never used as a hint: every launch re-read
+     * hundreds of megabytes of package data that the app itself had
+     * written and never modifies.
+     *
+     * Now: same size and mtime as the last verification, and that
+     * verification is younger than [DEEP_VERIFY_INTERVAL_MS] -> trust it.
+     * Anything else costs a hash, and a full mismatch costs a re-extract.
+     *
+     * This is trust-on-first-use, and deliberately so: the stamp itself
+     * is excluded from the tree hash (it is the root marker), so the
+     * thing being protected is not "an attacker with write access to
+     * app-private storage" — that boundary is the sandbox. It is
+     * "a package that was installed correctly is not re-read on every
+     * launch", with the archive hash still running whenever the archive
+     * identity changes and at least once a week regardless.
+     */
     private fun isCurrentExtraction(
         zipSo: File,
         target: File,
@@ -425,17 +476,52 @@ object BinaryPackageManager {
         currentStamp: Stamp?,
         zipLength: Long,
         zipMtime: Long,
+        forceVerify: Boolean = false,
     ): Boolean {
         if (!target.isDirectory || currentStamp == null) return false
-        val actualArchiveSha256 = computeSha256(zipSo)
-        val actualTreeSha256 = computeTreeSha256(target)
-        if (currentStamp.length != zipLength ||
-            currentStamp.archiveSha256 != actualArchiveSha256 ||
-            currentStamp.treeSha256 != actualTreeSha256
-        ) {
+
+        val statsMatch = currentStamp.length == zipLength && currentStamp.mtime == zipMtime
+        if (statsMatch && !forceVerify) {
+            val ageMs = System.currentTimeMillis() - currentStamp.verifiedAtMs
+            if (currentStamp.verifiedAtMs > 0L && ageMs in 0 until DEEP_VERIFY_INTERVAL_MS) {
+                return true
+            }
+        }
+
+        if (statsMatch) {
+            // The archive is the same file we hashed; verify the tree only.
+            if (computeTreeSha256(target) != currentStamp.treeSha256) {
+                Log.w(TAG, "${target.name}: tree hash mismatch; re-extracting")
+                return false
+            }
+            writeStamp(
+                marker,
+                currentStamp.copy(
+                    mtime = zipMtime,
+                    verifiedAtMs = System.currentTimeMillis(),
+                ),
+            )
+            return true
+        }
+
+        // Size or mtime changed: the archive is not the one we verified,
+        // so nothing in the stamp can be trusted without re-hashing both.
+        if (computeSha256(zipSo) != currentStamp.archiveSha256) {
+            Log.w(TAG, "${target.name}: archive changed; re-extracting")
             return false
         }
-        if (currentStamp.mtime != zipMtime) writeStamp(marker, currentStamp.copy(mtime = zipMtime))
+        if (computeTreeSha256(target) != currentStamp.treeSha256) {
+            Log.w(TAG, "${target.name}: tree hash mismatch; re-extracting")
+            return false
+        }
+        writeStamp(
+            marker,
+            currentStamp.copy(
+                length = zipLength,
+                mtime = zipMtime,
+                verifiedAtMs = System.currentTimeMillis(),
+            ),
+        )
         return true
     }
 

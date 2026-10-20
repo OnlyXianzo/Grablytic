@@ -1,10 +1,17 @@
-"""A retry backoff must NOT hold the concurrency slot.
+"""Retry backoff: the slot is released for work but reserved for the retry.
 
-The teardown finding: a transient failure slept 5s (then 15s) inside the
-already-admitted slot, so the engine sat idle with N-1 usable slots for
-the whole backoff window. The slot is now released for the duration of
-the sleep and re-acquired afterwards — without barging past a live
-download.
+The first teardown finding was that a transient failure slept 5s (then
+15s) inside the already-admitted slot, so the engine sat idle with N-1
+usable slots for the whole backoff window. The slot is therefore not
+held as a *working* slot during the sleep.
+
+The second, subtler finding is the one these tests now pin down: if the
+released slot is simply handed to the next queued entry, then in a deep
+queue every completion can refill it before the retry wakes, and the
+retry waits for ever — a hang with no timeout, because `_MAX_AUTO_RETRIES`
+counts attempts, not time. So the slot is a RESERVATION: `_running_count()`
+stops counting the sleeper, `_backoff_reservations()` still does, and no
+admission path may spend a reserved slot.
 """
 
 import threading
@@ -89,10 +96,23 @@ def test_backoff_sleeps_the_documented_policy(monkeypatch):
 
 
 @pytest.mark.unit
-def test_backoff_promotes_a_queued_download(monkeypatch):
-    """A waiting download starts while the failing one backs off."""
+def test_backoff_reserves_the_slot_against_the_queue(monkeypatch):
+    """The queue may not take the slot a retrying download is coming back to.
+
+    At the only slot, promoting "b" during the backoff means "a" has to
+    wait for "b" to finish and then for whatever the queue promotes next;
+    with a deep backlog that never ends. "b" stays parked instead.
+    """
     dl = _dl()
-    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    observed = {}
+
+    def fake_sleep(seconds):
+        observed["running"] = dl._running_count()
+        observed["reserved"] = dl._backoff_reservations()
+        dl._pump_queue()  # the pump runs on every terminal transition
+        observed["b_still_parked"] = "b" in dl._pending_queue
+
+    monkeypatch.setattr(dl.time, "sleep", fake_sleep)
     dl.set_max_concurrent(1)
     try:
         dl.start_download(url="https://example.com/a", download_id="a")
@@ -103,8 +123,49 @@ def test_backoff_promotes_a_queued_download(monkeypatch):
         cancel.set()  # do not wait for a slot on the way back in
         dl._begin_backoff("a", 5.0, cancel)
 
-        assert "b" not in dl._pending_queue
-        assert "b" in dl._active_downloads
+        # The sleeper does not consume a working slot ...
+        assert observed["running"] == 0
+        # ... but the budget still accounts for it ...
+        assert observed["reserved"] == 1
+        # ... so the pump cannot spend that slot on the queue.
+        assert observed["b_still_parked"] is True
+        assert "b" in dl._pending_queue
+        assert "b" not in dl._active_downloads
+        # The retry itself is back in the slot after waking.
+        assert dl._running_count() == 1
+    finally:
+        dl.set_max_concurrent(2)
+
+
+@pytest.mark.unit
+def test_backoff_keeps_one_slot_free_at_higher_limits(monkeypatch):
+    """Reservations subtract from the limit; they do not freeze the queue."""
+    dl = _dl()
+    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    dl.set_max_concurrent(2)
+    try:
+        dl.start_download(url="https://example.com/a", download_id="a")
+        dl.start_download(url="https://example.com/b", download_id="b")
+        dl.start_download(url="https://example.com/c", download_id="c")
+        # Two slots, so a and b are admitted and only c is parked.
+        assert dl._running_count() == 2
+        assert set(dl._pending_queue) == {"c"}
+
+        with dl._downloads_lock:
+            dl._active_downloads["a"]["backing_off"] = True
+        dl._pump_queue()
+
+        # 1 running (b) + 1 reserved (a) == the limit: c must not start.
+        assert set(dl._pending_queue) == {"c"}
+
+        # When b finishes, a's reservation becomes a running slot and the
+        # engine is full again — c is admitted only after that.
+        with dl._downloads_lock:
+            dl._active_downloads["b"]["finished_at"] = 1
+            dl._active_downloads["a"]["backing_off"] = False
+        dl._pump_queue()
+        assert dl._running_count() == 2
+        assert set(dl._pending_queue) == set()
     finally:
         dl.set_max_concurrent(2)
 

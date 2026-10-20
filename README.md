@@ -159,6 +159,13 @@ What actually changed:
   floor, and the Android API-35 emulator job wired into the matrix. Six jobs,
   all green on the merge commit.
 
+A second review pass then found ten more issues in that work — a startup path
+that re-hashed every bundled package on every launch, a retry that could be
+starved by the queue, a search fallback with a different grammar from the index
+it replaced, and a handful of smaller things. All ten are fixed or ratcheted;
+the response is in
+[`docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md`](docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md).
+
 The gory detail, finding by finding, is in
 [`docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md`](docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md)
 and the reasoning behind the judgement calls is in
@@ -236,7 +243,7 @@ yt-dlp installed, and the first request will tell you so.
 ## Tests and CI
 
 ```bash
-pytest engine/tests/ -q                       # 770 engine tests
+pytest engine/tests/ -q                       # 783 engine tests
 flutter test                                  # 658 Flutter tests
 flutter analyze                               # must report no issues
 ruff check --select F engine/                 # must be clean
@@ -248,7 +255,7 @@ every push and PR:
 | Job | What it checks |
 |---|---|
 | Flutter Analyze & Test | `flutter analyze` clean, `flutter test --coverage`, 30% project-lib coverage floor |
-| Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate |
+| Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate, broad-catch ratchet |
 | Android API 35 | release lint, then a real emulator run through Flutter → Chaquopy → Python |
 | Docs Link Check | every relative link in `README.md` and `docs/` resolves |
 | Secret Scan | gitleaks over the full history |
@@ -302,6 +309,7 @@ Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).
 | [Output templates](docs/output_templates.md) | Filename fields, uniqueness, length limits |
 | [JS runtimes](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Why Deno comes first, and what the alternatives cost |
 | [Audit record](docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md) | The 61-finding review, one row per finding |
+| [Second-pass record](docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md) | What the ten follow-up findings were, and what was done with them |
 | [Agent skills](skills/README.md) | The reusable review and verification procedures |
 | [Changelog](docs/CHANGELOG.md) | Release notes |
 
