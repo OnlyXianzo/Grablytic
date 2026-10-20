@@ -48,27 +48,8 @@ jobs:
       - name: Run static analysis
         run: flutter analyze
 
-      # TEMPORARY: surface the analyzer's message as a check annotation so
-      # it can be read without the Actions log (blocked in one environment).
-      # Reverted before merge.
-      - name: Analyzer diagnostics
-        if: failure()
-        run: |
-          flutter analyze 2>&1 | head -40 | while IFS= read -r line; do
-            echo "::error::$line"
-          done
-
       - name: Run widget & unit tests with coverage
         run: flutter test --coverage
-
-      # TEMPORARY: same reason as the step above, for the test run.
-      - name: Test diagnostics
-        if: failure()
-        run: |
-          flutter test 2>&1 \
-            | grep -E " -[0-9]+: |Some tests failed" \
-            | head -30 \
-            | while IFS= read -r line; do echo "::error::$line"; done
 
       - name: Enforce Flutter project-lib coverage floor
         run: python3 tool/check_flutter_coverage.py coverage/lcov.info --fail-under 30
