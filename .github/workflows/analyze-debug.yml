@@ -1,9 +1,8 @@
 name: Analyze Debug
 
-# TEMPORARY: mirrors the verify workflow's analyze step but re-emits every
-# diagnostic as an error-level annotation, so the exact text is visible on
-# the PR (job logs are not reachable from this environment). Deleted before
-# this branch merges.
+# TEMPORARY: mirrors the verify workflow's analyze + test steps but re-emits
+# the failures as annotations (job logs are unreachable from this
+# environment). Deleted before this branch merges.
 
 on:
   push:
@@ -24,9 +23,20 @@ jobs:
         run: |
           set +e
           flutter analyze > analyze.txt 2>&1
-          code=$?
-          echo "::error::flutter analyze exited $code"
-          head -c 4000 analyze.txt | while IFS= read -r line; do
+          echo "::error::flutter analyze exited $?"
+          head -c 2000 analyze.txt | while IFS= read -r line; do
             [ -n "$line" ] && echo "::error::$line"
+          done
+          exit 0
+      - name: Test
+        run: |
+          set +e
+          flutter test > test.txt 2>&1
+          echo "::error::flutter test exited $?"
+          grep -E "^[0-9:]+ \+[0-9]+.*\[E\]|^Expected:|^  Actual:|^    Which:|Error: |^[A-Za-z0-9_/]+\.dart [0-9]+:[0-9]+" test.txt | head -60 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          grep -n "Some tests failed\|tests passed" test.txt | tail -3 | while IFS= read -r line; do
+            echo "::error::SUM $line"
           done
           exit 0
