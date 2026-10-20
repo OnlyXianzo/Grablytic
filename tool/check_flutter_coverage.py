@@ -58,7 +58,11 @@ def _integer(value: str, field: str, line_number: int) -> int:
 
 
 def _merge_lcov_project_record(
-    files: dict, state: dict, end_line: int, source: str
+    files: dict,
+    state: dict,
+    end_line: int,
+    source: str,
+    seen: set | None = None,
 ) -> None:
     """Merge a project's line hits into ``files``, OR-ing duplicate lines.
 
@@ -69,6 +73,8 @@ def _merge_lcov_project_record(
     project_path = project_source(source)
     if project_path is None:
         return
+    if seen is not None:
+        seen.add(project_path)
     line_hits = state["line_hits"]
     summary_found = state["summary_found"]
     summary_hit = state["summary_hit"]
@@ -100,7 +106,9 @@ def _merge_lcov_project_record(
         merged[number] = merged.get(number, False) or was_hit
 
 
-def _finish_lcov_record(files: dict, state: dict, end_line: int) -> None:
+def _finish_lcov_record(
+    files: dict, state: dict, end_line: int, seen: set | None = None
+) -> None:
     source = state["source"]
     if source is None:
         if (
@@ -110,7 +118,7 @@ def _finish_lcov_record(files: dict, state: dict, end_line: int) -> None:
         ):
             raise ValueError(f"line {end_line}: LCOV data has no SF source record")
     else:
-        _merge_lcov_project_record(files, state, end_line, source)
+        _merge_lcov_project_record(files, state, end_line, source, seen)
     state.update(
         source=None,
         line_hits={},
@@ -148,7 +156,9 @@ def _handle_lcov_summary(data: str, line_number: int, state: dict, field: str) -
     state[key] = value
 
 
-def _handle_lcov_row(row: str, line_number: int, files: dict, state: dict) -> None:
+def _handle_lcov_row(
+    row: str, line_number: int, files: dict, state: dict, seen: set | None = None
+) -> None:
     key, _, data = row.partition(":")
     if key == "SF":
         _handle_lcov_source(data, line_number, state)
@@ -159,7 +169,7 @@ def _handle_lcov_row(row: str, line_number: int, files: dict, state: dict) -> No
     elif key == "LH":
         _handle_lcov_summary(data, line_number, state, "LH")
     elif key == "end_of_record":
-        _finish_lcov_record(files, state, line_number)
+        _finish_lcov_record(files, state, line_number, seen)
 
 
 def _lcov_record_is_open(state: dict) -> bool:
@@ -177,8 +187,29 @@ def _lcov_aggregate(files: dict) -> tuple[int, int]:
     return found, hit
 
 
-def parse_lcov(path: Path) -> tuple[int, int, int]:
-    """Return (files, executable_lines, hit_lines) for unique project lines."""
+def lib_sources() -> set[str]:
+    """Every Dart file under `lib/`, as project-relative POSIX paths."""
+    return {path.relative_to(LIB_ROOT).as_posix() for path in LIB_ROOT.rglob("*.dart")}
+
+
+def unloaded_sources(seen: set) -> list[str]:
+    """lib/ files that produced no LCOV record at all.
+
+    `flutter test --coverage` only reports files the instrumented code
+    reached. A file whose import is broken, or that no test touches, simply
+    vanishes from the report — and since the percentage is computed over
+    what IS in the report, deleting a weak module RAISES coverage. These
+    are the files that vanish.
+    """
+    return sorted(lib_sources() - seen)
+
+
+def parse_lcov(path: Path, seen: set | None = None) -> tuple[int, int, int]:
+    """Return (files, executable_lines, hit_lines) for unique project lines.
+
+    When [seen] is given it is filled with every project source that
+    appeared in the report, including files that carry no DA rows.
+    """
     try:
         rows = path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
@@ -193,7 +224,7 @@ def parse_lcov(path: Path) -> tuple[int, int, int]:
         "record_start": 0,
     }
     for line_number, row in enumerate(rows, start=1):
-        _handle_lcov_row(row, line_number, files, state)
+        _handle_lcov_row(row, line_number, files, state, seen)
     if _lcov_record_is_open(state):
         raise ValueError("LCOV report ends before end_of_record")
     if not files:
@@ -224,12 +255,32 @@ def main() -> int:
         metavar="PERCENT",
         help=f"minimum project-lib line coverage (default: {DEFAULT_FLOOR:g}%)",
     )
+    parser.add_argument(
+        "--max-unloaded",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "fail when more than N lib/ files have no coverage record at all "
+            "(default: report them, no failure)"
+        ),
+    )
+    parser.add_argument(
+        "--allow-unloaded",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="project-relative lib/ file that may have no coverage record",
+    )
     args = parser.parse_args()
     if not 0 <= args.fail_under <= 100:
         parser.error("--fail-under must be between 0 and 100")
+    if args.max_unloaded is not None and args.max_unloaded < 0:
+        parser.error("--max-unloaded must not be negative")
 
+    seen: set[str] = set()
     try:
-        file_count, found, hit = parse_lcov(args.lcov_file)
+        file_count, found, hit = parse_lcov(args.lcov_file, seen=seen)
     except ValueError as exc:
         print(f"Flutter coverage check: ERROR: {exc}", file=sys.stderr)
         return 2
@@ -240,7 +291,25 @@ def main() -> int:
         f"({hit}/{found} executable lines across {file_count} lib/ files); "
         f"required: {args.fail_under:.2f}%"
     )
-    if percentage + 1e-9 < args.fail_under:
+    unloaded = [p for p in unloaded_sources(seen) if p not in set(args.allow_unloaded)]
+    print(
+        f"lib/ files with coverage data: {len(seen)}; "
+        f"without any record: {len(unloaded)}"
+    )
+    if unloaded:
+        print("No coverage record for:", file=sys.stderr)
+        for missing in unloaded[:25]:
+            print(f"  {missing}", file=sys.stderr)
+        if len(unloaded) > 25:
+            print(f"  ... and {len(unloaded) - 25} more", file=sys.stderr)
+    over_budget = args.max_unloaded is not None and len(unloaded) > args.max_unloaded
+    if percentage + 1e-9 < args.fail_under or over_budget:
+        if over_budget:
+            print(
+                f"{len(unloaded)} lib/ files produced no coverage record, "
+                f"budget is {args.max_unloaded}",
+                file=sys.stderr,
+            )
         print("Flutter coverage check: FAIL", file=sys.stderr)
         return 1
     print("Flutter coverage check: PASS")

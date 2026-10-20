@@ -113,3 +113,39 @@ DownloadRecord? findDuplicate(List<DownloadRecord> records, String url) {
   }
   return null;
 }
+
+/// Set-based membership test over completed history records.
+///
+/// `findDuplicate` walks the record list for every candidate, so the batch
+/// pre-filter was O(items x completed records): a 500-entry playlist against
+/// a 5,000-row history meant 2.5M URL comparisons before the first download
+/// started. Building the two lookup tables once is O(n + m).
+///
+/// Same rule as [findDuplicate]: a normalized URL match, or a matching
+/// YouTube video id.
+class CompletedVideoIndex {
+  CompletedVideoIndex._(this._urls, this._ids);
+
+  /// Builds the index from records already filtered to `completed`.
+  factory CompletedVideoIndex.fromRecords(List<DownloadRecord> records) {
+    final urls = <String>{};
+    final ids = <String>{};
+    for (final record in records) {
+      if (record.status != 'completed') continue;
+      urls.add(_normalizeUrl(record.url));
+      final id = extractVideoId(record.url);
+      if (id != null) ids.add(id);
+    }
+    return CompletedVideoIndex._(urls, ids);
+  }
+
+  final Set<String> _urls;
+  final Set<String> _ids;
+
+  /// True when [url] matches a completed record.
+  bool contains(String url) {
+    if (_urls.contains(_normalizeUrl(url))) return true;
+    final id = extractVideoId(url);
+    return id != null && _ids.contains(id);
+  }
+}

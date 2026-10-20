@@ -231,3 +231,40 @@ def test_backoff_is_cancelled_by_a_cancel_event(monkeypatch):
         assert done.wait(3.0), "a cancelled backoff must not wait for a slot"
     finally:
         dl.set_max_concurrent(2)
+
+
+def test_expired_slot_wait_does_not_proceed(monkeypatch):
+    """A retry that never gets capacity must not run anyway.
+
+    Lowering the limit mid-backoff used to let every sleeper resume when
+    its 300 s deadline expired, so N downloads ran against a limit of 1.
+    The wait now reports failure and the caller ends the attempt.
+    """
+    dl = _dl()
+    monkeypatch.setattr(dl.time, "sleep", lambda s: None)
+    monkeypatch.setattr(dl, "_MAX_BACKOFF_SLOT_WAIT_S", -1.0)
+    dl.set_max_concurrent(1)
+    try:
+        dl.start_download(url="https://example.com/a", download_id="a")
+        with dl._downloads_lock:
+            dl._active_downloads["z"] = {
+                "url": "https://example.com/z",
+                "audio_only": False,
+                "finished_at": None,
+            }
+        assert dl._begin_backoff("a", 0.0, None) is False
+        with dl._downloads_lock:
+            assert dl._active_downloads["a"].get("backoff_slot_wait_expired") is True
+            # The reservation is released either way, so the queue is not
+            # permanently short a slot.
+            assert dl._active_downloads["a"].get("backing_off") is False
+    finally:
+        dl.set_max_concurrent(2)
+
+
+def test_expired_slot_wait_fails_the_retry(monkeypatch):
+    """_maybe_retry_transient declines when the backoff finds no slot."""
+    dl = _dl()
+    monkeypatch.setattr(dl, "_begin_backoff", lambda *a, **k: False)
+    err = dl.GrablyticError("ERROR_NETWORK", "boom")
+    assert dl._maybe_retry_transient(err, 1, None, "id") is False

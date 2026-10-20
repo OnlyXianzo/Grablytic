@@ -127,6 +127,15 @@ class AppSettings {
   final bool scheduleEnabled;
   final String scheduleTime;
   final List<int> scheduleDays;
+
+  /// How long the window stays open after [scheduleTime], in minutes.
+  ///
+  /// A start time with no end is not a window: "from 22:00" meant the
+  /// window closed at midnight, so an overnight schedule was open for two
+  /// hours and blocked at 00:30. Defaults to four hours, which wraps past
+  /// midnight correctly.
+  final int scheduleWindowMinutes;
+
   final int scheduleIntervalMinutes;
   final bool scheduleWifiOnly;
   final bool scheduleRequiresCharging;
@@ -183,6 +192,7 @@ class AppSettings {
     this.scheduleEnabled = false,
     this.scheduleTime = '22:00',
     this.scheduleDays = const [1, 2, 3, 4, 5],
+    this.scheduleWindowMinutes = 240,
     this.scheduleIntervalMinutes = 60,
     this.scheduleWifiOnly = true,
     this.scheduleRequiresCharging = false,
@@ -237,6 +247,7 @@ class AppSettings {
     bool? scheduleEnabled,
     String? scheduleTime,
     List<int>? scheduleDays,
+    int? scheduleWindowMinutes,
     int? scheduleIntervalMinutes,
     bool? scheduleWifiOnly,
     bool? scheduleRequiresCharging,
@@ -294,6 +305,8 @@ class AppSettings {
       scheduleEnabled: scheduleEnabled ?? this.scheduleEnabled,
       scheduleTime: scheduleTime ?? this.scheduleTime,
       scheduleDays: scheduleDays ?? this.scheduleDays,
+      scheduleWindowMinutes:
+          scheduleWindowMinutes ?? this.scheduleWindowMinutes,
       scheduleIntervalMinutes:
           scheduleIntervalMinutes ?? this.scheduleIntervalMinutes,
       scheduleWifiOnly: scheduleWifiOnly ?? this.scheduleWifiOnly,
@@ -548,6 +561,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final scheduleDays = scheduleDaysRaw
         .map((e) => int.tryParse(e) ?? 1)
         .toList();
+    final scheduleWindowMinutes =
+        _prefs.getInt('scheduleWindowMinutes') ?? 240;
     final scheduleIntervalMinutes =
         _prefs.getInt('scheduleIntervalMinutes') ?? 60;
     final scheduleWifiOnly = _prefs.getBool('scheduleWifiOnly') ?? true;
@@ -611,6 +626,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       scheduleEnabled: scheduleEnabled,
       scheduleTime: scheduleTime,
       scheduleDays: scheduleDays,
+      scheduleWindowMinutes: scheduleWindowMinutes,
       scheduleIntervalMinutes: scheduleIntervalMinutes,
       scheduleWifiOnly: scheduleWifiOnly,
       scheduleRequiresCharging: scheduleRequiresCharging,

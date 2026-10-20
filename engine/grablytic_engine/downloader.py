@@ -544,7 +544,7 @@ def _notify_slot_change() -> None:
         pass
 
 
-def _begin_backoff(download_id: str, delay: float, cancel) -> None:
+def _begin_backoff(download_id: str, delay: float, cancel) -> bool:
     """Pause work for `delay` seconds while reserving the download's slot.
 
     While it sleeps the entry is flagged `backing_off`, so
@@ -556,10 +556,15 @@ def _begin_backoff(download_id: str, delay: float, cancel) -> None:
     long as the queue kept completing, which looked exactly like a hang.
 
     After the sleep, wait up to 300 additional seconds for a working
-    slot. A set `cancel` event skips this additional wait, not the sleep.
-    If the deadline expires, clear the backoff flag and return even if
-    doing so exceeds the concurrency limit; mark the entry as expired.
-    Sleep failures are suppressed and slot acquisition still proceeds.
+    slot. A set `cancel` event skips this additional wait, not the sleep,
+    and the caller's own cancel check then turns it into a cancellation.
+
+    Returns True when the retry may proceed, False when the deadline
+    expired. The caller must NOT run the retry on False: resuming without
+    a slot is how five downloads ended up running against a limit of one
+    after the limit was lowered mid-backoff. A retry that never gets
+    capacity is ended as a failed attempt so the user sees a terminal
+    error and the concurrency budget stays honest.
     """
     with _downloads_lock:
         info = _active_downloads.get(download_id)
@@ -601,16 +606,21 @@ def _begin_backoff(download_id: str, delay: float, cancel) -> None:
             if expired:
                 info["backoff_slot_wait_expired"] = True
     if expired:
-        # Proceeding is the lesser evil: the alternative is a download that
-        # never retries and never fails. The flag keeps it visible.
+        # The retry never got capacity back. Fail the attempt instead of
+        # running over the limit: a terminal error is visible and retryable,
+        # an overloaded engine is neither.
         try:
-            log.warn(
-                "Retry slot wait expired; resuming without a free slot "
+            log.error(
+                "Retry slot wait expired; failing the attempt instead of "
+                "exceeding the concurrency limit "
                 f"(download_id={download_id})"
             )
         except Exception:
             pass
+        _notify_slot_change()
+        return False
     _notify_slot_change()
+    return True
 
 
 def _is_audio_mode(config) -> bool:
@@ -1395,7 +1405,10 @@ def _maybe_retry_transient(err, attempts_made: int, cancel, download_id: str) ->
         pass
     # The backoff sleep does NOT hold the concurrency slot: the slot is
     # released for the duration of the wait and re-acquired afterwards.
-    _begin_backoff(download_id, delay, cancel)
+    if not _begin_backoff(download_id, delay, cancel):
+        # No slot came free within the deadline: end the attempt rather
+        # than add a download the limit says cannot run.
+        return False
     if cancel is not None:
         try:
             if cancel.is_set():

@@ -54,6 +54,17 @@ jobs:
       - name: Enforce Flutter project-lib coverage floor
         run: python3 tool/check_flutter_coverage.py coverage/lcov.info --fail-under 30
 
+      # TEMPORARY: the coverage-completeness numbers as check annotations.
+      # Actions logs are unreachable from one review environment; removed
+      # once the --max-unloaded budget is seeded.
+      - name: Coverage completeness report
+        if: success()
+        run: |
+          python3 tool/check_flutter_coverage.py coverage/lcov.info \
+            --fail-under 0 2>&1 \
+            | head -40 \
+            | while IFS= read -r line; do echo "::warning::$line"; done
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
