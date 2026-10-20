@@ -32,7 +32,6 @@ private const val ERR_ENGINE_UNAVAILABLE = "ERROR_ENGINE_UNAVAILABLE"
 private const val MSG_ENGINE_NOT_READY = "Engine is not ready"
 private const val MSG_PERMISSION_DENIED = "permission denied"
 
-
 /**
  * Chaquopy callback contract for engine → Kotlin event delivery.
  * A public interface (not an anonymous `object : Any()`) so R8/ProGuard
