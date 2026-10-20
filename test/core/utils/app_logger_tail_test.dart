@@ -13,6 +13,11 @@ void main() {
   });
 
   tearDown(() async {
+    // init() starts the 30s flush worker and points the logger at this
+    // temp dir. Left running, it outlives the test: it keeps a periodic
+    // timer alive into later suites and, once the directory is gone,
+    // flushes into it. Global static state, so it has to be put back.
+    AppLogger.stopFlushWorker();
     try {
       await tmp.delete(recursive: true);
     } catch (_) {}
