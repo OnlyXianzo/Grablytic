@@ -73,9 +73,12 @@ class LogBuffer {
     return List<LogEntry>.of(_entries.skip(_entries.length - limit));
   }
 
-  /// Copy of every retained entry. Allocates — use [view] or [snapshot]
-  /// on any path a user can trigger.
-  List<LogEntry> get entries => List<LogEntry>.of(_entries);
+  /// Read-only copy of every retained entry.
+  ///
+  /// Unmodifiable on purpose (a caller that appends to this would be
+  /// writing into a copy and silently losing the write). Allocates — use
+  /// [view] or [snapshot] on any path a user can trigger.
+  List<LogEntry> get entries => List<LogEntry>.unmodifiable(_entries);
 
   void add(LogEntry entry) {
     // Gate FIRST. This used to record into the per-download queues before
