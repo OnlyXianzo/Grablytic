@@ -104,11 +104,20 @@ class AppLogger {
     }
     logLine += '\n';
 
-    // Print to console for debug (unchanged behavior).
-    // ignore: avoid_print
-    print(logLine.trim());
+    // Logging disabled is disabled: the console mirror used to run BEFORE
+    // this check, so `setEnabled(false)` only silenced the file and every
+    // message kept going to stdout (and to logcat in release builds).
+    if (!_loggingEnabled) return;
 
-    if (!_loggingEnabled || _logsDirPath == null) return;
+    // The console mirror is a developer affordance. Debug builds only, so
+    // a release binary does not stream titles, URLs and paths into logcat,
+    // where the buffer is shared and rotates fast.
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print(logLine.trim());
+    }
+
+    if (_logsDirPath == null) return;
 
     // Buffer for batched disk write — no await, no fsync on UI thread.
     _pending.add(logLine);
@@ -199,12 +208,38 @@ class AppLogger {
       await appFile.writeAsString(blob, mode: FileMode.append);
       await _pruneSealedChunks();
     } catch (e) {
-      // Re-queue on transient I/O failure (disk full excluded to avoid loop).
-      // ignore: avoid_print
-      print('Failed writing log batch: $e');
+      // The batch was detached from `_pending` before this block ran, so a
+      // failure used to DROP it — up to 10,000 lines, including the
+      // ERROR/FATAL that triggered the flush, lost at the exact moment
+      // (full disk, locked file, flaky storage) a crash report needs them.
+      // Put it back unless the failure is permanent; the usual cap still
+      // applies, so a permanently broken disk cannot loop or grow.
+      final permanent = _isPermanentWriteFailure(e);
+      if (!permanent) {
+        _pending.insertAll(0, batch);
+        if (_pending.length > 10000) {
+          _pending.removeRange(0, _pending.length - 10000);
+        }
+      }
+      AppLogger.warn(
+        'Log batch flush failed (${batch.length} lines, '
+        '${permanent ? "dropped" : "re-queued"}): $e',
+        tag: 'logger',
+      );
     } finally {
       _flushInProgress = false;
     }
+  }
+
+  /// True for write failures that retrying cannot fix.
+  ///
+  /// ENOSPC (28), EACCES (13) and EIO (5) are the three that turn a retry
+  /// loop into a battery drain. Everything else (a transiently locked file
+  /// on Windows, a reader holding the handle) is worth one more attempt.
+  static bool _isPermanentWriteFailure(Object error) {
+    if (error is! FileSystemException) return false;
+    final code = error.osError?.errorCode;
+    return code == 28 || code == 13 || code == 5;
   }
 
   /// Seals the full active chunk to `app_logs-YYYY-MM-DD-HH-mm-ss.txt`.
@@ -506,6 +541,33 @@ class AppLogger {
     return false;
   }
 
+  /// Reads the last [maxBytes] of [file] and decodes them as UTF-8.
+  ///
+  /// `String.fromCharCodes` maps each BYTE to one UTF-16 unit, so every
+  /// multi-byte sequence (a Hindi, Japanese or emoji title) came out as
+  /// mojibake in crash reports, exports and the log viewer's search. The
+  /// file is UTF-8 everywhere else; this is the one place that disagreed.
+  /// `allowMalformed` covers a seek that lands mid-codepoint.
+  static Future<String> _readTailUtf8(
+    File file, {
+    required int len,
+    required int maxBytes,
+  }) async {
+    final raf = await file.open(mode: FileMode.read);
+    try {
+      await raf.setPosition(len - maxBytes);
+      final bytes = await raf.read(maxBytes);
+      var text = utf8.decode(bytes, allowMalformed: true);
+      // Drop the partially cut first line when it is close to the start of
+      // the window; a whole-line cut is what makes tails readable.
+      final nl = text.indexOf('\n');
+      if (nl >= 0 && nl < 4096) text = text.substring(nl + 1);
+      return text;
+    } finally {
+      await raf.close();
+    }
+  }
+
   /// Reads the tail of `app_logs.txt` (or newest daily log as fallback),
   /// capped at [maxBytes]. Used by the GitHub reporter — never loads the
   /// whole file into memory on low-end devices.
@@ -520,17 +582,8 @@ class AppLogger {
       }
       final len = await target.length();
       if (len <= maxBytes) return await target.readAsString();
-      final raf = await target.open(mode: FileMode.read);
-      try {
-        await raf.setPosition(len - maxBytes);
-        final bytes = await raf.read(maxBytes);
-        var text = String.fromCharCodes(bytes);
-        final nl = text.indexOf('\n');
-        if (nl >= 0 && nl < 4096) text = text.substring(nl + 1);
-        return '... [TRUNCATED — showing last ${maxBytes ~/ 1024}KB of ${len ~/ 1024}KB] ...\n$text';
-      } finally {
-        await raf.close();
-      }
+      final text = await _readTailUtf8(target, len: len, maxBytes: maxBytes);
+      return '... [TRUNCATED — showing last ${maxBytes ~/ 1024}KB of ${len ~/ 1024}KB] ...\n$text';
     } catch (e) {
       return 'Failed to read log tail: $e';
     }
@@ -718,17 +771,8 @@ class AppLogger {
       }
       final len = await target.length();
       if (len <= maxBytes) return await target.readAsString();
-      final raf = await target.open(mode: FileMode.read);
-      try {
-        await raf.setPosition(len - maxBytes);
-        final bytes = await raf.read(maxBytes);
-        var text = String.fromCharCodes(bytes);
-        final nl = text.indexOf('\n');
-        if (nl >= 0 && nl < 4096) text = text.substring(nl + 1);
-        return '... [TRUNCATED — showing last ${maxBytes ~/ 1024}KB of ${len ~/ 1024}KB] ...\n$text';
-      } finally {
-        await raf.close();
-      }
+      final text = await _readTailUtf8(target, len: len, maxBytes: maxBytes);
+      return '... [TRUNCATED — showing last ${maxBytes ~/ 1024}KB of ${len ~/ 1024}KB] ...\n$text';
     } catch (e) {
       return 'Failed to read full log: $e';
     }

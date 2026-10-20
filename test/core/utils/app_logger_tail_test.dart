@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grablytic/core/utils/app_logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late Directory tmp;
@@ -178,6 +179,37 @@ void main() {
       expect(r.text, content);
       expect(r.text, contains('😀'));
       expect(r.text, contains('✓'));
+    });
+  });
+
+  group('readLogTail / readFullLog decoding', () {
+    test('multi-byte characters survive the truncated tail', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await AppLogger.init(tmp.path, prefs);
+
+      // ~60k characters of Devanagari + emoji: well past the 100 KB window,
+      // so the seek-and-read branch (not readAsString) is exercised.
+      final line = 'हिंदी शीर्षक 🎬 the quick brown fox';
+      final file = File('${tmp.path}/logs/app_logs.txt');
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        List<String>.filled(4000, line).join('\n'),
+        encoding: utf8,
+      );
+      expect(await file.length(), greaterThan(100 * 1024));
+
+      final tail = await AppLogger.readLogTail();
+      expect(tail, contains('TRUNCATED'));
+      expect(tail, contains('हिंदी शीर्षक'));
+      expect(tail, contains('🎬'));
+      // Bytes-as-code-units showed up as runs of Latin-1 mojibake; 'à¤' is
+      // the signature of UTF-8 Devanagari read one byte at a time.
+      expect(tail, isNot(contains('à¤')));
+
+      final full = await AppLogger.readFullLog();
+      expect(full, contains('हिंदी शीर्षक'));
+      expect(full, isNot(contains('à¤')));
     });
   });
 }

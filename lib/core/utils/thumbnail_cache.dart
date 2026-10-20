@@ -1,4 +1,14 @@
-import 'dart:io' show Directory, File, HttpClient;
+import 'dart:io'
+    show
+        Directory,
+        File,
+        FileStat,
+        FileSystemException,
+        HttpClient,
+        IOSink,
+        RandomAccessFile;
+
+import 'package:flutter/foundation.dart' show debugPrint;
 
 /// App-private thumbnail prefetch cache.
 ///
@@ -49,22 +59,57 @@ class ThumbnailCache {
       final mime = res.headers.contentType?.mimeType ?? '';
       if (mime.isNotEmpty && !mime.startsWith('image/')) return null;
       if (res.contentLength > maxBytes) return null;
-      final sink = dest.openWrite();
+
+      // Write to a sibling temp file, validate, THEN promote. Writing the
+      // final path directly meant a stream error or a killed isolate left
+      // a truncated JPEG behind — and the next call's `dest.exists()`
+      // check returned that fragment as a cache hit, for ever. A 200-byte
+      // piece of a 40 KB thumbnail is indistinguishable from the real
+      // thing once it is named `.jpg`.
+      final tmp = File('${dest.path}.part');
+      IOSink? sink;
       var bytes = 0;
       var tooBig = false;
-      await for (final chunk in res) {
-        bytes += chunk.length;
-        if (bytes > maxBytes) {
-          tooBig = true;
-          break;
+      var failed = false;
+      try {
+        sink = tmp.openWrite();
+        await for (final chunk in res) {
+          bytes += chunk.length;
+          if (bytes > maxBytes) {
+            tooBig = true;
+            break;
+          }
+          sink.add(chunk);
         }
-        sink.add(chunk);
-      }
-      await sink.close();
-      if (tooBig) {
+        await sink.flush();
+        await sink.close();
+        sink = null;
+      } on Object catch (error) {
+        // Deliberately broad: the body awaits a socket AND a file, so a
+        // failure can be SocketException, HttpException, TimeoutException
+        // or FileSystemException. Any of them means "no thumbnail".
+        debugPrint('[thumbnails] fetch failed: $error');
+        failed = true;
+      } finally {
         try {
-          await dest.delete();
-        } catch (_) {}
+          await sink?.close();
+        } on FileSystemException {
+          // Already failed; closing twice must not mask that.
+        }
+      }
+
+      if (failed || tooBig || bytes == 0) {
+        await _deleteQuietly(tmp);
+        return null;
+      }
+      if (!await _looksLikeJpeg(tmp)) {
+        await _deleteQuietly(tmp);
+        return null;
+      }
+      try {
+        await tmp.rename(dest.path);
+      } on FileSystemException {
+        await _deleteQuietly(tmp);
         return null;
       }
       return dest.path;
@@ -75,5 +120,96 @@ class ThumbnailCache {
         client?.close(force: true);
       } catch (_) {}
     }
+  }
+
+  /// True when [file] starts with the JPEG SOI marker.
+  ///
+  /// A truncated download either has no header at all or stops mid-stream;
+  /// either way it fails this check before it can claim a cache slot. A
+  /// cover served as PNG/WebP fails too — that is intended, the UI already
+  /// falls back to a placeholder and a wrong-format file in a `.jpg` slot
+  /// only breaks the decoder later.
+  static Future<bool> _looksLikeJpeg(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final magic = await raf.read(3);
+      return magic.length == 3 &&
+          magic[0] == 0xFF &&
+          magic[1] == 0xD8 &&
+          magic[2] == 0xFF;
+    } on FileSystemException {
+      // Unreadable is the same outcome as truncated: no thumbnail.
+      return false;
+    } finally {
+      try {
+        await raf?.close();
+      } on FileSystemException {
+        // Handle already released by the OS.
+      }
+    }
+  }
+
+  static Future<void> _deleteQuietly(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } on FileSystemException {
+      // Best effort: a file another process still holds is retried next
+      // prune, and there is nothing useful to do with the error here.
+    }
+  }
+
+  /// Deletes cached thumbnails that no longer belong to a live download.
+  ///
+  /// Nothing used to remove these files: deleting a download dropped the
+  /// DB row and the media file, and the thumbnail stayed for ever, in
+  /// app-private storage the user cannot see or clear. [liveIds] is the
+  /// set of download ids still referenced; [maxTotalBytes] is a hard
+  /// budget applied afterwards, oldest first, so a long history cannot
+  /// grow without bound.
+  ///
+  /// Returns the number of files removed. Never throws.
+  static Future<int> prune({
+    required String cacheDir,
+    required Set<String> liveIds,
+    int maxTotalBytes = 64 * 1024 * 1024,
+  }) async {
+    var removed = 0;
+    try {
+      final dir = Directory(cacheDir);
+      if (!await dir.exists()) return 0;
+
+      final kept = <String, FileStat>{};
+      await for (final entity in dir.list()) {
+        if (entity is! File || !entity.path.endsWith('.jpg')) continue;
+        final name = entity.uri.pathSegments.last;
+        final id = name.substring(0, name.length - '.jpg'.length);
+        if (!liveIds.contains(id)) {
+          await _deleteQuietly(entity);
+          removed++;
+          continue;
+        }
+        try {
+          kept[entity.path] = await entity.stat();
+        } on FileSystemException {
+          // A file we cannot stat is a file we cannot budget for; leave it.
+        }
+      }
+
+      var total = kept.values.fold<int>(0, (sum, stat) => sum + stat.size);
+      if (total <= maxTotalBytes) return removed;
+
+      final oldestFirst = kept.entries.toList()
+        ..sort((a, b) => a.value.modified.compareTo(b.value.modified));
+      for (final entry in oldestFirst) {
+        if (total <= maxTotalBytes) break;
+        await _deleteQuietly(File(entry.key));
+        total -= entry.value.size;
+        removed++;
+      }
+    } catch (error) {
+      debugPrint('[thumbnails] prune failed: $error');
+    }
+    return removed;
   }
 }

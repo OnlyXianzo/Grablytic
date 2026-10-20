@@ -398,11 +398,20 @@ class DownloadNotifier extends StateNotifier<List<DownloadItem>> {
     unawaited(() async {
       try {
         final docs = await getApplicationDocumentsDirectory();
+        final cacheDir = '${docs.path}/${ThumbnailCache.subdir}';
         final path = await ThumbnailCache.fetchToCache(
-          cacheDir: '${docs.path}/${ThumbnailCache.subdir}',
+          cacheDir: cacheDir,
           id: id,
           url: thumbUrl,
         );
+        // Opportunistic eviction: the cache had no cleanup at all, so every
+        // thumbnail ever fetched stayed in app-private storage, invisible to
+        // the user and unclearable. One directory listing per prefetch, run
+        // whether or not this fetch worked, bounded by a byte budget.
+        unawaited(ThumbnailCache.prune(
+          cacheDir: cacheDir,
+          liveIds: {for (final d in state) d.id},
+        ));
         if (path == null) return;
         final index = state.indexWhere((d) => d.id == id);
         if (index == -1) return;

@@ -14,7 +14,6 @@ Deterministic and stdlib-only: rerunning on the same history yields the
 same notes. Merge commits are folded (their contents are the commits).
 """
 
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
