@@ -65,9 +65,8 @@ jobs:
       - name: Test diagnostics
         if: failure()
         run: |
-          flutter test --reporter expanded 2>&1 \
-            | grep -iE "\[E\]|expected|actual|which:|exception|failed" \
-            | head -40 \
+          flutter test test/features/library/library_screen_test.dart 2>&1 \
+            | tail -45 \
             | while IFS= read -r line; do echo "::error::$line"; done
 
       - name: Enforce Flutter project-lib coverage floor
