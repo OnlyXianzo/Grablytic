@@ -23,8 +23,40 @@ import 'features/home/screens/share_overlay_screen.dart';
 /// Route observer instance shared by [GrablyticApp].
 final loggingNavigatorObserver = LoggingNavigatorObserver();
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  // Flutter requires the binding and runApp to live in the SAME zone.
+  // Initializing the binding in the root zone and then calling runApp
+  // inside runZonedGuarded associates the framework callbacks with the
+  // root zone, so their errors are dispatched to a handler that does not
+  // exist instead of the app's handler below — the crash reporter and
+  // the auto-report silently missed exactly the errors they exist for.
+  //
+  // The whole startup path therefore runs inside the guarded zone. The
+  // zone values that the startup code needs are produced before the
+  // zone is entered, and the zone handler is installed by FlutterError
+  // inside it.
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      await _bootstrap();
+    },
+    (error, stack) {
+      try {
+        AppLogger.fatal(
+          'Uncaught zone error: $error',
+          tag: 'global',
+          error: error,
+          stackTrace: stack,
+        );
+        unawaited(AppLogger.flushNow());
+      } catch (_) {}
+    },
+  );
+}
+
+/// Startup work that must run inside the app's zone, after the binding
+/// is initialized.
+Future<void> _bootstrap() async {
   if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
@@ -82,30 +114,15 @@ void main() async {
     },
   );
 
-  runZonedGuarded(
-    () {
-      runApp(
-        ProviderScope(
-          observers: [LoggingProviderObserver()],
-          overrides: [
-            sharedPreferencesProvider.overrideWithValue(prefs),
-            logBufferProvider.overrideWithValue(logBuffer),
-          ],
-          child: const GrablyticApp(),
-        ),
-      );
-    },
-    (error, stack) {
-      try {
-        AppLogger.fatal(
-          'Uncaught zone error: $error',
-          tag: 'global',
-          error: error,
-          stackTrace: stack,
-        );
-        unawaited(AppLogger.flushNow());
-      } catch (_) {}
-    },
+  runApp(
+    ProviderScope(
+      observers: [LoggingProviderObserver()],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        logBufferProvider.overrideWithValue(logBuffer),
+      ],
+      child: const GrablyticApp(),
+    ),
   );
 }
 

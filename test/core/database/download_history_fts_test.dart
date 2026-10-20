@@ -147,6 +147,16 @@ void main() {
       'id': 'pre-index',
       'url': 'https://video.test/legacy-token',
       'title': 'Legacy item',
+      // A zone-less local timestamp: the v7 migration has to read it
+      // as local time and rewrite it as UTC.
+      'timestamp': '2026-10-01T00:00:00.000',
+      'status': 'completed',
+      'progress': 1.0,
+    });
+    await oldDb.insert('downloads', {
+      'id': 'pre-index-zoned',
+      'url': 'https://video.test/legacy-token-2',
+      'title': 'Legacy item with an offset',
       'timestamp': '2026-10-01T00:00:00.000Z',
       'status': 'completed',
       'progress': 1.0,
@@ -156,7 +166,27 @@ void main() {
     final hits = await DownloadHistoryDb.instance.getAll(
       search: 'legacy-token',
     );
-    expect(hits.map((record) => record.id), ['pre-index']);
-    expect(await (await DownloadHistoryDb.instance.database).getVersion(), 6);
+    expect(hits.map((record) => record.id), containsAll(['pre-index', 'pre-index-zoned']));
+    // v7 normalises the timestamps to UTC ISO-8601 with an offset.
+    expect(await (await DownloadHistoryDb.instance.database).getVersion(), 7);
+    // The zone-less local timestamp is read as local time and stored
+    // as UTC; the already-zoned one is not shifted.
+    final rows = await (await DownloadHistoryDb.instance.database).query(
+      'downloads',
+      where: 'id IN (?, ?)',
+      whereArgs: ['pre-index', 'pre-index-zoned'],
+      orderBy: 'id ASC',
+    );
+    final byId = <String, String?>{
+      for (final row in rows)
+        row['id'] as String: row['timestamp'] as String?,
+    };
+    expect(byId['pre-index-zoned'], '2026-10-01T00:00:00.000Z');
+    expect(byId['pre-index'], isNotNull);
+    expect(
+      byId['pre-index']!,
+      matches(RegExp(r'Z$')),
+      reason: 'a zone-less timestamp must be normalised to UTC',
+    );
   });
 }

@@ -18,7 +18,9 @@ FATAL = 50
 
 LEVEL_NAMES = {10: "DEBUG", 20: "INFO", 30: "WARN", 40: "ERROR", 50: "FATAL"}
 
-_current_download_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_download_id", default=None)
+_current_download_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_download_id", default=None
+)
 
 
 def get_current_download_id() -> str | None:
@@ -63,14 +65,14 @@ class EngineLogger:
         self._bridge_min_level: int = INFO
 
     def set_context(self, **kwargs: Any) -> None:
-        if not hasattr(self._context, 'data'):
+        if not hasattr(self._context, "data"):
             self._context.data = {}
         self._context.data.update(kwargs)
         if "download_id" in kwargs:
             _current_download_id.set(kwargs["download_id"])
 
     def clear_context(self) -> None:
-        if hasattr(self._context, 'data'):
+        if hasattr(self._context, "data"):
             self._context.data.clear()
         _current_download_id.set(None)
 
@@ -91,12 +93,28 @@ class EngineLogger:
         """Floor for the UI bridge callback (file + queue unaffected)."""
         self._bridge_min_level = level
 
-    def _log(self, level: int, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
-        ctx = getattr(self._context, 'data', {}).copy() if hasattr(self._context, 'data') else {}
+    def _log(
+        self,
+        level: int,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        ctx = (
+            getattr(self._context, "data", {}).copy()
+            if hasattr(self._context, "data")
+            else {}
+        )
         level_name = LEVEL_NAMES.get(level, "UNKNOWN")
         now = datetime.now(timezone.utc)
         ts = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
-        did = ctx.get("download_id") or (extra or {}).get("download_id") or _current_download_id.get()
+        did = (
+            ctx.get("download_id")
+            or (extra or {}).get("download_id")
+            or _current_download_id.get()
+        )
         trace_id = ctx.get("trace_id") or did
         if did:
             ctx["download_id"] = did
@@ -118,9 +136,13 @@ class EngineLogger:
         print(f"[{level_name}] [{self.name}] {message}", file=sys.stderr)
 
         if level >= self._min_level and self._log_dir:
-            _write_daily_line(self._log_dir, now,
-                              json.dumps(event, default=str) + "\n",
-                              level=level, force_flush=level >= ERROR)
+            _write_daily_line(
+                self._log_dir,
+                now,
+                json.dumps(event, default=str) + "\n",
+                level=level,
+                force_flush=level >= ERROR,
+            )
 
         if level >= self._min_level and self._queue is not None:
             try:
@@ -135,7 +157,11 @@ class EngineLogger:
         # logging path must not break downloads (or tests without Chaquopy).
         # Gated on _bridge_min_level (default INFO): DEBUG rides the file +
         # queue only, never the UI thread.
-        cb = self._event_callback if self._event_callback is not None else _global_event_callback
+        cb = (
+            self._event_callback
+            if self._event_callback is not None
+            else _global_event_callback
+        )
         if cb is not None and level >= self._bridge_min_level:
             try:
                 cb.onEvent(json.dumps(event, default=str))
@@ -147,29 +173,75 @@ class EngineLogger:
         # so unit tests without persistent init keep passing.
         try:
             from grablytic_engine.persistent import bridge_event as _bridge
-            import logging as _stdlib_logging
 
             _level_map = {10: 10, 20: 20, 30: 30, 40: 40, 50: 50}
-            _bridge(_level_map.get(level, 20),
-                    f"[{self.name}] {message}"
-                    + (f" :: {event['exception']}" if event.get("exception") else ""))
+            _bridge(
+                _level_map.get(level, 20),
+                f"[{self.name}] {message}"
+                + (f" :: {event['exception']}" if event.get("exception") else ""),
+            )
         except Exception:
             pass
 
-    def debug(self, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
-        self._log(DEBUG, message, extra=extra, exception=exception, duration_ms=duration_ms)
+    def debug(
+        self,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        self._log(
+            DEBUG, message, extra=extra, exception=exception, duration_ms=duration_ms
+        )
 
-    def info(self, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
-        self._log(INFO, message, extra=extra, exception=exception, duration_ms=duration_ms)
+    def info(
+        self,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        self._log(
+            INFO, message, extra=extra, exception=exception, duration_ms=duration_ms
+        )
 
-    def warn(self, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
-        self._log(WARN, message, extra=extra, exception=exception, duration_ms=duration_ms)
+    def warn(
+        self,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        self._log(
+            WARN, message, extra=extra, exception=exception, duration_ms=duration_ms
+        )
 
-    def error(self, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
-        self._log(ERROR, message, extra=extra, exception=exception, duration_ms=duration_ms)
+    def error(
+        self,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        self._log(
+            ERROR, message, extra=extra, exception=exception, duration_ms=duration_ms
+        )
 
-    def fatal(self, message: str, *, extra: dict | None = None, exception: BaseException | None = None, duration_ms: int | None = None) -> None:
-        self._log(FATAL, message, extra=extra, exception=exception, duration_ms=duration_ms)
+    def fatal(
+        self,
+        message: str,
+        *,
+        extra: dict | None = None,
+        exception: BaseException | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        self._log(
+            FATAL, message, extra=extra, exception=exception, duration_ms=duration_ms
+        )
 
     @contextmanager
     def trace(self, label: str, level: int = DEBUG) -> Generator[None, None, None]:
@@ -177,14 +249,29 @@ class EngineLogger:
         try:
             yield
         except Exception as e:
-            self._log(ERROR, f"{label} FAILED", exception=e, duration_ms=int((time.time() - start) * 1000))
+            self._log(
+                ERROR,
+                f"{label} FAILED",
+                exception=e,
+                duration_ms=int((time.time() - start) * 1000),
+            )
             raise
         else:
-            self._log(level, f"{label} OK", duration_ms=int((time.time() - start) * 1000))
+            self._log(
+                level, f"{label} OK", duration_ms=int((time.time() - start) * 1000)
+            )
 
-    def log_exception(self, exc: BaseException, message: str = "", *, level: int = ERROR, extra: dict | None = None) -> None:
+    def log_exception(
+        self,
+        exc: BaseException,
+        message: str = "",
+        *,
+        level: int = ERROR,
+        extra: dict | None = None,
+    ) -> None:
         try:
             from grablytic_engine.persistent import format_traceback as _fmt_tb
+
             tb_text = _fmt_tb(exc)
         except Exception:
             try:
@@ -216,8 +303,14 @@ _file_sinks_lock = threading.Lock()
 _FILE_FLUSH_INTERVAL_S = 5.0
 
 
-def _write_daily_line(log_dir: str, now: datetime, line: str, *, level: int = INFO,
-                      force_flush: bool = False) -> None:
+def _write_daily_line(
+    log_dir: str,
+    now: datetime,
+    line: str,
+    *,
+    level: int = INFO,
+    force_flush: bool = False,
+) -> None:
     # Durability contract: INFO and above are write-through (flushed every
     # line) so triage/report/export readers never see a stale file. DEBUG —
     # the per-block flood — rides the 64 KiB buffer with a 5 s flush cadence.
@@ -230,13 +323,18 @@ def _write_daily_line(log_dir: str, now: datetime, line: str, *, level: int = IN
         with _file_sinks_lock:
             sink = _file_sinks.get(path)
             if sink is None or sink.get("closed", False):
-                sink = {"fh": open(path, "a", buffering=1 << 16),
-                        "last_flush": _time_monotonic(),
-                        "closed": False}
+                sink = {
+                    "fh": open(path, "a", buffering=1 << 16),
+                    "last_flush": _time_monotonic(),
+                    "closed": False,
+                }
                 _file_sinks[path] = sink
             sink["fh"].write(line)
-            if (force_flush or level >= INFO
-                    or _time_monotonic() - sink["last_flush"] >= _FILE_FLUSH_INTERVAL_S):
+            if (
+                force_flush
+                or level >= INFO
+                or _time_monotonic() - sink["last_flush"] >= _FILE_FLUSH_INTERVAL_S
+            ):
                 sink["fh"].flush()
                 sink["last_flush"] = _time_monotonic()
     except Exception:
@@ -295,6 +393,7 @@ def flush_log_sinks() -> None:
 
 try:
     import atexit as _atexit
+
     _atexit.register(close_log_sinks)
 except Exception:
     pass

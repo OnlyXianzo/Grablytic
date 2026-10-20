@@ -19,8 +19,6 @@ def _fake_ffmpeg(tmp_path):
 
 @pytest.fixture()
 def _env(tmp_path, monkeypatch):
-    import grablytic_engine.paths as paths_mod
-
     monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
     set_paths(
         data_dir=str(tmp_path),

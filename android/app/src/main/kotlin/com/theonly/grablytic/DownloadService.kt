@@ -246,12 +246,21 @@ class DownloadService : Service() {
             }
             ACTION_STOP -> {
                 lockRenewalHandler.removeCallbacks(idleStopRunnable)
-                synchronized(stateLock) {
+                val stoppedIds = synchronized(stateLock) {
+                    val ids = active.keys.toList()
                     active.clear()
                     prog.clear()
                     alertPrefs.clear()
                     lastShownId = null
+                    ids
                 }
+                // STOP means "stop the service". The old code cleared the
+                // bookkeeping and stopped, but the Chaquopy/Python worker
+                // threads kept downloading with no service to keep them
+                // alive: the files kept growing, the notifications stopped,
+                // and the process was killed later with the downloads half
+                // written.
+                cancelActiveDownloads(stoppedIds)
                 releaseLocks()
                 stopSelf()
             }
@@ -259,8 +268,34 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
+    /**
+     * Android 15 (API 35) dataSync timeout.
+     *
+     * `Service.onTimeout(int startId, int fgsType)` was added in API 35
+     * and is the callback the system actually uses for a `dataSync`
+     * foreground service once its 6-hour-per-24-hour budget is spent.
+     *
+     * The old code overrode only `onTimeout(int startId)` — the
+     * SHORT-SERVICE overload. The system never called it for a
+     * `dataSync` service, so the service was never given the chance to
+     * stop itself: the platform killed the process with
+     * `ForegroundServiceDidNotStopInTimeException` and the in-flight
+     * downloads were lost with their `.part` files half written.
+     *
+     * Both overloads are implemented and share one implementation.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        android.util.Log.w(TAG, "ForegroundService timeout (startId=$startId, fgsType=$fgsType)")
+        handleForegroundTimeout()
+    }
+
+    /** Short-service overload (API 29+). Kept for the shortService type. */
     override fun onTimeout(startId: Int) {
-        android.util.Log.w(TAG, "ForegroundService dataSync timeout (startId=$startId)")
+        android.util.Log.w(TAG, "ForegroundService shortService timeout (startId=$startId)")
+        handleForegroundTimeout()
+    }
+
+    private fun handleForegroundTimeout() {
         try {
             // Cancel active engine workers BEFORE alerts/sweep/stop.
             // Without this the Chaquopy/Python threads keep downloading with
@@ -291,6 +326,14 @@ class DownloadService : Service() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        // The service can be destroyed without ACTION_STOP (the system
+        // stops it, the user revokes the notification, the process is
+        // trimmed). The engine workers must be told, or they keep
+        // downloading with no service behind them.
+        val pendingIds = synchronized(stateLock) { active.keys.toList() }
+        if (pendingIds.isNotEmpty()) {
+            cancelActiveDownloads(pendingIds)
+        }
         releaseLocks()
         powerLockExecutor.shutdown()
         super.onDestroy()

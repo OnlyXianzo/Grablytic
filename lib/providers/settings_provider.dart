@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -5,9 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/storage/cookie_secret_store.dart';
 import '../core/storage/proxy_secret_store.dart';
-import '../core/utils/trust_boundary.dart';
+import '../core/utils/app_logger.dart';
 import '../core/utils/command_template.dart';
+import '../core/utils/trust_boundary.dart';
 
 /// Migration-aware download-folder resolution (TrueStream → Grablytic).
 ///
@@ -315,17 +318,145 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
 class SettingsNotifier extends StateNotifier<AppSettings> {
   final SharedPreferences _prefs;
   final ProxySecretStore _proxySecretStore;
+  final CookieSecretStore _cookieSecretStore;
   bool _proxyUnavailable = false;
   late final Future<void> proxyReady;
 
-  SettingsNotifier(this._prefs, {ProxySecretStore? proxySecretStore})
-      : _proxySecretStore = proxySecretStore ?? FlutterSecureProxySecretStore(),
+  SettingsNotifier(
+    this._prefs, {
+    ProxySecretStore? proxySecretStore,
+    CookieSecretStore? cookieSecretStore,
+  })  : _proxySecretStore = proxySecretStore ?? FlutterSecureProxySecretStore(),
+        _cookieSecretStore = cookieSecretStore ?? FileCookieSecretStore(),
         super(const AppSettings()) {
     _loadSettings();
     proxyReady = _initializeProxy();
+    cookieProfilesReady = _initializeCookieProfiles();
   }
 
+  /// Completes once the cookie jars have been read back from the secret
+  /// store (and any legacy plaintext jar has been migrated out of
+  /// SharedPreferences).
+  late final Future<void> cookieProfilesReady;
+
   AppSettings get settingsSnapshot => state;
+
+  /// Moves cookie jars out of SharedPreferences and back in from the
+  /// secret store.
+  ///
+  /// Legacy builds stored the full Netscape jar (session cookies) as
+  /// plaintext JSON under the `cookieProfiles` key. That file is
+  /// readable by anything with the app's uid. The jar is written to the
+  /// secret store and the plaintext copy is removed; a jar that cannot
+  /// be migrated is dropped rather than left in the clear.
+  Future<void> _initializeCookieProfiles() async {
+    final stored = <String, List<String>>{};
+    try {
+      stored.addAll(await _cookieSecretStore.readAll());
+    } catch (_) {}
+
+    final profiles = state.cookieProfiles;
+    if (profiles.isEmpty) {
+      if (mounted) state = state.copyWith(cookieProfiles: const []);
+      return;
+    }
+
+    final hydrated = <Map<String, dynamic>>[];
+    final metadata = <Map<String, dynamic>>[];
+    var migrated = 0;
+    for (final profile in profiles) {
+      final copy = Map<String, dynamic>.from(profile);
+      // A profile that still carries a 'content' key holds the jar in
+      // memory: either a legacy plaintext jar read from preferences, or
+      // a jar the user just captured in this session. It is
+      // authoritative and is written to the secret store. A profile
+      // without the key was already migrated and is read back from the
+      // store.
+      final hasContent = copy.containsKey('content');
+      final inMemory = copy.remove('content');
+      final id = copy['id']?.toString() ?? '';
+      var lines = const <String>[];
+
+      if (hasContent && inMemory is List) {
+        lines = inMemory.map((e) => e.toString()).toList();
+        final alreadyStored = stored.containsKey(id);
+        try {
+          await _cookieSecretStore.write(id, lines);
+          if (!alreadyStored) migrated++;
+        } catch (_) {
+          // Could not secure it: the plaintext copy is still dropped
+          // from preferences below, so the jar does not survive a
+          // restart rather than sitting in the clear.
+        }
+      } else if (id.isNotEmpty) {
+        lines = stored[id] ?? const <String>[];
+      }
+
+      copy['content'] = lines;
+      hydrated.add(copy);
+      metadata.add(Map<String, dynamic>.from(copy)..remove('content'));
+    }
+
+    // Rewrite the preference without the jar.
+    try {
+      await _prefs.setStringList(
+        'cookieProfiles',
+        metadata.map((p) => jsonEncode(p)).toList(),
+      );
+    } catch (_) {}
+
+    if (migrated > 0) {
+      AppLogger.info(
+        'Moved $migrated cookie jar(s) out of SharedPreferences',
+        tag: 'settings',
+      );
+    }
+    if (mounted) {
+      // MERGE, do not replace. The user can add, toggle or delete a
+      // profile while the store is being read; a wholesale replace
+      // dropped that change (the startup snapshot is the older one).
+      // The content always comes from the store; everything else from
+      // the newer in-memory copy.
+      final current = <String, Map<String, dynamic>>{
+        for (final profile in state.cookieProfiles)
+          if (profile['id']?.toString() != null)
+            profile['id']!.toString(): profile,
+      };
+      final startupIds = <String>{
+        for (final profile in profiles)
+          if (profile['id']?.toString() != null) profile['id']!.toString(),
+      };
+      final currentIds = current.keys.toSet();
+      final deleted = startupIds.difference(currentIds);
+
+      final merged = <Map<String, dynamic>>[];
+      final mergedIds = <String>{};
+      for (final profile in hydrated) {
+        final id = profile['id']?.toString();
+        if (id != null && deleted.contains(id)) continue;
+        final newer = id == null ? null : current[id];
+        if (newer == null) {
+          merged.add(profile);
+        } else {
+          merged.add({
+            ...profile,
+            ...newer,
+            'content': newer.containsKey('content')
+                ? newer['content']
+                : profile['content'],
+          });
+        }
+        if (id != null) mergedIds.add(id);
+      }
+      // Profiles added while the store was being read.
+      for (final profile in state.cookieProfiles) {
+        final id = profile['id']?.toString();
+        if (id == null || mergedIds.contains(id)) continue;
+        merged.add(profile);
+      }
+      state = state.copyWith(cookieProfiles: merged);
+    }
+  }
 
   Future<void> _initializeProxy() async {
     final legacy = _prefs.getString('proxy');
@@ -621,12 +752,62 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(useCookies: value);
   }
 
+  /// Persists cookie profiles.
+  ///
+  /// The cookie JAR (bearer credentials) never goes into
+  /// SharedPreferences. Only the metadata is stored there; the content
+  /// goes to the cookie secret store (an app-private 0600 file).
+  ///
+  /// The in-memory state keeps the content, because the cookies screen
+  /// merges it into `cookies.txt` for the engine.
   void _persistCookieProfiles(List<Map<String, dynamic>> profiles) {
+    final metadata = <Map<String, dynamic>>[];
+    for (final profile in profiles) {
+      final copy = Map<String, dynamic>.from(profile);
+      final hasContent = copy.containsKey('content');
+      final content = copy.remove('content');
+      metadata.add(copy);
+      final id = copy['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      // A profile WITHOUT loaded content means "unchanged", not "empty".
+      // Writing [] here replaced every stored jar with an empty file:
+      // after the migration the profiles are metadata-only until the
+      // store has been read, so any persist during that window wiped
+      // the user's session cookies.
+      if (!hasContent || content is! List) continue;
+      final lines = content.map((e) => e.toString()).toList();
+      unawaited(_writeCookieContent(id, lines));
+    }
     _prefs.setStringList(
       'cookieProfiles',
-      profiles.map((p) => jsonEncode(p)).toList(),
+      metadata.map((p) => jsonEncode(p)).toList(),
     );
     state = state.copyWith(cookieProfiles: profiles);
+  }
+
+  /// Every secret-store operation goes through ONE queue.
+  ///
+  /// The store has no ordering of its own: a write started by an
+  /// earlier toggle can land AFTER a clear() listed the directory, and
+  /// the file the user asked to clear comes back — and is then never
+  /// read or deleted again. One chain keeps the operations in the
+  /// order they were requested.
+  Future<void> _storeQueue = Future<void>.value();
+
+  Future<void> _enqueueStore(Future<void> Function() op) {
+    final next = _storeQueue.then((_) => op()).catchError((Object _) {});
+    _storeQueue = next;
+    return next;
+  }
+
+  Future<void> _writeCookieContent(String id, List<String> lines) {
+    return _enqueueStore(() async {
+      try {
+        await _cookieSecretStore.write(id, lines);
+      } catch (_) {
+        // The jar stays in memory for this session only.
+      }
+    });
   }
 
   /// Insert or replace the profile for [url] (matched case-insensitively
@@ -669,9 +850,29 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     _persistCookieProfiles(
       state.cookieProfiles.where((p) => p['id'] != id).toList(),
     );
+    unawaited(_deleteCookieContent(id));
   }
 
-  void clearCookieProfiles() => _persistCookieProfiles([]);
+  void clearCookieProfiles() {
+    _persistCookieProfiles([]);
+    unawaited(_clearCookieContent());
+  }
+
+  Future<void> _deleteCookieContent(String id) {
+    return _enqueueStore(() async {
+      try {
+        await _cookieSecretStore.delete(id);
+      } catch (_) {}
+    });
+  }
+
+  Future<void> _clearCookieContent() {
+    return _enqueueStore(() async {
+      try {
+        await _cookieSecretStore.clear();
+      } catch (_) {}
+    });
+  }
 
   void setYoutubeLoggedIn(bool value) {
     _prefs.setBool('youtubeLoggedIn', value);
@@ -910,9 +1111,18 @@ final proxySecretStoreProvider = Provider<ProxySecretStore>(
   (ref) => FlutterSecureProxySecretStore(),
 );
 
+/// Cookie jars live outside SharedPreferences. Override in tests.
+final cookieSecretStoreProvider = Provider<CookieSecretStore>(
+  (ref) => FileCookieSecretStore(),
+);
+
 final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);
-  return SettingsNotifier(prefs, proxySecretStore: ref.watch(proxySecretStoreProvider));
+  return SettingsNotifier(
+    prefs,
+    proxySecretStore: ref.watch(proxySecretStoreProvider),
+    cookieSecretStore: ref.watch(cookieSecretStoreProvider),
+  );
 });
 
 /// SEC-04: custom yt-dlp argument templates are user-typed CLI fragments.

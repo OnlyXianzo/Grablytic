@@ -1,4 +1,5 @@
 from grablytic_engine import contract
+import os
 import sys
 import json
 import concurrent.futures as _futures
@@ -648,13 +649,9 @@ def _execute_parsed_request(req_id, method, params):
         except Exception:
             pass
         # Opt-in auto-report (STEP 3C): gated by GRABLYTIC_AUTO_REPORT=1
-        # inside notify_exception; never blocks the error response.
-        try:
-            from grablytic_engine.github_notifier import notify_exception
-
-            notify_exception(e, context={"method": str(method)})
-        except Exception:
-            pass
+        # inside notify_exception; never blocks the error response and
+        # never blocks the reader either (queued to a bounded worker).
+        _report_async(e, str(method))
         err_res = {
             "id": req_id,
             "error": {
@@ -706,18 +703,134 @@ def _run_guarded_request(req_id, method, params, inflight) -> None:
             pass
 
 
+# ── opt-in auto-report scheduler ───────────────────────────────────────
+# notify_exception() performs up to two BLOCKING HTTPS calls (a duplicate
+# search with a 15 s timeout and an issue create with a 20 s timeout).
+# Calling it inline in the stdin reader stalled the whole protocol: the
+# reader could not read the next request for up to ~35 s per crash, so
+# cancel and queue-status (the fast lane runs inside the same reader)
+# were held hostage by an unrelated failure.
+#
+# The reader now only ENQUEUES. A single dedicated worker performs the
+# network calls, with a rate limit (one report per minute) and a hard
+# per-session cap so a crash loop cannot spam a public repository.
+_REPORT_MIN_INTERVAL_S = 60.0
+_REPORT_MAX_PER_SESSION = 5
+_report_pool_lock = threading.Lock()
+_report_state = {"sent": 0, "last_monotonic": 0.0}
+
+
+class _ReportPool:
+    """The single worker that performs the opt-in auto-reports.
+
+    The executor lives in an instance attribute rather than a module
+    global: a `global` rebinding is a data race between the reader
+    thread and the worker, and it hides the pool's lifetime inside the
+    module namespace. One instance owns the whole lifecycle.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pool: _futures.ThreadPoolExecutor | None = None
+        self._closed = False
+
+    @property
+    def closed(self) -> bool:
+        """True once shutdown() ran: no new work may be scheduled."""
+        with self._lock:
+            return self._closed
+
+    def get(self) -> _futures.ThreadPoolExecutor:
+        """Return the worker, starting it on first use.
+
+        Raises after shutdown: recreating the pool here would start a
+        FRESH non-daemon worker during interpreter shutdown, and
+        Python joins it — so a report that was scheduled after the
+        engine was told to stop would keep the process alive for the
+        length of an HTTPS call.
+        """
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("report pool is closed")
+            if self._pool is None:
+                self._pool = _futures.ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="gh-report"
+                )
+            return self._pool
+
+    def shutdown(self) -> None:
+        """Detach and stop the worker. Never blocks the caller."""
+        with self._lock:
+            self._closed = True
+            pool = self._pool
+            self._pool = None
+        if pool is None:
+            return
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
+
+_report_pool = _ReportPool()
+
+
+def _report_pool_get() -> _futures.ThreadPoolExecutor:
+    return _report_pool.get()
+
+
+def _report_async(exc: BaseException, method: str) -> bool:
+    """Queue an opt-in auto-report. Never blocks the caller.
+
+    Returns True when the report was accepted for delivery, False when
+    it was suppressed (rate limit, session cap, pool unavailable).
+    """
+    now = time.monotonic()
+    if _report_pool.closed:
+        return False
+    with _report_pool_lock:
+        if _report_state["sent"] >= _REPORT_MAX_PER_SESSION:
+            return False
+        last = _report_state["last_monotonic"]
+        if last and (now - last) < _REPORT_MIN_INTERVAL_S:
+            return False
+        _report_state["sent"] += 1
+        _report_state["last_monotonic"] = now
+    try:
+        pool = _report_pool_get()
+    except Exception:
+        return False
+    try:
+        pool.submit(_deliver_report, exc, str(method))
+    except RuntimeError:
+        # Pool already shut down (EOF). Fall back to no report rather
+        # than blocking the reader on a network call.
+        return False
+    return True
+
+
+def _deliver_report(exc: BaseException, method: str) -> None:
+    """Perform the network side of an auto-report. Runs off the reader."""
+    try:
+        from grablytic_engine.github_notifier import notify_exception
+
+        notify_exception(exc, context={"method": method})
+    except Exception:
+        pass
+
+
+def _shutdown_report_pool() -> None:
+    _report_pool.shutdown()
+
+
 def _report_ipc_parse_error(exc: Exception, method: str, req_id) -> None:
     log.log_exception(exc, f"Error processing {method}")
     try:
         persistent_flush()
     except Exception:
         pass
-    try:
-        from grablytic_engine.github_notifier import notify_exception
-
-        notify_exception(exc, context={"method": str(method)})
-    except Exception:
-        pass
+    # Never block the reader on a network call.
+    _report_async(exc, method)
     _write_stdout_line(
         json.dumps(
             {
@@ -745,7 +858,7 @@ def _parse_ipc_request(line: str):
     return req_id, method, params
 
 
-def _dispatch_ipc_request(req_id, method, params, pool, inflight) -> None:
+def _dispatch_ipc_request(req_id, method, params, pool, inflight, futures=None) -> None:
     if method in _FAST_IPC_METHODS or method == "paths/set":
         _execute_parsed_request(req_id, method, params)
         return
@@ -760,16 +873,25 @@ def _dispatch_ipc_request(req_id, method, params, pool, inflight) -> None:
         _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
         return
     try:
-        pool.submit(_run_guarded_request, req_id, method, params, inflight)
+        fut = pool.submit(_run_guarded_request, req_id, method, params, inflight)
     except Exception:
         try:
             inflight.release()
         except Exception:
             pass
         _write_stdout_line(json.dumps(_busy_envelope(req_id, method)))
+        return
+    # Track the future so EOF can cancel the queued ones and drain the
+    # running ones with a deadline instead of waiting for all of them.
+    if futures is not None:
+        futures.add(fut)
+        try:
+            fut.add_done_callback(futures.discard)
+        except Exception:
+            pass
 
 
-def _process_ipc_line(line: str, pool, inflight) -> None:
+def _process_ipc_line(line: str, pool, inflight, futures=None) -> None:
     req_id = None
     method = "<unparsed>"
     params = {}
@@ -778,7 +900,7 @@ def _process_ipc_line(line: str, pool, inflight) -> None:
     except Exception as exc:
         _report_ipc_parse_error(exc, method, req_id)
         return
-    _dispatch_ipc_request(req_id, method, params, pool, inflight)
+    _dispatch_ipc_request(req_id, method, params, pool, inflight, futures)
 
 
 def main():
@@ -787,19 +909,71 @@ def main():
     install_stdout_firewall()
     threading.Thread(target=poll_queues, daemon=True).start()
     inflight = threading.BoundedSemaphore(_MAX_IPC_INFLIGHT)
-    with _futures.ThreadPoolExecutor(
+    # Explicit pool lifecycle (no `with` block). Leaving a
+    # ThreadPoolExecutor context calls shutdown(wait=True), which waits
+    # for EVERY submitted future — a 500-item playlist extraction can
+    # take 90 s, so the engine outlived its parent by minutes and the
+    # graceful `shutdown_downloads` budget below never even started.
+    # On EOF: cancel what has not started, drain what runs with a hard
+    # deadline, then hand the downloads their own budget.
+    pool = _futures.ThreadPoolExecutor(
         max_workers=_MAX_IPC_WORKERS, thread_name_prefix="ipc"
-    ) as pool:
+    )
+    futures: set[_futures.Future] = set()
+    try:
         for line in sys.stdin:
             line = line.strip()
             if line:
-                _process_ipc_line(line, pool, inflight)
+                _process_ipc_line(line, pool, inflight, futures)
+    finally:
+        _shutdown_ipc_pool(pool, futures)
+        _shutdown_report_pool()
     try:
         shutdown_downloads(timeout=5.0)
     except Exception:
         pass
 
 
+def _shutdown_ipc_pool(pool, futures, drain_timeout: float = 10.0) -> None:
+    """Cancel queued work and drain running work with a deadline."""
+    pending = list(futures)
+    for fut in pending:
+        try:
+            fut.cancel()
+        except Exception:
+            pass
+    try:
+        pool.shutdown(wait=False, cancel_futures=True)
+    except TypeError:
+        # Python < 3.9 has no cancel_futures.
+        pool.shutdown(wait=False)
+    except Exception:
+        pass
+    deadline = time.monotonic() + drain_timeout
+    for fut in list(futures):
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            fut.result(timeout=remaining)
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
     log.info("Engine started")
     main()
+    # The IPC drain deadline in main() is a DEADLINE. Python joins the
+    # executor's worker threads during interpreter shutdown, so a worker
+    # that is still running keeps the process alive long after its
+    # parent went away — the engine would outlive the app by minutes.
+    # Flush what matters, then leave hard. (Only the executable entry
+    # point does this: the test suite calls main() in-process.)
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    try:
+        persistent_flush()
+    except Exception:
+        pass
+    os._exit(0)

@@ -15,10 +15,10 @@ Only stdlib dependencies — safe for Chaquopy + desktop bundles.
 
 from __future__ import annotations
 
-import copy
 import logging
 import logging.handlers
 import os
+import re
 import threading
 import time
 import traceback
@@ -29,18 +29,84 @@ DEFAULT_MAX_BYTES = 2 * 1024 * 1024  # 2 MB per file
 DEFAULT_BACKUP_COUNT = 5
 FLUSH_INTERVAL_S = 30.0
 
-_SENSITIVE_SUBSTRINGS = (
-    "cookie",
-    "token",
-    "password",
-    "passwd",
-    "secret",
-    "auth",
-    "proxy",
-    "api_key",
-    "apikey",
-    "session",
-    "po_token",
+# Exact key names whose VALUE is always a secret. A substring test was
+# used before: it destroyed benign keys ("author", "author_id",
+# "authorization_status" all contain "auth") and still missed the shapes
+# that actually leak (a bare "Cookie:" header, a "Bearer" token).
+_SENSITIVE_KEYS = frozenset(
+    {
+        "cookie",
+        "cookiefile",
+        "cookie_file",
+        "cookies",
+        "set-cookie",
+        "authorization",
+        "auth",
+        "proxy-authorization",
+        "password",
+        "passwd",
+        "pass",
+        "secret",
+        "token",
+        "po_token",
+        "potoken",
+        "api_key",
+        "apikey",
+        "x-api-key",
+        "session",
+        "sessionid",
+        "proxy",
+        "proxy_password",
+        "proxy_url",
+        "proxyurl",
+        "credential",
+        "credentials",
+        "jwt",
+        "bearer",
+        "private_key",
+        "client_secret",
+    }
+)
+
+# Suffix rules: a key that ENDS with one of these is a secret no matter
+# what prefix it carries ("yt_proxy_password", "x_api_key").
+_SENSITIVE_SUFFIXES = (
+    "_token",
+    "_secret",
+    "_password",
+    "_passwd",
+    "_apikey",
+    "_api_key",
+    "_cookie",
+    "_cookies",
+    "_credential",
+    "_credentials",
+    "_session",
+    "_sessionid",
+    "_bearer",
+    "_authorization",
+)
+
+# Header-shaped secrets. yt-dlp's verbose lines and exception messages
+# carry "Authorization: Bearer eyJ..." and "Cookie: SID=..." — neither is
+# a key/value pair, so the query-string regex never saw them.
+_HEADER_RE = re.compile(
+    r"(?im)^(?P<head>[ \t]*(?:authorization|proxy-authorization|cookie|"
+    r"set-cookie|x-api-key|x-auth-token)[ \t]*:[ \t]*)(?P<value>[^\r\n]+)$"
+)
+_BEARER_RE = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
+# Query-string / kv secrets. `sig`/`lsig` are yt-dlp's signed-URL
+# parameters; `expire` is a bearer-style token on CDN URLs.
+_SECRET_PARAM_RE = re.compile(
+    r"(?i)((?:token|po_?token|sig|lsig|signature|key|auth|secret|"
+    r"password|session|sessionid|credential|bearer|expire|proxy)"
+    r"=)([^&\"'\s,}]+)"
+)
+# `token: value` / `token=value` in free text (logs, exception messages).
+_KV_SECRET_RE = re.compile(
+    r"(?i)((?:token|po_?token|api[_-]?key|secret|password|passwd|"
+    r"session(?:id)?|authorization|cookie)\s*[:=]\s*"
+    r"[\"']?)([^\"'\s,;&}]+)"
 )
 
 _lock = threading.RLock()
@@ -51,83 +117,119 @@ _flush_thread: threading.Thread | None = None
 _flush_stop = threading.Event()
 
 
-def sanitize(obj: Any, _seen: set[int] | None = None) -> Any:
+def is_sensitive_key(key: Any) -> bool:
+    """True when a mapping key names a secret value.
+
+    Exact match against :data:`_SENSITIVE_KEYS` plus a suffix rule. Never
+    a substring test: "author" and "authorization_status" are not
+    secrets, and redacting them destroys useful diagnostics.
+    """
+    try:
+        k = str(key).strip().lower()
+    except Exception:
+        return False
+    if not k:
+        return False
+    if k in _SENSITIVE_KEYS:
+        return True
+    return k.endswith(_SENSITIVE_SUFFIXES)
+
+
+def _scrub_string(text: str) -> str:
+    """Mask secret-bearing shapes inside a free-text string.
+
+    Public alias: :func:`scrub_text`. The GitHub notifier posts PUBLIC
+    issues, so it must use the same scrubber as the on-disk logger.
+    """
+    masked = _HEADER_RE.sub(lambda m: m.group("head") + "***REDACTED***", text)
+    masked = _BEARER_RE.sub(lambda m: f"{m.group(1)} ***REDACTED***", masked)
+    masked = _SECRET_PARAM_RE.sub(r"\1***REDACTED***", masked)
+    masked = _KV_SECRET_RE.sub(r"\1***REDACTED***", masked)
+
+    # Mask user:password@host userinfo (proxy creds in URLs).
+    # Greedy to the last @ before / or whitespace, so passwords
+    # containing @ are fully masked; user-only form stays untouched.
+    def _mask_userinfo(m: "re.Match[str]") -> str:
+        userinfo = m.group(2)
+        if ":" not in userinfo:
+            return m.group(0)
+        return f"{m.group(1)}{userinfo.split(':', 1)[0]}:***REDACTED***@"
+
+    return re.sub(
+        r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@",
+        _mask_userinfo,
+        masked,
+    )
+
+
+def scrub_text(text: str) -> str:
+    """Public entry point for the shared free-text scrubber."""
+    if not isinstance(text, str):
+        return text
+    return _scrub_string(text)
+
+
+def _redact_items(pairs, _stack: tuple[int, ...]) -> dict[Any, Any]:
+    """Redact one mapping's items, recursing into the non-sensitive ones.
+
+    Shared by the `dict` branch and the duck-typed mapping branch so
+    both redact exactly the same way.
+    """
+    redacted: dict[Any, Any] = {}
+    for k, v in pairs:
+        if is_sensitive_key(k):
+            redacted[k] = "***REDACTED***"
+        else:
+            redacted[k] = sanitize(v, _stack)
+    return redacted
+
+
+def _sanitize_mapping(obj: Any, _stack: tuple[int, ...]) -> Any:
+    """Redact a duck-typed mapping (e.g. a Chaquopy Java-map proxy).
+
+    Returns *obj* unchanged when it is not mapping-like at all.
+    """
+    items = getattr(obj, "items", None)
+    if not callable(items):
+        return obj
+    try:
+        pairs = list(items())
+    except Exception:
+        return obj
+    return _redact_items(pairs, _stack + (id(obj),))
+
+
+def sanitize(obj: Any, _stack: tuple[int, ...] = ()) -> Any:
     """Deep-copy *obj* with sensitive values replaced by ***REDACTED***.
 
     Handles dicts, lists/tuples and strings (query-string token masking +
     URL userinfo passwords). Mapping-like proxies (Chaquopy Java maps are
-    not `dict` instances) are redacted via duck-typed `.items()`. Cyclic
-    structures terminate with a ***CYCLIC*** marker instead of RecursionError.
-    Never mutates the caller's object — the engine keeps working with the
-    original while only the redacted copy hits disk / GitHub.
+    not `dict` instances) are redacted via duck-typed `.items()`.
+    Cyclic structures terminate with a ***CYCLIC*** marker instead of
+    RecursionError. Never mutates the caller's object — the engine keeps
+    working with the original while only the redacted copy hits disk /
+    GitHub.
+
+    Cycle detection tracks the CURRENT ANCESTOR PATH, not every id ever
+    visited. A shared reference (the same dict reachable under two keys)
+    is a DAG, not a cycle: reporting it as ``***CYCLIC***`` blanked real
+    config values out of every diagnostic.
     """
-    if _seen is None:
-        _seen = set()
     if isinstance(obj, dict):
-        if id(obj) in _seen:
+        if id(obj) in _stack:
             return "***CYCLIC***"
-        _seen.add(id(obj))
-        redacted: dict[Any, Any] = {}
-        for k, v in obj.items():
-            lk = str(k).lower()
-            if any(s in lk for s in _SENSITIVE_SUBSTRINGS):
-                redacted[k] = "***REDACTED***"
-            else:
-                redacted[k] = sanitize(v, _seen)
-        return redacted
+        return _redact_items(obj.items(), _stack + (id(obj),))
     if isinstance(obj, (list, tuple)):
-        if id(obj) in _seen:
+        if id(obj) in _stack:
             return "***CYCLIC***"
-        _seen.add(id(obj))
-        cleaned = [sanitize(v, _seen) for v in obj]
+        cleaned = [sanitize(v, _stack + (id(obj),)) for v in obj]
         return type(obj)(cleaned) if isinstance(obj, tuple) else cleaned
     if isinstance(obj, str) and len(obj) > 8:
-        # Mask token= / sig= / key= query params, keep names for debugging.
-        import re
-
-        masked = re.sub(
-            r"((?:token|sig|key|auth)[=:][\"']?)([^\"'&\s,}]+)",
-            r"\1***REDACTED***",
-            obj,
-            flags=re.IGNORECASE,
-        )
-
-        # Mask user:password@host userinfo (proxy creds in URLs).
-        # Greedy to the last @ before / or whitespace, so passwords
-        # containing @ are fully masked; user-only form stays untouched.
-        def _mask_userinfo(m: "re.Match[str]") -> str:
-            userinfo = m.group(2)
-            if ":" not in userinfo:
-                return m.group(0)
-            return f"{m.group(1)}{userinfo.split(':', 1)[0]}:***REDACTED***@"
-
-        masked = re.sub(
-            r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@",
-            _mask_userinfo,
-            masked,
-        )
-        return masked
+        return _scrub_string(obj)
     if isinstance(obj, (bytes, bytearray)):
         return obj
     # Duck-typed mappings (e.g. Chaquopy Java-map proxies).
-    items = getattr(obj, "items", None)
-    if callable(items):
-        try:
-            pairs = list(items())
-        except Exception:
-            return obj
-        out: dict[Any, Any] = {}
-        for k, v in pairs:
-            try:
-                lk = str(k).lower()
-            except Exception:
-                lk = ""
-            if any(s in lk for s in _SENSITIVE_SUBSTRINGS):
-                out[k] = "***REDACTED***"
-            else:
-                out[k] = sanitize(v, _seen)
-        return out
-    return obj
+    return _sanitize_mapping(obj, _stack)
 
 
 def format_traceback(exc: BaseException, limit: int = 40) -> str:
@@ -345,9 +447,52 @@ def traced_request(
         flush_now()
         raise
     latency_ms = int((time.time() - start) * 1000)
-    try:
-        safe_preview = str(sanitize(result))[:500]
-    except Exception:
-        safe_preview = "<unserializable>"
+    safe_preview = _preview(result)
     log.debug("%s<< %s OK in %dms preview=%s", prefix, method, latency_ms, safe_preview)
     return result
+
+
+_REPR_KV_RE = re.compile(
+    r"""(['"])([^'"]{1,64})\1(\s*:\s*)(['"])((?:(?!\4).){0,4096})\4"""
+)
+
+
+def _redact_repr_pairs(text: str) -> str:
+    """Redact sensitive mapping keys inside a repr()ed structure.
+
+    The bounded preview works on repr() TEXT, so the key-based
+    redaction that :func:`sanitize` applies to real structures has to
+    be reapplied to the repr shape. A cookie header reaches the log as
+    ``'Cookie': 'SID=...'`` — the text patterns cannot match that
+    (the quote sits between the key and the colon), so without this the
+    cookie value would be written to the daily JSONL and to
+    server_logs.log. Reuses :func:`is_sensitive_key`, so the rule stays
+    "exact key or secret suffix" — never a substring match.
+    """
+
+    def _sub(m):
+        if is_sensitive_key(m.group(2)):
+            return f"{m.group(1)}{m.group(2)}{m.group(1)}{m.group(3)}'***REDACTED***'"
+        return m.group(0)
+
+    return _REPR_KV_RE.sub(_sub, text)
+
+
+def _preview(result, limit: int = 500) -> str:
+    """Bounded, sanitized preview of a response payload.
+
+    The old code sanitized (deep-copied) the WHOLE result and then threw
+    away everything past 500 characters. A ``formats/get`` payload with 80
+    formats, or a 500-entry playlist, was copied in full on every request
+    just to print 500 characters of it. Bound first, then sanitize the
+    bounded slice.
+
+    The bounded slice is still redacted BY KEY: a repr() of a response
+    carries the cookie header inside ``headers``, and only the key tells
+    us it is a secret.
+    """
+    try:
+        head = repr(result)[: limit * 4]
+        return str(sanitize(_redact_repr_pairs(head)))[:limit]
+    except Exception:
+        return "<unserializable>"

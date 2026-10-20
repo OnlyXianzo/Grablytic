@@ -25,6 +25,9 @@ _DEFAULT_MAX_ATTEMPTS = 3
 _DEFAULT_RESUME_LIMIT = 50
 _MAX_RESUME_LIMIT = 500
 _MAX_SCAN_FILES = 2000
+# Largest .info.json sidecar the scan will parse. Playlist payloads run
+# to several MB; the scan only needs the URL fields.
+_MAX_INFOJSON_BYTES = 2 * 1024 * 1024
 
 
 def _attempts_path(cache_dir: str) -> str:
@@ -179,6 +182,7 @@ def scan_resume_candidates(
     limit: int = 50,
     recursive: bool = True,
     max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
+    max_files: int | None = None,
 ) -> dict:
     """Scan for interrupted (.part) downloads.
 
@@ -213,7 +217,10 @@ def scan_resume_candidates(
     with _attempts_lock:
         strikes = _load_attempts(cache_dir)
 
-    for filepath in _iter_part_files(cache_dir, recursive):
+    # Resolved at call time (not as a default argument) so the module
+    # constant stays overridable in tests and by callers.
+    file_cap = max_files if max_files is not None else _MAX_SCAN_FILES
+    for filepath in _iter_part_files(cache_dir, recursive, file_cap):
         entry = os.path.basename(filepath)
         try:
             stat = os.stat(filepath)
@@ -240,14 +247,22 @@ def scan_resume_candidates(
                 info_path = os.path.join(base_dir, base_name + ".info.json")
 
         if os.path.exists(info_path):
+            # Size-cap before reading. yt-dlp writes an .info.json for
+            # EVERY playlist entry, and a playlist payload can be several
+            # MB. json.load()ing all of them inside one IPC worker turned
+            # a 50-item partial directory into 50 synchronous multi-MB
+            # parses (OOM / ANR on low-memory Android) and let anyone
+            # drop a crafted sidecar into the cache dir.
             try:
-                with open(info_path, "r", encoding="utf-8") as f:
-                    info_data = json.load(f)
-                    likely_url = (
-                        info_data.get("webpage_url")
-                        or info_data.get("original_url")
-                        or info_data.get("url")
-                    )
+                if os.path.getsize(info_path) <= _MAX_INFOJSON_BYTES:
+                    with open(info_path, "r", encoding="utf-8") as f:
+                        info_data = json.load(f)
+                        if isinstance(info_data, dict):
+                            likely_url = (
+                                info_data.get("webpage_url")
+                                or info_data.get("original_url")
+                                or info_data.get("url")
+                            )
             except Exception:
                 pass
 

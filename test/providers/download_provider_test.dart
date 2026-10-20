@@ -235,7 +235,7 @@ void main() {
       expect(item.totalBytes, 10240);
     });
 
-    test('interrupted item can be resumed via resumeInterrupted', () {
+    test('interrupted item can be resumed via resumeInterrupted', () async {
       final n = _notifier();
       n.addDownload(DownloadItem(
         id: 'dl-int',
@@ -248,6 +248,11 @@ void main() {
       ));
       expect(n.state.single.status, 'interrupted');
       n.resumeInterrupted('dl-int');
+      // The retry is NOT admitted optimistically: the card says
+      // "pending" until the engine confirms the request, so a request
+      // the engine refuses can never look like a running download.
+      expect(n.state.single.status, 'pending');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(n.state.single.status, 'downloading');
     });
   });

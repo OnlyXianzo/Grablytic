@@ -29,9 +29,18 @@
             android:name=".DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- Exported because BOOT_COMPLETED is a system broadcast that
+             only the system can send. RECEIVE_BOOT_COMPLETED is a
+             NORMAL permission, not a signature-level sender
+             restriction, so it does not narrow who may send the
+             broadcast. The real guard is in BootReceiver itself: it
+             accepts ONLY BOOT_COMPLETED and MY_PACKAGE_REPLACED and
+             ignores every other action before it touches the database,
+             so a spoofed broadcast cannot trigger the sweep. -->
         <receiver
             android:name=".BootReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
@@ -58,12 +67,34 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link: open shared https media URLs directly in the app. -->
+            <!-- Deep link: open shared media URLs directly in the app.
+                 The host list is EXPLICIT. The old filter declared
+                 `<data android:scheme="https"/>` and nothing else, which
+                 made the app a candidate handler for EVERY https link on
+                 the device: the system chooser offered Grablytic for a
+                 bank login, a news article and a private document, and
+                 accepting one handed the URL to the app. Only the media
+                 hosts the app can actually handle are claimed now. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https"/>
+                <data android:scheme="https" android:host="youtube.com"/>
+                <data android:scheme="https" android:host="www.youtube.com"/>
+                <data android:scheme="https" android:host="m.youtube.com"/>
+                <data android:scheme="https" android:host="music.youtube.com"/>
+                <data android:scheme="https" android:host="youtu.be"/>
+                <data android:scheme="https" android:host="www.youtube-nocookie.com"/>
+                <data android:scheme="https" android:host="vimeo.com"/>
+                <data android:scheme="https" android:host="www.vimeo.com"/>
+                <data android:scheme="https" android:host="twitter.com"/>
+                <data android:scheme="https" android:host="x.com"/>
+                <data android:scheme="https" android:host="www.instagram.com"/>
+                <data android:scheme="https" android:host="instagram.com"/>
+                <data android:scheme="https" android:host="www.twitch.tv"/>
+                <data android:scheme="https" android:host="twitch.tv"/>
+                <data android:scheme="https" android:host="www.bilibili.com"/>
+                <data android:scheme="https" android:host="bilibili.com"/>
             </intent-filter>
         </activity>
         <!-- Dynamic launcher icons: Settings → App logo (system/dark/light/legacy) switches via PackageManager.

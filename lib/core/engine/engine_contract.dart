@@ -31,6 +31,18 @@ class EngineContract {
   /// unanswered request.
   static const String invalidParamErrorType = 'ERROR_INVALID_PARAM';
 
+  /// The yt-dlp release the desktop bootstrap installs.
+  ///
+  /// Pinned on purpose. Installing "latest" from PyPI at runtime made
+  /// the engine's behaviour depend on a package index the project does
+  /// not control: a breaking upstream release, or a compromised
+  /// package, changed what the engine did with the user's privileges
+  /// and no review in between.
+  ///
+  /// Bump this deliberately, in a release, together with the pinned
+  /// version on the Android side (`android/app/build.gradle.kts`).
+  static const String ytDlpVersion = '2026.08.19';
+
   /// True when an engine speaking [engineMajor] is compatible with us.
   static bool isCompatible(int engineMajor) => engineMajor == major;
 

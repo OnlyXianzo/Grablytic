@@ -53,7 +53,7 @@ class DownloadRecord {
     this.bytesDownloaded = 0,
     this.totalBytes,
     this.updatedAt,
-  }) : timestamp = timestamp ?? DateTime.now().toIso8601String();
+  }) : timestamp = timestamp ?? utcNowIso();
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -103,6 +103,15 @@ class DownloadRecord {
         updatedAt: map['updatedAt'] as String?,
       );
 
+  /// Sentinel for "not supplied" in [copyWith].
+  ///
+  /// Without it every nullable parameter used `x ?? this.x`, so a
+  /// caller could never set a nullable field back to null: a successful
+  /// retry could not clear the previous error, a deleted file could not
+  /// clear [filePath], and a promoted item could not clear
+  /// [queuePosition].
+  static const Object _unset = Object();
+
   DownloadRecord copyWith({
     String? id,
     String? url,
@@ -111,20 +120,20 @@ class DownloadRecord {
     String? format,
     String? quality,
     int? fileSize,
-    String? filePath,
+    Object? filePath = _unset,
     String? status,
     double? progress,
     String? timestamp,
     String? thumbnailUrl,
-    String? thumbnailPath,
-    String? configJson,
-    int? queuePosition,
+    Object? thumbnailPath = _unset,
+    Object? configJson = _unset,
+    Object? queuePosition = _unset,
     int? attempts,
-    String? lastErrorType,
-    String? lastErrorMessage,
+    Object? lastErrorType = _unset,
+    Object? lastErrorMessage = _unset,
     int? bytesDownloaded,
-    int? totalBytes,
-    String? updatedAt,
+    Object? totalBytes = _unset,
+    Object? updatedAt = _unset,
   }) =>
       DownloadRecord(
         id: id ?? this.id,
@@ -134,26 +143,54 @@ class DownloadRecord {
         format: format ?? this.format,
         quality: quality ?? this.quality,
         fileSize: fileSize ?? this.fileSize,
-        filePath: filePath ?? this.filePath,
+        filePath: identical(filePath, _unset)
+            ? this.filePath
+            : filePath as String?,
         status: status ?? this.status,
         progress: progress ?? this.progress,
         timestamp: timestamp ?? this.timestamp,
         thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
-        thumbnailPath: thumbnailPath ?? this.thumbnailPath,
-        configJson: configJson ?? this.configJson,
-        queuePosition: queuePosition ?? this.queuePosition,
+        thumbnailPath: identical(thumbnailPath, _unset)
+            ? this.thumbnailPath
+            : thumbnailPath as String?,
+        configJson: identical(configJson, _unset)
+            ? this.configJson
+            : configJson as String?,
+        queuePosition: identical(queuePosition, _unset)
+            ? this.queuePosition
+            : queuePosition as int?,
         attempts: attempts ?? this.attempts,
-        lastErrorType: lastErrorType ?? this.lastErrorType,
-        lastErrorMessage: lastErrorMessage ?? this.lastErrorMessage,
+        lastErrorType: identical(lastErrorType, _unset)
+            ? this.lastErrorType
+            : lastErrorType as String?,
+        lastErrorMessage: identical(lastErrorMessage, _unset)
+            ? this.lastErrorMessage
+            : lastErrorMessage as String?,
         bytesDownloaded: bytesDownloaded ?? this.bytesDownloaded,
-        totalBytes: totalBytes ?? this.totalBytes,
-        updatedAt: updatedAt ?? this.updatedAt,
+        totalBytes: identical(totalBytes, _unset)
+            ? this.totalBytes
+            : totalBytes as int?,
+        updatedAt: identical(updatedAt, _unset)
+            ? this.updatedAt
+            : updatedAt as String?,
       );
 
   Map<String, dynamic> toJson() => toMap();
   factory DownloadRecord.fromJson(String source) =>
       DownloadRecord.fromMap(jsonDecode(source) as Map<String, dynamic>);
 }
+
+/// Single source of truth for persisting a timestamp.
+///
+/// UTC ISO-8601 with an explicit offset. Local ISO strings have no
+/// zone, so lexicographic ordering of them is only correct while the
+/// device stays in one timezone; the history table also mixed in UTC
+/// strings written by the Android sweeper, so one column held two
+/// conventions.
+String utcNowIso() => DateTime.now().toUtc().toIso8601String();
+
+/// Converts a local [DateTime] to the persisted UTC representation.
+String toUtcIso(DateTime value) => value.toUtc().toIso8601String();
 
 class DownloadHistoryDb {
   DownloadHistoryDb._();
@@ -194,7 +231,7 @@ class DownloadHistoryDb {
             'grablytic.db');
     final db = await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE downloads (
@@ -291,6 +328,27 @@ class DownloadHistoryDb {
         }
         if (oldVersion < 6) {
           await _createDownloadsFts4(db, rebuild: true);
+        }
+        if (oldVersion < 7) {
+          // v6 → v7: timestamps become UTC ISO-8601 with an explicit
+          // offset. Rows written before this stored LOCAL ISO strings
+          // without a zone ("2026-10-19T21:30:00.000"), which sort
+          // correctly only while the device stays in one timezone and
+          // never crosses DST. The Kotlin sweeper wrote UTC strings into
+          // the same column, so one column held two conventions.
+          //
+          // `updatedAt` was added by the v2 → v3 step, so a database
+          // that was CREATED at v3 or later by an older build can lack
+          // the column. Without it the normalisation query fails and
+          // NOTHING is normalised — the migration silently does
+          // nothing. Add the column when it is missing, so every
+          // database converges on the same shape.
+          final cols = await db.rawQuery('PRAGMA table_info(downloads)');
+          final names = cols.map((c) => c['name'] as String?).toSet();
+          if (!names.contains('updatedAt')) {
+            await db.execute('ALTER TABLE downloads ADD COLUMN updatedAt TEXT');
+          }
+          await _normalizeTimestampsToUtc(db);
         }
       },
     );
@@ -398,10 +456,70 @@ class DownloadHistoryDb {
     }
   }
 
+  /// Rewrites local ISO timestamps as UTC ISO-8601.
+  ///
+  /// Only rows whose value has no zone marker are touched, so an
+  /// already-UTC row is left alone and the migration is idempotent.
+  Future<void> _normalizeTimestampsToUtc(Database db) async {
+    try {
+      // Only the columns that EXIST: a query for a missing column
+      // throws, and the whole migration would then be a no-op.
+      final cols = await db.rawQuery('PRAGMA table_info(downloads)');
+      final names = cols.map((c) => c['name'] as String?).toSet();
+      final targets = <String>[
+        for (final column in const ['timestamp', 'updatedAt'])
+          if (names.contains(column)) column,
+      ];
+      if (targets.isEmpty) return;
+      final rows = await db.query(
+        'downloads',
+        columns: ['id', ...targets],
+      );
+      if (rows.isEmpty) return;
+      final batch = db.batch();
+      var changed = 0;
+      for (final row in rows) {
+        for (final column in targets) {
+          final value = row[column] as String?;
+          if (value == null || value.isEmpty) continue;
+          if (value.endsWith('Z') || value.endsWith('+00:00')) continue;
+          final parsed = DateTime.tryParse(value);
+          if (parsed == null) continue;
+          batch.update(
+            'downloads',
+            {column: parsed.toUtc().toIso8601String()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+          changed++;
+        }
+      }
+      if (changed > 0) await batch.commit(noResult: true);
+    } catch (_) {
+      // A failed normalisation must never block the app from starting.
+    }
+  }
+
+  /// Upsert by primary key.
+  ///
+  /// UPDATE-then-INSERT, never `ConflictAlgorithm.replace` and never a
+  /// manual delete+insert. REPLACE deletes the old row and inserts a new
+  /// one: the rowid changes, the `downloads_fts` delete trigger fires
+  /// and the FTS index is rebuilt for the row, and any column the caller
+  /// does not supply is reset to its default. `ON CONFLICT DO UPDATE`
+  /// would be the natural SQL, but it needs SQLite 3.24 (API 30) while
+  /// this app supports API 24 and sqflite runs on the PLATFORM SQLite,
+  /// so the two-step form is the portable equivalent.
   Future<int> insert(DownloadRecord record) async {
     final db = await database;
     return db.transaction((txn) async {
-      await txn.delete('downloads', where: 'id = ?', whereArgs: [record.id]);
+      final updated = await txn.update(
+        'downloads',
+        record.toMap(),
+        where: 'id = ?',
+        whereArgs: [record.id],
+      );
+      if (updated > 0) return updated;
       return txn.insert('downloads', record.toMap());
     });
   }
@@ -424,7 +542,7 @@ class DownloadHistoryDb {
   /// Returns the number of affected rows.
   Future<int> sweepActiveToInterrupted({String? now}) async {
     final db = await database;
-    final timestamp = now ?? DateTime.now().toIso8601String();
+    final timestamp = now ?? utcNowIso();
     return db.update(
       'downloads',
       {
@@ -459,7 +577,7 @@ class DownloadHistoryDb {
     String? now,
   }) async {
     final db = await database;
-    final timestamp = now ?? DateTime.now().toIso8601String();
+    final timestamp = now ?? utcNowIso();
     final values = <String, dynamic>{
       'bytesDownloaded': bytesDownloaded,
       'progress': progress,
@@ -475,7 +593,7 @@ class DownloadHistoryDb {
   /// Mark a specific download as interrupted.
   Future<int> markInterrupted(String id, {String? now}) async {
     final db = await database;
-    final timestamp = now ?? DateTime.now().toIso8601String();
+    final timestamp = now ?? utcNowIso();
     return db.update(
       'downloads',
       {
@@ -600,7 +718,7 @@ class DownloadHistoryDb {
   }) async {
     if (videoIds.isEmpty) return;
     final db = await database;
-    final timestamp = now ?? DateTime.now().toIso8601String();
+    final timestamp = now ?? utcNowIso();
     final batch = db.batch();
     for (final vid in videoIds) {
       batch.insert(

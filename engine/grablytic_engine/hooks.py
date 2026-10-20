@@ -188,14 +188,36 @@ def build_progress_hook(queue: _queue.Queue, download_id: str, event_callback=No
             _emit_event(event_callback, event_json)
 
         elif status == "error":
+            # yt-dlp reports BOTH per-fragment transient failures and
+            # terminal ones (private video, DRM, no formats) through
+            # progress_hooks with status="error". Hardcoding
+            # recoverable=True offered "Retry" for failures that can
+            # never succeed and hid the geo-block / cookies guidance
+            # that classify_error produces. Classify the event's own
+            # error text instead of bypassing the classifier.
+            raw_error = str(d.get("error") or "Unknown error")
+            try:
+                from grablytic_engine.errors import classify_error
+
+                err = classify_error(Exception(raw_error))
+                error_type = err.error_type
+                error_message = err.message
+                recoverable = err.recoverable
+                suggests_vpn = err.suggests_vpn
+            except Exception:
+                error_type = "ERROR_DOWNLOAD"
+                error_message = raw_error
+                recoverable = True
+                suggests_vpn = False
             event_json = json.dumps(
                 {
                     "type": "event",
                     "event": "error",
                     "download_id": download_id,
-                    "error_type": "ERROR_DOWNLOAD",
-                    "error_message": d.get("error", "Unknown error"),
-                    "recoverable": True,
+                    "error_type": error_type,
+                    "error_message": error_message,
+                    "recoverable": recoverable,
+                    "suggests_vpn": suggests_vpn,
                 }
             )
             # Dual-write: the queue feeds _last_known_bytes() (terminal

@@ -4,7 +4,6 @@ import tempfile
 import threading
 from urllib.request import Request
 
-from grablytic_engine.paths import get_paths
 from grablytic_engine.url_guard import pinned_urlopen as urlopen
 
 _MAX_PROFILE_BYTES = 256 * 1024

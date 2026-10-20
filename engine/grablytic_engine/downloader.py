@@ -667,7 +667,7 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
                 "result_queue": entry["result_queue"],
                 "url": entry["url"],
                 "audio_only": _is_audio_mode(entry.get("config")),
-                "thread": None,  # set after start
+                "thread": None,  # published before start() in _spawn_thread
                 "started_at": datetime.now(timezone.utc),
                 "slot_token": _new_slot_token(),
                 "event_callback": entry.get("event_callback"),
@@ -694,21 +694,29 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
         # start) so the worker's finally-block can prove ownership even if
         # the entry is replaced under the same id mid-flight.
         slot_token = _active_downloads[download_id].get("slot_token")
-    t = threading.Thread(
-        target=download_thread,
-        args=(
-            entry["url"],
-            download_id,
-            entry["config"],
-            entry["network_type"],
-            entry["progress_queue"],
-            entry["result_queue"],
-            cancel_event,
-            entry["event_callback"],
-            slot_token,
-        ),
-        daemon=True,
-    )
+        t = threading.Thread(
+            target=download_thread,
+            args=(
+                entry["url"],
+                download_id,
+                entry["config"],
+                entry["network_type"],
+                entry["progress_queue"],
+                entry["result_queue"],
+                cancel_event,
+                entry["event_callback"],
+                slot_token,
+            ),
+            daemon=True,
+            name=f"dl-{str(download_id)[:8]}",
+        )
+        # Publish the handle BEFORE start(). The old code stored it only
+        # after start() returned, leaving a window in which a cancel saw
+        # worker_thread is None, took the "threadless" branch, closed the
+        # slot and admitted the next entry while this thread was already
+        # running yt-dlp — over-admission past _max_concurrent plus an
+        # orphaned worker whose terminal event was later suppressed.
+        _active_downloads[download_id]["thread"] = t
     try:
         t.start()
     except Exception as exc:
@@ -754,9 +762,6 @@ def _spawn_thread(entry: dict) -> threading.Thread | None:
             pass
         return None
 
-    with _downloads_lock:
-        if download_id in _active_downloads:
-            _active_downloads[download_id]["thread"] = t
     return t
 
 
@@ -2222,6 +2227,15 @@ def _worker_thread_alive(info) -> bool:
     is_alive = getattr(th, "is_alive", None)
     if not callable(is_alive):
         return False
+    # A thread that has been PUBLISHED into the slot but has not been
+    # started yet reports is_alive() == False (and ident is None). It
+    # is going to run, so it must count as active: treating it as dead
+    # let a cancel in that window close the slot and admit the next
+    # entry while this worker was about to start — over-admission past
+    # _max_concurrent. A thread that already ran keeps its ident, so
+    # only the published-but-not-started case is caught here.
+    if hasattr(th, "ident") and getattr(th, "ident", None) is None:
+        return True
     try:
         return bool(is_alive())
     except Exception:

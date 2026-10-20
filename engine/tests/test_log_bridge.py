@@ -160,17 +160,21 @@ def test_set_paths_initializes_file_logging(tmp_path, monkeypatch, _clean_bridge
     data_dir = str(tmp_path / "data")
     os.makedirs(data_dir, exist_ok=True)
     paths_mod.set_paths(
-        data_dir=data_dir, output_dir=data_dir,
-        ffmpeg_path=None, cache_dir=data_dir,
+        data_dir=data_dir,
+        output_dir=data_dir,
+        ffmpeg_path=None,
+        cache_dir=data_dir,
     )
     # Daily JSONL file logging is armed …
     log = get_logger("grablytic_engine.test_bridge_paths")
     log.info("paths armed logging")
-    day_files = [f for f in os.listdir(os.path.join(data_dir, "logs"))
-                 if f.startswith("engine_")]
+    day_files = [
+        f for f in os.listdir(os.path.join(data_dir, "logs")) if f.startswith("engine_")
+    ]
     assert day_files, "set_paths must configure the engine log dir"
     # … and so is the rotating server log.
     from grablytic_engine.persistent import server_log_path
+
     assert server_log_path() is not None
     assert os.path.isfile(server_log_path())
 
@@ -195,7 +199,8 @@ def test_start_download_wires_callback(monkeypatch):
     cb = _Sink()
     try:
         dl_mod.start_download(
-            url="https://x.test/v", download_id="wire1",
+            url="https://x.test/v",
+            download_id="wire1",
             event_callback=cb,
         )
     finally:
@@ -243,21 +248,23 @@ class _FakeYDL:
             ph({"status": "started", "postprocessor": "Merger"})
         hooks = list(self.hooks) + list(self.opts.get("progress_hooks", []))
         for h in hooks:
-            h({
-                "status": "downloading",
-                "downloaded_bytes": 50,
-                "total_bytes": 100,
-                "speed": 10,
-                "eta": 5,
-                "filename": "f.mp4",
-                "info_dict": {},
-            })
-            h({"status": "finished", "total_bytes": 100,
-               "filename": "f.mp4"})
+            h(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": 50,
+                    "total_bytes": 100,
+                    "speed": 10,
+                    "eta": 5,
+                    "filename": "f.mp4",
+                    "info_dict": {},
+                }
+            )
+            h({"status": "finished", "total_bytes": 100, "filename": "f.mp4"})
 
 
 def _fake_ffmpeg(tmp_path):
     import stat
+
     exe = tmp_path / "ffmpeg"
     exe.write_text("#!/bin/sh\necho hi\n")
     exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -275,8 +282,10 @@ class TestCallbackEndToEnd:
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
-            data_dir=str(tmp_path), output_dir=str(tmp_path),
-            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+            data_dir=str(tmp_path),
+            output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path),
+            cache_dir=str(tmp_path),
         )
         monkeypatch.setattr(dl_mod, "YoutubeDL", _FakeYDL)
         sink = _Sink()
@@ -285,8 +294,10 @@ class TestCallbackEndToEnd:
         res_q: queue.Queue = queue.Queue()
         try:
             dl_mod.download_thread(
-                url="https://x.test/v", download_id="e2e1",
-                progress_queue=prog_q, result_queue=res_q,
+                url="https://x.test/v",
+                download_id="e2e1",
+                progress_queue=prog_q,
+                result_queue=res_q,
                 event_callback=sink,
             )
         finally:
@@ -302,8 +313,9 @@ class TestCallbackEndToEnd:
         assert ("event", "stream_finished") in by_type
         assert ("event", "postprocessing") in by_type
         # … engine logger chatter (YDLogger) rode the same callback …
-        log_evs = [json.loads(r) for r in sink.events
-                   if json.loads(r).get("type") == "log"]
+        log_evs = [
+            json.loads(r) for r in sink.events if json.loads(r).get("type") == "log"
+        ]
         assert any("fake extractor chatter" in e["message"] for e in log_evs)
         # … and the terminal finished honors the filesize contract
         # (dual-write keeps _last_known_bytes fed on the callback path).
@@ -348,16 +360,22 @@ class TestBridgeSanitization:
         from grablytic_engine.persistent import bridge_event
         import logging
 
-        prev = (persist_mod._configured_dir, persist_mod._std_logger,
-                persist_mod._handler)
+        prev = (
+            persist_mod._configured_dir,
+            persist_mod._std_logger,
+            persist_mod._handler,
+        )
         persist_mod._configured_dir = None
         persist_mod._std_logger = None
         persist_mod._handler = None
         try:
             bridge_event(logging.ERROR, "no handler configured")
         finally:
-            (persist_mod._configured_dir, persist_mod._std_logger,
-             persist_mod._handler) = prev
+            (
+                persist_mod._configured_dir,
+                persist_mod._std_logger,
+                persist_mod._handler,
+            ) = prev
 
 
 class _SystemExitYDL(_FakeYDL):
@@ -374,8 +392,10 @@ class TestDownloaderCrashGuard:
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
-            data_dir=str(tmp_path), output_dir=str(tmp_path),
-            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+            data_dir=str(tmp_path),
+            output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path),
+            cache_dir=str(tmp_path),
         )
         monkeypatch.setattr(dl_mod, "YoutubeDL", ydl_cls)
         sink = _Sink()
@@ -386,7 +406,8 @@ class TestDownloaderCrashGuard:
             dl_mod.download_thread(
                 url="https://x.test/watch?v=abc&sig=SECRET999",
                 download_id=did,
-                progress_queue=prog_q, result_queue=res_q,
+                progress_queue=prog_q,
+                result_queue=res_q,
                 event_callback=sink,
             )
         finally:
@@ -397,8 +418,9 @@ class TestDownloaderCrashGuard:
         self, tmp_path, monkeypatch, _clean_bridge
     ):
         sink = self._run(tmp_path, monkeypatch, _SystemExitYDL, "crasher1")
-        errs = [json.loads(r) for r in sink.events
-                if json.loads(r).get("event") == "error"]
+        errs = [
+            json.loads(r) for r in sink.events if json.loads(r).get("event") == "error"
+        ]
         assert len(errs) == 1
         assert errs[0]["error_type"] == "ERROR_DOWNLOADER_CRASH"
         assert errs[0]["recoverable"] is True
@@ -407,8 +429,11 @@ class TestDownloaderCrashGuard:
         self, tmp_path, monkeypatch, _clean_bridge
     ):
         sink = self._run(tmp_path, monkeypatch, _FakeYDL, "leakcheck1")
-        logs = [json.loads(r)["message"] for r in sink.events
-                if json.loads(r).get("type") == "log"]
+        logs = [
+            json.loads(r)["message"]
+            for r in sink.events
+            if json.loads(r).get("type") == "log"
+        ]
         assert any("Download started: https://x.test/watch" in m for m in logs)
         assert not any("SECRET999" in m for m in logs)
         assert not any("sig=" in m for m in logs)
@@ -421,8 +446,15 @@ class _FailingPPYDL(_FakeYDL):
 
     def download(self, urls):
         for h in list(self.hooks) + list(self.opts.get("progress_hooks", [])):
-            h({"status": "downloading", "downloaded_bytes": 10,
-               "total_bytes": 10, "filename": "f.mp4", "info_dict": {}})
+            h(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": 10,
+                    "total_bytes": 10,
+                    "filename": "f.mp4",
+                    "info_dict": {},
+                }
+            )
         self.opts["logger"].error("ERROR: ffmpeg not found")
 
 
@@ -433,8 +465,10 @@ class TestPostprocessFailure:
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
-            data_dir=str(tmp_path), output_dir=str(tmp_path),
-            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+            data_dir=str(tmp_path),
+            output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path),
+            cache_dir=str(tmp_path),
         )
         monkeypatch.setattr(dl_mod, "YoutubeDL", _FailingPPYDL)
         sink = _Sink()
@@ -443,8 +477,10 @@ class TestPostprocessFailure:
         res_q: queue.Queue = queue.Queue()
         try:
             dl_mod.download_thread(
-                url=url, download_id="ppfail",
-                progress_queue=prog_q, result_queue=res_q,
+                url=url,
+                download_id="ppfail",
+                progress_queue=prog_q,
+                result_queue=res_q,
                 event_callback=sink,
             )
         finally:
@@ -455,11 +491,15 @@ class TestPostprocessFailure:
         self, tmp_path, monkeypatch, _clean_bridge
     ):
         sink = self._run(tmp_path, monkeypatch, "https://x.test/watch?v=abc")
-        kinds = [json.loads(r).get("event") for r in sink.events
-                 if json.loads(r).get("type") == "event"]
+        kinds = [
+            json.loads(r).get("event")
+            for r in sink.events
+            if json.loads(r).get("type") == "event"
+        ]
         assert "finished" not in kinds
-        errs = [json.loads(r) for r in sink.events
-                if json.loads(r).get("event") == "error"]
+        errs = [
+            json.loads(r) for r in sink.events if json.loads(r).get("event") == "error"
+        ]
         assert len(errs) == 1
         # AARAV-1: the real message is classified now — a genuine ffmpeg
         # failure maps to ERROR_FFMPEG_MISSING (terminality preserved,
@@ -470,10 +510,12 @@ class TestPostprocessFailure:
     def test_playlist_keeps_lenient_finished(
         self, tmp_path, monkeypatch, _clean_bridge
     ):
-        sink = self._run(
-            tmp_path, monkeypatch, "https://x.test/playlist?list=PL123")
-        kinds = [json.loads(r).get("event") for r in sink.events
-                 if json.loads(r).get("type") == "event"]
+        sink = self._run(tmp_path, monkeypatch, "https://x.test/playlist?list=PL123")
+        kinds = [
+            json.loads(r).get("event")
+            for r in sink.events
+            if json.loads(r).get("type") == "event"
+        ]
         assert "finished" in kinds
         assert "error" not in kinds
 
@@ -482,6 +524,7 @@ class TestProbeReport:
     @pytest.mark.unit
     def test_missing_binary_report(self):
         from grablytic_engine.bootstrap import _probe_report
+
         rep = _probe_report("/nonexistent/bin/xyz")
         assert rep["ok"] is False
         assert rep["version"] is None
@@ -491,6 +534,7 @@ class TestProbeReport:
     def test_working_binary_report(self, tmp_path):
         import stat
         from grablytic_engine.bootstrap import _probe_report
+
         exe = tmp_path / "ffmpeg"
         exe.write_text("#!/bin/sh\necho 'ffmpeg version n7.1-test'\n")
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
@@ -504,17 +548,24 @@ class TestMilestones:
     """Bounded stall visibility: 25/50/75% lines, never per-fragment."""
 
     def _drive(self, total, steps):
-        import queue as _queue
         from grablytic_engine import hooks as hooks_mod
+
         q: queue.Queue = queue.Queue()
         hook = hooks_mod.build_progress_hook(q, "mile1")
         for dl in steps:
-            hook({"status": "downloading", "downloaded_bytes": dl,
-                  "total_bytes": total, "info_dict": {}})
+            hook(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": dl,
+                    "total_bytes": total,
+                    "info_dict": {},
+                }
+            )
         return q
 
     def test_milestones_fire_once_each(self, _clean_bridge):
         from grablytic_engine import hooks as hooks_mod
+
         q = self._drive(100, [10, 30, 55, 80, 100])
         # Hook events flow; milestones go through the hooks logger.
         assert q.qsize() == 5
@@ -535,18 +586,26 @@ class TestMilestones:
     def test_milestone_carries_download_context(self, _clean_bridge):
         import queue as _queue
         from grablytic_engine import hooks as hooks_mod
+
         got = []
         hlog = hooks_mod._log
         orig = hlog._log
         try:
+
             def spy(level, message, **kw):
-                import grablytic_engine.logger as lm
                 got.append(getattr(hlog._context, "data", {}).get("download_id"))
                 return orig(level, message, **kw)
+
             hlog._log = spy
             hook = hooks_mod.build_progress_hook(_queue.Queue(), "ctx9")
-            hook({"status": "downloading", "downloaded_bytes": 90,
-                  "total_bytes": 100, "info_dict": {}})
+            hook(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": 90,
+                    "total_bytes": 100,
+                    "info_dict": {},
+                }
+            )
         finally:
             hlog._log = orig
             hlog.clear_context()
@@ -554,14 +613,21 @@ class TestMilestones:
 
     def test_unknown_total_no_milestones(self, _clean_bridge):
         from grablytic_engine import hooks as hooks_mod
+
         captured = []
         hlog = hooks_mod._log
         orig = hlog.info
         try:
             hlog.info = lambda msg, **kw: captured.append(msg)
             hook = hooks_mod.build_progress_hook(queue.Queue(), "m2")
-            hook({"status": "downloading", "downloaded_bytes": 50,
-                  "total_bytes": 0, "info_dict": {}})
+            hook(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": 50,
+                    "total_bytes": 0,
+                    "info_dict": {},
+                }
+            )
         finally:
             hlog.info = orig
             hlog.clear_context()
@@ -570,25 +636,25 @@ class TestMilestones:
 
 class TestVerboseOpts:
     @pytest.mark.unit
-    def test_verbose_dumps_sanitized_opts(
-        self, tmp_path, monkeypatch, _clean_bridge
-    ):
+    def test_verbose_dumps_sanitized_opts(self, tmp_path, monkeypatch, _clean_bridge):
         import grablytic_engine.downloader as dl_mod
         import grablytic_engine.paths as paths_mod
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
         paths_mod.set_paths(
-            data_dir=str(tmp_path), output_dir=str(tmp_path),
-            ffmpeg_path=_fake_ffmpeg(tmp_path), cache_dir=str(tmp_path),
+            data_dir=str(tmp_path),
+            output_dir=str(tmp_path),
+            ffmpeg_path=_fake_ffmpeg(tmp_path),
+            cache_dir=str(tmp_path),
         )
         monkeypatch.setattr(dl_mod, "YoutubeDL", _FakeYDL)
         sink = _Sink()
         set_global_event_callback(sink)
         try:
             dl_mod.download_thread(
-                url="https://x.test/v", download_id="verb1",
-                config={"verbose": True,
-                        "proxy": "http://user:pass@h:8080"},
+                url="https://x.test/v",
+                download_id="verb1",
+                config={"verbose": True, "proxy": "http://user:pass@h:8080"},
                 progress_queue=queue.Queue(),
                 result_queue=queue.Queue(),
                 event_callback=sink,
@@ -597,8 +663,9 @@ class TestVerboseOpts:
             dl_mod._active_downloads.pop("verb1", None)
         # Loop-1 contract: the verbose triage dump is DEBUG, so it rides the
         # FILE (diagnostics preserved, sanitized) — never the UI bridge.
-        logs = [json.loads(r) for r in sink.events
-                if json.loads(r).get("type") == "log"]
+        logs = [
+            json.loads(r) for r in sink.events if json.loads(r).get("type") == "log"
+        ]
         assert not [e for e in logs if "Effective opts:" in e["message"]]
         files = [p for p in tmp_path.rglob("engine_*.txt")]
         assert files, "expected an engine log file"
@@ -618,7 +685,6 @@ class TestEmitDiagnostics:
     """A dead callback must warn once (diagnosable) then stay silent."""
 
     def test_first_failure_warns_once(self, _clean_bridge):
-        import queue as _queue
         from grablytic_engine import hooks as hooks_mod
 
         q: queue.Queue = queue.Queue()
@@ -628,15 +694,22 @@ class TestEmitDiagnostics:
         try:
             # Drive through _emit_event via the hook with a dead callback.
             hook2 = hooks_mod.build_progress_hook(
-                q, "dead1", event_callback=_DeadSink())
-            payload = {"status": "downloading", "downloaded_bytes": 1,
-                       "total_bytes": 2, "info_dict": {}}
+                q, "dead1", event_callback=_DeadSink()
+            )
+            payload = {
+                "status": "downloading",
+                "downloaded_bytes": 1,
+                "total_bytes": 2,
+                "info_dict": {},
+            }
             hook2(dict(payload))
             hook2(dict(payload))
             warns = []
             while not log_q.empty():
                 ev = log_q.get_nowait()
-                if ev.get("level") == "WARN" and "callback failing" in ev.get("message", ""):
+                if ev.get("level") == "WARN" and "callback failing" in ev.get(
+                    "message", ""
+                ):
                     warns.append(ev)
             assert len(warns) == 1
         finally:

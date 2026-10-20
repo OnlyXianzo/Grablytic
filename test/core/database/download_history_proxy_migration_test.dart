@@ -78,7 +78,8 @@ void main() {
       final record = await DownloadHistoryDb.instance.getById('old-1');
       expect(record, isNotNull);
       expect(jsonDecode(record!.configJson!), {'format': 'best'});
-      expect(await (await DownloadHistoryDb.instance.database).getVersion(), 6);
+      // v7 normalises the timestamps to UTC ISO-8601 with an offset.
+      expect(await (await DownloadHistoryDb.instance.database).getVersion(), 7);
     },
   );
 }

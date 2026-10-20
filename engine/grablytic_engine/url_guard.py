@@ -19,7 +19,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 
 _ALLOWED_MEDIA_SCHEMES = ("http", "https")
 _ALLOWED_PROXY_SCHEMES = ("http", "https", "socks4", "socks5", "socks5h")
@@ -624,6 +624,58 @@ def pinned_urlopen(request, timeout=5):
         _SafeProfileRedirectHandler(),
     )
     return opener.open(request, timeout=timeout)
+
+
+def redact_url(url) -> str:
+    """Scheme + host + path only. Query and userinfo are never diagnostic.
+
+    Every other engine path strips the query before logging a URL
+    (``_safe_url``, explicit comments about ``sig``/``lsig``), but the
+    exception paths concatenated the raw URL, so a signed CDN link or a
+    playlist URL with an ``si=`` tracking token ended up in the daily
+    JSONL, the rotating log and any diagnostics export.
+    """
+    if not isinstance(url, str):
+        return "<url>"
+    try:
+        parts = urlsplit(url)
+    except Exception:
+        return "<url>"
+    if not parts.scheme and not parts.netloc:
+        # Not a URL (a bare path or an id) — keep it, but bound the size.
+        return url[:256]
+    host = parts.hostname or ""
+    try:
+        port = parts.port
+    except Exception:
+        port = None
+    netloc = host if port is None else f"{host}:{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
+# Hosts that legitimately need YouTube-specific extractor arguments.
+# A substring test ("youtube.com" in url) matched "https://evil.tld/?youtube.com"
+# and "https://notyoutube.com/watch?v=…", so unrelated hosts silently
+# received `player_client` / `po_token` extractor args.
+_YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+
+
+def is_youtube_url(url) -> bool:
+    """True when *url*'s HOST is a YouTube host (suffix allowlist).
+
+    Parsed, never substring-matched: "notyoutube.com" and
+    "https://x.tld/?youtube.com" are not YouTube, while
+    "m.youtube.com" and "www.youtube.com." are.
+    """
+    if not isinstance(url, str) or not url:
+        return False
+    try:
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    except Exception:
+        return False
+    if not host:
+        return False
+    return any(host == h or host.endswith("." + h) for h in _YOUTUBE_HOSTS)
 
 
 def sanitized_proxy(proxy):

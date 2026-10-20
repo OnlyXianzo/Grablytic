@@ -11,6 +11,7 @@ from grablytic_engine.config import (
 from grablytic_engine.paths import get_paths
 from grablytic_engine.format_selector import build_format_string
 from grablytic_engine.hooks import build_progress_hook, build_postprocessor_hook
+from grablytic_engine.url_guard import is_youtube_url
 
 
 _PLAYLIST_SEGMENT_RE = re.compile(r"^(\d+)(?:([-:])(\d+))?$")
@@ -648,7 +649,7 @@ def build_ydl_opts(
     # AV1/VP9 without requiring JS execution or PO Token. web client alone
     # returns only 5 formats without a PO Token.
     # Only add po_token when one is available.
-    if url and ("youtube.com" in url or "youtu.be" in url):
+    if url and is_youtube_url(url):
         opts.setdefault("extractor_args", {})
         opts["extractor_args"].setdefault("youtube", {})
         opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]

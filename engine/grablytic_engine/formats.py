@@ -2,9 +2,9 @@ from grablytic_engine.ytdlp_network import GuardedYoutubeDL as YoutubeDL
 
 from grablytic_engine.paths import get_paths
 from grablytic_engine.config import coerce_config
-from grablytic_engine.format_selector import build_format_string
-from grablytic_engine.errors import classify_error, GrablyticError
+from grablytic_engine.errors import classify_error
 from grablytic_engine.logger import get_logger
+from grablytic_engine.url_guard import is_youtube_url, redact_url
 
 
 log = get_logger("grablytic_engine.formats")
@@ -37,7 +37,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
 
     _configure_js_runtime(opts, paths)
 
-    if "youtube.com" in url or "youtu.be" in url:
+    if is_youtube_url(url):
         opts.setdefault("extractor_args", {})
         opts["extractor_args"].setdefault("youtube", {})
         opts["extractor_args"]["youtube"]["player_client"] = ["default", "mweb"]
@@ -64,7 +64,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             info = ydl.extract_info(url, download=False)
 
         if info is None:
-            log.warn(f"No info extracted for {url}")
+            log.warn(f"No info extracted for {redact_url(url)}")
             return {
                 "success": False,
                 "error_type": "ERROR_UNAVAILABLE",
@@ -222,7 +222,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
             }
 
         log.info(
-            f"Found {len(parsed)} formats for {url} (preview: {preview_stream is not None})"
+            f"Found {len(parsed)} formats for {redact_url(url)} (preview: {preview_stream is not None})"
         )
         thumb = info.get("thumbnail")
         if not thumb and info.get("thumbnails"):
@@ -282,7 +282,7 @@ def get_formats(url: str, config: dict | None = None) -> dict:
         }
 
     except Exception as exc:
-        log.log_exception(exc, f"Format fetch failed: {url}")
+        log.log_exception(exc, f"Format fetch failed: {redact_url(url)}")
         err = classify_error(exc)
         return {
             "success": False,

@@ -64,6 +64,11 @@ bool isFastLaneMethod(String method) =>
 class DesktopEngineService implements EngineService {
   final String _pythonPath;
   final String? _workingDirectory;
+
+  /// How long the engine may take to come up before a waiting request
+  /// gives up. Far larger than any request budget: the first run may
+  /// install yt-dlp (uv venv + uv pip install), which is minutes.
+  static const Duration _startupBudget = Duration(minutes: 5);
   Process? _process;
   StreamSubscription<String>? _stdoutSubscription;
   StreamSubscription<String>? _stderrSubscription;
@@ -71,6 +76,16 @@ class DesktopEngineService implements EngineService {
   String? _dataDir;
 
   final _pending = <String, Completer<Map<String, dynamic>>>{};
+
+  /// Ids whose request already timed out. A late answer for one of these
+  /// is expected; an answer for an id that is neither pending nor
+  /// timed out is a protocol desync. Bounded so it cannot grow.
+  final _timedOutIds = <String>{};
+
+  void _rememberTimedOut(String id) {
+    if (_timedOutIds.length > 64) _timedOutIds.clear();
+    _timedOutIds.add(id);
+  }
   final _progressController =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -165,19 +180,42 @@ class DesktopEngineService implements EngineService {
   Future<String> _resolvePythonPath() async {
     String executable = _pythonPath;
     if (executable == 'python' || executable == 'python3') {
-      final venvCandidates = Platform.isWindows
-          ? [
-              '${Directory.current.path}/engine/.venv/Scripts/python.exe',
-              '${Directory.current.path}/.venv/Scripts/python.exe',
-            ]
-          : [
-              '${Directory.current.path}/engine/.venv/bin/python',
-              '${Directory.current.path}/.venv/bin/python',
-            ];
+      // Only APP-OWNED roots. The old code probed
+      // `Directory.current/engine/.venv/bin/python` — the process working
+      // directory, which on Windows is the shortcut's "Start in" folder
+      // and on Linux is whatever directory the launcher inherited. An
+      // attacker who can drop a `python` binary into a folder the user
+      // opens from (an extracted archive is the classic vector) got
+      // code execution as the user, invisibly.
+      final roots = <String>[
+        File(Platform.resolvedExecutable).parent.path,
+        ?_dataDir,
+      ];
+      final candidates = <String>[];
+      for (final root in roots) {
+        if (Platform.isWindows) {
+          candidates
+            ..add('$root\\engine\\.venv\\Scripts\\python.exe')
+            ..add('$root\\.venv\\Scripts\\python.exe');
+        } else {
+          candidates
+            ..add('$root/engine/.venv/bin/python')
+            ..add('$root/.venv/bin/python');
+        }
+      }
 
-      for (final path in venvCandidates) {
+      for (final path in candidates) {
         if (File(path).existsSync()) {
           return path;
+        }
+      }
+
+      // Development only: an explicit environment variable, never the
+      // working directory.
+      if (kDebugMode) {
+        final dev = Platform.environment['GRABLYTIC_PYTHON'];
+        if (dev != null && dev.isNotEmpty && File(dev).existsSync()) {
+          return dev;
         }
       }
     }
@@ -375,7 +413,32 @@ class DesktopEngineService implements EngineService {
       }
 
       final id = data['id'] as String?;
-      if (id == null || !_pending.containsKey(id)) return;
+      if (id == null) {
+        AppLogger.warn(
+          'Engine response without an id: protocol desync',
+          tag: 'engine',
+        );
+        return;
+      }
+      if (!_pending.containsKey(id)) {
+        // A response for an id we are not waiting for. Either it is the
+        // late answer to a request that already timed out (harmless) or
+        // the engine answered with an id we never sent (a real desync).
+        // The old code dropped both silently, so a desync was invisible
+        // until a download mysteriously never started.
+        if (_timedOutIds.remove(id)) {
+          AppLogger.info(
+            'Late engine response for the timed-out request $id',
+            tag: 'engine',
+          );
+        } else {
+          AppLogger.warn(
+            'Unknown engine response id $id: protocol desync',
+            tag: 'engine',
+          );
+        }
+        return;
+      }
 
       final completer = _pending.remove(id);
       if (completer == null || completer.isCompleted) return;
@@ -386,7 +449,24 @@ class DesktopEngineService implements EngineService {
           Exception(error['error_message'] ?? 'Unknown error'),
         );
       } else {
-        completer.complete(data['result'] as Map<String, dynamic>? ?? {});
+        final result = data['result'];
+        if (result is Map) {
+          completer.complete(Map<String, dynamic>.from(result));
+        } else {
+          // A malformed result used to become `{}`, which every caller
+          // read as "no success, no reason". Report it as a protocol
+          // error instead of a silent empty answer.
+          AppLogger.warn(
+            'Malformed engine result for request $id',
+            tag: 'engine',
+          );
+          completer.complete(
+            EngineEnvelope.error(
+              errorType: 'ERROR_PROTOCOL',
+              message: 'Malformed engine result',
+            ),
+          );
+        }
       }
     } catch (e) {
       // Malformed engine stdout lines used to vanish. Protocol
@@ -446,11 +526,18 @@ class DesktopEngineService implements EngineService {
       AppLogger.warn('uv venv failed: ${result.stderr}', tag: 'engine-deps');
     }
 
-    AppLogger.info('Installing yt-dlp into venv...', tag: 'engine-deps');
+    AppLogger.info(
+      'Installing yt-dlp ${EngineContract.ytDlpVersion} into venv...',
+      tag: 'engine-deps',
+    );
     result = await Process.run(uvPath, [
       'pip',
       'install',
-      'yt-dlp',
+      // Pinned, and no dependency resolution from the index: yt-dlp has
+      // no runtime dependencies, so an unpinned install would only add
+      // supply-chain surface.
+      'yt-dlp==${EngineContract.ytDlpVersion}',
+      '--no-deps',
     ], workingDirectory: venvDir).timeout(const Duration(seconds: 120));
 
     if (result.exitCode != 0) {
@@ -465,27 +552,23 @@ class DesktopEngineService implements EngineService {
   Future<String> ensureDependencies(String pythonPath) async {
     if (await _hasYtDlp(pythonPath)) return pythonPath;
 
+    // The version is PINNED. Installing "latest" from PyPI at runtime
+    // means a breaking upstream release changes the engine's behaviour
+    // with no review, and a compromised package would run with the
+    // user's privileges. A pinned version is reproducible; the pinned
+    // value is bumped deliberately, in a release.
     final uvPath = await _findUv();
     if (uvPath == null) {
-      AppLogger.warn(
-        'uv not found, attempting pip fallback...',
-        tag: 'engine-deps',
-      );
-      final pipCmd = Platform.isWindows ? 'pip' : 'pip3';
-      final pipResult = await Process.run(pipCmd, [
-        'install',
-        '--user',
-        'yt-dlp',
-      ]);
-      if (pipResult.exitCode == 0 && await _hasYtDlp(pythonPath)) {
-        return pythonPath;
-      }
       throw Exception(
-        'yt-dlp is required but uv not found and pip fallback failed. Run the bootstrap process first.',
+        'yt-dlp ${EngineContract.ytDlpVersion} is required but uv was not found. '
+        'Run the bootstrap process first.',
       );
     }
 
-    AppLogger.info('Installing yt-dlp via uv...', tag: 'engine-deps');
+    AppLogger.info(
+      'Installing yt-dlp ${EngineContract.ytDlpVersion} via uv...',
+      tag: 'engine-deps',
+    );
     final venvPython = await _installYtDlpViaUv(uvPath);
 
     if (!await _hasYtDlp(venvPython)) {
@@ -518,8 +601,59 @@ class DesktopEngineService implements EngineService {
       },
     );
 
-    Future<void> writeRequest() async {
+    // An error that completes the completer BEFORE the caller attaches
+    // its listener would escape to the zone: main.dart logs an uncaught
+    // zone error as FATAL, and the opt-in GitHub auto-report could fire
+    // for an ordinary timeout. Mark the future as handled here; the
+    // caller still gets the error through the chain returned below.
+    completer.future.ignore();
+
+    // The budget covers the exchange (the queue wait, the write and the
+    // answer) but NOT the start-up. The first run may have to install
+    // yt-dlp (uv venv + uv pip install), which takes minutes; arming
+    // the request timer before that made every first-run request time
+    // out even though the engine came up a moment later. The start-up
+    // gets its own, much larger, watchdog below.
+    final timeoutBudget = requestTimeoutForMethod(method);
+    Timer? timeout;
+    void armTimeout() {
+      timeout ??= Timer(timeoutBudget, () {
+        if (!completer.isCompleted) {
+          _pending.remove(id);
+          _rememberTimedOut(id);
+          completer.completeError(Exception('Request $method timed out'));
+        }
+      });
+    }
+
+    // A start-up that never finishes (a wedged uv, a pipe that stays
+    // open) must not leave the request pending for ever either. The
+    // watchdog is deliberately far larger than the request budget: it
+    // only fires when the engine never came up at all.
+    final startupWatchdog = Timer(_startupBudget, () {
+      if (!completer.isCompleted) {
+        _pending.remove(id);
+        completer.completeError(
+          Exception(
+            'Engine did not start within ${_startupBudget.inSeconds}s',
+          ),
+        );
+      }
+    });
+
+    // The engine must be UP before the request budget starts.
+    try {
       await _ensureRunning();
+    } catch (e) {
+      startupWatchdog.cancel();
+      _pending.remove(id);
+      if (!completer.isCompleted) completer.completeError(e);
+      rethrow;
+    }
+    startupWatchdog.cancel();
+    armTimeout();
+
+    Future<void> writeRequest() async {
       final proc = _process;
       if (proc == null) throw StateError('engine process died before write');
       proc.stdin.writeln(request);
@@ -532,8 +666,9 @@ class DesktopEngineService implements EngineService {
         await writeRequest();
       } catch (e) {
         // Do not leak the pending entry on a dead transport; the timer
-        // below would otherwise fire on a zombie id and desync by id.
+        // would otherwise fire on a zombie id and desync by id.
         _pending.remove(id);
+        timeout?.cancel();
         if (!completer.isCompleted) completer.completeError(e);
         rethrow;
       }
@@ -553,26 +688,19 @@ class DesktopEngineService implements EngineService {
         await currentTask;
       } catch (e) {
         _pending.remove(id);
+        timeout?.cancel();
         if (!completer.isCompleted) completer.completeError(e);
         rethrow;
       }
     }
 
-    final timeoutBudget = requestTimeoutForMethod(method);
-    final timeout = Timer(timeoutBudget, () {
-      if (!completer.isCompleted) {
-        _pending.remove(id);
-        completer.completeError(Exception('Request $method timed out'));
-      }
-    });
-
     return completer.future
         .then((result) {
-          timeout.cancel();
+          timeout?.cancel();
           return result;
         })
         .catchError((error) {
-          timeout.cancel();
+          timeout?.cancel();
           throw error;
         });
   }

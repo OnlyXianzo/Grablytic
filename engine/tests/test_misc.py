@@ -429,7 +429,6 @@ class TestBootstrap:
     def test_bootstrap_github_binary_missing_sha256(self, tmp_path, monkeypatch):
         import shutil
         import sys
-        import grablytic_engine.bootstrap as bootstrap_dummy  # ensure module is loaded
         from grablytic_engine.bootstrap import _bootstrap_github_binary
 
         bootstrap_mod = sys.modules["grablytic_engine.bootstrap"]

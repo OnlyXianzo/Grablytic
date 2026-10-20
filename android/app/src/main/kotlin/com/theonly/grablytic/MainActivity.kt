@@ -15,6 +15,23 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 import java.io.File
 
+// --- Shared string constants -------------------------------------------
+// One literal, one place: these keys and messages are used by more than
+// one branch, and a literal repeated across the file is both a typo risk
+// and a maintenance risk.
+private const val KEY_SUCCESS = "success"
+private const val KEY_ERROR = "error"
+private const val KEY_GRANTED = "granted"
+private const val KEY_EVENT = "event"
+private const val KEY_SYSTEM = "system"
+private const val KEY_SUPPORTED = "supported"
+private const val KEY_TYPE = "type"
+private const val KEY_VARIANT = "variant"
+private const val KEY_FINISHED = "finished"
+private const val ERR_ENGINE_UNAVAILABLE = "ERROR_ENGINE_UNAVAILABLE"
+private const val MSG_ENGINE_NOT_READY = "Engine is not ready"
+private const val MSG_PERMISSION_DENIED = "permission denied"
+
 /**
  * Chaquopy callback contract for engine → Kotlin event delivery.
  * A public interface (not an anonymous `object : Any()`) so R8/ProGuard
@@ -33,6 +50,64 @@ open class MainActivity : FlutterActivity() {
     private val PROGRESS_CHANNEL = "com.theonly.grablytic/progress"
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    /**
+     * Answers a MethodChannel result on the main thread, even when the
+     * calling coroutine has been cancelled.
+     *
+     * The old code used `withContext(Dispatchers.Main) { result.success(..) }`.
+     * Inside a cancelled coroutine `withContext` throws before the body
+     * runs, so a reply that was due when the activity was destroyed (or
+     * the scope cancelled) never reached the Dart side: the future hung
+     * for ever and the UI showed a spinner that could not end.
+     *
+     * `NonCancellable` makes the delivery attempt independent of the
+     * caller's cancellation. The `try/catch` covers the case where the
+     * engine is already gone and the channel throws.
+     */
+    private suspend fun replySuccess(result: MethodChannel.Result, payload: Any?) {
+        withContext(NonCancellable + Dispatchers.Main) {
+            try {
+                result.success(payload)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Error counterpart of [replySuccess]. */
+    private suspend fun replyError(
+        result: MethodChannel.Result,
+        code: String,
+        message: String?,
+        details: Any? = null,
+    ) {
+        withContext(NonCancellable + Dispatchers.Main) {
+            try {
+                result.error(code, message, details)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * True when the engine's JSON answer carries a success flag set to true.
+     *
+     * The old code decided this with
+     * `jsonStr.contains("\"success\": true")` — a substring test over
+     * the WHOLE payload. A download title containing the literal text
+     * A literal success flag flipped the verdict, and a different JSON
+     * spacing (success:true without the space) slipped past the first test. The
+     * payload is parsed instead.
+     */
+    private fun jsonReportsSuccess(jsonStr: String): Boolean {
+        return try {
+            val obj = org.json.JSONObject(jsonStr)
+            obj.optBoolean(KEY_SUCCESS, false)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private var methodChannel: MethodChannel? = null
 
     // FIFO of share URLs (was a single nullable var — two rapid
@@ -48,6 +123,18 @@ open class MainActivity : FlutterActivity() {
     private var pendingNotifResult: MethodChannel.Result? = null
     private var notifPromptShown = false
 
+    /** This activity's own progress sink (see the listener registry). */
+    private var myEventSink: EventChannel.EventSink? = null
+
+    /**
+     * Download ids whose event listener THIS activity registered.
+     *
+     * `activeCallbacks` is process-wide, so a destroyed activity left its
+     * entries behind for entries whose download never reached a terminal
+     * event.
+     */
+    private val ownedCallbackIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     companion object {
         private const val REQ_POST_NOTIFICATIONS = 4101
 
@@ -56,12 +143,39 @@ open class MainActivity : FlutterActivity() {
 
         // Terminals missed per detach gap (mirrors the engine queue vocabulary).
         private const val MAX_UNDELIVERED_TERMINALS = 50
-        private val TERMINAL_EVENTS = setOf("finished", "error", "cancelled")
+        private val TERMINAL_EVENTS = setOf(KEY_FINISHED, KEY_ERROR, "cancelled")
 
         val activeCallbacks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
-        @Volatile
-        var eventSink: EventChannel.EventSink? = null
+        // Every registered listener, not a single shared sink.
+        //
+        // MainActivity and ShareActivity each run their own Flutter engine
+        // (and their own Dart isolate) and both listen on the same
+        // EventChannel name. The old code kept ONE static sink, so the
+        // second listener silently REPLACED the first: while the share
+        // overlay was open, the main activity's download cards stopped
+        // receiving progress events, and the share overlay received the
+        // main activity's events.
+        private val eventSinks = java.util.concurrent.CopyOnWriteArrayList<EventChannel.EventSink>()
+
+        /** Sinks that are currently attached, for a broadcast dispatch. */
+        fun currentEventSinks(): List<EventChannel.EventSink> = eventSinks.toList()
+
+        fun registerEventSink(sink: EventChannel.EventSink) {
+            if (!eventSinks.contains(sink)) eventSinks.add(sink)
+        }
+
+        /**
+         * Detaches ONE listener.
+         *
+         * A null sink means "this activity never had a listener". It must
+         * NOT clear the registry: the other activity's listener would
+         * lose its sink and stop receiving events — exactly the
+         * cross-activity theft the registry exists to prevent.
+         */
+        fun unregisterEventSink(sink: EventChannel.EventSink) {
+            eventSinks.remove(sink)
+        }
         private val terminalLock = Any()
         private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -119,9 +233,9 @@ open class MainActivity : FlutterActivity() {
 
         fun reportTerminalTimeout(id: String) {
             val eventJson = org.json.JSONObject().apply {
-                put("type", "event")
+                put(KEY_TYPE, KEY_EVENT)
                 put("download_id", id)
-                put("event", "error")
+                put(KEY_EVENT, KEY_ERROR)
                 put("error_type", "ERROR_TIMEOUT")
                 put("error_message", "Download paused: background execution limit reached. Re-open app to resume.")
                 put("suggests_vpn", false)
@@ -129,7 +243,7 @@ open class MainActivity : FlutterActivity() {
 
             bufferTerminal(id, eventJson)
             mainHandler.post {
-                eventSink?.let { flushTerminals(it) }
+                currentEventSinks().forEach { flushTerminals(it) }
             }
         }
 
@@ -293,7 +407,7 @@ open class MainActivity : FlutterActivity() {
             val granted = grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             try {
-                pendingNotifResult?.success(mapOf("success" to true, "granted" to granted))
+                pendingNotifResult?.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to granted))
             } catch (_: Exception) {
             }
             pendingNotifResult = null
@@ -362,7 +476,7 @@ open class MainActivity : FlutterActivity() {
         override fun onEvent(eventJson: String) {
             val terminalId = try {
                 val o = org.json.JSONObject(eventJson)
-                if (o.optString("type") == "event" && o.optString("event") in TERMINAL_EVENTS) {
+                if (o.optString(KEY_TYPE) == KEY_EVENT && o.optString(KEY_EVENT) in TERMINAL_EVENTS) {
                     o.optString("download_id").takeIf { it.isNotEmpty() }
                 } else {
                     null
@@ -371,10 +485,10 @@ open class MainActivity : FlutterActivity() {
 
             try {
                 val obj = org.json.JSONObject(eventJson)
-                if (obj.optString("type") == "event") {
+                if (obj.optString(KEY_TYPE) == KEY_EVENT) {
                     val id = obj.optString("download_id")
                     if (id.isNotEmpty()) {
-                        when (obj.optString("event")) {
+                        when (obj.optString(KEY_EVENT)) {
                             "downloading" -> {
                                 val dl = obj.optLong("downloaded_bytes", 0)
                                 val total = obj.optLong("total_bytes", 0)
@@ -385,15 +499,15 @@ open class MainActivity : FlutterActivity() {
                             "postprocessing" -> {
                                 DownloadService.updateStage(appContext, id, obj.optString("stage_label", "Processing..."))
                             }
-                            "finished", "error", "cancelled" -> {
+                            KEY_FINISHED, KEY_ERROR, "cancelled" -> {
                                 activeCallbacks.remove(id)
-                                when (obj.optString("event")) {
-                                    "finished" -> {
+                                when (obj.optString(KEY_EVENT)) {
+                                    KEY_FINISHED -> {
                                         DownloadService.finished(appContext, id)
                                         scanFileExact(appContext, obj.optString("file_path", null))
                                         scanRecentMedia(appContext, outDir)
                                     }
-                                    "error" -> DownloadService.failed(appContext, id, obj.optString("error_message", null).takeIf { it.isNotEmpty() })
+                                    KEY_ERROR -> DownloadService.failed(appContext, id, obj.optString("error_message", null).takeIf { it.isNotEmpty() })
                                     else -> DownloadService.done(appContext, id, true)
                                 }
                             }
@@ -407,13 +521,15 @@ open class MainActivity : FlutterActivity() {
                 bufferTerminal(terminalId, eventJson)
                 // 2. Dispatch flush to Main thread via Handler
                 mainHandler.post {
-                    eventSink?.let { flushTerminals(it) }
+                    currentEventSinks().forEach { flushTerminals(it) }
                 }
             } else {
-                val sink = eventSink
-                if (sink != null) {
+                val sinks = currentEventSinks()
+                if (sinks.isNotEmpty()) {
                     mainHandler.post {
-                        try { eventSink?.success(eventJson) } catch (_: Exception) {}
+                        for (sink in currentEventSinks()) {
+                            try { sink.success(eventJson) } catch (_: Exception) {}
+                        }
                     }
                 } else if (!noSinkWarned) {
                     noSinkWarned = true
@@ -431,14 +547,14 @@ open class MainActivity : FlutterActivity() {
             when (call.method) {
                 "activity/finish" -> {
                     finish()
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "notification/show_error" -> {
                     val downloadId = call.argument<String>("download_id") ?: "err_${System.currentTimeMillis()}"
                     val title = call.argument<String>("title") ?: "Download failed"
-                    val error = call.argument<String>("error") ?: "Extraction or download failed"
+                    val error = call.argument<String>(KEY_ERROR) ?: "Extraction or download failed"
                     DownloadService.failed(applicationContext, downloadId, "$title: $error")
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "notification/show_success" -> {
                     val downloadId = call.argument<String>("download_id") ?: "ok_${System.currentTimeMillis()}"
@@ -447,7 +563,7 @@ open class MainActivity : FlutterActivity() {
                     // Gate on runtime permission (Android 13+) — matches NotificationManagerCompat.areNotificationsEnabled
                     // contract. Prevents SecurityException and silent drop (caught below as fallback).
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted()) {
-                        result.success(mapOf("success" to false, "granted" to false, "error" to "permission denied")) // skipcq: KT-W1042
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_GRANTED to false, KEY_ERROR to MSG_PERMISSION_DENIED)) // skipcq: KT-W1042
                         return@setMethodCallHandler
                     }
                     try {
@@ -489,16 +605,16 @@ open class MainActivity : FlutterActivity() {
                                 mgr.notify(downloadId.hashCode(), notif)
                             } catch (e: SecurityException) {
                                 android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied for success: ${e.message}")
-                                result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied"))) // skipcq: KT-W1042
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_GRANTED to false, KEY_ERROR to (e.message ?: MSG_PERMISSION_DENIED))) // skipcq: KT-W1042
                                 return@setMethodCallHandler
                             }
                         }
                     } catch (e: SecurityException) {
                         android.util.Log.w("GrablyticNotif", "POST_NOTIFICATIONS denied: ${e.message}")
-                        result.success(mapOf("success" to false, "granted" to false, "error" to (e.message ?: "permission denied"))) // skipcq: KT-W1042
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_GRANTED to false, KEY_ERROR to (e.message ?: MSG_PERMISSION_DENIED))) // skipcq: KT-W1042
                         return@setMethodCallHandler
                     }
-                    result.success(mapOf("success" to true, "granted" to true))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to true))
                 }
                 "intent/get_shared" -> {
                     // Pops one URL per call (null when empty) so the Dart
@@ -518,20 +634,20 @@ open class MainActivity : FlutterActivity() {
                         val uri = android.net.Uri.parse(url)
                         val scheme = uri?.scheme?.lowercase()
                         if (uri == null || (scheme != "http" && scheme != "https" && scheme != "mailto")) {
-                            result.success(mapOf("success" to false, "error" to "only http(s)/mailto URLs"))
+                            result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "only http(s)/mailto URLs"))
                         } else {
                             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             try {
                                 startActivity(view)
-                                result.success(mapOf("success" to true))
+                                result.success(mapOf(KEY_SUCCESS to true))
                             } catch (e: android.content.ActivityNotFoundException) {
-                                result.success(mapOf("success" to false, "error" to "no handler"))
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "no handler"))
                             }
                         }
                     } catch (e: Exception) {
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "open failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "open failed")))
                     }
                 }
                 // Open a downloaded media file in the system player via
@@ -540,11 +656,11 @@ open class MainActivity : FlutterActivity() {
                     val path = call.argument<String>("path")
                     try {
                         if (path.isNullOrEmpty()) {
-                            result.success(mapOf("success" to false, "error" to "missing path"))
+                            result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "missing path"))
                         } else {
                             val file = File(path)
                             if (!file.isFile) {
-                                result.success(mapOf("success" to false, "error" to "file not found"))
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "file not found"))
                             } else {
                                 val uri = androidx.core.content.FileProvider.getUriForFile(
                                     this@MainActivity,
@@ -559,14 +675,14 @@ open class MainActivity : FlutterActivity() {
                                 }
                                 try {
                                     startActivity(view)
-                                    result.success(mapOf("success" to true))
+                                    result.success(mapOf(KEY_SUCCESS to true))
                                 } catch (e: android.content.ActivityNotFoundException) {
-                                    result.success(mapOf("success" to false, "error" to "no handler"))
+                                    result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "no handler"))
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "open failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "open failed")))
                     }
                 }
                 "paths/set" -> {
@@ -626,19 +742,42 @@ open class MainActivity : FlutterActivity() {
                             )
                         }
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
-                            engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
-                            withContext(Dispatchers.Main) { result.success(mapOf("success" to true)) }
+                            // The engine FAILS CLOSED on a non-absolute
+                            // root (it is the trust anchor for every
+                            // derived path). The old code threw that
+                            // verdict away and answered
+                            // a success answer unconditionally, so the
+                            // app believed it was configured while the
+                            // engine had rejected the paths.
+                            val setPathsResult = engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
+                            replySuccess(result, pyJson(setPathsResult))
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_INVALID_PATH", e.message, null) }
+                            replyError(result, "ERROR_INVALID_PATH", e.message, null)
                         }
                     }
                 }
                 "engine/bootstrap" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val bootstrapResult = engine.callAttr("bootstrap")
 
@@ -659,9 +798,9 @@ open class MainActivity : FlutterActivity() {
                             }
 
                             val jsonStr = pyJson(bootstrapResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_BOOTSTRAP_FAILED", e.message, null) }
+                            replyError(result, "ERROR_BOOTSTRAP_FAILED", e.message, null)
                         }
                     }
                 }
@@ -711,51 +850,77 @@ open class MainActivity : FlutterActivity() {
 
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
 
                             val eventCallback = ProcessEngineEventListener(applicationContext, outputDir)
-                            if (downloadId != null) {
-                                activeCallbacks[downloadId] = eventCallback
+                            val ownedId = downloadId
+                            if (ownedId != null) {
+                                activeCallbacks[ownedId] = eventCallback
+                                ownedCallbackIds.add(ownedId)
                             }
 
                             val startResult = engine.callAttr("start_download", url, downloadId, configJson(config), networkType, eventCallback)
                             val jsonStr = pyJson(startResult)
-                            if (downloadId != null && !jsonStr.contains("\"success\": true") && !jsonStr.contains("\"success\":true")) {
+                            if (downloadId != null && !jsonReportsSuccess(jsonStr)) {
                                 activeCallbacks.remove(downloadId)
                             }
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
                             if (downloadId != null) {
                                 activeCallbacks.remove(downloadId)
                             }
-                            withContext(Dispatchers.Main) { result.error("ERROR_START_FAILED", e.message, null) }
+                            replyError(result, "ERROR_START_FAILED", e.message, null)
                         }
                     }
                 }
                 "download/clear_archive" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val cleared = engine.callAttr("clear_download_archive")
                             val jsonStr = pyJson(cleared)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_ARCHIVE_FAILED", e.message, null) }
+                            replyError(result, "ERROR_ARCHIVE_FAILED", e.message, null)
                         }
                     }
                 }
                 "download/queue_status" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val status = engine.callAttr("get_queue_status")
                             val jsonStr = pyJson(status)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_QUEUE_FAILED", e.message, null) }
+                            replyError(result, "ERROR_QUEUE_FAILED", e.message, null)
                         }
                     }
                 }
@@ -763,13 +928,21 @@ open class MainActivity : FlutterActivity() {
                     val maxConcurrent = call.argument<Int>("max_concurrent") ?: 2
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val updated = engine.callAttr("set_max_concurrent", maxConcurrent)
                             val jsonStr = pyJson(updated)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_CONCURRENCY_FAILED", e.message, null) }
+                            replyError(result, "ERROR_CONCURRENCY_FAILED", e.message, null)
                         }
                     }
                 }
@@ -777,13 +950,21 @@ open class MainActivity : FlutterActivity() {
                     val downloadId = call.argument<String>("download_id")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val cancelResult = engine.callAttr("cancel_download", downloadId)
                             val jsonStr = pyJson(cancelResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_CANCEL_FAILED", e.message, null) }
+                            replyError(result, "ERROR_CANCEL_FAILED", e.message, null)
                         }
                     }
                 }
@@ -792,13 +973,21 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val formatsResult = engine.callAttr("get_formats", url, configJson(config))
                             val jsonStr = pyJson(formatsResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_FORMATS_FAILED", e.message, null) }
+                            replyError(result, "ERROR_FORMATS_FAILED", e.message, null)
                         }
                     }
                 }
@@ -807,13 +996,21 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val playlistResult = engine.callAttr("get_playlist_info", url, configJson(config))
                             val jsonStr = pyJson(playlistResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_PLAYLIST_FAILED", e.message, null) }
+                            replyError(result, "ERROR_PLAYLIST_FAILED", e.message, null)
                         }
                     }
                 }
@@ -824,13 +1021,21 @@ open class MainActivity : FlutterActivity() {
                     val config = call.argument<Map<String, Any>>("config")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val searchResult = engine.callAttr("search_query", query, site, limit, configJson(config))
                             val jsonStr = pyJson(searchResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_SEARCH_FAILED", e.message, null) }
+                            replyError(result, "ERROR_SEARCH_FAILED", e.message, null)
                         }
                     }
                 }
@@ -838,23 +1043,39 @@ open class MainActivity : FlutterActivity() {
                     val cacheDir = call.argument<String>("cache_dir")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val resumeResult = engine.callAttr("scan_resume_candidates", cacheDir)
                             val jsonStr = pyJson(resumeResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_RESUME_FAILED", e.message, null) }
+                            replyError(result, "ERROR_RESUME_FAILED", e.message, null)
                         }
                     }
                 }
                 "resume/report" -> {
                     val cacheDir = call.argument<String>("cache_dir")
                     val filepath = call.argument<String>("filepath")
-                    val success = call.argument<Boolean>("success") ?: false
+                    val success = call.argument<Boolean>(KEY_SUCCESS) ?: false
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val reportResult = engine.callAttr(
                                 "report_resume_attempt",
@@ -863,14 +1084,14 @@ open class MainActivity : FlutterActivity() {
                                 success,
                             )
                             val jsonStr = pyJson(reportResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_RESUME_FAILED", e.message, null) }
+                            replyError(result, "ERROR_RESUME_FAILED", e.message, null)
                         }
                     }
                 }
                 "system/battery_status" -> {
-                    result.success(mapOf("success" to true, "supported" to true, "exempt" to batteryExempt()))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_SUPPORTED to true, "exempt" to batteryExempt()))
                 }
                 "system/network_metered" -> {
                     // Seal parity (PreferenceUtil.isNetworkAvailableForDownload):
@@ -886,7 +1107,7 @@ open class MainActivity : FlutterActivity() {
                     } catch (_: Exception) {
                         true
                     }
-                    result.success(mapOf("success" to true, "supported" to true, "metered" to metered))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_SUPPORTED to true, "metered" to metered))
                 }
                 "system/battery_request" -> {
                     // Play policy: exemption prompts must be user-initiated
@@ -908,11 +1129,11 @@ open class MainActivity : FlutterActivity() {
                         } catch (_: Exception) {
                         }
                     }
-                    result.success(mapOf("success" to launched))
+                    result.success(mapOf(KEY_SUCCESS to launched))
                 }
                 "system/notification_status" -> {
                     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                    result.success(mapOf("success" to true, "supported" to supported, "granted" to notificationsGranted()))
+                    result.success(mapOf(KEY_SUCCESS to true, KEY_SUPPORTED to supported, KEY_GRANTED to notificationsGranted()))
                 }
                 "system/notification_settings" -> {
                     // Denial recovery: deep-link to this app's notification
@@ -943,14 +1164,14 @@ open class MainActivity : FlutterActivity() {
                         } catch (_: Exception) {
                         }
                     }
-                    result.success(mapOf("success" to launched))
+                    result.success(mapOf(KEY_SUCCESS to launched))
                 }
                 "system/notification_request" -> {
                     if (notificationsGranted()) {
-                        result.success(mapOf("success" to true, "granted" to true))
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to true))
                     } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         pendingNotifResult?.let {
-                            try { it.success(mapOf("success" to false)) } catch (_: Exception) {}
+                            try { it.success(mapOf(KEY_SUCCESS to false)) } catch (_: Exception) {}
                         }
                         pendingNotifResult = result
                         androidx.core.app.ActivityCompat.requestPermissions(
@@ -959,19 +1180,27 @@ open class MainActivity : FlutterActivity() {
                             REQ_POST_NOTIFICATIONS,
                         )
                     } else {
-                        result.success(mapOf("success" to true, "granted" to true))
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_GRANTED to true))
                     }
                 }
                 "engine/update_check" -> {
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val updateResult = engine.callAttr("update_check")
                             val jsonStr = pyJson(updateResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_UPDATE_FAILED", e.message, null) }
+                            replyError(result, "ERROR_UPDATE_FAILED", e.message, null)
                         }
                     }
                 }
@@ -979,13 +1208,21 @@ open class MainActivity : FlutterActivity() {
                     val channel = call.argument<String>("channel")
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val python = py ?: return@launch
+                            val python = py ?: run {
+                                // The engine is not up. The old code did
+                                // `return@launch` here, which left the
+                                // MethodChannel.Result unanswered: the Dart
+                                // future never completed and the caller
+                                // waited for ever.
+                                replyError(result, ERR_ENGINE_UNAVAILABLE, MSG_ENGINE_NOT_READY)
+                                return@launch
+                            }
                             val engine = python.getModule("grablytic_engine")
                             val channelResult = engine.callAttr("set_update_channel", channel)
                             val jsonStr = pyJson(channelResult)
-                            withContext(Dispatchers.Main) { result.success(jsonStr) }
+                            replySuccess(result, jsonStr)
                         } catch (e: Exception) {
-                            withContext(Dispatchers.Main) { result.error("ERROR_CHANNEL_FAILED", e.message, null) }
+                            replyError(result, "ERROR_CHANNEL_FAILED", e.message, null)
                         }
                     }
                 }
@@ -1011,11 +1248,11 @@ open class MainActivity : FlutterActivity() {
                             }
                             val dest = exportFileToDownloads(File(sourcePath), displayName)
                             withContext(Dispatchers.Main) {
-                                result.success(mapOf("success" to true, "path" to dest))
+                                result.success(mapOf(KEY_SUCCESS to true, "path" to dest))
                             }
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
-                                result.success(mapOf("success" to false, "error" to (e.message ?: "export failed")))
+                                result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "export failed")))
                             }
                         }
                     }
@@ -1033,7 +1270,7 @@ open class MainActivity : FlutterActivity() {
                         wifiOnly = wifiOnly,
                         requiresCharging = requiresCharging,
                     )
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "queue_reminder/sync" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
@@ -1043,10 +1280,10 @@ open class MainActivity : FlutterActivity() {
                         enabled = enabled,
                         intervalMinutes = intervalMinutes,
                     )
-                    result.success(mapOf("success" to true))
+                    result.success(mapOf(KEY_SUCCESS to true))
                 }
                 "launcher/set_icon" -> { // skipcq: KT-W1042
-                    val variant = call.argument<String>("variant") ?: "system" // skipcq: KT-W1042
+                    val variant = call.argument<String>(KEY_VARIANT) ?: KEY_SYSTEM // skipcq: KT-W1042
                     try {
                         val pm = packageManager
                         val pkg = packageName
@@ -1055,7 +1292,7 @@ open class MainActivity : FlutterActivity() {
                         val dark = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")
                         val legacy = android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")
                         val all = mapOf(
-                            "system" to main,
+                            KEY_SYSTEM to main,
                             "light" to light,
                             "dark" to dark,
                             "legacy" to legacy,
@@ -1068,9 +1305,9 @@ open class MainActivity : FlutterActivity() {
                                 pm.setComponentEnabledSetting(comp, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
                             }
                         }
-                        result.success(mapOf("success" to true, "variant" to variant))
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_VARIANT to variant))
                     } catch (e: Exception) { // skipcq: KT-W1009
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "set_icon failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "set_icon failed")))
                     }
                 }
                 "launcher/get_icon" -> {
@@ -1078,16 +1315,16 @@ open class MainActivity : FlutterActivity() {
                         val pm = packageManager
                         val pkg = packageName
                         val states = mapOf(
-                            "system" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
+                            KEY_SYSTEM to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity")),
                             "light" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Light")),
                             "dark" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Dark")),
                             "legacy" to pm.getComponentEnabledSetting(android.content.ComponentName(pkg, "com.theonly.grablytic.MainActivity_Legacy")),
                         )
                         val enabled = states.entries.firstOrNull { it.value == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }?.key
-                            ?: if (states["system"] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) "system" else "system"
-                        result.success(mapOf("success" to true, "variant" to enabled, "states" to states))
+                            ?: if (states[KEY_SYSTEM] != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) KEY_SYSTEM else KEY_SYSTEM
+                        result.success(mapOf(KEY_SUCCESS to true, KEY_VARIANT to enabled, "states" to states))
                     } catch (e: Exception) { // skipcq: KT-W1009
-                        result.success(mapOf("success" to false, "error" to (e.message ?: "get_icon failed")))
+                        result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to (e.message ?: "get_icon failed")))
                     }
                 }
                 else -> result.notImplemented()
@@ -1096,18 +1333,22 @@ open class MainActivity : FlutterActivity() {
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, PROGRESS_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
+                // Per-listener sink. The registry keeps every attached
+                // listener, so a second activity (the share overlay) no
+                // longer steals the first one's sink.
                 private var events: EventChannel.EventSink? = null
 
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     this.events = events
-                    eventSink = events
-                    events?.let { flushTerminals(it) }
+                    myEventSink = events
+                    events?.let {
+                        registerEventSink(it)
+                        flushTerminals(it)
+                    }
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    if (eventSink === events) {
-                        eventSink = null
-                    }
+                    events?.let { unregisterEventSink(it) }
                     this.events = null
                 }
             },
@@ -1116,6 +1357,21 @@ open class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         scope.cancel()
+        // The listener registry is process-wide; drop THIS activity's
+        // sink so a destroyed activity does not keep receiving events
+        // (and does not keep the Flutter engine alive through it).
+        // A null sink (this activity never had a listener) detaches
+        // nothing — the other activity's sink stays.
+        myEventSink?.let { unregisterEventSink(it) }
+        myEventSink = null
+        // The callback map is process-wide too. Entries for downloads
+        // that never reached a terminal event (the activity was
+        // destroyed mid-download) used to stay for the whole session,
+        // holding the listener — and its engine callback — alive.
+        for (id in ownedCallbackIds) {
+            activeCallbacks.remove(id)
+        }
+        ownedCallbackIds.clear()
         super.onDestroy()
     }
 
