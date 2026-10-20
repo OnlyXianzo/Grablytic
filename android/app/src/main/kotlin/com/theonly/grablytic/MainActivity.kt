@@ -165,13 +165,15 @@ open class MainActivity : FlutterActivity() {
             if (!eventSinks.contains(sink)) eventSinks.add(sink)
         }
 
-        fun unregisterEventSink(sink: EventChannel.EventSink?) {
-            // A null sink means "this activity never had a listener".
-            // It must NOT clear the registry: the other activity's
-            // listener would lose its sink and stop receiving events —
-            // exactly the cross-activity theft the registry exists to
-            // prevent.
-            if (sink == null) return
+        /**
+         * Detaches ONE listener.
+         *
+         * A null sink means "this activity never had a listener". It must
+         * NOT clear the registry: the other activity's listener would
+         * lose its sink and stop receiving events — exactly the
+         * cross-activity theft the registry exists to prevent.
+         */
+        fun unregisterEventSink(sink: EventChannel.EventSink) {
             eventSinks.remove(sink)
         }
         private val terminalLock = Any()
@@ -1346,7 +1348,7 @@ open class MainActivity : FlutterActivity() {
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    unregisterEventSink(events)
+                    events?.let { unregisterEventSink(it) }
                     this.events = null
                 }
             },
@@ -1358,7 +1360,9 @@ open class MainActivity : FlutterActivity() {
         // The listener registry is process-wide; drop THIS activity's
         // sink so a destroyed activity does not keep receiving events
         // (and does not keep the Flutter engine alive through it).
-        unregisterEventSink(myEventSink)
+        // A null sink (this activity never had a listener) detaches
+        // nothing — the other activity's sink stays.
+        myEventSink?.let { unregisterEventSink(it) }
         myEventSink = null
         // The callback map is process-wide too. Entries for downloads
         // that never reached a terminal event (the activity was

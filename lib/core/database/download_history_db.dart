@@ -336,6 +336,18 @@ class DownloadHistoryDb {
           // correctly only while the device stays in one timezone and
           // never crosses DST. The Kotlin sweeper wrote UTC strings into
           // the same column, so one column held two conventions.
+          //
+          // `updatedAt` was added by the v2 → v3 step, so a database
+          // that was CREATED at v3 or later by an older build can lack
+          // the column. Without it the normalisation query fails and
+          // NOTHING is normalised — the migration silently does
+          // nothing. Add the column when it is missing, so every
+          // database converges on the same shape.
+          final cols = await db.rawQuery('PRAGMA table_info(downloads)');
+          final names = cols.map((c) => c['name'] as String?).toSet();
+          if (!names.contains('updatedAt')) {
+            await db.execute('ALTER TABLE downloads ADD COLUMN updatedAt TEXT');
+          }
           await _normalizeTimestampsToUtc(db);
         }
       },
@@ -450,15 +462,24 @@ class DownloadHistoryDb {
   /// already-UTC row is left alone and the migration is idempotent.
   Future<void> _normalizeTimestampsToUtc(Database db) async {
     try {
+      // Only the columns that EXIST: a query for a missing column
+      // throws, and the whole migration would then be a no-op.
+      final cols = await db.rawQuery('PRAGMA table_info(downloads)');
+      final names = cols.map((c) => c['name'] as String?).toSet();
+      final targets = <String>[
+        for (final column in const ['timestamp', 'updatedAt'])
+          if (names.contains(column)) column,
+      ];
+      if (targets.isEmpty) return;
       final rows = await db.query(
         'downloads',
-        columns: ['id', 'timestamp', 'updatedAt'],
+        columns: ['id', ...targets],
       );
       if (rows.isEmpty) return;
       final batch = db.batch();
       var changed = 0;
       for (final row in rows) {
-        for (final column in const ['timestamp', 'updatedAt']) {
+        for (final column in targets) {
           final value = row[column] as String?;
           if (value == null || value.isEmpty) continue;
           if (value.endsWith('Z') || value.endsWith('+00:00')) continue;
