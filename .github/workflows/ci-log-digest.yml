@@ -42,6 +42,12 @@ on:
         type: string
   issue_comment:
     types: [created]
+  # Escape hatch: some tokens (and every GitHub App install without
+  # `actions: write`) cannot create workflow_dispatch events. A push whose
+  # head commit message contains the command runs the same digest, so the
+  # tool stays usable from a plain `git push`.
+  push:
+    branches: [main]
 
 permissions:
   actions: read
@@ -54,16 +60,20 @@ jobs:
     # write access, and only on a PR (never a plain issue).
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.issue.pull_request != null &&
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
        contains(github.event.comment.body, '/ci-digest') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                github.event.comment.author_association))
+                github.event.comment.author_association)) ||
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '/ci-digest'))
     runs-on: ubuntu-latest
     steps:
       - name: Resolve the job id
         id: resolve
         env:
           COMMENT: ${{ github.event.comment.body }}
+          PUSH_MESSAGE: ${{ github.event.head_commit.message }}
           INPUT_JOB_ID: ${{ inputs.job_id }}
           INPUT_CONTEXT: ${{ inputs.context_lines }}
         run: |
@@ -71,7 +81,8 @@ jobs:
           JOB_ID="${INPUT_JOB_ID:-}"
           if [ -z "$JOB_ID" ]; then
             # `/ci-digest 118508979807` — first number after the command.
-            JOB_ID=$(printf '%s\n' "$COMMENT" \
+            SOURCE=$(printf '%s\n%s\n' "$COMMENT" "$PUSH_MESSAGE")
+            JOB_ID=$(printf '%s\n' "$SOURCE" \
               | grep -oE '/ci-digest[[:space:]]+[0-9]+' \
               | grep -oE '[0-9]+$' | head -n 1 || true)
           fi
@@ -91,11 +102,33 @@ jobs:
           JOB_ID: ${{ steps.resolve.outputs.job_id }}
         run: |
           set -euo pipefail
-          gh api "repos/${{ github.repository }}/actions/jobs/${JOB_ID}/logs" \
-            > "$RUNNER_TEMP/job.log"
-          echo "Fetched $(wc -l < "$RUNNER_TEMP/job.log") log lines."
+          LOG="$RUNNER_TEMP/job.log"
+
+          # `gh api` follows GitHub's 302 to signed blob storage. Capture the
+          # failure instead of dying silently: an unreachable log is the one
+          # thing this workflow exists to report on.
+          if gh api "repos/${{ github.repository }}/actions/jobs/${JOB_ID}/logs" > "$LOG" 2>"$RUNNER_TEMP/gh.err"; then
+            echo "Fetched $(wc -l < "$LOG") log lines via gh api."
+          else
+            echo "::warning::gh api failed: $(head -c 400 "$RUNNER_TEMP/gh.err" | tr '\n' ' ')"
+            # Fallback: raw REST call, no gh in the path.
+            CODE=$(curl -sSL -o "$LOG" -w '%{http_code}' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${{ github.repository }}/actions/jobs/${JOB_ID}/logs" || true)
+            echo "curl fallback: HTTP $CODE, $(wc -l < "$LOG" 2>/dev/null || echo 0) lines."
+            if [ "$CODE" != "200" ]; then
+              echo "::error::Could not fetch the log for job ${JOB_ID} (gh api failed, curl got HTTP ${CODE}). Body: $(head -c 400 "$LOG" | tr '\n' ' ')"
+              exit 1
+            fi
+          fi
+
+          if [ ! -s "$LOG" ]; then
+            echo "::error::The log for job ${JOB_ID} came back empty."
+            exit 1
+          fi
           # The tail is the part that names the failure; keep it in the log.
-          tail -n 40 "$RUNNER_TEMP/job.log"
+          tail -n 40 "$LOG"
 
       - name: Emit the failure summary as annotations
         env:
