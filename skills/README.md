@@ -13,6 +13,9 @@ can read a file and follow instructions can use them.
 |---|---|
 | [`flaws-hunter-endlessly`](flaws-hunter-endlessly/SKILL.md) | Repeats an audit, research, fix, and prove cycle until a full rescan finds nothing. |
 | [`secret-scan`](secret-scan/SKILL.md) | Audits the working tree and commit history for credentials. Includes a small Python scanner. |
+| [`stop-slop`](stop-slop/SKILL.md) | Removes AI writing tells from prose. Vendored from [hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop), MIT. Required reading before any prose, per `AGENTS.md`. |
+| [`humanizer`](humanizer/SKILL.md) | Rewrites AI-sounding text without changing what it says. Vendored from [blader/humanizer](https://github.com/blader/humanizer), MIT. |
+| [`write-in-my-style`](write-in-my-style/SKILL.md) | Matches this project's own voice, learned from its README, docs, changelog, and commit bodies. Local to Grablytic. |
 | [`studio-critic-loop`](studio-critic-loop/SKILL.md) | Renders a Flutter screen, sends only the screenshot to a fresh critic, fixes one thing per round until it scores 9/10. |
 | [`teardown-myproject`](teardown-myproject/SKILL.md) | Adversarial review across architecture, debt, edge cases, security, and onboarding. |
 | [`verified-implementation`](verified-implementation/SKILL.md) | Research, cross-check, map the blast radius, implement, then test and retest. |
@@ -69,5 +72,15 @@ different frontmatter format or a plugin manifest.
 
 ## License
 
-These skills are part of Grablytic and use the same license as the repository:
-GPL-3.0. See [`LICENSE`](../LICENSE).
+Skills written here are part of Grablytic and use the same license as the
+repository: GPL-3.0. See [`LICENSE`](../LICENSE).
+
+Two exceptions are vendored and keep their own MIT license, included beside
+each skill:
+
+- [`stop-slop`](stop-slop/SKILL.md) from
+  [hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop), license
+  at [`stop-slop/LICENSE`](stop-slop/LICENSE).
+- [`humanizer`](humanizer/SKILL.md) from
+  [blader/humanizer](https://github.com/blader/humanizer), license at
+  [`humanizer/LICENSE`](humanizer/LICENSE).

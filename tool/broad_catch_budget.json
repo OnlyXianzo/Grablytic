@@ -1,4 +1,7 @@
 {
   "dart_catch_underscore_in_lib": 163,
-  "python_except_exception_in_engine": 235
+  "python_except_exception_in_engine": {
+    "limit": 235,
+    "why": "redact_text(): str(value) can raise from a caller-supplied __str__, and the fallback is a fixed safe string, so the handler cannot hide a real failure (PR #32)"
+  }
 }

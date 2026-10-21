@@ -1,7 +1,42 @@
 # Changelog
 
-> Current version: `0.0.5+5`. The v0.0.5 section below is a curated highlights
-> + automated stats from `tool/generate_release_changelog.py v0.0.4 0.0.5` (tree diff).
+> Current version: `0.6.0+6`. Sections below v0.6.0 are unchanged; the v0.0.5
+> entry mixes curated highlights with automated stats from
+> `tool/generate_release_changelog.py v0.0.4 0.0.5`.
+
+## v0.6.0 — 2026-10-21
+
+The release where failures became reportable without becoming someone else's
+data.
+
+- **Crash capture that does not need permission.** A crash is written to disk
+  whether or not automatic reporting is on; sending stays the user's decision.
+  The fatal path does no network I/O, and the next launch offers the report
+  with a banner that has a three-day cooldown.
+- **One queue for reports.** Atomic file writes, three-report cap, fingerprint
+  dedup with a seven-day window, 64 KB body cap, and a migration from the old
+  preferences blob. Submission is a prefilled GitHub form the user reviews, or
+  a token-free draft — the app never holds a write credential and never claims
+  a report was sent unless GitHub confirmed it.
+- **Engine exits are reported too.** An unexpected Python exit used to be
+  invisible: the restart that follows a closed stdout nulled the process
+  before the exit code was read. Capture now depends on the exit code alone.
+- **Redaction at every exit point.** The stored summary, the report body, the
+  issue URL and the API call each scrub independently, so a caller that forgets
+  cannot publish a token, a cookie header or a private URL.
+- **One version, stamped from `pubspec.yaml`.** The About screen, the report
+  composer and every crash body used to quote three different versions.
+- **Long reports survive.** The composer now uses the length-guarded issue URL,
+  so a report GitHub would answer 414 for is copied to the clipboard and its
+  queue entry is kept instead of being silently dropped.
+- **Engine logging toggle actually reaches the engine** (`log_level` on
+  `paths/set`, `verbose` in the yt-dlp overlay), and the engine scrubber's fast
+  path no longer skips `Basic` credentials.
+- **Resume evidence matches the scan**: both roots, recursive and bounded, so a
+  download in a subfolder brings the interrupted-downloads card back.
+- **Controls that say what they mean**: the broad-catch ratchet refuses a raised
+  budget without a recorded reason, and a new gate fails when an app version
+  literal appears in `lib/`.
 
 ## v0.0.5 — 2026-10-11 (feature + polish release; 57 commits + orphan redesign merge since v0.0.4)
 

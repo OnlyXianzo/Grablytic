@@ -26,6 +26,7 @@ import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
 import 'report_problem_screen.dart';
 import '../../../core/utils/offline_link_queue.dart';
+import '../../../core/utils/app_version.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -1133,7 +1134,7 @@ class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
               _SettingNavItem(
                 icon: Icons.info_outline,
                 title: 'About Grablytic',
-                subtitle: 'v0.0.1-beta · The Only',
+                subtitle: 'v${AppVersion.short} · The Only',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(

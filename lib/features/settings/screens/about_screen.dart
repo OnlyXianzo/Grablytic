@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
+import '../../../core/utils/app_version.dart';
 import '../../../core/widgets/grablytic_components.dart';
 import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
@@ -76,7 +77,8 @@ class AboutScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Version 0.0.1-beta (Build 1)',
+                    'Version ${AppVersion.short}',
+
                     style: textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -177,7 +179,7 @@ class AboutScreen extends ConsumerWidget {
                 showLicensePage(
                   context: context,
                   applicationName: 'Grablytic',
-                  applicationVersion: '0.0.1-beta',
+                  applicationVersion: AppVersion.short,
                   applicationIcon: Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Icon(

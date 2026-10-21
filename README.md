@@ -11,8 +11,11 @@
 A media downloader for Android, Windows and Linux.
 Flutter for the app, yt-dlp for the actual work, no accounts and no telemetry.
 
+**[grablytic.vercel.app](https://grablytic.vercel.app)** — screenshots, install
+notes, and the longer version of what this is.
+
 [![CI](https://img.shields.io/badge/CI-verify.yml-brightgreen?logo=githubactions&logoColor=white)](.github/workflows/verify.yml)
-[![Version](https://img.shields.io/badge/version-0.0.5-blue)](pubspec.yaml)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue)](pubspec.yaml)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org)
@@ -36,7 +39,7 @@ It runs on Android (8.0 and up), Windows 10/11 and Linux. iOS is not
 supported and there is no plan for it, mostly because everything here leans on
 being able to spawn processes and write into the filesystem.
 
-The project is at `0.0.5`, still early. It works and it is used, but treat it
+The project is at `0.6.0`, still early. It works and it is used, but treat it
 like beta software: read the release notes, keep a backup of anything you
 care about.
 

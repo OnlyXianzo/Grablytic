@@ -174,6 +174,21 @@ Useful docs: [architecture](docs/architecture.md),
 
 This project gets a lot of AI-generated text. Keep it readable and specific.
 
+**Required skills:** three, in this order, before writing or editing any prose:
+README, `docs/`, `.agents/vault/`, commit bodies, pull request descriptions,
+release notes, or an answer to the maintainer.
+
+1. [`skills/write-in-my-style/SKILL.md`](skills/write-in-my-style/SKILL.md) sets
+   the target voice, from this repository's own prose.
+2. [`skills/stop-slop/SKILL.md`](skills/stop-slop/SKILL.md) removes AI tells.
+3. [`skills/humanizer/SKILL.md`](skills/humanizer/SKILL.md) audits the result
+   and rewrites what still sounds generated.
+
+They are checklists, so run them over the final text, not the first draft.
+Where any of them conflicts with the rules below, the rules below win.
+
+The short version, so a missed step is still visible in review:
+
 - Start with the point. Skip the warm-up sentence.
 - Prefer short, plain sentences. Mix lengths so it does not read like a
   template.

@@ -30,6 +30,7 @@ import json
 import os
 import re
 import sys
+from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUDGET_PATH = os.path.join(ROOT, "tool", "broad_catch_budget.json")
@@ -93,17 +94,73 @@ def _current_counts() -> dict[str, int]:
     }
 
 
-def _load_budget() -> dict[str, int]:
-    """Load integer budgets, or return {} on read, parse, or conversion errors.
+def _parse_entry(value: Any) -> tuple[int | None, str | None]:
+    """(limit, why) for one budget entry.
 
-    A JSON value without an ``items`` method raises AttributeError.
+    An entry is either a bare integer or ``{"limit": n, "why": "..."}``. The
+    second form exists because a number on its own is not a decision: this
+    budget was raised once in the same commit as the catch that raised it,
+    with nothing recording why, and the gate passed (#107).
     """
+    if isinstance(value, bool):
+        return None, None
+    if isinstance(value, int):
+        return value, None
+    if isinstance(value, dict):
+        limit = value.get("limit")
+        why = value.get("why")
+        return (
+            limit if isinstance(limit, int) and not isinstance(limit, bool) else None,
+            why.strip() if isinstance(why, str) and why.strip() else None,
+        )
+    return None, None
+
+
+def _load_budget(path: str = BUDGET_PATH) -> dict[str, tuple[int | None, str | None]]:
+    """Load budgets, or return {} on read, parse, or conversion errors."""
     try:
-        with open(BUDGET_PATH, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
-        return {key: int(value) for key, value in data.items()}
+        if not isinstance(data, dict):
+            return {}
+        return {key: _parse_entry(value) for key, value in data.items()}
     except (OSError, ValueError, TypeError):
         return {}
+
+
+def _serialise(
+    counts: dict[str, int], budget: dict[str, tuple[int | None, str | None]]
+) -> dict:
+    """The budget as written to disk: keep every recorded reason."""
+    out: dict[str, Any] = {}
+    for key in sorted(counts):
+        limit = counts[key]
+        _old_limit, why = budget.get(key, (None, None))
+        out[key] = {"limit": limit, "why": why} if why else limit
+    return out
+
+
+def _raised_without_reason(
+    current: dict[str, int],
+    budget: dict[str, tuple[int | None, str | None]],
+) -> list[str]:
+    """Keys whose count went up while the entry carries no justification."""
+    failures: list[str] = []
+    for key, count in sorted(current.items()):
+        limit, why = budget.get(key, (None, None))
+        if limit is None:
+            failures.append(
+                f"{key}: no budget entry (current {count}). Run --update once "
+                "to record it."
+            )
+            continue
+        if count > limit and not why:
+            failures.append(
+                f"{key}: raised {limit} -> {count} without a 'why' entry. Add "
+                '{"limit": n, "why": "<what makes this catch necessary>"} to '
+                "tool/broad_catch_budget.json in a separate commit."
+            )
+    return failures
 
 
 def main() -> int:
@@ -123,18 +180,26 @@ def main() -> int:
 
     current = _current_counts()
 
+    previous = _load_budget()
+
     if args.update:
+        # Raising a number is a decision, so it needs a reason on record.
+        blocked = _raised_without_reason(current, previous)
+        if blocked:
+            print("refusing to raise the budget without a recorded reason:")
+            for line in blocked:
+                print(f"  - {line}")
+            return 1
         with open(BUDGET_PATH, "w", encoding="utf-8") as handle:
-            json.dump(current, handle, indent=2, sort_keys=True)
+            json.dump(_serialise(current, previous), handle, indent=2, sort_keys=True)
             handle.write("\n")
         print(f"budget updated: {json.dumps(current, sort_keys=True)}")
         return 0
 
-    budget = _load_budget()
     failures: list[str] = []
 
     for key, count in sorted(current.items()):
-        allowed = budget.get(key)
+        allowed, why = previous.get(key, (None, None))
         if allowed is None:
             failures.append(
                 f"{key}: no budget entry (current {count}). Run "
@@ -142,7 +207,8 @@ def main() -> int:
             )
             continue
         status = "ok" if count <= allowed else "OVER"
-        print(f"{status:4} {key}: {count} / {allowed}")
+        suffix = "" if why is None else "  (reason on file)"
+        print(f"{status:4} {key}: {count} / {allowed}{suffix}")
         if count > allowed:
             failures.append(
                 f"{key}: {count} broad catches, budget is {allowed} "
