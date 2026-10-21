@@ -41,12 +41,12 @@ jobs:
               if ev.get('type') == 'testStart':
                   names[ev['test']['id']] = ev['test']['name']
               elif ev.get('type') == 'error':
-                  fails.append((names.get(ev.get('testID'), '?'), ev.get('error', '')))
+                  fails.append((names.get(ev.get('testID'), '?'), str(ev.get('error', '')) + ' || ' + str(ev.get('stackTrace', ''))[:700]))
           if not fails:
               print('::error::no failures parsed from the json reporter')
               sys.exit(0)
           for name, err in fails[:8]:
-              msg = ' '.join(str(err).split())[:400].replace('%', '%25')
+              msg = ' '.join(str(err).split())[:700].replace('%', '%25')
               title = ' '.join(str(name).split())[:120]
               print('::error::FAILED ' + title + ' :: ' + msg)
           sys.exit(1)
