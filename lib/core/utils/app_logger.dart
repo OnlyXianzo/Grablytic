@@ -328,6 +328,15 @@ class AppLogger {
 
   // ── Global error boundaries (STEP 3A) ──────────────────────────────────
 
+  /// Lets the root `runZonedGuarded` boundary use the same opt-in reporter.
+  /// The zone may receive unhandled Future errors that bypass the platform
+  /// dispatcher callback; keep this hook best-effort and non-throwing.
+  static void reportUncaught(Object error, StackTrace stack) {
+    final hook = _fatalHook;
+    if (hook == null) return;
+    unawaited(Future<void>.sync(() => hook(error, stack)).catchError((_) {}));
+  }
+
   /// Installs `FlutterError.onError` + `PlatformDispatcher.instance.onError`.
   ///
   /// Both funnel into [AppLogger.error] + instant [flushNow], then invoke

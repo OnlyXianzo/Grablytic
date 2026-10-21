@@ -9,21 +9,38 @@ import 'app_logger.dart';
 /// - Checks for duplicate open issues via the GitHub Search API to avoid spam.
 /// - POSTs a formatted bug issue with environment specs + redacted log tail.
 ///
-/// Token is NEVER hardcoded: pass explicitly (from secure storage / user
-/// input) or compile with `--dart-define=GITHUB_TOKEN=ghp_...`.
-/// If no token is available the reporter copies the formatted body to the
-/// result so the LogViewer can fall back to manual filing.
+/// Distributed clients never receive a GitHub write token. Automatic reports
+/// are prepared locally; manual reports open a user-reviewed GitHub issue form.
 class GithubReporter {
+  /// Conservative report-only scrubber. Diagnostic text is public once a user
+  /// submits the GitHub form, so URLs and local paths are omitted entirely;
+  /// regex failure returns no diagnostic text rather than the original value.
+  static String sanitizeForReport(String input, {int maxLength = 6000}) {
+    try {
+      var value = AppLogger.redact(input);
+      // Authorization and other header-like credentials (including values
+      // not anticipated by the general-purpose logger scrubber).
+      value = value.replaceAll(
+        RegExp(r'^\s*(authorization|proxy-authorization|cookie|set-cookie)\s*[:=].*$', multiLine: true, caseSensitive: false),
+        r'$1: ***REDACTED***',
+      );
+      // URLs may identify a private resource even after query parameters are
+      // removed. Do not send them at all from reports.
+      value = value.replaceAll(RegExp(r'https?://\S+', caseSensitive: false), '[URL removed]');
+      // File paths expose usernames, mounted volumes, and personal folders.
+      value = value.replaceAll(RegExp(r'(?:(?:[A-Za-z]:\\|/)(?:[^\s\n\r:]+[\\/])+[^\s\n\r:]+)'), '[local path removed]');
+      value = value.replaceAll(RegExp(r'\b(?:/home|/Users)/[^/\s]+', caseSensitive: false), '[user path removed]');
+      if (value.length > maxLength) {
+        value = '[earlier content omitted]\n${value.substring(value.length - maxLength)}';
+      }
+      return value;
+    } catch (_) {
+      return '[diagnostics omitted: safe redaction failed]';
+    }
+  }
   final String owner;
   final String repo;
   final String? _explicitToken;
-
-  /// Compile-time token. CI / local builds inject via:
-  /// `flutter run --dart-define=GITHUB_TOKEN=ghp_...`
-  static const String _envToken = String.fromEnvironment(
-    'GITHUB_TOKEN',
-    defaultValue: '',
-  );
 
   static const String _envRepo = String.fromEnvironment(
     'GITHUB_REPO',
@@ -56,16 +73,18 @@ class GithubReporter {
         _explicitToken = token;
 
   String? get _token {
+    // No token is compiled into client apps. Explicit injection remains only
+    // for controlled tests/tools; the production UI uses the reviewed issue
+    // page because a distributed client cannot safely hold a write credential.
     if (_explicitToken != null && _explicitToken.isNotEmpty) {
       return _explicitToken;
     }
-    if (_envToken.isNotEmpty) return _envToken;
-    // Never read from SharedPreferences here — caller passes a user-supplied
-    // token explicitly so secrets stay out of prefs-backed logs.
     return null;
   }
 
   bool get canPost => _token != null && _token!.isNotEmpty;
+
+  static String get buildIdentifier => _envGitSha.isEmpty ? 'unknown' : _envGitSha;
 
   /// Short stable fingerprint for dedup: error type + first stack frame.
   /// Simple FNV-1a hex — no crypto dependency needed.
@@ -118,12 +137,12 @@ class GithubReporter {
   Future<String?> createIssue({
     required String title,
     required String body,
-    List<String> labels = const ['bug', 'auto-report'],
+    List<String> labels = const ['bug'],
   }) async {
     final token = _token;
     if (token == null) {
       throw StateError(
-          'GITHUB_TOKEN missing — pass --dart-define=GITHUB_TOKEN=... or supply a token.');
+          'No GitHub write credential is available in this client; open the user-reviewed issue form instead.');
     }
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
@@ -163,8 +182,8 @@ class GithubReporter {
     String appVersion = '0.0.1-beta+1',
   }) async {
     final stackLines = stack.toString().trim().split('\n');
-    final firstFrame = stackLines.isNotEmpty ? stackLines.first.trim() : '';
-    final errStr = error.toString();
+    final firstFrame = sanitizeForReport(stackLines.isNotEmpty ? stackLines.first.trim() : '', maxLength: 300);
+    final errStr = sanitizeForReport(error.toString(), maxLength: 500);
     final shortErr = errStr.length > 120 ? '${errStr.substring(0, 120)}…' : errStr;
     final fp = fingerprint(shortErr, firstFrame);
     final title = '[Auto-report $fp] $shortErr';
@@ -241,8 +260,10 @@ class GithubReporter {
         fullLog ? await AppLogger.readFullLog() : await AppLogger.readLogTail();
     final minute =
         DateTime.now().toUtc().toIso8601String().substring(0, 16);
-    final fp = fingerprint('$userSummary\n$minute', null);
-    final title = '[Manual $fp] ${userSummary.length > 100 ? '${userSummary.substring(0, 100)}…' : userSummary}';
+    final safeSummary = sanitizeForReport(userSummary, maxLength: 3000);
+    final fp = fingerprint('$safeSummary\n$minute', null);
+    final shortSummary = safeSummary.length > 100 ? '${safeSummary.substring(0, 100)}…' : safeSummary;
+    final title = '[Manual $fp] ${shortSummary.isEmpty ? 'Problem report' : shortSummary}';
     final body = _buildBody(
       summary: userSummary,
       repro: userSteps.isEmpty ? '_Not provided._' : userSteps,
@@ -296,9 +317,19 @@ class GithubReporter {
     String logLabel = 'tail',
   }) {
     final env = _envSpecs(appVersion);
+    // Apply the stricter public-report scrubber at the final serialization
+    // boundary too, so every caller (including automatic reports) is covered.
+    summary = sanitizeForReport(summary, maxLength: 3000);
+    repro = sanitizeForReport(repro, maxLength: 3000);
+    expected = sanitizeForReport(expected, maxLength: 2000);
+    actual = sanitizeForReport(actual, maxLength: 3000);
+    stack = sanitizeForReport(stack, maxLength: 6000);
+    logTail = sanitizeForReport(logTail, maxLength: 6000);
     final ctxStr = context.isEmpty
         ? '_None._'
-        : context.entries.map((e) => '- `${e.key}`: `${e.value}`').join('\n');
+        : context.entries
+            .map((e) => '- `${sanitizeForReport(e.key, maxLength: 100)}`: `${sanitizeForReport(e.value.toString(), maxLength: 500)}`')
+            .join('\n');
     return '''
 ### Summary
 $summary
@@ -313,7 +344,7 @@ $expected
 $actual
 
 ### Platform
-- OS: ${env['os']} (${env['osVersion']})
+- OS: ${sanitizeForReport(env['os'] ?? 'unknown', maxLength: 100)} (${sanitizeForReport(env['osVersion'] ?? 'unknown', maxLength: 200)})
 - App version: $appVersion (build ${env['build']})
 - Dart: ${env['dart']} · Flutter: ${env['flutter'] ?? 'n/a'}
 - Debug build: ${env['debug']}

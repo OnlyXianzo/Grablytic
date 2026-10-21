@@ -38,14 +38,25 @@ def test_url_userinfo_password_is_redacted():
     gn = _gn()
     out = gn.redact_text("proxy http://alice:sup3rs3cret@10.0.0.1:8080")
     assert "sup3rs3cret" not in out
-    assert "alice" in out
+    assert "alice" not in out
+    assert "[URL removed]" in out
 
 
 @pytest.mark.unit
-def test_user_only_userinfo_is_untouched():
+def test_report_urls_are_removed_including_userinfo():
     gn = _gn()
     out = gn.redact_text("http://alice@example.com/x")
-    assert "alice" in out
+    assert "alice" not in out
+    assert "example.com" not in out
+    assert "[URL removed]" in out
+
+
+@pytest.mark.unit
+def test_local_paths_are_removed_from_public_reports():
+    gn = _gn()
+    out = gn.redact_text("failed reading /home/alice/private/movie.mp4")
+    assert "/home/alice" not in out
+    assert "movie.mp4" not in out
 
 
 @pytest.mark.unit

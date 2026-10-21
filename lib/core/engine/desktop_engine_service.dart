@@ -990,12 +990,32 @@ class DesktopEngineService implements EngineService {
       );
 
   @override
-  Future<Map<String, dynamic>> openUrl(String url) async =>
-      EngineEnvelope.error(
-        errorType: 'ERROR_UNSUPPORTED',
-        message: 'Not supported on this platform',
-        extra: {'supported': false},
+  Future<Map<String, dynamic>> openUrl(String url) async {
+    // Only hand web links to the user's configured browser. Process arguments
+    // are passed without a shell so issue text cannot become shell syntax.
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme != 'https' || uri.host != 'github.com') {
+      return EngineEnvelope.error(
+        errorType: 'ERROR_INVALID_ARGUMENT',
+        message: 'Only GitHub HTTPS links can be opened',
       );
+    }
+    try {
+      final os = Platform.operatingSystem;
+      if (os == 'linux') {
+        await Process.start('xdg-open', [uri.toString()], mode: ProcessStartMode.detached);
+      } else if (os == 'macos') {
+        await Process.start('open', [uri.toString()], mode: ProcessStartMode.detached);
+      } else if (os == 'windows') {
+        await Process.start('rundll32.exe', ['url.dll,FileProtocolHandler', uri.toString()], mode: ProcessStartMode.detached);
+      } else {
+        return EngineEnvelope.error(errorType: 'ERROR_UNSUPPORTED', message: 'Not supported on this platform');
+      }
+      return {'success': true};
+    } catch (_) {
+      return EngineEnvelope.error(errorType: 'ERROR_TRANSPORT', message: 'Could not open the browser');
+    }
+  }
 
   @override
   Future<Map<String, dynamic>> openFile(String path) async {
