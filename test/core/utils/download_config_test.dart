@@ -28,6 +28,16 @@ void main() {
       expect(cfg['write_description'], isTrue);
     });
 
+    test('sends the detailed-logging toggle as yt-dlp verbose', () {
+      // #100: the switch used to change only the app log level; the engine
+      // overlay carried no key, so yt-dlp stayed quiet.
+      expect(settingsDownloadConfig(const AppSettings())['verbose'], isFalse);
+      expect(
+        settingsDownloadConfig(const AppSettings(verbose: true))['verbose'],
+        isTrue,
+      );
+    });
+
     test('thumbnail format follows PNG toggle', () {
       expect(
         settingsDownloadConfig(const AppSettings(pngThumbnails: true))['thumbnail_format'],
