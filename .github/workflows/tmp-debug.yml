@@ -16,9 +16,13 @@ jobs:
       - name: Analyze
         run: |
           set -o pipefail
-          flutter analyze > /tmp/analyze.txt 2>&1 && exit 0
-          head -c 6000 /tmp/analyze.txt | tr '\n' '\r' | sed 's/\r/\\n/g' | sed 's/%/%25/g' | fold -w 900 | while read -r chunk; do
-            echo "::error::${chunk}"
+          flutter analyze > /tmp/analyze.txt 2>&1 && echo "::notice::analyze clean" && exit 0
+          echo "::warning::analyze errors: $(grep -c 'error .' /tmp/analyze.txt) warnings: $(grep -c 'warning .' /tmp/analyze.txt)"
+          grep 'error .' /tmp/analyze.txt | head -12 | cut -c1-220 | sed 's/%/%25/g' | while read -r line; do
+            echo "::error::${line}"
+          done
+          grep 'warning .' /tmp/analyze.txt | head -12 | cut -c1-220 | sed 's/%/%25/g' | while read -r line; do
+            echo "::warning::${line}"
           done
           exit 1
       - name: Upload
