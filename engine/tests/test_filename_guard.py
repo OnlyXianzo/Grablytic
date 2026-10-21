@@ -40,7 +40,9 @@ def _byte_len(text: str) -> int:
 
 @pytest.mark.unit
 def test_short_names_are_untouched():
-    assert fg.bound_component("Muskan K - Short clip.mp4") == "Muskan K - Short clip.mp4"
+    assert (
+        fg.bound_component("Muskan K - Short clip.mp4") == "Muskan K - Short clip.mp4"
+    )
 
 
 @pytest.mark.unit
