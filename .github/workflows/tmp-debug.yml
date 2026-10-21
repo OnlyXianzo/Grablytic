@@ -30,6 +30,7 @@ jobs:
           import sys
           fails = []
           names = {}
+          prints = []
           for line in open('/tmp/t.json', encoding='utf-8', errors='replace'):
               line = line.strip()
               if not line.startswith('{'):
@@ -40,6 +41,8 @@ jobs:
                   continue
               if ev.get('type') == 'testStart':
                   names[ev['test']['id']] = ev['test']['name']
+              elif ev.get('type') == 'print':
+                  prints.append(str(ev.get('message', '')))
               elif ev.get('type') == 'error':
                   fails.append((names.get(ev.get('testID'), '?'), str(ev.get('error', '')) + ' || ' + str(ev.get('stackTrace', ''))[:700]))
           if not fails:
@@ -49,6 +52,9 @@ jobs:
               msg = ' '.join(str(err).split())[:700].replace('%', '%25')
               title = ' '.join(str(name).split())[:120]
               print('::error::FAILED ' + title + ' :: ' + msg)
+          keep = [p for p in prints if 'EXCEPTION' in p or 'Expected:' in p or 'Which:' in p or 'Actual:' in p]
+          for line in keep[-12:]:
+              print('::error::DETAIL ' + ' '.join(line.split())[:400].replace('%', '%25'))
           sys.exit(1)
           PYEOF
           python3 /tmp/parse.py
