@@ -26,10 +26,7 @@ jobs:
         run: |
           set -o pipefail
           flutter test > /tmp/test.txt 2>&1 && echo "::notice::tests clean" && exit 0
-          grep -E "(\[E\]|Expected:|Actual:|Which:|Error:)" /tmp/test.txt | head -40 | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r line; do
-            echo "::error::${line}"
-          done
-          tail -5 /tmp/test.txt | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r line; do
-            echo "::error::${line}"
+          sed -n '/\[E\]/,$p' /tmp/test.txt | head -70 | sed -e 's/%/%25/g' -e 's/\r//g' | while IFS= read -r line; do
+            echo "::error::${line:0:280}"
           done
           exit 1

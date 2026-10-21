@@ -114,7 +114,8 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
   String _composeBody() {
     final description = GithubReporter.sanitizeForReport(_description.text.trim(), maxLength: 3000);
     final safeTitle = GithubReporter.sanitizeForReport(_description.text.trim(), maxLength: 90);
-    final reportTitle = '[${_category}] ${safeTitle.isEmpty ? 'Problem report' : safeTitle}';
+    final reportTitle =
+        '[$_category] ${safeTitle.isEmpty ? 'Problem report' : safeTitle}';
     final body = '''### What happened?
 ${description.isEmpty ? '(No description provided)' : description}
 
@@ -204,7 +205,7 @@ Submitted from Grablytic. Please review this report before creating the issue.''
           Text('A short description is enough. Nothing is sent until you review and submit it on GitHub.', style: TextStyle(color: colors.onSurfaceVariant)),
           const SizedBox(height: 20),
           DropdownButtonFormField<String>(
-            value: _category,
+            initialValue: _category,
             decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
             items: _categories.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
             onChanged: (value) { if (value != null) setState(() => _category = value); },

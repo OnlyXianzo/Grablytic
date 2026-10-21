@@ -15,7 +15,8 @@ void main() {
 
       expect(draft.fingerprint, hasLength(8));
       expect(draft.title, contains(draft.fingerprint));
-      expect(draft.title, contains('StateError'));
+      // The title uses the exception's message, not its class name.
+      expect(draft.title, contains('download stalled'));
       expect(draft.body, contains('### Summary'));
       expect(draft.body, contains('fingerprint:'));
     });
