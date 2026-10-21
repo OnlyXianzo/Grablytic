@@ -299,6 +299,17 @@ class AppLogger {
 
   static String _redact(String input) {
     var out = input;
+    // Header lines first: "Authorization: Bearer eyJ..." and "Cookie: SID=..."
+    // are not key/value pairs, so the patterns below never saw them — the
+    // report body carries these lines verbatim from the log tail.
+    out = out.replaceAllMapped(
+      RegExp(
+        r"^\s*(authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token)\s*:\s*.*$",
+        multiLine: true,
+        caseSensitive: false,
+      ),
+      (m) => '${m.group(1)}: ***REDACTED***',
+    );
     // Query-string / JSON tokens, cookies, auth headers, proxy creds.
     // The sig family covers signed-URL params (?sig=, &lsig=, signature=)
     // that YouTube and other hosts embed in share/clipboard URLs — without
@@ -306,10 +317,19 @@ class AppLogger {
     const patterns = [
       r"""(token\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(api[_-]?key\s*[:=]\s*["']?)([^"'\s,}]+)""",
-      r"""(cookie\s*[:=]\s*["']?)([^"'\s,}]+)""",
+      // The cookie value runs to the end of the line: SID and friends are
+      // space-separated "a=b; c=d" pairs, and stopping at the first space
+      // left every cookie after the first one in the log.
+      r"""(cookie\s*[:=]\s*["']?)([^"'\r\n]+)""",
       r"""(password\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""(po[_-]?token\s*[:=]\s*["']?)([^"'\s,}]+)""",
       r"""((?:lsig|sig|signature)\s*[:=]\s*["']?)([^"'\s,};&]+)""",
+      // CDN URLs sign the expiry with the rest of the token: ?expire=1700000
+      // is as good as a password while it lasts.
+      r"""((?:expire|expires)\s*[:=]\s*["']?)([^&"'\s,}]+)""",
+      // Bare credentials: "Bearer eyJ..." with no header line around it,
+      // which is what exception messages and curl echoes look like.
+      r"""\b(bearer|basic)\s+([A-Za-z0-9._~+/=-]{8,})""",
       // URL userinfo passwords (proxy creds): scheme://user:PASS@host.
       // Mirrors the engine sanitize() userinfo mask — same secret class.
       r"""([A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)""",
