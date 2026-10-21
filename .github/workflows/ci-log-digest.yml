@@ -6,19 +6,25 @@
 # a phone. The failing detail — which test, which assertion, which coverage
 # number — is exactly what a reviewer needs, so this workflow fetches the log
 # from inside Actions (where blob storage *is* reachable) and re-emits the
-# interesting lines as `::error::` annotations, which the /check-runs/
-# {id}/annotations API answers without any extra access.
+# interesting lines as `::error::` annotations, which
+# `/repos/{owner}/{repo}/actions/jobs/{id}/annotations` answers without any
+# extra access.
 #
-# Usage (no checkout, no build — it only reads one log):
-#   gh workflow run ci-log-digest.yml -f job_id=<job id>
+# Two ways in, both read-only:
+#   * comment `/ci-digest <job-id>` on a pull request (a slash command, so
+#     reviewers can pull the cause of a red run into the thread they are
+#     already reading), or
+#   * Actions → "CI Log Digest" → Run workflow, with `job_id`.
 #
 # Find the job id with:
 #   gh run view <run-id> --json jobs -q '.jobs[] | [.name,.databaseId] | @tsv'
-#
 # Read the digest back with:
 #   gh api repos/<owner>/<repo>/actions/jobs/<job-id>/annotations
 #
-# It is read-only: `actions: read` + `contents: read`, no secrets, no writes.
+# Permissions stay at actions: read + contents: read. Only the repository's
+# own job logs are read, and a slash command from a non-collaborator is
+# ignored, so this cannot be pointed at another repository or used to pull
+# private data into a thread.
 
 name: CI Log Digest
 
@@ -34,6 +40,8 @@ on:
         required: false
         default: '2'
         type: string
+  issue_comment:
+    types: [created]
 
 permissions:
   actions: read
@@ -41,15 +49,49 @@ permissions:
 
 jobs:
   digest:
-    name: Digest job ${{ inputs.job_id }}
+    name: Digest job log
+    # PR comments only, only the documented command, only from someone with
+    # write access, and only on a PR (never a plain issue).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '/ci-digest') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                github.event.comment.author_association))
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve the job id
+        id: resolve
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+          INPUT_JOB_ID: ${{ inputs.job_id }}
+          INPUT_CONTEXT: ${{ inputs.context_lines }}
+        run: |
+          set -euo pipefail
+          JOB_ID="${INPUT_JOB_ID:-}"
+          if [ -z "$JOB_ID" ]; then
+            # `/ci-digest 118508979807` — first number after the command.
+            JOB_ID=$(printf '%s\n' "$COMMENT" \
+              | grep -oE '/ci-digest[[:space:]]+[0-9]+' \
+              | grep -oE '[0-9]+$' | head -n 1 || true)
+          fi
+          case "$JOB_ID" in
+            ''|*[!0-9]*)
+              echo "::error::No job id found. Use '/ci-digest <job-id>' or the workflow_dispatch 'job_id' input."
+              exit 1
+              ;;
+          esac
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "context=${INPUT_CONTEXT:-2}" >> "$GITHUB_OUTPUT"
+          echo "Digesting job $JOB_ID"
+
       - name: Fetch job log
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_ID: ${{ steps.resolve.outputs.job_id }}
         run: |
           set -euo pipefail
-          gh api "repos/${{ github.repository }}/actions/jobs/${{ inputs.job_id }}/logs" \
+          gh api "repos/${{ github.repository }}/actions/jobs/${JOB_ID}/logs" \
             > "$RUNNER_TEMP/job.log"
           echo "Fetched $(wc -l < "$RUNNER_TEMP/job.log") log lines."
           # The tail is the part that names the failure; keep it in the log.
@@ -57,11 +99,10 @@ jobs:
 
       - name: Emit the failure summary as annotations
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTEXT_LINES: ${{ steps.resolve.outputs.context }}
         run: |
           set -euo pipefail
-          python3 - "$RUNNER_TEMP/job.log" "${{ inputs.context_lines }}" <<'PY'
-          import os
+          python3 - "$RUNNER_TEMP/job.log" "$CONTEXT_LINES" <<'PY'
           import re
           import sys
 
@@ -79,7 +120,7 @@ jobs:
               for raw in handle:
                   lines.append(STAMP.sub("", raw.rstrip("\n")))
 
-          # Markers that identify *why* a job went red. Ordered most specific first.
+          # Markers that identify *why* a job went red.
           markers = [
               re.compile(r"^FAILED "),                       # pytest short summary
               re.compile(r"^ERROR "),                        # collection/runtime error
@@ -123,8 +164,6 @@ jobs:
           PY
 
       - name: Coverage + summary tail
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           python3 - "$RUNNER_TEMP/job.log" <<'PY'
@@ -135,9 +174,9 @@ jobs:
           with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
               lines = [STAMP.sub("", l.rstrip("\n")) for l in handle]
 
-          # The per-step delimiters Actions writes (`##[group]Run ...`) name the
-          # step that failed; report the last one that started before the tail.
-          steps = [l for l in lines if "##[group]" in l or l.startswith("Run ")]
+          # The per-step markers Actions writes name the step that ran; report
+          # the last one so the annotation is tied to the right step.
+          steps = [l for l in lines if "##[group]" in l]
           interesting = [
               l for l in lines
               if re.search(r"(Required test coverage|TOTAL\s+\d+|tests? (passed|failed|error)|FAIL Required)", l)
