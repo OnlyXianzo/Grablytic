@@ -7,6 +7,8 @@ import 'package:grablytic/core/utils/crash_reports.dart';
 import 'package:grablytic/core/utils/pending_report.dart';
 import 'package:grablytic/features/settings/screens/report_problem_screen.dart';
 import 'package:grablytic/features/shell/widgets/crash_recovery_banner.dart';
+import 'package:grablytic/providers/settings_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/memory_report_store.dart';
 
@@ -35,9 +37,13 @@ class _HostState extends ConsumerState<_Host> {
 void main() {
   late MemoryReportStore store;
 
-  setUp(() {
+  late SharedPreferences prefs;
+
+  setUp(() async {
     store = MemoryReportStore();
     CrashRecoveryBanner.resetForTest();
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
   });
 
   tearDown(() {
@@ -60,8 +66,9 @@ void main() {
   /// Fixed pumps, not `pumpAndSettle`: the queue read is a real async hop
   /// and the banner animates in.
   Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
+    // Long enough for the banner's 250 ms entrance and exit animations.
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
     }
   }
 
@@ -70,7 +77,11 @@ void main() {
       ProviderScope(
         // The form reads the engine to open GitHub; keep it fake so the
         // test never spawns a Python process.
-        overrides: [engineProvider.overrideWith((ref) => MockEngineService())],
+        overrides: [
+          engineProvider.overrideWith((ref) => MockEngineService()),
+          // The form reads the settings for its diagnostics panel.
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
         child: const MaterialApp(home: _Host()),
       ),
     );
