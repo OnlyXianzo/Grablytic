@@ -2,6 +2,7 @@
 #
 # Layers (each fails the run independently):
 #   flutter_verify      analyze + unit/widget tests + project-lib LCOV floor
+#   linux_build         `flutter build linux --release` with the packaging deps
 #   android_ipc_smoke   API 35 emulator: Flutter MethodChannel → Chaquopy → Python
 #   python_verify       pytest + 75% coverage ratchet + ruff correctness gate
 #   docs_links          relative Markdown links resolve
@@ -67,6 +68,40 @@ jobs:
         with:
           name: flutter-coverage
           path: coverage/lcov.info
+
+  # The Linux desktop build is the one artefact no other gate touched: analyze
+  # and `flutter test` never run CMake, so a plugin whose `pkg_check_modules`
+  # needs a package the build host lacks (libsecret-1 >= 0.18.4 for
+  # flutter_secure_storage) passed every check and then lost the entire nightly
+  # — Publish was skipped because the Linux legs failed in two seconds.
+  # Install the same dependency list the release job installs (build.yml) and
+  # build for real.
+  linux_build:
+    name: Linux desktop build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev \
+            libsecret-1-dev libjsoncpp-dev pkg-config
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Linux release bundle
+        run: |
+          flutter build linux --release \
+            --dart-define=GRABLYTIC_FLUTTER_VERSION="$(flutter --version | head -n 1)" \
+            --dart-define=GRABLYTIC_GIT_SHA="$(git rev-parse --short HEAD)"
+          test -x build/linux/*/release/bundle/grablytic
 
   android_ipc_smoke:
     name: Android API 35 — Flutter → Chaquopy → Python IPC
