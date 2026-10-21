@@ -24,10 +24,31 @@ jobs:
       - name: Test
         if: always()
         run: |
-          set -o pipefail
-          flutter test > /tmp/test.txt 2>&1 && echo "::notice::tests clean" && exit 0
-          echo "::error::flutter test failed; tail follows"
-          tr -d '\r' < /tmp/test.txt | grep -v '^$' | tail -60 | sed 's/%/%25/g' | while IFS= read -r line; do
-            echo "::error::${line:0:280}"
-          done
-          exit 1
+          flutter test --reporter json > /tmp/t.json 2>/tmp/t.err || true
+          cat > /tmp/parse.py <<'PYEOF'
+          import json
+          import sys
+          fails = []
+          names = {}
+          for line in open('/tmp/t.json', encoding='utf-8', errors='replace'):
+              line = line.strip()
+              if not line.startswith('{'):
+                  continue
+              try:
+                  ev = json.loads(line)
+              except ValueError:
+                  continue
+              if ev.get('type') == 'testStart':
+                  names[ev['test']['id']] = ev['test']['name']
+              elif ev.get('type') == 'error':
+                  fails.append((names.get(ev.get('testID'), '?'), ev.get('error', '')))
+          if not fails:
+              print('::error::no failures parsed from the json reporter')
+              sys.exit(0)
+          for name, err in fails[:8]:
+              msg = ' '.join(str(err).split())[:400].replace('%', '%25')
+              title = ' '.join(str(name).split())[:120]
+              print('::error::FAILED ' + title + ' :: ' + msg)
+          sys.exit(1)
+          PYEOF
+          python3 /tmp/parse.py
