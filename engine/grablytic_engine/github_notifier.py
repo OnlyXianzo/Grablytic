@@ -93,7 +93,9 @@ def redact_text(value) -> str:
         r"\1 " + _REDACTED,
         text,
     )
-    text = re.sub(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", r"\1 " + _REDACTED, text)
+    text = re.sub(
+        r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", r"\1 " + _REDACTED, text
+    )
 
     def _mask_userinfo(m: "re.Match[str]") -> str:
         userinfo = m.group(2)
@@ -105,7 +107,11 @@ def redact_text(value) -> str:
     # GitHub issues are public. Even a query-scrubbed URL can expose a private
     # resource identifier, so remove URLs and absolute local paths entirely.
     text = re.sub(r"https?://\S+", "[URL removed]", text, flags=re.IGNORECASE)
-    text = re.sub(r"(?<![A-Za-z0-9])(?:[A-Za-z]:\\|/(?:[^/\s]+/)+[^\s<>\"']*)", "[local path removed]", text)
+    text = re.sub(
+        r"(?<![A-Za-z0-9])(?:[A-Za-z]:\\|/(?:[^/\s]+/)+[^\s<>\"']*)",
+        "[local path removed]",
+        text,
+    )
     return text
 
 
