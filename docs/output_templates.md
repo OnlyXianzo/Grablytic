@@ -53,20 +53,41 @@ creates the subdirectory inside the output directory.
 
 ## Length
 
-yt-dlp's `trim_file_name` is set to **160** characters (the extension
-is excluded), so the expanded file name is at most 160 characters plus
-the extension — comfortably under the 255-byte limit that Linux and
-Android filesystems enforce. The kernel, not yt-dlp, is what rejects
-an over-long name, so the trim is what prevents that failure.
+A filesystem limits a **single path component** to `NAME_MAX` — 255
+bytes on ext4, on Android's FUSE-backed `/storage/emulated/0`, and on
+macOS/Windows. Bytes, not characters: an emoji costs 4 and a full-width
+`｜` costs 3, so a 100-character emoji title can already be over the
+limit. The kernel, not yt-dlp, rejects the name.
 
-Note that trimming can itself create a collision between two long
-titles that share their first 160 characters. Including `%(id)s`
-after the title keeps that safe in practice only if the id falls
-inside the trimmed prefix — the safest template puts `%(id)s` FIRST:
+yt-dlp's `trim_file_name` does **not** solve this. It counts characters
+rather than bytes, and it splits the name on its last two dots, so a
+title containing a dot escapes trimming completely (upstream yt-dlp
+issues #2314, #5526, #6974, #12035, #12386). The engine therefore leaves
+`trim_file_name` unset and bounds the expanded name itself, in
+`engine/grablytic_engine/filename_guard.py`, applied by
+`GuardedYoutubeDL._prepare_filename`:
+
+| Rule | Value |
+|---|---|
+| Hard limit per path component | 255 bytes (`NAME_MAX_BYTES`) |
+| Reserved for yt-dlp's suffixes (`.f<format_id>`, `.part`, `.temp.<ext>`) | 55 bytes |
+| Budget for the prepared name | 200 bytes per component (`MAX_COMPONENT_BYTES`) |
+
+The extension is kept, a trailing `[id]`-style marker is kept, and only a
+head is cut — multi-byte characters are never split. This applies to
+every template (including user templates and subdirectory templates),
+so no output template can make a download fail with `[Errno 36] File
+name too long`. If the bound is ever hit, keeping the unique field at
+the END of the template (`... [%(id)s]`) is what preserves uniqueness
+after truncation; the safest template still puts `%(id)s` FIRST:
 
 ```
 %(id)s - %(uploader)s - %(title)s.%(ext)s
 ```
+
+A name the kernel still rejects (an even smaller limit, a deep path)
+surfaces as `ERROR_FILENAME_TOO_LONG` — a non-recoverable error that is
+not auto-retried.
 
 ## Fields that leak
 

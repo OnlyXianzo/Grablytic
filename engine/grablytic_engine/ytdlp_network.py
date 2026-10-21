@@ -30,6 +30,7 @@ from yt_dlp.networking._urllib import (
     UrllibRH as _UrllibRH,
 )
 
+from grablytic_engine import filename_guard
 from grablytic_engine.url_guard import (
     _PINNED_REQUEST_ATTR,
     _PinnedHTTPConnection,
@@ -173,3 +174,21 @@ class GuardedYoutubeDL(_YoutubeDL):
 
     def build_request_director(self, handlers, preferences=None):
         return super().build_request_director([_GuardedUrllibRH], preferences)
+
+    def _prepare_filename(self, info_dict, *args, **kwargs):
+        """Bound the generated name to what the filesystem can create.
+
+        yt-dlp's ``trim_file_name`` counts characters and gives up on
+        titles containing a dot (upstream issues #2314 / #5526 /
+        #6974 / #12035 / #12386), so a Facebook reel with an emoji in
+        the caption produced a 521-byte component and the kernel
+        answered ``[Errno 36] File name too long``. Bound by BYTES,
+        after the template has been expanded, so every template and
+        every caller (download, thumbnail, info.json) is covered.
+        """
+        # Pass-through *args/**kwargs: this is a private yt-dlp hook, and
+        # a pin bump must not crash on a changed signature.
+        filename = super()._prepare_filename(info_dict, *args, **kwargs)
+        if not filename or filename == "-":
+            return filename
+        return filename_guard.bound_filename(filename)
