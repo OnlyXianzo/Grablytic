@@ -273,3 +273,15 @@ def test_guarded_name_is_actually_creatable_while_the_old_one_is_not(tmp_path):
     final = tmp_path / f"{prepared}.f{info['format_id']}.mp4.part"
     final.write_bytes(b"x")
     assert final.exists()
+
+
+@pytest.mark.unit
+def test_backslash_separators_are_bounded_per_component():
+    """#102: a Windows template must not share one NAME_MAX between folders."""
+    out = fg.bound_filename(f"{'d' * 300}\\{'f' * 300}.mp4")
+    assert "/" in out, "separators are normalised for the output template"
+    assert "\\" not in out
+    parts = out.split("/")
+    assert len(parts) == 2
+    assert all(_byte_len(part) <= fg.MAX_COMPONENT_BYTES for part in parts)
+    assert parts[1].endswith(".mp4")
