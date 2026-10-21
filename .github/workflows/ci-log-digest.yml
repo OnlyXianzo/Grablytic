@@ -1,0 +1,149 @@
+# CI Log Digest — turn a *finished* job's log into check-run annotations.
+#
+# Why this exists: a red job only exposes "Process completed with exit code 1"
+# through the checks API, and the raw log lives on a signed blob-storage URL
+# that is not always reachable from a review environment, an agent sandbox or
+# a phone. The failing detail — which test, which assertion, which coverage
+# number — is exactly what a reviewer needs, so this workflow fetches the log
+# from inside Actions (where blob storage *is* reachable) and re-emits the
+# interesting lines as `::error::` annotations, which the /check-runs/
+# {id}/annotations API answers without any extra access.
+#
+# Usage (no checkout, no build — it only reads one log):
+#   gh workflow run ci-log-digest.yml -f job_id=<job id>
+#
+# Find the job id with:
+#   gh run view <run-id> --json jobs -q '.jobs[] | [.name,.databaseId] | @tsv'
+#
+# Read the digest back with:
+#   gh api repos/<owner>/<repo>/actions/jobs/<job-id>/annotations
+#
+# It is read-only: `actions: read` + `contents: read`, no secrets, no writes.
+
+name: CI Log Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'Actions job databaseId whose log should be digested.'
+        required: true
+        type: string
+      context_lines:
+        description: 'Log lines of context kept around each failure marker.'
+        required: false
+        default: '2'
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  digest:
+    name: Digest job ${{ inputs.job_id }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch job log
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/actions/jobs/${{ inputs.job_id }}/logs" \
+            > "$RUNNER_TEMP/job.log"
+          echo "Fetched $(wc -l < "$RUNNER_TEMP/job.log") log lines."
+          # The tail is the part that names the failure; keep it in the log.
+          tail -n 40 "$RUNNER_TEMP/job.log"
+
+      - name: Emit the failure summary as annotations
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/job.log" "${{ inputs.context_lines }}" <<'PY'
+          import os
+          import re
+          import sys
+
+          path, ctx_raw = sys.argv[1], sys.argv[2]
+          try:
+              ctx = max(0, min(10, int(ctx_raw)))
+          except ValueError:
+              ctx = 2
+
+          # Timestamped log lines look like `2026-10-20T07:31:39.1234567Z rest`.
+          STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?")
+
+          lines = []
+          with open(path, encoding="utf-8", errors="replace") as handle:
+              for raw in handle:
+                  lines.append(STAMP.sub("", raw.rstrip("\n")))
+
+          # Markers that identify *why* a job went red. Ordered most specific first.
+          markers = [
+              re.compile(r"^FAILED "),                       # pytest short summary
+              re.compile(r"^ERROR "),                        # collection/runtime error
+              re.compile(r"^E\s+\S"),                        # pytest assertion detail
+              re.compile(r"Required test coverage of"),      # pytest-cov gate
+              re.compile(r"^\s*assert\s"),
+              re.compile(r"^::error"),
+              re.compile(r"^(Traceback \(most recent call last\)|.*Error:)"),
+              re.compile(r"^\d+ (failed|passed|error)"),     # pytest tail summary
+              re.compile(r"=+ .*(failed|passed|error).* =+"),
+          ]
+
+          hits = []
+          seen_blocks = set()
+          for index, line in enumerate(lines):
+              if not line.strip():
+                  continue
+              if not any(marker.search(line) for marker in markers):
+                  continue
+              start = max(0, index - ctx)
+              end = min(len(lines), index + ctx + 1)
+              block = tuple(range(start, end))
+              if block in seen_blocks:
+                  continue
+              seen_blocks.add(block)
+              hits.append((start, end))
+
+          if not hits:
+              print("::error::No failure markers matched in the job log; see the raw log tail above.")
+              raise SystemExit(0)
+
+          print(f"::group::Extracted {len(hits)} failure block(s)")
+          emitted = 0
+          for start, end in hits[:12]:  # keep well inside GitHub's per-job limit
+              excerpt = " | ".join(l.strip() for l in lines[start:end] if l.strip())
+              excerpt = excerpt[:900].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error::log[{start + 1}] {excerpt}")
+              emitted += 1
+          print("::endgroup::")
+          print(f"Emitted {emitted} annotation(s).")
+          PY
+
+      - name: Coverage + summary tail
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/job.log" <<'PY'
+          import re
+          import sys
+
+          STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?")
+          with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
+              lines = [STAMP.sub("", l.rstrip("\n")) for l in handle]
+
+          # The per-step delimiters Actions writes (`##[group]Run ...`) name the
+          # step that failed; report the last one that started before the tail.
+          steps = [l for l in lines if "##[group]" in l or l.startswith("Run ")]
+          interesting = [
+              l for l in lines
+              if re.search(r"(Required test coverage|TOTAL\s+\d+|tests? (passed|failed|error)|FAIL Required)", l)
+          ]
+          for line in interesting[-6:]:
+              print(f"::notice::{line.strip()[:900]}")
+          if steps:
+              print(f"::notice::last step marker: {steps[-1].strip()[:300]}")
+          PY
