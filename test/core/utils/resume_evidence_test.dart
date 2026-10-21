@@ -54,8 +54,9 @@ void main() {
   });
 
   test('stops at the depth bound', () async {
+    // Three levels down: inside the default budget, outside a shallow one.
     var dir = root;
-    for (var i = 0; i < 8; i++) {
+    for (var i = 0; i < 3; i++) {
       dir = Directory('${dir.path}/d$i')..createSync();
     }
     File('${dir.path}/deep.mp4.part').writeAsStringSync('x');
