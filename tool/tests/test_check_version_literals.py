@@ -31,7 +31,7 @@ def test_finds_a_version_literal(tmp_path):
 
 
 def test_finds_a_tag_shaped_literal(tmp_path):
-    _write(str(tmp_path), "a.dart", "final s = \"v0.6.0\";\n")
+    _write(str(tmp_path), "a.dart", 'final s = "v0.6.0";\n')
     assert cvl.scan(str(tmp_path))
 
 

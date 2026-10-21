@@ -128,7 +128,9 @@ def _load_budget(path: str = BUDGET_PATH) -> dict[str, tuple[int | None, str | N
         return {}
 
 
-def _serialise(counts: dict[str, int], budget: dict[str, tuple[int | None, str | None]]) -> dict:
+def _serialise(
+    counts: dict[str, int], budget: dict[str, tuple[int | None, str | None]]
+) -> dict:
     """The budget as written to disk: keep every recorded reason."""
     out: dict[str, Any] = {}
     for key in sorted(counts):
