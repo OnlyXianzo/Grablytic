@@ -332,12 +332,18 @@ class PlaylistSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SkeletonShimmer(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    // Non-scrolling scroll view, not a bare Column: a skeleton is a fixed
+    // number of rows, and six of them plus the header overflow a short
+    // viewport (a landscape phone, a split-screen pane, the 600 dp test
+    // surface) — a real overflow for the user and a thrown assertion in a
+    // widget test. Clipping is the correct behaviour for a placeholder.
+    return SkeletonShimmer(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          children: const [
             SkeletonHeaderCard(),
             SizedBox(height: 16),
             Skeleton(width: 140, height: 16),
@@ -403,7 +409,10 @@ class HistorySkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return SkeletonShimmer(
-      child: Padding(
+      // Same reason as PlaylistSkeleton: the row count is fixed, the
+      // viewport is not. Eight rows default, used at four in a sheet.
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
           children: [
