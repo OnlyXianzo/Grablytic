@@ -6,16 +6,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/crash_reports.dart';
 import '../../../core/utils/github_reporter.dart';
+import '../../../core/utils/pending_report.dart';
 import '../../../providers/settings_provider.dart';
 
 /// Short, user-reviewed report composer. GitHub itself performs the final
 /// authenticated submission; Grablytic never embeds or asks for a token.
 class ReportProblemScreen extends ConsumerStatefulWidget {
-  const ReportProblemScreen({super.key, this.initialTitle, this.initialBody, this.submitImmediately = false});
+  const ReportProblemScreen({
+    super.key,
+    this.initialTitle,
+    this.initialBody,
+    this.queuedReportId,
+    this.submitImmediately = false,
+  });
 
   final String? initialTitle;
   final String? initialBody;
+
+  /// The queued crash this screen represents.
+  ///
+  /// Passed explicitly by the recovery banner, which shows a report from
+  /// the queue: without it the screen cannot dismiss that entry after the
+  /// GitHub draft opens, and the banner offers the same crash again three
+  /// days later.
+  final String? queuedReportId;
+
   final bool submitImmediately;
 
   @override
@@ -24,13 +41,7 @@ class ReportProblemScreen extends ConsumerStatefulWidget {
 
 class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
   static const _draftKey = 'pending_bug_report';
-  static const _categories = <String>[
-    'Crash',
-    'Download failure',
-    'Playback or file issue',
-    'UI problem',
-    'Other',
-  ];
+  static const List<String> _categories = ReportCategory.all;
   final _description = TextEditingController();
   String _category = _categories.first;
   String _diagnostics = 'Preparing diagnostics…';
@@ -41,11 +52,17 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
   String? _savedTitle;
   String? _savedBody;
 
+  /// The queued crash this screen was opened for, if any. Kept so "Clear
+  /// saved draft" can take it out of the crash queue as well — before, the
+  /// same text lived in two places and only one of them was cleared.
+  String? _queuedReportId;
+
   @override
   void initState() {
     super.initState();
     _description.text = widget.initialTitle ?? '';
     _savedBody = widget.initialBody;
+    _queuedReportId = widget.queuedReportId;
     _prepare();
   }
 
@@ -72,18 +89,20 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
           _stateMessage = 'Your last report draft is ready to retry.';
         }
       } else if (crashBody == null) {
-        final pending = prefs.getString('pending_crash_report');
-        if (pending != null) {
-          final crash = jsonDecode(pending);
-          if (crash is Map) {
-            crashBody = crash['body']?.toString();
-            _savedBody = crashBody;
-            if (crashBody != null) {
-              _description.text = 'The app encountered a problem and restarted.';
-              _category = 'Crash';
-              _stateMessage = 'A saved crash report is ready to review.';
-            }
-          }
+        // A crash captured last session lives in the report queue, not in
+        // the preferences blob: the queue is what survives a process that
+        // died, and it is written even when automatic reporting is off.
+        final queued =
+            await CrashReports.instance?.pending() ?? const <PendingReport>[];
+        for (final report in queued) {
+          if (!report.isCrash) continue;
+          _queuedReportId = report.id;
+          crashBody = report.body;
+          _savedBody = report.body;
+          _description.text = 'The app encountered a problem and restarted.';
+          _category = ReportCategory.crash;
+          _stateMessage = 'A saved crash report is ready to review.';
+          break;
         }
       }
       await AppLogger.flushNow();
@@ -95,9 +114,10 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
       _diagnostics = crashBody != null
           ? 'Previous crash report (sanitized):\n${GithubReporter.sanitizeForReport(crashBody, maxLength: 3000)}'
           : 'Grablytic: $version\nBuild: ${GithubReporter.buildIdentifier}\nPlatform: ${GithubReporter.sanitizeForReport(platform, maxLength: 200)}\nTime (UTC): $timestamp\n\nRecent app logs (sanitized):\n${safeTail.isEmpty ? '(No recent logs available)' : safeTail}';
-    } catch (_) {
+    } on Exception catch (e) {
       // Fail closed: do not include diagnostics that could not be sanitized.
       _diagnostics = 'Diagnostics could not be safely prepared and will not be included.';
+      AppLogger.warn('Diagnostics not prepared: $e', tag: 'reporting');
     }
     if (mounted) {
       setState(() => _preparing = false);
@@ -110,7 +130,8 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
   String _composeBody() {
     final description = GithubReporter.sanitizeForReport(_description.text.trim(), maxLength: 3000);
     final safeTitle = GithubReporter.sanitizeForReport(_description.text.trim(), maxLength: 90);
-    final reportTitle = '[${_category}] ${safeTitle.isEmpty ? 'Problem report' : safeTitle}';
+    final reportTitle =
+        '[$_category] ${safeTitle.isEmpty ? 'Problem report' : safeTitle}';
     final body = '''### What happened?
 ${description.isEmpty ? '(No description provided)' : description}
 
@@ -155,17 +176,28 @@ Submitted from Grablytic. Please review this report before creating the issue.''
         'labels': 'bug',
       });
       final result = await ref.read(engineProvider).openUrl(uri.toString());
-      if (!mounted) return;
       final opened = result['success'] == true;
+      if (opened) {
+        // The user has the draft in their browser, and the same text is
+        // saved under `_draftKey`, so the queue entry has done its job.
+        // Leaving it queued would re-offer the crash every three days.
+        final queued = _queuedReportId;
+        if (queued != null) {
+          await CrashReports.instance?.dismiss(queued);
+          _queuedReportId = null;
+        }
+      }
+      if (!mounted) return;
       setState(() {
         _stateMessage = opened
             ? 'GitHub opened with your draft. Review it there and tap “Submit new issue” to send it. Your draft is saved here if you need to retry.'
             : 'Could not open GitHub. Your sanitized draft is saved; try again when online or open github.com/OnlyXianzo/Grablytic/issues/new.';
       });
-    } catch (_) {
+    } on Exception catch (e) {
       if (mounted) {
         setState(() => _stateMessage = 'Could not open GitHub. Your sanitized draft is saved so you can retry later.');
       }
+      AppLogger.warn('Could not open the GitHub form: $e', tag: 'reporting');
     } finally {
       if (mounted) setState(() => _opening = false);
     }
@@ -173,7 +205,11 @@ Submitted from Grablytic. Please review this report before creating the issue.''
 
   Future<void> _clearDraft() async {
     await ref.read(sharedPreferencesProvider).remove(_draftKey);
-    await ref.read(sharedPreferencesProvider).remove('pending_crash_report');
+    final queued = _queuedReportId;
+    if (queued != null) {
+      await CrashReports.instance?.dismiss(queued);
+      _queuedReportId = null;
+    }
     if (!mounted) return;
     setState(() {
       _savedTitle = null;
@@ -195,7 +231,7 @@ Submitted from Grablytic. Please review this report before creating the issue.''
           Text('A short description is enough. Nothing is sent until you review and submit it on GitHub.', style: TextStyle(color: colors.onSurfaceVariant)),
           const SizedBox(height: 20),
           DropdownButtonFormField<String>(
-            value: _category,
+            initialValue: _category,
             decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
             items: _categories.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
             onChanged: (value) { if (value != null) setState(() => _category = value); },

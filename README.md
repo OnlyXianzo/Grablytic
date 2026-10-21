@@ -118,24 +118,36 @@ handled by Deno, Node or QuickJS, in that order of preference.
 
 **Privacy.** No account, no analytics, no ad SDKs. Cookies and logins are
 opt-in and, when you do use them, stored in app-private files with owner-only
-permissions rather than in the settings blob. Automatic Flutter crash capture
-is off unless you opt in under Settings → System & Diagnostics. When enabled,
-Flutter/Dart reports that cannot be submitted are saved locally and offered on
-the next launch for review. The Python engine's existing auto-issue notifier
-remains disabled by default and can only file automatically in trusted
-engine deployments that explicitly set `GRABLYTIC_AUTO_REPORT=1` and provide
-`GITHUB_TOKEN`; the in-app switch does not silently turn it on. A manual
-Help & feedback → Report a problem form is available regardless of that setting;
-it prepares a short, sanitized draft and opens the official GitHub issue form.
-Nothing is submitted until you review and confirm it on GitHub. The app never
-ships a GitHub token; direct API submission is therefore unavailable in normal
-builds. Diagnostic attachments are optional and limited to version, platform,
-time, and a small log excerpt. URLs and local paths are removed, credentials
-are masked, and reports can still contain unforeseen private text, so inspect
-the draft before submitting. Automatic capture can record Flutter/Dart errors
-but cannot recover arbitrary native Android process crashes or a forced OS
-termination. Uninstalling removes the app's private data, and files you
-downloaded stay wherever you saved them.
+permissions rather than in the settings blob.
+
+Crash reports are the only thing that ever leaves the app, and they only leave
+when you press Send. When something goes wrong the app writes a redacted report
+into its own folder — that happens whether or not you have opted into anything,
+because otherwise the next launch would have nothing to offer you. On the next
+launch a dismissible banner says we ran into a problem and asks what to do:
+**Not now**, **Review report**, or **Send report**. The same report is always
+under Settings → Report a problem, where a sentence and a
+category are enough; the diagnostics are gathered for you and shown before
+anything is sent. There is no GitHub token inside the app, so sending opens a
+prefilled GitHub issue form in your browser and you press Submit there. The app
+says exactly that instead of pretending it filed something.
+
+*Send crash reports automatically* (Settings → System & Diagnostics) is a
+separate switch and is off until you turn it on. Even then nothing is uploaded
+by a build that has no token — which is every normal build.
+
+The Python engine's own notifier is a developer tool: it needs
+`GRABLYTIC_AUTO_REPORT=1` and a `GITHUB_TOKEN` in its environment, neither of
+which a normal install sets. It never runs because the in-app switch is on.
+
+Diagnostics are limited to the exception, the stack trace, app version,
+platform, time, the category, and a short recent-log excerpt. URLs and local
+paths are stripped, credentials and headers are masked, and redaction fails
+closed rather than sending text it could not parse. A report can still contain
+unforeseen private text, so read the draft before submitting. Capture covers
+Flutter/Dart errors and an unexpected engine exit; it cannot recover a native
+Android process crash or a forced OS termination. Uninstalling removes the
+app's private data, and files you downloaded stay wherever you saved them.
 
 ## Recent work (Oct 18–20)
 

@@ -153,7 +153,14 @@ class GithubReporter {
       req.headers.set('Authorization', 'Bearer $token');
       req.headers.set('X-GitHub-Api-Version', '2022-11-28');
       req.headers.contentType = ContentType.json;
-      req.write(jsonEncode({'title': title, 'body': body, 'labels': labels}));
+      // Redact at the network boundary as well as when the draft is built:
+      // an issue is public, and a caller that hands over raw text must not
+      // be able to publish a credential.
+      req.write(jsonEncode({
+        'title': sanitizeForReport(title, maxLength: 200),
+        'body': sanitizeForReport(body, maxLength: 6000),
+        'labels': labels,
+      }));
       final resp = await req.close().timeout(const Duration(seconds: 20));
       final respBody = await resp.transform(utf8.decoder).join();
       if (resp.statusCode == 201) {
@@ -172,17 +179,25 @@ class GithubReporter {
     }
   }
 
-  /// Full auto-report pipeline for an unhandled exception.
-  /// Returns [GithubReportResult] — either an issue URL, a duplicate URL,
-  /// or the formatted body for manual filing when no token is configured.
-  Future<GithubReportResult> reportCrash(
+  /// Builds a crash report **without touching the network**.
+  ///
+  /// Split out of [reportCrash] so the fatal handler can capture a report
+  /// and return: the old single method awaited a duplicate search and a
+  /// POST from inside the crash handler, which meant a crash during
+  /// shutdown could sit for twenty seconds before the process gave up.
+  /// Capture writes the draft to disk; submission is a separate, later
+  /// decision.
+  Future<GithubReportDraft> draftCrash(
     Object error,
-    StackTrace stack, {
+    StackTrace? stack, {
     Map<String, dynamic> context = const {},
     String appVersion = '0.0.1-beta+1',
   }) async {
-    final stackLines = stack.toString().trim().split('\n');
-    final firstFrame = sanitizeForReport(stackLines.isNotEmpty ? stackLines.first.trim() : '', maxLength: 300);
+    final stackText = stack?.toString() ?? '';
+    final stackLines = stackText.trim().split('\n');
+    final firstFrame = sanitizeForReport(
+        stackLines.isNotEmpty ? stackLines.first.trim() : '',
+        maxLength: 300);
     final errStr = sanitizeForReport(error.toString(), maxLength: 500);
     final shortErr = errStr.length > 120 ? '${errStr.substring(0, 120)}…' : errStr;
     final fp = fingerprint(shortErr, firstFrame);
@@ -195,52 +210,81 @@ class GithubReporter {
       actual: '```\n$errStr\n$firstFrame\n```',
       fp: fp,
       logTail: logTail,
-      stack: stack.toString().length > 6000
-          ? stack.toString().substring(0, 6000)
-          : stack.toString(),
+      stack: stackText.length > 6000 ? stackText.substring(0, 6000) : stackText,
       context: context,
       appVersion: appVersion,
     );
+    return GithubReportDraft(fingerprint: fp, title: title, body: body);
+  }
 
+  /// Sends a prepared draft.
+  ///
+  /// This is the only place a report becomes a GitHub issue, for both the
+  /// automatic and the manual path: dedup search, then create, and a
+  /// status that says exactly what happened. No token means no issue, and
+  /// the caller gets `manualNeeded` so it can offer the prefilled page
+  /// instead of pretending.
+  Future<GithubReportResult> submitDraft(GithubReportDraft draft) async {
     if (!canPost) {
-      AppLogger.info('Crash captured ($fp); no token — manual filing body ready.',
+      AppLogger.info(
+          'Report ${draft.fingerprint} prepared; no token — manual filing.',
           tag: 'github-reporter');
       return GithubReportResult(
         status: GithubReportStatus.manualNeeded,
-        fingerprint: fp,
-        body: body,
-        title: title,
+        fingerprint: draft.fingerprint,
+        body: draft.body,
+        title: draft.title,
       );
     }
-    final dup = await findDuplicate(fp);
+    final dup = await findDuplicate(draft.fingerprint);
     if (dup != null) {
-      AppLogger.info('Duplicate crash issue found ($fp): $dup',
+      AppLogger.info(
+          'Duplicate issue found (${draft.fingerprint}): $dup',
           tag: 'github-reporter');
       return GithubReportResult(
         status: GithubReportStatus.duplicate,
-        fingerprint: fp,
+        fingerprint: draft.fingerprint,
         url: dup,
-        body: body,
-        title: title,
+        body: draft.body,
+        title: draft.title,
       );
     }
-    final url = await createIssue(title: title, body: body);
+    final url = await createIssue(title: draft.title, body: draft.body);
     if (url != null) {
-      AppLogger.info('Crash issue filed ($fp): $url', tag: 'github-reporter');
+      AppLogger.info('Issue filed (${draft.fingerprint}): $url',
+          tag: 'github-reporter');
       return GithubReportResult(
         status: GithubReportStatus.created,
-        fingerprint: fp,
+        fingerprint: draft.fingerprint,
         url: url,
-        body: body,
-        title: title,
+        body: draft.body,
+        title: draft.title,
       );
     }
     return GithubReportResult(
       status: GithubReportStatus.failed,
-      fingerprint: fp,
-      body: body,
-      title: title,
+      fingerprint: draft.fingerprint,
+      body: draft.body,
+      title: draft.title,
     );
+  }
+
+  /// Full auto-report pipeline for an unhandled exception: build, then
+  /// submit. Kept for callers that want the whole thing in one call; the
+  /// crash handler uses [draftCrash] alone.
+  Future<GithubReportResult> reportCrash(
+    Object error,
+    StackTrace stack, {
+    Map<String, dynamic> context = const {},
+    String appVersion = '0.0.1-beta+1',
+  }) async {
+    final draft = await draftCrash(
+      error,
+      stack,
+      context: context,
+      appVersion: appVersion,
+    );
+    return submitDraft(draft);
   }
 
   /// Manual flow for the LogViewer "Report to GitHub" button.
@@ -255,6 +299,22 @@ class GithubReporter {
     String appVersion = '0.0.1-beta+1',
     bool fullLog = false,
     Map<String, dynamic> context = const {},
+  }) async =>
+      submitDraft(await draftManual(
+        userSummary: userSummary,
+        userSteps: userSteps,
+        appVersion: appVersion,
+        fullLog: fullLog,
+        context: context,
+      ));
+
+  /// Builds the manual draft without sending it.
+  Future<GithubReportDraft> draftManual({
+    required String userSummary,
+    String userSteps = '',
+    String appVersion = '0.0.1-beta+1',
+    bool fullLog = false,
+    Map<String, dynamic> context = const {},
   }) async {
     final logTail =
         fullLog ? await AppLogger.readFullLog() : await AppLogger.readLogTail();
@@ -262,8 +322,10 @@ class GithubReporter {
         DateTime.now().toUtc().toIso8601String().substring(0, 16);
     final safeSummary = sanitizeForReport(userSummary, maxLength: 3000);
     final fp = fingerprint('$safeSummary\n$minute', null);
-    final shortSummary = safeSummary.length > 100 ? '${safeSummary.substring(0, 100)}…' : safeSummary;
-    final title = '[Manual $fp] ${shortSummary.isEmpty ? 'Problem report' : shortSummary}';
+    final shortSummary =
+        safeSummary.length > 100 ? '${safeSummary.substring(0, 100)}…' : safeSummary;
+    final title =
+        '[Manual $fp] ${shortSummary.isEmpty ? 'Problem report' : shortSummary}';
     final body = _buildBody(
       summary: userSummary,
       repro: userSteps.isEmpty ? '_Not provided._' : userSteps,
@@ -276,33 +338,38 @@ class GithubReporter {
       appVersion: appVersion,
       logLabel: fullLog ? 'full' : 'tail',
     );
-    if (!canPost) {
-      return GithubReportResult(
-        status: GithubReportStatus.manualNeeded,
-        fingerprint: fp,
-        body: body,
-        title: title,
-      );
-    }
-    final dup = await findDuplicate(fp);
-    if (dup != null) {
-      return GithubReportResult(
-        status: GithubReportStatus.duplicate,
-        fingerprint: fp,
-        url: dup,
-        body: body,
-        title: title,
-      );
-    }
-    final url = await createIssue(title: title, body: body);
-    return GithubReportResult(
-      status: url != null ? GithubReportStatus.created : GithubReportStatus.failed,
-      fingerprint: fp,
-      url: url,
-      body: body,
-      title: title,
-    );
+    return GithubReportDraft(fingerprint: fp, title: title, body: body);
   }
+
+  /// A prefilled GitHub "new issue" page.
+  ///
+  /// The submission path for a stock build: the user sees the exact issue
+  /// text on GitHub before pressing Submit. No token, nothing to extract
+  /// from the APK. GitHub accepts a long query string, but some browsers
+  /// and share sheets truncate near 8 KB, so an over-long body is left out
+  /// of the URL — the caller has the text and shows it to the user.
+  Uri issueUrl({
+    required String title,
+    required String body,
+    List<String> labels = const ['bug'],
+  }) {
+    final base = 'https://github.com/$owner/$repo/issues/new';
+    final safeTitle = sanitizeForReport(title, maxLength: 200);
+    final safeBody = sanitizeForReport(body, maxLength: 6000);
+    final full = Uri.parse(base).replace(queryParameters: {
+      'title': safeTitle,
+      'body': safeBody,
+      'labels': labels.join(','),
+    });
+    if (full.toString().length <= _maxIssueUrlChars) return full;
+    return Uri.parse(base).replace(queryParameters: {
+      'title': safeTitle,
+      'labels': labels.join(','),
+    });
+  }
+
+  /// Roughly what browsers and Android intents handle without truncation.
+  static const int _maxIssueUrlChars = 7500;
 
   String _buildBody({
     required String summary,
@@ -378,6 +445,24 @@ $logTail
 }
 
 enum GithubReportStatus { created, duplicate, manualNeeded, failed }
+
+/// A report that has been built and redacted, but not sent.
+///
+/// Separating "prepare" from "send" is what lets the crash handler finish
+/// in milliseconds: everything expensive (log read is bounded, the network
+/// is not) is either local or moved to submission time.
+@immutable
+class GithubReportDraft {
+  const GithubReportDraft({
+    required this.fingerprint,
+    required this.title,
+    required this.body,
+  });
+
+  final String fingerprint;
+  final String title;
+  final String body;
+}
 
 class GithubReportResult {
   final GithubReportStatus status;

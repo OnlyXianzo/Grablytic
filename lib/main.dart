@@ -17,16 +17,19 @@ import 'package:shared_preferences/shared_preferences.dart'
 import 'core/engine/engine_provider.dart' show setEngineDirs;
 import 'core/utils/app_logger.dart';
 import 'core/utils/log_buffer.dart';
-import 'core/utils/github_reporter.dart';
+import 'core/utils/crash_reports.dart';
 import 'core/utils/logging_observers.dart';
+import 'core/utils/pending_report.dart';
 import 'features/home/screens/share_overlay_screen.dart';
-import 'features/settings/screens/report_problem_screen.dart';
 
 /// Route observer instance shared by [GrablyticApp].
 final loggingNavigatorObserver = LoggingNavigatorObserver();
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+/// Key the previous shared-preferences based crash slot lived under.
+///
+/// Kept only so an install that queued a crash under the old scheme can
+/// hand it to the new queue once. See [_migrateLegacyCrash].
 const _pendingCrashKey = 'pending_crash_report';
-const _dismissedCrashKey = 'dismissed_crash_report_fingerprint';
 
 void main() {
   // Flutter requires the binding and runApp to live in the SAME zone.
@@ -76,6 +79,22 @@ Future<void> _bootstrap() async {
   ).wait;
   await AppLogger.init(appDir.path, prefs);
 
+  // Crash capture: a redacted draft is written under `<app>/reports` and a
+  // GitHub issue is only ever considered later (or with the user's say-so).
+  // A failure to set this up must not stop the app: `instance` stays null
+  // and every reporting surface degrades to "unavailable".
+  try {
+    final store = await CrashReports.openStore(appDir.path);
+    CrashReports.instance = CrashReports(
+      store: store,
+      autoSendLoader: () async =>
+          prefs.getBool('auto_crash_reporting') ?? false,
+    );
+    await _migrateLegacyCrash(store, prefs);
+  } catch (e) {
+    AppLogger.warn('Crash reporting unavailable: $e', tag: 'reporting');
+  }
+
   // Initialize in-memory log buffer and wire to AppLogger
   final logBuffer = LogBuffer.forThisPlatform();
   AppLogger.initBuffer(logBuffer);
@@ -114,34 +133,16 @@ Future<void> _bootstrap() async {
     await prefs.setString('downloadPath', defaultPath);
   }
 
-  // Global error boundaries (STEP 3A). Anonymous by default: auto-report to
-  // GitHub only when the user explicitly opts in via settings.
+  // Global error boundaries (STEP 3A).
+  //
+  // `onFatal` captures and returns. It used to build a body, search for a
+  // duplicate AND post the issue from inside the handler, which is a
+  // 20-second worst case during shutdown — and on a stock build (no token)
+  // it discarded the body, so nothing reached the next launch when the
+  // user had automatic reporting off, which is everyone.
   AppLogger.installGlobalErrorHandlers(
     onFatal: (error, stack) async {
-      try {
-        final autoReport = prefs.getBool('auto_crash_reporting') ?? false;
-        if (!autoReport) return;
-        final reporter = GithubReporter();
-        final result = await reporter.reportCrash(error, stack);
-        if (result.status == GithubReportStatus.failed ||
-            result.status == GithubReportStatus.manualNeeded) {
-          // The report body is sanitized at GithubReporter's final boundary.
-          // Keep only one bounded pending crash for review on next startup.
-          await prefs.setString(_pendingCrashKey, jsonEncode({
-            'fingerprint': result.fingerprint,
-            'title': result.title,
-            'body': result.body,
-            'captured_at': DateTime.now().toUtc().toIso8601String(),
-          }));
-          await prefs.remove(_dismissedCrashKey);
-        }
-        AppLogger.info(
-          'Auto-report finished: ${result.status.name}${result.url != null ? ' ${result.url}' : ''}',
-          tag: 'github-reporter',
-        );
-      } catch (_) {
-        // Reporting must never crash the crash handler.
-      }
+      await _captureCrash(error, stack);
     },
   );
 
@@ -155,50 +156,86 @@ Future<void> _bootstrap() async {
       child: const GrablyticApp(),
     ),
   );
+  // One deferred attempt at the queue, after the first frame. Off the
+  // startup path so a slow network cannot delay the UI, and gated inside on
+  // the user's opt-in preference (and on the build having a token at all).
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(_promptPendingCrash(prefs));
+    final reports = CrashReports.instance;
+    if (reports == null) return;
+    unawaited(
+      reports.submitQueuedIfOptedIn().catchError(
+        (Object e) => AppLogger.warn('Queued report submission failed: $e',
+            tag: 'reporting'),
+      ),
+    );
   });
 }
 
-Future<void> _promptPendingCrash(SharedPreferences prefs) async {
+/// Records an unhandled failure for the next launch to offer.
+///
+/// Never throws: this runs inside error handlers, where a reporting failure
+/// would replace the original crash with a confusing second one.
+Future<void> _captureCrash(Object error, StackTrace? stack) async {
+  final reports = CrashReports.instance;
+  if (reports == null) return;
   try {
-    final raw = prefs.getString(_pendingCrashKey);
-    if (raw == null) return;
-    final report = jsonDecode(raw);
-    if (report is! Map) return;
-    final fingerprint = report['fingerprint']?.toString() ?? '';
-    if (fingerprint.isEmpty ||
-        prefs.getString(_dismissedCrashKey) == fingerprint) return;
-    final context = appNavigatorKey.currentContext;
-    if (context == null) return;
-    final action = await showDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('We encountered a problem last time'),
-        content: const Text('A sanitized diagnostic report is saved on this device. Review it first, or open it in GitHub where you can make the final decision to submit.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, 'later'), child: const Text('Not now')),
-          OutlinedButton(onPressed: () => Navigator.pop(dialogContext, 'review'), child: const Text('Review report')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, 'send'), child: const Text('Send report')),
-        ],
-      ),
-    );
-    if (action == null) {
-      await prefs.setString(_dismissedCrashKey, fingerprint);
+    final report = await reports.capture(error, stack);
+    if (report != null) {
+      AppLogger.fatal(
+        'Crash captured for reporting (${report.fingerprint})',
+        tag: 'reporting',
+      );
+    }
+  } on Exception catch (e) {
+    AppLogger.warn('Crash capture failed: $e', tag: 'reporting');
+  }
+}
+
+/// Moves a crash queued by the old preferences-based scheme into the file
+/// queue, once.
+///
+/// Before this, a crash was stored as a single JSON string under
+/// `pending_crash_report` and only when automatic reporting was already
+/// on. Anyone who updated with one sitting there should still see it; after
+/// the move the old key is deleted so it is not offered twice.
+Future<void> _migrateLegacyCrash(
+  PendingReportStore? store,
+  SharedPreferences prefs,
+) async {
+  if (store == null) return;
+  final raw = prefs.getString(_pendingCrashKey);
+  if (raw == null || raw.isEmpty) return;
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) {
+      await prefs.remove(_pendingCrashKey);
       return;
     }
-    await prefs.setString(_dismissedCrashKey, fingerprint);
-    if (action == 'later') return;
-    appNavigatorKey.currentState?.push(MaterialPageRoute(
-      builder: (_) => ReportProblemScreen(
-        initialTitle: 'The app encountered a problem and restarted.',
-        initialBody: report['body']?.toString(),
-        submitImmediately: action == 'send',
-      ),
+    final body = decoded['body']?.toString() ?? '';
+    if (body.isEmpty) {
+      await prefs.remove(_pendingCrashKey);
+      return;
+    }
+    final fingerprint = decoded['fingerprint']?.toString() ?? '';
+    final captured =
+        DateTime.tryParse(decoded['captured_at']?.toString() ?? '') ??
+            DateTime.now().subtract(const Duration(minutes: 1));
+    await store.add(PendingReport(
+      id: 'legacy-${fingerprint.isEmpty ? 'anon' : fingerprint}',
+      fingerprint: fingerprint,
+      category: ReportCategory.crash,
+      title: decoded['title']?.toString() ?? '[Crash] Problem report',
+      summary: 'The app encountered a problem and restarted.',
+      body: body,
+      createdAt: captured,
+      source: 'auto',
     ));
-  } catch (_) {
-    // A damaged pending report must never prevent normal startup.
+    await prefs.remove(_pendingCrashKey);
+    AppLogger.info('Imported a pending crash from the old slot',
+        tag: 'reporting');
+  } on Exception catch (e) {
+    AppLogger.warn('Could not import the old pending crash: $e',
+        tag: 'reporting');
   }
 }
 

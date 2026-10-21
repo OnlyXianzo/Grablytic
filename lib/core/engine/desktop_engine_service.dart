@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
+import '../utils/crash_reports.dart';
 import '../utils/trust_boundary.dart';
 import 'engine_codec.dart';
 import 'engine_contract.dart';
@@ -118,6 +119,14 @@ class DesktopEngineService implements EngineService {
   @visibleForTesting
   void restart() => _restart();
 
+  /// Crash reports filed for unexpected exits in this process.
+  ///
+  /// A crash-looping engine exits repeatedly, and the queue already
+  /// collapses repeats by fingerprint — this cap is about not doing a log
+  /// read and a file write on every restart of a hot loop.
+  int _engineCrashReports = 0;
+  static const int _maxEngineCrashReports = 3;
+
   @visibleForTesting
   Process? get process => _process;
 
@@ -133,9 +142,12 @@ class DesktopEngineService implements EngineService {
     }
     p.exitCode.then((code) {
       _running = false;
-      if (!_disposed && code != 0 && _process == p) {
-        _restart();
-      }
+      if (_disposed || code == 0) return;
+      // Capture even when the stream-close path already restarted: the
+      // restart nulls `_process`, so a capture gated on that identity was
+      // skipped exactly for the abnormal exits it exists for.
+      _captureEngineExit(code);
+      if (_process == p) _restart();
     });
   }
 
@@ -316,9 +328,9 @@ class DesktopEngineService implements EngineService {
     final currentProcess = _process!;
     currentProcess.exitCode.then((code) {
       _running = false;
-      if (!_disposed && code != 0 && _process == currentProcess) {
-        _restart();
-      }
+      if (_disposed || code == 0) return;
+      _captureEngineExit(code);
+      if (_process == currentProcess) _restart();
     });
 
     _running = true;
@@ -388,6 +400,23 @@ class DesktopEngineService implements EngineService {
       }
     }
     _pending.clear();
+  }
+
+  /// Queues a report for an engine process that died with [exitCode].
+  ///
+  /// Fire-and-forget: `_restart` is the recovery path and a disk write must
+  /// never delay bringing the engine back. The log tail carries the Python
+  /// traceback, because engine stderr is forwarded to the app log.
+  void _captureEngineExit(int exitCode) {
+    if (_engineCrashReports >= _maxEngineCrashReports) return;
+    final reports = CrashReports.instance;
+    if (reports == null) return;
+    _engineCrashReports++;
+    unawaited(
+      reports
+          .capture(EngineExitError(exitCode), null)
+          .catchError((Object _) => null),
+    );
   }
 
   void _handleLine(String line) {
@@ -1012,7 +1041,8 @@ class DesktopEngineService implements EngineService {
         return EngineEnvelope.error(errorType: 'ERROR_UNSUPPORTED', message: 'Not supported on this platform');
       }
       return {'success': true};
-    } catch (_) {
+    } on ProcessException catch (e) {
+      AppLogger.warn('Could not open the browser: $e', tag: 'engine');
       return EngineEnvelope.error(errorType: 'ERROR_TRANSPORT', message: 'Could not open the browser');
     }
   }
