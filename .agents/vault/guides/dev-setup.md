@@ -73,7 +73,7 @@ Five families are committed under `assets/fonts/` and declared in `pubspec.yaml:
 |---|---|---|
 | Android | `flutter build apk --release` | `build/app/outputs/flutter-apk/app-release.apk` |
 | Windows | `flutter build windows --release` + copy `engine/grablytic_engine` into bundle | `build/windows/x64/runner/Release/` |
-| Linux | `flutter build linux --release` + copy `engine/grablytic_engine` into bundle (+ `ninja-build libgtk-3-dev liblzma-dev`) | `build/linux/x64/release/bundle/` |
+| Linux | `flutter build linux --release` + copy `engine/grablytic_engine` into bundle (+ `ninja-build libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev`) | `build/linux/x64/release/bundle/` |
 
 Android notes: `minSdk 24`; ABIs `arm64-v8a` (+ `armeabi-v7a`, `x86_64` for universal) via `ndk.abiFilters` (Chaquopy-mandated; never combine with `--split-per-abi` or Gradle `splits{}`/flavors). `packages.gradle.kts` fetches pinned `ytdlnis-packages` APKs → jniLibs; `-PskipNativePackages` for contributor builds without ffmpeg/deno; `-PtargetAbi=… -PjsRuntime=deno|node|both` selects release variants (Deno ≈91 MB/152 MB vs Node ≈50 MB/82 MB; armv7 takes Node — no upstream Deno armv7 build). `lintVital*` disabled (AGP/Kotlin-script bug); `zip.so` stripping skipped (keeps `libffmpeg.zip.so`/`libdeno.zip.so` trees). Signing via `android/key.properties`. `DownloadService` needs no new permissions.
 

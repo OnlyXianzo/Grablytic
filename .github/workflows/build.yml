@@ -177,10 +177,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      # `libsecret-1-dev` + `libjsoncpp-dev` are not optional: the
+      # flutter_secure_storage Linux plugin's CMakeLists does
+      # `pkg_check_modules(SECRET REQUIRED ... libsecret-1>=0.18.4)` and links
+      # jsoncpp, so `flutter build linux` dies in CMake configure without them
+      # ("The following required packages were not found: libsecret-1>=0.18.4")
+      # — which is exactly how the 2026-10-21 nightly lost its Linux artifacts.
       - name: Install Linux build and packaging dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev pkg-config alien rpm zstd
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev \
+            libsecret-1-dev libjsoncpp-dev pkg-config alien rpm zstd
 
       - name: Set up Flutter (Linux ARM64)
         if: matrix.arch == 'arm64'
@@ -246,7 +253,7 @@ jobs:
           Priority: optional
           Architecture: ${{ matrix.deb_arch }}
           Maintainer: OnlyXianzo <184820152+OnlyXianzo@users.noreply.github.com>
-          Depends: libgtk-3-0, python3, ffmpeg, aria2
+          Depends: libgtk-3-0, libsecret-1-0 | libsecret-1-0t64, python3, ffmpeg, aria2
           Replaces: truestream
           Conflicts: truestream
           Description: Fast, beautiful, privacy-first media downloader
@@ -313,6 +320,7 @@ jobs:
           arch = ${{ matrix.arch_arch }}
           license = custom
           depend = gtk3
+          depend = libsecret
           depend = python
           depend = ffmpeg
           depend = aria2

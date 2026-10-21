@@ -171,7 +171,11 @@ Same approach as Windows — engine copied alongside the bundle.
 
 ```bash
 # Install Linux build dependencies
-sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev
+#   libsecret-1-dev + libjsoncpp-dev are required by the
+#   flutter_secure_storage Linux plugin (libsecret-1 >= 0.18.4). Without them
+#   `flutter build linux` stops in CMake configure.
+sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev \
+  libsecret-1-dev libjsoncpp-dev
 
 flutter build linux --release
 
