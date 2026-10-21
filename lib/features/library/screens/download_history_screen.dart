@@ -159,6 +159,9 @@ class _DownloadHistoryScreenState
   @override
   Widget build(BuildContext context) {
     final historyAsync = ref.watch(downloadHistoryProvider);
+    final searchQuery = ref.watch(downloadHistorySearchProvider).trim();
+    final statusFilter = ref.watch(downloadHistoryStatusFilterProvider);
+    final hasActiveFilter = searchQuery.isNotEmpty || statusFilter != null;
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -202,58 +205,61 @@ class _DownloadHistoryScreenState
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              _FilterChip(
-                label: 'All',
-                selected: ref.watch(downloadHistoryStatusFilterProvider) ==
-                    null,
-                onSelected: () {
-                  ref
-                      .read(downloadHistoryStatusFilterProvider.notifier)
-                      .state = null;
-                },
-                colorScheme: colorScheme,
-              ),
-              const SizedBox(width: 8),
-              _FilterChip(
-                label: 'Completed',
-                selected:
-                    ref.watch(downloadHistoryStatusFilterProvider) ==
-                        'completed',
-                onSelected: () {
-                  ref
-                      .read(downloadHistoryStatusFilterProvider.notifier)
-                      .state = 'completed';
-                },
-                colorScheme: colorScheme,
-              ),
-              const SizedBox(width: 8),
-              _FilterChip(
-                label: 'Failed',
-                selected:
-                    ref.watch(downloadHistoryStatusFilterProvider) == 'error',
-                onSelected: () {
-                  ref
-                      .read(downloadHistoryStatusFilterProvider.notifier)
-                      .state = 'error';
-                },
-                colorScheme: colorScheme,
-              ),
-              const SizedBox(width: 8),
-              _FilterChip(
-                label: 'In Progress',
-                selected:
-                    ref.watch(downloadHistoryStatusFilterProvider) ==
-                        'downloading',
-                onSelected: () {
-                  ref
-                      .read(downloadHistoryStatusFilterProvider.notifier)
-                      .state = 'downloading';
-                },
-                colorScheme: colorScheme,
-              ),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FilterChip(
+                  label: 'All',
+                  selected:
+                      ref.watch(downloadHistoryStatusFilterProvider) == null,
+                  onSelected: () {
+                    ref
+                        .read(downloadHistoryStatusFilterProvider.notifier)
+                        .state = null;
+                  },
+                  colorScheme: colorScheme,
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Completed',
+                  selected:
+                      ref.watch(downloadHistoryStatusFilterProvider) ==
+                          'completed',
+                  onSelected: () {
+                    ref
+                        .read(downloadHistoryStatusFilterProvider.notifier)
+                        .state = 'completed';
+                  },
+                  colorScheme: colorScheme,
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'Failed',
+                  selected:
+                      ref.watch(downloadHistoryStatusFilterProvider) == 'error',
+                  onSelected: () {
+                    ref
+                        .read(downloadHistoryStatusFilterProvider.notifier)
+                        .state = 'error';
+                  },
+                  colorScheme: colorScheme,
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: 'In Progress',
+                  selected:
+                      ref.watch(downloadHistoryStatusFilterProvider) ==
+                          'downloading',
+                  onSelected: () {
+                    ref
+                        .read(downloadHistoryStatusFilterProvider.notifier)
+                        .state = 'downloading';
+                  },
+                  colorScheme: colorScheme,
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -282,7 +288,9 @@ class _DownloadHistoryScreenState
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No download history yet',
+                          hasActiveFilter
+                              ? 'No matching downloads'
+                              : 'No download history yet',
                           style: textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onSurface,
@@ -290,7 +298,9 @@ class _DownloadHistoryScreenState
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Items you download will be logged here for quick access.',
+                          hasActiveFilter
+                              ? 'Try another search or change the filters.'
+                              : 'Items you download will be logged here for quick access.',
                           textAlign: TextAlign.center,
                           style: textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
@@ -348,9 +358,39 @@ class _DownloadHistoryScreenState
             },
             loading: () => const HistorySkeleton(),
             error: (err, _) => Center(
-              child: Text('Error: $err',
-                  style: textTheme.bodyMedium
-                      ?.copyWith(color: colorScheme.error)),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.history_toggle_off,
+                        size: 32, color: colorScheme.error),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Couldn’t load download history',
+                      textAlign: TextAlign.center,
+                      style: textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Your downloads are still safe. Try again.',
+                      textAlign: TextAlign.center,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () => ref.invalidate(downloadHistoryProvider),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
