@@ -26,6 +26,10 @@ Map<String, dynamic> settingsDownloadConfig(AppSettings settings) {
     'organize_by_folder': settings.archiveByFolder,
     'use_archive': settings.downloadArchive,
     'thumbnail_format': settings.pngThumbnails ? 'png' : 'jpg',
+    // yt-dlp's own verbose mode, mirrored from the Settings toggle. Without
+    // this the switch changed the app log level only, and the engine kept
+    // its default quiet output.
+    'verbose': settings.verbose,
     // UI-level only (engine opts_builder ignores unknown keys): lets the
     // native layer gate completion/error alerts without a second IPC.
     'completion_alerts': settings.completionAlerts,

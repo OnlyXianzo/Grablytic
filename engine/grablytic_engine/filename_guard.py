@@ -124,4 +124,10 @@ def bound_filename(path: str, max_bytes: int = MAX_COMPONENT_BYTES) -> str:
     """
     if not isinstance(path, str) or not path:
         return path
-    return "/".join(bound_component(part, max_bytes) for part in path.split("/"))
+    # yt-dlp builds templates with a backslash on Windows, so splitting on
+    # "/" alone treated "Show/Episode 1.mp4" (written with a backslash) as one
+    # component: the pair shared a single NAME_MAX and the episode lost its
+    # tail while the show kept all of it. Separators come out as "/" because
+    # the value is fed back into an output template.
+    parts = re.split(r"[/\\]", path)
+    return "/".join(bound_component(part, max_bytes) for part in parts)

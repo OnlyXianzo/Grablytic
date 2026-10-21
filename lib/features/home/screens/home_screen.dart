@@ -1,5 +1,5 @@
 import 'dart:async' show unawaited;
-import 'dart:io' show Directory, FileSystemException;
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
@@ -20,6 +20,7 @@ import '../screens/format_picker_screen.dart';
 import 'playlist_selection_screen.dart';
 import 'search_results_screen.dart';
 import '../../../core/utils/notification_helper.dart';
+import '../../../core/utils/resume_evidence.dart';
 import '../../../features/settings/screens/cookie_webview_screen.dart';
 import '../../../features/settings/screens/presets_screen.dart';
 import '../../../features/settings/screens/settings_screen.dart';
@@ -1630,21 +1631,17 @@ class _ResumeScanSectionState extends ConsumerState<_ResumeScanSection> {
   }
 
   Future<void> _probeForPartialFiles() async {
-    var found = false;
+    final roots = <String>[];
+    final dir = ref.read(settingsProvider).downloadPath;
+    if (dir.isNotEmpty) roots.add(dir);
     try {
-      final dir = ref.read(settingsProvider).downloadPath;
-      if (dir.isNotEmpty) {
-        await for (final entity in Directory(dir).list(followLinks: false)) {
-          if (entity.path.endsWith('.part')) {
-            found = true;
-            break;
-          }
-        }
-      }
-    } on FileSystemException {
-      // Unreadable or absent folder: no evidence, so no engine start.
-      found = false;
+      roots.add((await getTemporaryDirectory()).path);
+    } on Exception {
+      // No platform channel (tests, unsupported host): probe what we have.
     }
+    // Same two roots the resume scan covers, walked the same way. A nested
+    // download used to be invisible here, so the card never rendered.
+    final found = await hasPartialDlFiles(roots);
     if (!mounted) return;
     setState(() => _hasPartialFiles = found);
   }

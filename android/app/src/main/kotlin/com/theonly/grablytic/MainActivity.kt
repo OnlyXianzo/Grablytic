@@ -760,6 +760,10 @@ open class MainActivity : FlutterActivity() {
                     this.aria2cPath = call.argument<String>("aria2c_path")
                     val dartDenoPath = call.argument<String>("deno_path")
                     val poToken = call.argument<String>("po_token")
+                    // "Detailed engine logging" from Settings. The engine
+                    // applies it here because this is the one call every
+                    // platform makes before any work starts (#100).
+                    val logLevel = call.argument<String>("log_level")
 
                     // Bundled jniLibs binaries win: only APK-origin files are
                     // executable on targetSdk > 28. Dart-sent bin/ paths are
@@ -824,7 +828,7 @@ open class MainActivity : FlutterActivity() {
                             // a success answer unconditionally, so the
                             // app believed it was configured while the
                             // engine had rejected the paths.
-                            val setPathsResult = engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath)
+                            val setPathsResult = engine.callAttr("set_paths", dataDir, outputDir, ffmpegPath, cacheDir, cookiesPath, aria2cPath, resolvedDenoPath, poToken, ffmpegLdPath, resolvedNodePath, logLevel)
                             replySuccess(result, pyJson(setPathsResult))
                         } catch (e: Exception) {
                             replyError(result, "ERROR_INVALID_PATH", e.message, null)

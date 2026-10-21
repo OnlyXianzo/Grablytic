@@ -8,6 +8,39 @@ import 'platform_channel_engine_service.dart';
 import 'desktop_engine_service.dart';
 import 'mock_engine_service.dart';
 
+/// The `paths/set` payload.
+///
+/// Built once for both call sites (first configuration and every settings
+/// change). They used to be two hand-written maps, and neither carried
+/// `log_level`, so the engine never learned about the detailed-logging
+/// toggle (#100).
+Map<String, dynamic> enginePathsPayload({
+  required String appDir,
+  required String cacheDir,
+  required String outputDir,
+  required bool verbose,
+  String? ffmpegPath,
+  String? aria2cPath,
+  String? denoPath,
+  String? cookiesPath,
+}) =>
+    <String, dynamic>{
+      'data_dir': appDir,
+      'cache_dir': cacheDir,
+      'output_dir': outputDir,
+      'ffmpeg_path': ffmpegPath,
+      'aria2c_path': aria2cPath,
+      'deno_path': denoPath,
+      'cookies_path': cookiesPath,
+      'log_level': engineLogLevel(verbose),
+    };
+
+/// The engine log level that matches Settings → "Detailed engine logging".
+///
+/// `paths/set` carries the name, not a number: the engine maps it in
+/// `paths.py`, so the value stays readable in an IPC trace.
+String engineLogLevel(bool verbose) => verbose ? 'debug' : 'info';
+
 final engineProvider = Provider<EngineService>((ref) {
   final engine = Platform.isAndroid
       ? PlatformChannelEngineService()
@@ -27,39 +60,42 @@ final engineProvider = Provider<EngineService>((ref) {
   }) => useCookies ? cookiesPath : null;
 
   if (_appDir != null) {
-    _setPathsFuture = engine.setPaths({
-      'data_dir': _appDir,
-      'cache_dir': _cacheDir,
-      'output_dir': initialOutputDir,
-      'ffmpeg_path': _ffmpegPath,
-      'aria2c_path': _aria2cPath,
-      'deno_path': _denoPath,
-      'cookies_path': effectiveCookiesPath(
+    _setPathsFuture = engine.setPaths(enginePathsPayload(
+      appDir: _appDir!,
+      cacheDir: _cacheDir!,
+      outputDir: initialOutputDir,
+      verbose: settings.verbose,
+      ffmpegPath: _ffmpegPath,
+      aria2cPath: _aria2cPath,
+      denoPath: _denoPath,
+      cookiesPath: effectiveCookiesPath(
         useCookies: settings.useCookies,
         cookiesPath: settings.cookiesPath,
       ),
-    });
+    ));
   }
 
   ref.listen<AppSettings>(settingsProvider, (previous, next) {
     if (previous?.downloadPath != next.downloadPath ||
         previous?.cookiesPath != next.cookiesPath ||
-        previous?.useCookies != next.useCookies) {
+        previous?.useCookies != next.useCookies ||
+        previous?.verbose != next.verbose) {
       final outputDir = next.downloadPath == '/Internal/Videos'
           ? '$_appDir/Grablytic'
           : next.downloadPath;
-      engine.setPaths({
-        'data_dir': _appDir,
-        'cache_dir': _cacheDir,
-        'output_dir': outputDir,
-        'ffmpeg_path': _ffmpegPath,
-        'aria2c_path': _aria2cPath,
-        'deno_path': _denoPath,
-        'cookies_path': effectiveCookiesPath(
+      engine.setPaths(enginePathsPayload(
+        appDir: _appDir!,
+        cacheDir: _cacheDir!,
+        outputDir: outputDir,
+        verbose: next.verbose,
+        ffmpegPath: _ffmpegPath,
+        aria2cPath: _aria2cPath,
+        denoPath: _denoPath,
+        cookiesPath: effectiveCookiesPath(
           useCookies: next.useCookies,
           cookiesPath: next.cookiesPath,
         ),
-      });
+      ));
     }
     // Queue gate: push the persisted preference whenever it changes (the
     // Settings slider also calls setConcurrency directly for immediacy;

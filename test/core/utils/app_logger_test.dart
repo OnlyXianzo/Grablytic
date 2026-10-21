@@ -65,4 +65,38 @@ void main() {
       expect(AppLogger.isLogFilePath('/logs/.nomedia'), isFalse);
     });
   });
+
+  group('AppLogger.redact mirrors the engine scrubber (#101)', () {
+    // The report body carries the log tail verbatim, so every shape the
+    // engine scrubber masks has to be masked here too — this used to stop at
+    // bare "token=" pairs and one cookie value.
+    test('masks whole header lines, keeping the header name', () {
+      final out = AppLogger.redact(
+        'GET https://api.test/x\nAuthorization: Bearer eyJhbGciOiJIUzI1NiJ9\nok',
+      );
+      expect(out, isNot(contains('eyJhbGciOiJIUzI1NiJ9')));
+      expect(out, contains('Authorization: ***REDACTED***'));
+      expect(out, contains('GET https://api.test/x'));
+    });
+
+    test('masks every cookie in a multi-cookie header', () {
+      final out = AppLogger.redact('Cookie: SID=secretone; HSID=secrettwo');
+      expect(out, isNot(contains('secretone')));
+      expect(out, isNot(contains('secrettwo')));
+    });
+
+    test('masks bare bearer and basic credentials', () {
+      final out = AppLogger.redact(
+        'http error: Bearer abcdefghijklmnop and Basic dXNlcjpwYXNzd29yZA==',
+      );
+      expect(out, isNot(contains('abcdefghijklmnop')));
+      expect(out, isNot(contains('dXNlcjpwYXNzd29yZA==')));
+    });
+
+    test('masks a signed URL expiry', () {
+      final out = AppLogger.redact('https://cdn.test/v?expire=1700000000&x=1');
+      expect(out, isNot(contains('1700000000')));
+      expect(out, contains('x=1'));
+    });
+  });
 }
