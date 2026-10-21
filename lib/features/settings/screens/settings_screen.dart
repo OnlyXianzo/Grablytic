@@ -24,6 +24,7 @@ import 'about_screen.dart';
 import '../../home/screens/link_saver_screen.dart';
 import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
+import 'report_problem_screen.dart';
 import '../../../core/utils/offline_link_queue.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -181,7 +182,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _matches('Link Saver', 'Saved offline links') ||
                   _matches('Cookies', 'Site logins for members-only content') ||
                   _matches('Packages & Updates', settings.updateChannel) ||
-                  _matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                  _matches('System & Diagnostics', 'Logs, diagnostics, about, report a problem crash bug issue'))
                 _SettingsSection(
                   title: 'App',
                   icon: Icons.apps_outlined,
@@ -256,7 +257,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           );
                         },
                       ),
-                    if (_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                    if (_matches('System & Diagnostics', 'Logs, diagnostics, about, report a problem crash bug issue'))
                       _SettingNavItem(
                         icon: Icons.info_outline,
                         title: 'System & Diagnostics',
@@ -284,7 +285,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   !_matches('Link Saver', 'Saved offline links') &&
                   !_matches('Cookies', 'Site logins for members-only content') &&
                   !_matches('Packages & Updates', settings.updateChannel) &&
-                  !_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                  !_matches('System & Diagnostics', 'Logs, diagnostics, about, report a problem crash bug issue'))
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Center(
@@ -1058,6 +1059,31 @@ class SystemSettingsScreen extends ConsumerWidget {
                 value: settings.verbose,
                 onChanged: () =>
                     ref.read(settingsProvider.notifier).toggleVerbose(),
+                colorScheme: colorScheme,
+              ),
+              _SettingNavItem(
+                icon: Icons.report_gmailerrorred_outlined,
+                title: 'Report a problem',
+                subtitle: 'Describe a bug — diagnostics are attached for you',
+                colorScheme: colorScheme,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ReportProblemScreen(),
+                    ),
+                  );
+                },
+              ),
+              _SettingSwitch(
+                icon: Icons.send_and_archive_outlined,
+                title: 'Send crash reports automatically',
+                subtitle: settings.autoCrashReporting
+                    ? 'A crash is filed without asking (still fully redacted)'
+                    : 'Ask me first — a crash is only saved on this device',
+                value: settings.autoCrashReporting,
+                onChanged: () => ref
+                    .read(settingsProvider.notifier)
+                    .setAutoCrashReporting(!settings.autoCrashReporting),
                 colorScheme: colorScheme,
               ),
               _SettingNavItem(

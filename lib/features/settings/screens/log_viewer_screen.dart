@@ -99,15 +99,31 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     );
   }
 
-  void _openGithubIssues() {
-    Clipboard.setData(
-      const ClipboardData(
-        text: 'https://github.com/OnlyXianzo/Grablytic/issues/new',
-      ),
+  /// Opens the GitHub new-issue page instead of copying a link to it.
+  ///
+  /// Copying a URL left the user to find their own browser, and on a phone
+  /// a pasted URL is usually opened by whatever app owns the clipboard
+  /// preview — often not a browser. `openUrl` is pure Kotlin/desktop, so
+  /// this never starts the engine.
+  Future<void> _openGithubIssues() async {
+    final url = GithubReporter().issueUrl(
+      title: 'Bug report',
+      body: '',
+      labels: const ['bug'],
     );
-    ScaffoldMessenger.of(context).showSnackBar(
-      styledSnackBar(context, 'GitHub link copied! Open your browser and paste to create the issue.'),
-    );
+    await _openExternal(url.toString());
+  }
+
+  Future<void> _openExternal(String url) async {
+    try {
+      await ref.read(engineProvider).openUrl(url);
+    } catch (e) {
+      await Clipboard.setData(ClipboardData(text: url));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        styledSnackBar(context, 'Could not open a browser — link copied instead.'),
+      );
+    }
   }
 
   bool _reporting = false;
@@ -143,21 +159,31 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           );
           break;
         case GithubReportStatus.manualNeeded:
-          await Clipboard.setData(
-            ClipboardData(text: '${result.title}\n\n${result.body}'),
-          );
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            styledSnackBar(context, 'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new', duration: const Duration(seconds: 5)),
-          );
-          break;
         case GithubReportStatus.failed:
+          // No token (every release build), or GitHub refused. The body is
+          // copied as a safety net AND the prefilled page is opened, so the
+          // user lands one Submit away instead of being told to go find
+          // github.com themselves.
           await Clipboard.setData(
             ClipboardData(text: '${result.title}\n\n${result.body}'),
           );
           if (!mounted) return;
+          final reporter = GithubReporter();
+          final uri = reporter.issueUrl(
+            title: result.title,
+            body: result.body,
+            labels: const ['bug', 'user-report'],
+          );
+          await _openExternal(uri.toString());
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            styledSnackBar(context, 'Upload failed — issue text copied for manual filing.'),
+            styledSnackBar(
+              context,
+              result.status == GithubReportStatus.manualNeeded
+                  ? 'Opened GitHub — press Submit to file it. The report is also copied.'
+                  : 'GitHub did not accept it automatically. Press Submit on the page that opened; the report is also copied.',
+              duration: const Duration(seconds: 6),
+            ),
           );
           break;
       }

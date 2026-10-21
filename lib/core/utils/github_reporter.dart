@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'app_logger.dart';
+import 'report_sanitizer.dart';
 
 /// Automated GitHub Issue reporter (Flutter side, STEP 3C).
 ///
@@ -11,8 +12,16 @@ import 'app_logger.dart';
 ///
 /// Token is NEVER hardcoded: pass explicitly (from secure storage / user
 /// input) or compile with `--dart-define=GITHUB_TOKEN=ghp_...`.
-/// If no token is available the reporter copies the formatted body to the
-/// result so the LogViewer can fall back to manual filing.
+///
+/// A release build has no token, and that is the intended design — a token
+/// shipped in an APK is a token anyone can extract. So the normal path is
+/// [issueUrl]: a prefilled `github.com/.../issues/new` page the user
+/// reviews and submits in their own browser, under their own account. The
+/// app cannot observe that submission, and does not pretend to: the
+/// resulting status is `needsBrowser`, never `created`.
+///
+/// Every free-text field goes through [ReportSanitizer] before it is put
+/// in an issue, on both the direct-POST and the prefilled-URL path.
 class GithubReporter {
   final String owner;
   final String repo;
@@ -69,15 +78,42 @@ class GithubReporter {
 
   /// Short stable fingerprint for dedup: error type + first stack frame.
   /// Simple FNV-1a hex — no crypto dependency needed.
-  String fingerprint(String title, [String? stackFirstLine]) {
-    final input = '$title\n${stackFirstLine ?? ''}';
-    var hash = 0x811c9dc5;
-    for (final code in input.codeUnits) {
-      hash ^= code;
-      hash = (hash * 0x01000193) & 0xffffffff;
-    }
-    return hash.toRadixString(16).padLeft(8, '0');
+  String fingerprint(String title, [String? stackFirstLine]) =>
+      reportFingerprint(title, stackFirstLine);
+
+  /// A prefilled GitHub "new issue" URL.
+  ///
+  /// This is the submission path for a stock build: the user sees the exact
+  /// issue text in their browser, on GitHub, before pressing Submit. No
+  /// token, no backend, nothing that can be extracted from the APK.
+  ///
+  /// GitHub accepts a long query string but some browsers and share sheets
+  /// truncate around 8 KB, so an over-long body is dropped from the URL and
+  /// the caller is expected to have copied it to the clipboard first (the
+  /// UI does). The bare new-issue page still opens, so the tap is never a
+  /// dead end.
+  Uri issueUrl({
+    required String title,
+    required String body,
+    List<String> labels = const ['bug'],
+  }) {
+    final base = 'https://github.com/$owner/$repo/issues/new';
+    final safeTitle = ReportSanitizer.sanitize(title);
+    final safeBody = ReportSanitizer.sanitize(body);
+    final uri = Uri.parse(base).replace(queryParameters: {
+      'title': safeTitle,
+      'body': safeBody,
+      'labels': labels.join(','),
+    });
+    if (uri.toString().length <= _maxIssueUrlChars) return uri;
+    return Uri.parse(base).replace(queryParameters: {
+      'title': safeTitle,
+      'labels': labels.join(','),
+    });
   }
+
+  /// Roughly what browsers and Android intents handle without truncation.
+  static const int _maxIssueUrlChars = 7500;
 
   /// Searches open issues for the fingerprint marker. Returns the existing
   /// issue URL, or null when no duplicate exists / search unavailable.
@@ -134,7 +170,13 @@ class GithubReporter {
       req.headers.set('Authorization', 'Bearer $token');
       req.headers.set('X-GitHub-Api-Version', '2022-11-28');
       req.headers.contentType = ContentType.json;
-      req.write(jsonEncode({'title': title, 'body': body, 'labels': labels}));
+      // Redact at the boundary, not at every call site: an issue is public
+      // and a caller that forgets is a credential on the internet.
+      req.write(jsonEncode({
+        'title': ReportSanitizer.sanitize(title),
+        'body': ReportSanitizer.sanitize(body),
+        'labels': labels,
+      }));
       final resp = await req.close().timeout(const Duration(seconds: 20));
       final respBody = await resp.transform(utf8.decoder).join();
       if (resp.statusCode == 201) {
@@ -298,8 +340,15 @@ class GithubReporter {
     final env = _envSpecs(appVersion);
     final ctxStr = context.isEmpty
         ? '_None._'
-        : context.entries.map((e) => '- `${e.key}`: `${e.value}`').join('\n');
-    return '''
+        : ReportSanitizer.sanitizeMap(context)
+            .entries
+            .map((e) => '- `${e.key}`: `${e.value}`')
+            .join('\n');
+    // Sanitized here as well as at the network boundary: the body is also
+    // returned to callers that copy it to the clipboard, and "redacted only
+    // on the wire" left the clipboard copy — the one people paste into
+    // gists and chat — in the clear.
+    return ReportSanitizer.sanitize('''
 ### Summary
 $summary
 
@@ -331,7 +380,7 @@ $logTail
 
 ---
 <!-- fingerprint: $fp · auto-report: flutter -->
-''';
+''');
   }
 
   Map<String, String> _envSpecs(String appVersion) {
@@ -361,4 +410,17 @@ class GithubReportResult {
     required this.body,
     required this.title,
   });
+}
+
+/// Short stable fingerprint for dedup: a label plus its first distinguishing
+/// line. FNV-1a hex — no crypto dependency, stable across runs and
+/// platforms, and short enough to live inside an issue body comment.
+String reportFingerprint(String label, [String? detail]) {
+  final input = '$label\n${detail ?? ''}';
+  var hash = 0x811c9dc5;
+  for (final code in input.codeUnits) {
+    hash ^= code;
+    hash = (hash * 0x01000193) & 0xffffffff;
+  }
+  return hash.toRadixString(16).padLeft(8, '0');
 }

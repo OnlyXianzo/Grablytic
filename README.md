@@ -118,10 +118,17 @@ handled by Deno, Node or QuickJS, in that order of preference.
 
 **Privacy.** No account, no analytics, no ad SDKs. Cookies and logins are
 opt-in and, when you do use them, stored in app-private files with owner-only
-permissions rather than in the settings blob. Crash reporting is off unless you
-turn it on; when it is on, the app files a GitHub issue with a redacted log tail
-and nothing else. Uninstalling removes the app's private data, and files you
-downloaded stay wherever you saved them.
+permissions rather than in the settings blob.
+
+Crash reports are the only thing that ever leaves the app, and they only leave
+when you press Send. A crash writes a redacted report to the app's own folder;
+the next launch offers it once, you can read the exact issue text before
+deciding, and "Not now" is a real option. There is no GitHub token inside the
+APK, so sending works by opening a prefilled GitHub page in your browser —
+you press Submit there, and the app says so instead of pretending it filed
+anything. Automatic sending is a separate switch, and it is off until you turn
+it on. Uninstalling removes the app's private data, and files you downloaded
+stay wherever you saved them.
 
 ## Recent work (Oct 18–20)
 
@@ -284,7 +291,9 @@ The short list of things that were deliberately made difficult:
 - Temp directories are `0700`, downloaded binaries are checksummed or the
   download fails, and timestamps are aware-UTC.
 - Logs and crash reports are redacted with the same scrubber before they leave
-  the process, and the report path is opt-in.
+  the process. A pending crash report is already redacted on disk, the issue
+  body is scrubbed again on the way out, and redaction fails closed rather than
+  sending something it could not parse.
 
 Found something? Please use
 [private vulnerability reporting](https://github.com/OnlyXianzo/Grablytic/security/advisories/new)
@@ -298,7 +307,8 @@ rather than a public issue. Details are in [`docs/security.md`](docs/security.md
 | FFmpeg missing (Android) | You are probably on a contributor build made with `-PskipNativePackages`. Rebuild with the packages, or set a custom FFmpeg path in Settings. |
 | Progress sticks at 99% | On purpose — the last percent is reserved for the terminal `finished` event. Check the live log for the post-processing stage. |
 | Resume finds nothing | Only `.part` files with a matching `.info.json`, less than 24 hours old, inside the cache directory are considered. |
-| Anything else | Settings → Diagnostics & Logs → Export gives you `app_logs.txt` and `server_logs.log`. |
+| Something crashed or looks wrong | Settings → System & Diagnostics → Report a problem. Type a sentence, pick a category; the diagnostics are attached and you can read them before sending. |
+| Anything else | Settings → System & Diagnostics → App logs & diagnostics → Export gives you `app_logs.txt` and `server_logs.log`. |
 
 Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).
 

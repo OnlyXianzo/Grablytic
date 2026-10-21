@@ -141,6 +141,13 @@ class AppSettings {
   final bool scheduleRequiresCharging;
   final List<String> sponsorBlockCats;
   final bool downloadArchive;
+
+  /// Whether a captured crash is sent automatically on the next launch.
+  ///
+  /// Off by default, and separate from *keeping* a crash report: the app
+  /// always records a sanitized local report so the next launch can offer
+  /// to send it, but only this flag allows it to send without asking.
+  final bool autoCrashReporting;
   final bool archiveByFolder;
   final bool hasSeenBatteryPrompt;
   final bool queueReminderEnabled;
@@ -198,6 +205,7 @@ class AppSettings {
     this.scheduleRequiresCharging = false,
     this.sponsorBlockCats = const ['sponsor'],
     this.downloadArchive = false,
+    this.autoCrashReporting = false,
     this.archiveByFolder = true,
     this.maxConcurrentDownloads = 2,
     this.queueReminderEnabled = false,
@@ -253,6 +261,7 @@ class AppSettings {
     bool? scheduleRequiresCharging,
     List<String>? sponsorBlockCats,
     bool? downloadArchive,
+    bool? autoCrashReporting,
     bool? archiveByFolder,
     int? maxConcurrentDownloads,
     bool? queueReminderEnabled,
@@ -314,6 +323,7 @@ class AppSettings {
           scheduleRequiresCharging ?? this.scheduleRequiresCharging,
       sponsorBlockCats: sponsorBlockCats ?? this.sponsorBlockCats,
       downloadArchive: downloadArchive ?? this.downloadArchive,
+      autoCrashReporting: autoCrashReporting ?? this.autoCrashReporting,
       archiveByFolder: archiveByFolder ?? this.archiveByFolder,
       maxConcurrentDownloads:
           maxConcurrentDownloads ?? this.maxConcurrentDownloads,
@@ -571,6 +581,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final sponsorBlockCats =
         _prefs.getStringList('sponsorBlockCats') ?? ['sponsor'];
     final downloadArchive = _prefs.getBool('downloadArchive') ?? false;
+    final autoCrashReporting =
+        _prefs.getBool('auto_crash_reporting') ?? false;
     final archiveByFolder = _prefs.getBool('archiveByFolder') ?? true;
     final maxConcurrentDownloads =
         (_prefs.getInt('maxConcurrentDownloads') ?? recommendedMaxConcurrency())
@@ -635,6 +647,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       cookieProfiles: cookieProfiles,
       useGridView: useGridView,
       downloadArchive: downloadArchive,
+      autoCrashReporting: autoCrashReporting,
       archiveByFolder: archiveByFolder,
       maxConcurrentDownloads: maxConcurrentDownloads,
       queueReminderEnabled: queueReminderEnabled,
@@ -732,6 +745,17 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final newValue = !state.verbose;
     _prefs.setBool('verbose', newValue);
     state = state.copyWith(verbose: newValue);
+  }
+
+  /// Opt-in for sending a captured crash without being asked.
+  ///
+  /// Note what this does *not* control: the app still records a sanitized
+  /// report locally when it crashes, because that is what lets the next
+  /// launch offer to send it. This switch is the difference between
+  /// "offered" and "sent on its own".
+  void setAutoCrashReporting(bool enabled) {
+    _prefs.setBool('auto_crash_reporting', enabled);
+    state = state.copyWith(autoCrashReporting: enabled);
   }
 
   void toggleAutoStartDownloadOnShare() {

@@ -22,6 +22,8 @@ import '../../../core/utils/local_analytics.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/offline_link_queue.dart';
 import '../../../core/utils/schedule_guard.dart';
+import '../../../core/utils/crash_reporter.dart';
+import '../widgets/crash_recovery_prompt.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -64,6 +66,28 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.addObserver(this);
     _pageController = PageController(initialPage: _currentIndex);
     _initSharedUrlListening();
+    _offerCrashReportIfAny();
+  }
+
+  /// Offers the "we crashed last time" banner, after the first frame.
+  ///
+  /// Post-frame and fire-and-forget on purpose: reading the report queue is
+  /// file I/O, and nothing about a past crash may delay the shell. The
+  /// prompt itself decides whether there is anything to say (earlier
+  /// session only, cooldown per report), so this call is safe every launch.
+  void _offerCrashReportIfAny() {
+    if (CrashReporter.instance == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        CrashRecoveryPrompt.maybeShow(context: context, ref: ref).catchError(
+          (Object e) => AppLogger.warn(
+            'Crash recovery prompt failed: $e',
+            tag: 'reporting',
+          ),
+        ),
+      );
+    });
   }
 
   @override

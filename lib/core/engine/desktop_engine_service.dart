@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/app_logger.dart';
+import '../utils/crash_reporter.dart';
 import '../utils/trust_boundary.dart';
 import 'engine_codec.dart';
 import 'engine_contract.dart';
@@ -118,6 +119,14 @@ class DesktopEngineService implements EngineService {
   @visibleForTesting
   void restart() => _restart();
 
+  /// Crash reports filed for unexpected exits in this process.
+  ///
+  /// A crash-looping engine exits repeatedly, and the queue already
+  /// collapses repeats by fingerprint — this cap is about not doing a log
+  /// read and a file write on every restart of a hot loop.
+  int _engineCrashReports = 0;
+  static const int _maxEngineCrashReports = 3;
+
   @visibleForTesting
   Process? get process => _process;
 
@@ -134,7 +143,7 @@ class DesktopEngineService implements EngineService {
     p.exitCode.then((code) {
       _running = false;
       if (!_disposed && code != 0 && _process == p) {
-        _restart();
+        _restart(exitCode: code);
       }
     });
   }
@@ -317,7 +326,7 @@ class DesktopEngineService implements EngineService {
     currentProcess.exitCode.then((code) {
       _running = false;
       if (!_disposed && code != 0 && _process == currentProcess) {
-        _restart();
+        _restart(exitCode: code);
       }
     });
 
@@ -370,7 +379,7 @@ class DesktopEngineService implements EngineService {
         );
   }
 
-  void _restart() {
+  void _restart({int? exitCode}) {
     _stdoutSubscription?.cancel();
     _stderrSubscription?.cancel();
     final oldProcess = _process;
@@ -382,12 +391,31 @@ class DesktopEngineService implements EngineService {
     // only the time-window check resets it (see _ensureRunning).
     _consecutiveAbnormalExits++;
     _lastAbnormalExitAt = DateTime.now();
+    if (exitCode != null && exitCode != 0) _captureEngineExit(exitCode);
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Engine process exited'));
       }
     }
     _pending.clear();
+  }
+
+  /// Queues a report for an engine process that died with [exitCode].
+  ///
+  /// Deliberately fire-and-forget and unawaited: `_restart` is the recovery
+  /// path, and a disk write must never delay bringing the engine back. The
+  /// report carries the recent log tail, which is where the Python
+  /// traceback (if any) landed via stderr.
+  void _captureEngineExit(int exitCode) {
+    if (_engineCrashReports >= _maxEngineCrashReports) return;
+    final reporter = CrashReporter.instance;
+    if (reporter == null) return;
+    _engineCrashReports++;
+    unawaited(
+      reporter
+          .recordCrash(EngineExitError(exitCode), null)
+          .catchError((Object _) => null),
+    );
   }
 
   void _handleLine(String line) {

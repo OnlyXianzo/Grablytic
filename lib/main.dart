@@ -15,9 +15,10 @@ import 'package:shared_preferences/shared_preferences.dart'
     show SharedPreferences;
 import 'core/engine/engine_provider.dart' show setEngineDirs;
 import 'core/utils/app_logger.dart';
+import 'core/utils/crash_reporter.dart';
 import 'core/utils/log_buffer.dart';
-import 'core/utils/github_reporter.dart';
 import 'core/utils/logging_observers.dart';
+import 'core/utils/pending_report.dart';
 import 'features/home/screens/share_overlay_screen.dart';
 
 /// Route observer instance shared by [GrablyticApp].
@@ -50,6 +51,10 @@ void main() {
         );
         unawaited(AppLogger.flushNow());
       } catch (_) {}
+      // A failure here happened outside the framework's handlers (or
+      // before they were installed), so it still needs to reach the
+      // report queue — that is the only way the next launch can offer it.
+      unawaited(_captureCrash(error, stack));
     },
   );
 }
@@ -69,6 +74,23 @@ Future<void> _bootstrap() async {
     getTemporaryDirectory(),
   ).wait;
   await AppLogger.init(appDir.path, prefs);
+
+  // Crash reporting: a sanitized report is written to disk locally, and a
+  // GitHub issue is only ever filed with the user's say-so (the settings
+  // switch, or the Send button). A failure to set this up must not stop the
+  // app: `instance` stays null and every reporting surface degrades to
+  // "unavailable" instead of throwing.
+  try {
+    final store = await PendingReportStore.open(appDir.path);
+    CrashReporter.instance = CrashReporter(
+      store: store,
+      prefsLoader: CrashReporter.viewFromPrefs(
+        () async => prefs.getBool('auto_crash_reporting') ?? false,
+      ),
+    );
+  } catch (e) {
+    AppLogger.warn('Crash reporting unavailable: $e', tag: 'reporting');
+  }
 
   // Initialize in-memory log buffer and wire to AppLogger
   final logBuffer = LogBuffer.forThisPlatform();
@@ -108,22 +130,16 @@ Future<void> _bootstrap() async {
     await prefs.setString('downloadPath', defaultPath);
   }
 
-  // Global error boundaries (STEP 3A). Anonymous by default: auto-report to
-  // GitHub only when the user explicitly opts in via settings.
+  // Global error boundaries (STEP 3A).
+  //
+  // `onFatal` captures and queues; it never touches the network. The old
+  // version built a report and POSTed it inline, which meant every crash
+  // paid a 20-second HTTP timeout during shutdown — and in a release build
+  // (no token) it built a body and discarded it, so the next launch had no
+  // idea anything had gone wrong.
   AppLogger.installGlobalErrorHandlers(
     onFatal: (error, stack) async {
-      try {
-        final autoReport = prefs.getBool('auto_crash_reporting') ?? false;
-        if (!autoReport) return;
-        final reporter = GithubReporter();
-        final result = await reporter.reportCrash(error, stack);
-        AppLogger.info(
-          'Auto-report finished: ${result.status.name}${result.url != null ? ' ${result.url}' : ''}',
-          tag: 'github-reporter',
-        );
-      } catch (_) {
-        // Reporting must never crash the crash handler.
-      }
+      await _captureCrash(error, stack);
     },
   );
 
@@ -137,6 +153,42 @@ Future<void> _bootstrap() async {
       child: const GrablyticApp(),
     ),
   );
+
+  // One deferred attempt at the queue, after the first frame. Kept off the
+  // startup path so a slow network cannot delay the UI, and gated inside on
+  // the user's opt-in preference.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final reporter = CrashReporter.instance;
+    if (reporter == null) return;
+    unawaited(
+      reporter.submitQueuedIfOptedIn().catchError(
+            (Object e) => AppLogger.warn(
+              'Queued report submission failed: $e',
+              tag: 'reporting',
+            ),
+          ),
+    );
+  });
+}
+
+/// Records an unhandled failure for the next launch to offer.
+///
+/// Never throws: this runs inside error handlers, and a reporting failure
+/// there would replace the original crash with a confusing second one.
+Future<void> _captureCrash(Object error, StackTrace? stack) async {
+  final reporter = CrashReporter.instance;
+  if (reporter == null) return;
+  try {
+    final report = await reporter.recordCrash(error, stack);
+    if (report != null) {
+      AppLogger.fatal(
+        'Crash captured for reporting (${report.fingerprint})',
+        tag: 'reporting',
+      );
+    }
+  } catch (_) {
+    // Nothing to do: the log line above is the fallback.
+  }
 }
 
 class GrablyticApp extends ConsumerWidget {

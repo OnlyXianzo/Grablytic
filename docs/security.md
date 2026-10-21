@@ -51,30 +51,81 @@ If you discover a security vulnerability or sensitive data issue in Grablytic, p
 | **Intent Bounds** | Strict length and payload guards on incoming send intents | Protects against intent-based denial-of-service and intent overflow crashes |
 | **Template Validation** | Sanitization and escape-blocking on custom output template formats | Restricts template path traversal and unauthorized command flags |
 
-## Crash Auto-Reporting (opt-in, disclosed)
+## Bug and crash reports (opt-in, reviewed before sending)
 
-**Auto-reporting is OFF by default.** A crash report is only filed when
-`GRABLYTIC_AUTO_REPORT=1` is set in the environment AND a `GITHUB_TOKEN`
-with issue-write access is available. Neither is set in a normal install,
-so a stock build never contacts GitHub.
+Grablytic records a crash report locally and offers it on the next launch.
+Nothing is sent without the user pressing a button.
 
-When a build *does* enable it, the following is filed as a **public**
-GitHub issue against the configured repository (default
-`OnlyXianzo/Grablytic`):
+The path in the app:
 
-| Included | Redacted before it leaves the device |
+1. An unhandled error (Flutter framework error, uncaught Dart error, or an
+   unexpected Python engine exit) is turned into a **redacted** report and
+   written to `<app>/reports/<id>.json`. No network call happens here — the
+   handler returns immediately.
+2. On the next launch, the shell shows a dismissible banner: *"Grablytic ran
+   into a problem last time."* with **Not now / Review / Send report**. The
+   same report is reachable at **Settings → System & Diagnostics → Report a
+   problem**.
+3. The report form shows what happened in the user's own words, one of five
+   categories, and a *What will be included* panel containing the exact issue
+   text. The user can read all of it before sending.
+4. Sending either files the issue through the GitHub API (only when the build
+   was compiled with a token) or opens a prefilled `issues/new` page in the
+   browser. In the second case the app says so — it never claims a submission
+   it could not confirm, and the report stays in the local list until the user
+   removes it.
+
+**Auto-sending is OFF by default.** The setting *Send crash reports
+automatically* (Settings → System & Diagnostics) is the only thing that lets a
+queued crash be filed without asking. Even then the body is the same redacted
+one the review panel shows. Recording a report locally is not gated on that
+setting; otherwise the next launch would have nothing to offer.
+
+### What is in a report
+
+| Included | Redacted before it is written to disk |
 |---|---|
-| Exception type and message | URL userinfo passwords (`user:***REDACTED***@host`) |
-| Full traceback frames | `token=` / `sig=` / `lsig=` / `key=` / `auth=` query parameters |
-| Tail of `server_logs.log` (up to 15 KB) | The same parameter names as query strings, plus dict keys matching `cookie`, `token`, `password`, `secret`, `auth`, `proxy`, `api_key`, `session`, `po_token` |
-| Platform versions (OS, Python, yt-dlp) | — |
-| The IPC method that failed | — |
+| Exception type, message, and first stack frame | URL userinfo passwords (`user:***REDACTED***@host`) |
+| Full stack trace, bounded to 6 KB | `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `X-Auth-Token` header values |
+| App version/build, platform, Flutter version, timestamp | `token=`, `sig=`, `lsig=`, `key=`, `password=`, `session=`, `po_token=`, `credential=` and similar assignments, in query strings and free text |
+| Recent app log tail, bounded to 12 KB (a tail, not a head) | Bare `Bearer`/`Basic` credentials |
+| Category, session/recovered flags, the IPC method or subsystem | The account name in `/home/<name>/…`, `/Users/<name>/…` and `C:\Users\<name>\…` |
 
-**What is NOT redacted:** the URL path and query parameter *names*, the
-video/channel identifiers in a URL, and file names. If you need those
-gone too, disable the log tail with `GRABLYTIC_REPORT_LOG_TAIL=0`.
+**Not collected at all:** download history, media, cookies, authentication
+headers, tokens, personal files, and full command-line arguments.
 
-### Configuration
+**Unknown fields are not assumed safe.** Values in the report's context map are
+scrubbed even when their key looks harmless, and redaction **fails closed**: if
+the scrubber throws on a pathological input, the field becomes
+`[content withheld — redaction failed]` instead of the original text.
+
+Reports are redacted before they are persisted, so the files in `<app>/reports`
+are already safe to attach to an issue by hand. Submission re-runs the scrubber
+at the network boundary, and the clipboard copy of a report is the redacted one.
+
+### Limits of the queue
+
+At most three reports are kept, each body capped at 64 KB; a repeat of the same
+fingerprint within seven days collapses into one report with an occurrence
+count; the recovery banner mentions a given report no more often than every
+three days. Writes are atomic (`.tmp` + rename), so a process killed mid-write
+leaves no half-parsed report. A failed submission keeps the user's text and
+increments an attempt counter rather than discarding it.
+
+### Python engine (developer/CLI path)
+
+The engine has its own notifier for exceptions raised while handling an IPC
+request. It is a developer tool, not the user-facing path: it requires
+`GRABLYTIC_AUTO_REPORT=1` in the environment **and** a `GITHUB_TOKEN`, and
+neither is set in a normal install — nor can it be, since Android never passes
+environment variables to the embedded interpreter and no token is shipped in
+the APK. The in-app preference above governs the Flutter path only; the engine
+notifier cannot file anything without its own explicit environment.
+
+When it is configured, it files a **public** GitHub issue against
+`OnlyXianzo/Grablytic` (overridable) containing the exception, traceback, log
+tail (up to 15 KB) and platform versions, redacted by the same shared scrubber
+(`persistent.scrub_text`) the on-disk logger uses.
 
 | Variable | Purpose | Default |
 |---|---|---|

@@ -188,6 +188,11 @@ List<String> diffAppSettings(AppSettings previous, AppSettings next) {
     next.sponsorBlockCats,
   );
   field('downloadArchive', previous.downloadArchive, next.downloadArchive);
+  field(
+    'autoCrashReporting',
+    previous.autoCrashReporting,
+    next.autoCrashReporting,
+  );
   field('archiveByFolder', previous.archiveByFolder, next.archiveByFolder);
   field(
     'maxConcurrentDownloads',
