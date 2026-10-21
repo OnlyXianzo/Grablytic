@@ -51,7 +51,64 @@ If you discover a security vulnerability or sensitive data issue in Grablytic, p
 | **Intent Bounds** | Strict length and payload guards on incoming send intents | Protects against intent-based denial-of-service and intent overflow crashes |
 | **Template Validation** | Sanitization and escape-blocking on custom output template formats | Restricts template path traversal and unauthorized command flags |
 
-## Crash Auto-Reporting (opt-in, disclosed)
+## In-app bug and crash reports
+
+Reports are captured locally, redacted, and only sent when the user says so.
+
+1. A Flutter framework error, an uncaught Dart error, or an unexpected Python
+   engine exit is turned into a redacted draft and written to
+   `<app>/reports/<id>.json`. **No network call happens on this path** — the
+   handler returns as soon as the file is written.
+2. On the next launch the shell shows a dismissible banner offering
+   **Not now / Review report / Send report**. The same report is reachable at
+   **Settings → Help & feedback → Report a problem**.
+3. The form shows the user's own description, a category, and a *Review
+   included information* panel with the exact text that would be filed.
+4. Sending opens a prefilled `github.com/.../issues/new` page. A build that was
+   deliberately compiled with a token may post through the API instead; in that
+   case the app only reports success when GitHub returned an issue URL.
+
+Capture is **not** gated on the auto-send switch — otherwise an install that
+left it off would lose every crash, which is what used to happen. The switch
+only decides whether a queued crash may be filed without asking, and it is off
+by default.
+
+### What a report contains
+
+| Included | Removed before the report is written |
+|---|---|
+| Exception type, message, first stack frame | Whole URLs (`[URL removed]`) |
+| Stack trace, bounded to 6 KB | Absolute file paths, including account names (`[local path removed]`) |
+| App version, platform, Dart/Flutter version, timestamp | `Authorization` / `Proxy-Authorization` / `Cookie` / `Set-Cookie` header values |
+| Category and session state | `token=`, `sig=`, `key=`, `password=`, `session=` and similar query parameters (via `AppLogger.redact`) |
+| Recent app log tail, bounded | — |
+
+**Not collected at all:** download history, media files, cookies, tokens,
+personal files, and command-line arguments.
+
+Redaction is applied when the draft is built, again at `_buildBody`, and once
+more inside `issueUrl` / `createIssue`, so a caller that forgets cannot leak.
+It **fails closed**: if the scrubber throws, the field becomes
+`[diagnostics omitted: safe redaction failed]` rather than the original text.
+The trade-off is deliberate and documented: because whole URLs are stripped, a
+download-failure report cannot name the site that failed. The log tail and the
+user's own description are the diagnostic value.
+
+### Queue limits
+
+At most three reports are kept, each body capped at 64 KB; a repeat of the same
+fingerprint inside seven days collapses into one report with an occurrence
+count; the recovery banner mentions a given report no more than once every
+three days. Writes are atomic (`.tmp` + rename), so a process killed mid-write
+leaves no half-parsed report. A submission failure keeps the text and bumps an
+attempt counter.
+
+## Python engine auto-reporting (developer/CLI only)
+
+This is the engine's own notifier, not the user-facing path above. It is
+disabled unless both of these are true, and a normal install sets neither:
+Android never passes environment variables to the embedded interpreter, and no
+token ships in the APK.
 
 **Auto-reporting is OFF by default.** A crash report is only filed when
 `GRABLYTIC_AUTO_REPORT=1` is set in the environment AND a `GITHUB_TOKEN`

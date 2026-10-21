@@ -1,0 +1,35 @@
+name: Temp Debug
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/9efb08d1-grablytic]
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - name: Analyze
+        run: |
+          set -o pipefail
+          flutter analyze > /tmp/analyze.txt 2>&1 && echo "::notice::analyze clean" && exit 0
+          head -30 /tmp/analyze.txt | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit 1
+      - name: Test
+        if: always()
+        run: |
+          set -o pipefail
+          flutter test > /tmp/test.txt 2>&1 && echo "::notice::tests clean" && exit 0
+          grep -E "(\[E\]|Expected:|Actual:|Which:|Error:)" /tmp/test.txt | head -40 | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          tail -5 /tmp/test.txt | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit 1

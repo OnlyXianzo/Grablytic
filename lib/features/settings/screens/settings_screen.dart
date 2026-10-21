@@ -1089,8 +1089,14 @@ class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 secondary: const Icon(Icons.privacy_tip_outlined),
-                title: const Text('Automatic crash reporting'),
-                subtitle: const Text('Off by default. When on, save captured Flutter errors for next-launch review. No background upload or analytics.'),
+                title: const Text('Send crash reports automatically'),
+                subtitle: Text(
+                  _autoCrashReporting
+                      ? 'On. A captured crash is filed for you — still fully '
+                          'redacted, and only in builds that can post.'
+                      : 'Off. Crashes are saved on this device and offered on '
+                          'the next launch; nothing is uploaded.',
+                ),
                 value: _autoCrashReporting,
                 onChanged: (value) async {
                   await ref.read(sharedPreferencesProvider).setBool('auto_crash_reporting', value);

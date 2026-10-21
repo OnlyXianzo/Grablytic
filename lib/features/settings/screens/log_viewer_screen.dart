@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/github_reporter.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/widgets/skeleton.dart';
@@ -98,15 +99,31 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     );
   }
 
-  void _openGithubIssues() {
-    Clipboard.setData(
-      const ClipboardData(
-        text: 'https://github.com/OnlyXianzo/Grablytic/issues/new',
-      ),
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      styledSnackBar(context, 'GitHub link copied! Open your browser and paste to create the issue.'),
-    );
+  /// Opens the new-issue page instead of handing over a URL to paste.
+  ///
+  /// Copying a link left the user to find their own browser, and on a phone
+  /// a pasted URL is often opened by whatever owns the clipboard preview.
+  /// `openUrl` is pure Kotlin/desktop, so this never starts the engine.
+  Future<void> _openGithubIssues() async {
+    try {
+      await ref.read(engineProvider).openUrl(GithubReporter().issueUrl(
+            title: 'Bug report',
+            body: '',
+            labels: const ['bug'],
+          ).toString());
+    } on Exception catch (e) {
+      AppLogger.warn('Could not open the issue page: $e', tag: 'settings');
+      Clipboard.setData(
+        const ClipboardData(
+          text: 'https://github.com/OnlyXianzo/Grablytic/issues/new',
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        styledSnackBar(context,
+            'Could not open a browser — the GitHub link is copied instead.'),
+      );
+    }
   }
 
   void _reportToGithub() {
