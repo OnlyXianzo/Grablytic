@@ -125,12 +125,17 @@ jobs:
         run: |
           V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           echo "GRABLYTIC_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
+          # The full value, build number included: AppVersion reads this, so
+          # the About screen, the report composer and every crash body name
+          # the build the user actually installed (#105).
+          echo "GRABLYTIC_APP_VERSION=${V}" >> $GITHUB_ENV
 
       - name: Build Android APK (${{ matrix.variant }})
         run: |
           flutter build apk --release \
             --dart-define=GRABLYTIC_FLUTTER_VERSION="${{ env.GRABLYTIC_FLUTTER_VERSION }}" \
             --dart-define=GRABLYTIC_GIT_SHA="${{ env.GRABLYTIC_GIT_SHA }}" \
+            --dart-define=GRABLYTIC_APP_VERSION="${{ env.GRABLYTIC_APP_VERSION }}" \
             ${{ matrix.target_arg }} \
             ${{ matrix.jsruntime_arg }}
 
@@ -212,6 +217,7 @@ jobs:
         run: |
           V=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           echo "GRABLYTIC_RELEASE_VERSION=${V%%+*}" >> $GITHUB_ENV
+          echo "GRABLYTIC_APP_VERSION=${V}" >> $GITHUB_ENV
 
       - name: Stamp git commit
         run: echo "GRABLYTIC_GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
@@ -220,7 +226,8 @@ jobs:
         run: |
           flutter build linux --release \
             --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" \
-            --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}"
+            --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}" \
+            --dart-define="GRABLYTIC_APP_VERSION=${{ env.GRABLYTIC_APP_VERSION }}"
 
       - name: Bundle Python Engine
         run: |
@@ -364,8 +371,13 @@ jobs:
       - name: Stamp git commit
         run: echo "GRABLYTIC_GIT_SHA=$(git rev-parse --short HEAD)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Stamp app version
+        run: |
+          $V = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)').Matches.Groups[1].Value
+          echo "GRABLYTIC_APP_VERSION=$V" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build Windows App (64-bit)
-        run: flutter build windows --release --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}"
+        run: flutter build windows --release --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}" --dart-define="GRABLYTIC_APP_VERSION=${{ env.GRABLYTIC_APP_VERSION }}"
 
       - name: Copy Python Engine to Bundle
         run: xcopy /E /I engine\grablytic_engine build\windows\x64\runner\Release\grablytic_engine

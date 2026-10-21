@@ -274,9 +274,16 @@ jobs:
       # complete. Deleting them is not the fix (most are load-bearing in
       # logging and storage paths), so this gate holds the two counts at
       # their current values and fails only when one grows. Reduce them
-      # with `python3 tool/check_broad_catches.py --update`.
+      # with `python3 tool/check_broad_catches.py --update`; raising one
+      # requires a "why" on the entry, recorded in its own commit.
       - name: Broad-catch ratchet
         run: python3 tool/check_broad_catches.py
+
+      # Finding #105 of the sixth review pass: the app version lived in six
+      # literals that disagreed. It is stamped from pubspec.yaml now, and
+      # this gate fails when a new literal appears in lib/.
+      - name: App version literals
+        run: python3 tool/check_version_literals.py
 
   docs_links:
     name: Docs Link Check

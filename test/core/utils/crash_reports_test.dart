@@ -39,7 +39,7 @@ class _FakeGithubReporter extends GithubReporter {
     Object error,
     StackTrace? stack, {
     Map<String, dynamic> context = const {},
-    String appVersion = '0.0.1-beta+1',
+    String? appVersion,
   }) async =>
       GithubReportDraft(
         fingerprint: 'fp-${error.runtimeType}',

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../../core/utils/app_version.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/engine/engine_provider.dart';
@@ -108,7 +109,7 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
       await AppLogger.flushNow();
       final tail = await AppLogger.readLogTail();
       final safeTail = GithubReporter.sanitizeForReport(tail, maxLength: 2500);
-      final version = '0.0.5+5';
+      final version = AppVersion.value;
       final platform = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
       final timestamp = DateTime.now().toUtc().toIso8601String();
       _diagnostics = crashBody != null

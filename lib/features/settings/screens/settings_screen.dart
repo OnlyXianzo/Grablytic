@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import '../../../core/utils/app_version.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1133,7 +1134,7 @@ class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
               _SettingNavItem(
                 icon: Icons.info_outline,
                 title: 'About Grablytic',
-                subtitle: 'v0.0.1-beta · The Only',
+                subtitle: 'v${AppVersion.short} · The Only',
                 colorScheme: colorScheme,
                 onTap: () {
                   Navigator.of(context).push(

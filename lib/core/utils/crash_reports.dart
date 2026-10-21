@@ -1,4 +1,5 @@
 import 'app_logger.dart';
+import 'app_version.dart';
 import 'github_reporter.dart';
 import 'pending_report.dart';
 
@@ -45,7 +46,7 @@ class CrashReports {
     GithubReporter Function()? reporterFactory,
     DateTime Function()? clock,
     Future<bool> Function()? autoSendLoader,
-    String appVersion = '0.0.1-beta+1',
+    String? appVersion,
   })  : _store = store,
         _reporterFactory = reporterFactory ?? GithubReporter.new,
         _clock = clock ?? DateTime.now,
