@@ -418,3 +418,22 @@ def test_preview_redacts_sensitive_keys():
     assert "super-secret" not in out
     assert "also-secret" not in out
     assert "***REDACTED***" in out
+
+
+@pytest.mark.unit
+def test_every_bearer_scheme_is_matched_and_passes_the_hint():
+    """#99: the pre-check must know every scheme the matcher accepts.
+
+    ``Basic dXNlcjpwYXNzd29yZA==`` used to slip through: ``_BEARER_RE``
+    matched ``basic`` but ``_SCRUB_HINT_RE`` did not, and ``_scrub_string``
+    returns early when the hint misses. The two are built from one tuple now,
+    so this iterates the source of truth instead of hardcoding a list that
+    could drift again.
+    """
+    from grablytic_engine import persistent
+
+    assert persistent._BEARER_SCHEMES, "the scheme tuple is the source of truth"
+    for scheme in persistent._BEARER_SCHEMES:
+        text = f"proxy said {scheme} dXNlcjpwYXNzd29yZA=="
+        assert persistent._SCRUB_HINT_RE.search(text), scheme
+        assert "dXNlcjpwYXNzd29yZA==" not in persistent.scrub_text(text), scheme

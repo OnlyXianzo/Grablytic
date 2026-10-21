@@ -94,7 +94,13 @@ _HEADER_RE = re.compile(
     r"(?im)^(?P<head>[ \t]*(?:authorization|proxy-authorization|cookie|"
     r"set-cookie|x-api-key|x-auth-token)[ \t]*:[ \t]*)(?P<value>[^\r\n]+)$"
 )
-_BEARER_RE = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
+# One list, used twice: the matcher and the pre-check below are built from
+# the same tuple, so a scheme added here cannot be forgotten by the hint
+# (which would make _scrub_string skip the text entirely).
+_BEARER_SCHEMES = ("bearer", "basic")
+_BEARER_RE = re.compile(
+    r"(?i)\b(" + "|".join(_BEARER_SCHEMES) + r")\s+[A-Za-z0-9._~+/=-]{8,}"
+)
 # Query-string / kv secrets. `sig`/`lsig` are yt-dlp's signed-URL
 # parameters; `expire` is a bearer-style token on CDN URLs.
 _SECRET_PARAM_RE = re.compile(
@@ -140,10 +146,22 @@ def is_sensitive_key(key: Any) -> bool:
 # contain a match, so the full scrub (measured 29.3 us on a 129-byte line)
 # is skipped. Every alternative of every pattern above is covered by this
 # hint — if a new pattern is added, its keyword belongs here too.
-_SCRUB_HINT_RE = re.compile(
-    r"(?i)(?:token|sig|key|auth|secret|passw|session|cookie|credential|"
-    r"bearer|expire|proxy|://)"
+_SCRUB_HINT_WORDS = (
+    "token",
+    "sig",
+    "key",
+    "auth",
+    "secret",
+    "passw",
+    "session",
+    "cookie",
+    "credential",
+    "expire",
+    "proxy",
+    "://",
+    *_BEARER_SCHEMES,
 )
+_SCRUB_HINT_RE = re.compile(r"(?i)(?:" + "|".join(_SCRUB_HINT_WORDS) + r")")
 
 
 def _scrub_string(text: str) -> str:
