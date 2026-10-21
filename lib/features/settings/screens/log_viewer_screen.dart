@@ -6,6 +6,7 @@ import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/github_reporter.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../core/utils/notification_helper.dart';
 import '../../../providers/log_provider.dart';
 import '../widgets/live_log_view.dart';
@@ -498,7 +499,12 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
               border: Border.all(color: cs.outlineVariant),
             ),
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonShimmer(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SkeletonList(itemCount: 5),
+                    ),
+                  )
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(12),
                     child: SelectableText(

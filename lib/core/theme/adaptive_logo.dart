@@ -58,49 +58,85 @@ class AdaptiveLogo extends StatelessWidget {
   /// How to inscribe the logo into the space allocated during layout.
   final BoxFit fit;
 
+  /// Chooses a pre-rendered asset from `assets/brand/variants/`.
+  ///
+  /// Keyed on the DECODE width (rendered size × DPR, capped at 2), not the
+  /// logical size: on a 3x phone a 28 dp badge is 56 physical pixels, and
+  /// picking the 32 px variant for it would upscale. Every threshold is a
+  /// variant that actually exists, and the largest (192) covers the call
+  /// sites today (28, 96, 104).
+  String _variantSuffix(int decodeWidth) {
+    if (decodeWidth <= 32) return '32x32';
+    if (decodeWidth <= 48) return '48x48';
+    if (decodeWidth <= 72) return '72x72';
+    if (decodeWidth <= 96) return '96x96';
+    if (decodeWidth <= 144) return '144x144';
+    return '192x192';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // One rule for every image site (#96): decode at the drawn size, DPR
+    // capped at 2. The suffix is then chosen from that same number, so the
+    // pre-scaled asset is never smaller than the pixels being drawn.
+    final cacheWidth = thumbCacheWidth(context, size);
+    final suffix = _variantSuffix(cacheWidth);
 
+    String variantPath(String base) =>
+        'assets/brand/variants/${base}_$suffix.png';
+    // The variants are what keeps a 28 dp badge from decoding 1024²
+    // (4.00 MiB → ~11 KiB). The errorBuilder below falls back to the master
+    // asset for a bundle that predates them.
     final String assetPath;
     switch (variant) {
       case LogoVariant.auto:
         assetPath = isDark
-            ? 'assets/brand/grablytic_logo_dark.png'
-            : 'assets/brand/grablytic_logo_light.png';
+            ? variantPath('grablytic_logo_dark')
+            : variantPath('grablytic_logo_light');
         break;
       case LogoVariant.light:
-        assetPath = 'assets/brand/grablytic_logo_light.png';
+        assetPath = variantPath('grablytic_logo_light');
         break;
       case LogoVariant.dark:
-        assetPath = 'assets/brand/grablytic_logo_dark.png';
+        assetPath = variantPath('grablytic_logo_dark');
         break;
       case LogoVariant.mark:
-        assetPath = 'assets/brand/grablytic_logo_mark.png';
+        assetPath = variantPath('grablytic_logo_mark');
         break;
       case LogoVariant.legacy:
         assetPath = 'assets/brand/grablytic_logo.png';
         break;
     }
 
-    // Bundled assets must always load via Image.asset. A File.existsSync
-    // check against the asset path is CWD-dependent: it is true in a repo
-    // checkout / CI (source files on disk) but false on device (assets are
-    // bundled, not files), which diverged test vs production behavior.
-    // ValueKey forces image reload when theme/variant flips (fixes stuck logo on theme change).
-    //
-    // `cacheWidth` on the tenth image site (#96): the brand PNGs are
-    // 1024x1024 — 4.00 MiB decoded — and the hero renders one at 28 logical
-    // px. Four variants, re-decoded on every theme flip, for a 28 px box.
-    // Decoding at the rendered size costs ~14 KiB instead.
+    final String fallbackAsset = switch (variant) {
+      LogoVariant.mark => 'assets/brand/grablytic_logo_mark.png',
+      LogoVariant.light => 'assets/brand/grablytic_logo_light.png',
+      LogoVariant.dark => 'assets/brand/grablytic_logo_dark.png',
+      LogoVariant.legacy => 'assets/brand/grablytic_logo.png',
+      LogoVariant.auto => isDark
+          ? 'assets/brand/grablytic_logo_dark.png'
+          : 'assets/brand/grablytic_logo_light.png',
+    };
+
+    // ValueKey forces image reload when theme/variant flips (fixes stuck logo
+    // on theme change). `cacheWidth` is set even on the fallback so a missing
+    // variant costs a bigger decode, not a 4 MiB one.
     final Widget image = Image.asset(
       assetPath,
       key: ValueKey(assetPath),
       width: size,
       height: size,
-      cacheWidth: thumbCacheWidth(context, size),
+      cacheWidth: cacheWidth,
       fit: fit,
-      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      errorBuilder: (_, _, _) => Image.asset(
+        fallbackAsset,
+        width: size,
+        height: size,
+        cacheWidth: cacheWidth,
+        fit: fit,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ),
     );
 
     final effectiveRadius = borderRadius ?? BorderRadius.circular(size * 0.28);
