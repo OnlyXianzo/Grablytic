@@ -98,7 +98,9 @@ void main() {
     });
 
     test('an over-long body is left out, the page still opens', () {
-      final uri = GithubReporter().issueUrl(title: 'big', body: 'x' * 20000);
+      // Encoded length, not character count, is what overflows a browser:
+      // each of these becomes six bytes in a percent-encoded query string.
+      final uri = GithubReporter().issueUrl(title: 'big', body: 'é' * 6000);
 
       expect(uri.toString().length, lessThanOrEqualTo(7500));
       expect(uri.queryParameters.containsKey('body'), isFalse);

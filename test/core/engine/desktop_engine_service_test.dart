@@ -3,6 +3,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grablytic/core/engine/desktop_engine_service.dart';
+import 'package:grablytic/core/utils/crash_reports.dart';
+import 'package:grablytic/core/utils/github_reporter.dart';
+
+import '../../support/memory_report_store.dart';
+
+/// A reporter that never touches the network or the log file.
+class _SilentReporter extends GithubReporter {
+  @override
+  Future<GithubReportDraft> draftCrash(
+    Object error,
+    StackTrace? stack, {
+    Map<String, dynamic> context = const {},
+    String appVersion = '0.0.1-beta+1',
+  }) async =>
+      GithubReportDraft(
+        fingerprint: 'fp-engine',
+        title: '[Auto-report fp-engine] engine exit',
+        body: '### Summary\nThe engine exited.\n',
+      );
+}
 
 class _FakeProcess implements Process {
   bool killCalled = false;
@@ -180,6 +200,53 @@ void main() {
 
         expect(service.process, isNull);
         expect(fakeProcess.killCalled, isTrue);
+      });
+
+      test('an abnormal exit is captured even though stdout closed first',
+          () async {
+        // Regression: the stdout onDone path restarts the engine, which
+        // nulls `_process` before `exitCode` resolves. Gating the capture on
+        // `_process == process` therefore skipped precisely the abnormal
+        // exits it exists for.
+        final store = MemoryReportStore();
+        CrashReports.instance = CrashReports(
+          store: store,
+          reporterFactory: _SilentReporter.new,
+        );
+        addTearDown(() => CrashReports.instance = null);
+
+        final service = DesktopEngineService();
+        final fakeProcess = _FakeProcess();
+        service.attachProcessForTesting(fakeProcess, wireStreams: true);
+
+        fakeProcess.completeStdoutDone();
+        await pumpEventQueue();
+        fakeProcess.completeExit(-9);
+        await pumpEventQueue();
+
+        final saved = await store.list();
+        expect(saved, hasLength(1));
+        expect(saved.single.summary, contains('-9'));
+      });
+
+      test('a clean exit is not reported as a crash', () async {
+        final store = MemoryReportStore();
+        CrashReports.instance = CrashReports(
+          store: store,
+          reporterFactory: _SilentReporter.new,
+        );
+        addTearDown(() => CrashReports.instance = null);
+
+        final service = DesktopEngineService();
+        final fakeProcess = _FakeProcess();
+        service.attachProcessForTesting(fakeProcess, wireStreams: true);
+
+        fakeProcess.completeStdoutDone();
+        await pumpEventQueue();
+        fakeProcess.completeExit(0);
+        await pumpEventQueue();
+
+        expect(await store.list(), isEmpty);
       });
 
       test('stderr onError logs error safely without restarting engine', () async {

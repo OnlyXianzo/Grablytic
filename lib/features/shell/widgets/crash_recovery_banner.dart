@@ -48,6 +48,7 @@ class CrashRecoveryBanner {
         builder: (_) => ReportProblemScreen(
           initialTitle: 'The app encountered a problem and restarted.',
           initialBody: report.body,
+          queuedReportId: report.id,
           submitImmediately: sendImmediately,
         ),
       ));
@@ -56,6 +57,9 @@ class CrashRecoveryBanner {
     messenger.showMaterialBanner(
       MaterialBanner(
         leading: const Icon(Icons.report_problem_outlined),
+        // Three actions on a phone-width banner do not fit beside the text,
+        // and the alternative is a row that overflows by a pixel.
+        forceActionsBelow: true,
         content: Text(
           'Grablytic ran into a problem last time. Send a diagnostic report '
           'so it can be fixed?',

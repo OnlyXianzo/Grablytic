@@ -153,7 +153,14 @@ class GithubReporter {
       req.headers.set('Authorization', 'Bearer $token');
       req.headers.set('X-GitHub-Api-Version', '2022-11-28');
       req.headers.contentType = ContentType.json;
-      req.write(jsonEncode({'title': title, 'body': body, 'labels': labels}));
+      // Redact at the network boundary as well as when the draft is built:
+      // an issue is public, and a caller that hands over raw text must not
+      // be able to publish a credential.
+      req.write(jsonEncode({
+        'title': sanitizeForReport(title, maxLength: 200),
+        'body': sanitizeForReport(body, maxLength: 6000),
+        'labels': labels,
+      }));
       final resp = await req.close().timeout(const Duration(seconds: 20));
       final respBody = await resp.transform(utf8.decoder).join();
       if (resp.statusCode == 201) {

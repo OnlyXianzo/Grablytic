@@ -112,6 +112,19 @@ void main() {
       expect(report.isCrash, isTrue);
     });
 
+    test('the stored summary is redacted, not just the body', () async {
+      final report = await build().capture(
+        StateError('failed at https://host/private?token=supersecret\n'
+            'Authorization: Bearer abcdefghijklmnop'),
+        null,
+      );
+
+      expect(report!.summary, isNot(contains('supersecret')));
+      expect(report.summary, isNot(contains('abcdefghijklmnop')));
+      expect(report.summary, isNot(contains('host/private')));
+      expect(report.summary, isNotEmpty);
+    });
+
     test('no store means capture is a no-op, not a throw', () async {
       final reports = CrashReports(store: null);
       expect(await reports.capture(StateError('x'), null), isNull);

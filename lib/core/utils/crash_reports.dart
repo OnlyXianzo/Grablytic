@@ -199,8 +199,14 @@ class CrashReports {
   /// Built from the error rather than from the draft body so the banner can
   /// say "the app stopped" in one line; the body is what the form shows.
   static String _summaryOf(Object error) {
-    final oneLine =
-        error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    // Redacted before it is stored, not only before it is sent: this value
+    // is written to <app>/reports/<id>.json, and those files outlive the
+    // process and can be attached to an issue by hand.
+    final safe = GithubReporter.sanitizeForReport(
+      error.toString(),
+      maxLength: 500,
+    );
+    final oneLine = safe.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (oneLine.isEmpty) return 'The app stopped unexpectedly.';
     return oneLine.length > 160 ? '${oneLine.substring(0, 159)}…' : oneLine;
   }

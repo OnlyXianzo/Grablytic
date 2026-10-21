@@ -126,7 +126,7 @@ into its own folder — that happens whether or not you have opted into anything
 because otherwise the next launch would have nothing to offer you. On the next
 launch a dismissible banner says we ran into a problem and asks what to do:
 **Not now**, **Review report**, or **Send report**. The same report is always
-under Settings → Help & feedback → Report a problem, where a sentence and a
+under Settings → Report a problem, where a sentence and a
 category are enough; the diagnostics are gathered for you and shown before
 anything is sent. There is no GitHub token inside the app, so sending opens a
 prefilled GitHub issue form in your browser and you press Submit there. The app

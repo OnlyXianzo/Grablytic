@@ -142,9 +142,12 @@ class DesktopEngineService implements EngineService {
     }
     p.exitCode.then((code) {
       _running = false;
-      if (!_disposed && code != 0 && _process == p) {
-        _restart(exitCode: code);
-      }
+      if (_disposed || code == 0) return;
+      // Capture even when the stream-close path already restarted: the
+      // restart nulls `_process`, so a capture gated on that identity was
+      // skipped exactly for the abnormal exits it exists for.
+      _captureEngineExit(code);
+      if (_process == p) _restart();
     });
   }
 
@@ -325,9 +328,9 @@ class DesktopEngineService implements EngineService {
     final currentProcess = _process!;
     currentProcess.exitCode.then((code) {
       _running = false;
-      if (!_disposed && code != 0 && _process == currentProcess) {
-        _restart(exitCode: code);
-      }
+      if (_disposed || code == 0) return;
+      _captureEngineExit(code);
+      if (_process == currentProcess) _restart();
     });
 
     _running = true;
@@ -379,7 +382,7 @@ class DesktopEngineService implements EngineService {
         );
   }
 
-  void _restart({int? exitCode}) {
+  void _restart() {
     _stdoutSubscription?.cancel();
     _stderrSubscription?.cancel();
     final oldProcess = _process;
@@ -391,7 +394,6 @@ class DesktopEngineService implements EngineService {
     // only the time-window check resets it (see _ensureRunning).
     _consecutiveAbnormalExits++;
     _lastAbnormalExitAt = DateTime.now();
-    if (exitCode != null && exitCode != 0) _captureEngineExit(exitCode);
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('Engine process exited'));

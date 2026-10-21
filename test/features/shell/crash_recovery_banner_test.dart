@@ -7,8 +7,18 @@ import 'package:grablytic/core/utils/crash_reports.dart';
 import 'package:grablytic/core/utils/pending_report.dart';
 import 'package:grablytic/features/settings/screens/report_problem_screen.dart';
 import 'package:grablytic/features/shell/widgets/crash_recovery_banner.dart';
+import 'package:grablytic/providers/settings_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/memory_report_store.dart';
+
+/// An engine whose browser launch succeeds. The mock returns an error
+/// envelope, which is the case that must NOT dismiss the queued report.
+class _OpeningEngine extends MockEngineService {
+  @override
+  Future<Map<String, dynamic>> openUrl(String url) async =>
+      {'success': true};
+}
 
 /// Hosts the banner the way the shell does: once, after the first frame.
 class _Host extends ConsumerStatefulWidget {
@@ -35,9 +45,13 @@ class _HostState extends ConsumerState<_Host> {
 void main() {
   late MemoryReportStore store;
 
-  setUp(() {
+  late SharedPreferences prefs;
+
+  setUp(() async {
     store = MemoryReportStore();
     CrashRecoveryBanner.resetForTest();
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
   });
 
   tearDown(() {
@@ -60,17 +74,24 @@ void main() {
   /// Fixed pumps, not `pumpAndSettle`: the queue read is a real async hop
   /// and the banner animates in.
   Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
+    // Long enough for the banner's 250 ms entrance and exit animations.
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
     }
   }
 
-  Future<void> pumpHost(WidgetTester tester) async {
+  Future<void> pumpHost(WidgetTester tester, {bool browserOpens = false}) async {
     await tester.pumpWidget(
       ProviderScope(
         // The form reads the engine to open GitHub; keep it fake so the
         // test never spawns a Python process.
-        overrides: [engineProvider.overrideWith((ref) => MockEngineService())],
+        overrides: [
+          engineProvider.overrideWith(
+            (ref) => browserOpens ? _OpeningEngine() : MockEngineService(),
+          ),
+          // The form reads the settings for its diagnostics panel.
+          sharedPreferencesProvider.overrideWithValue(prefs),
+        ],
         child: const MaterialApp(home: _Host()),
       ),
     );
@@ -136,6 +157,42 @@ void main() {
     await settle(tester);
 
     expect(find.byType(MaterialBanner), findsNothing);
+    expect(await store.list(), hasLength(1));
+  });
+
+  testWidgets('opening the GitHub draft retires the queued crash',
+      (tester) async {
+    CrashReports.instance = CrashReports(store: store);
+    await seedCrash();
+    await pumpHost(tester, browserOpens: true);
+
+    await tester.tap(find.text('Review report'));
+    await settle(tester);
+
+    await tester.enterText(find.byType(TextField), 'still broken');
+    await tester.pump();
+    await tester.tap(find.text('Review and open GitHub'));
+    await settle(tester);
+
+    expect(await store.list(), isEmpty,
+        reason: 'the draft is in the browser and saved locally; leaving the '
+            'entry queued would re-offer the same crash every three days');
+  });
+
+  testWidgets('a browser that fails to open keeps the crash queued',
+      (tester) async {
+    CrashReports.instance = CrashReports(store: store);
+    await seedCrash();
+    await pumpHost(tester); // MockEngineService.openUrl → success: false
+
+    await tester.tap(find.text('Review report'));
+    await settle(tester);
+
+    await tester.enterText(find.byType(TextField), 'still broken');
+    await tester.pump();
+    await tester.tap(find.text('Review and open GitHub'));
+    await settle(tester);
+
     expect(await store.list(), hasLength(1));
   });
 

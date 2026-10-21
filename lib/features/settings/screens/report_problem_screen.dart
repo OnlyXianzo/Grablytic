@@ -14,10 +14,25 @@ import '../../../providers/settings_provider.dart';
 /// Short, user-reviewed report composer. GitHub itself performs the final
 /// authenticated submission; Grablytic never embeds or asks for a token.
 class ReportProblemScreen extends ConsumerStatefulWidget {
-  const ReportProblemScreen({super.key, this.initialTitle, this.initialBody, this.submitImmediately = false});
+  const ReportProblemScreen({
+    super.key,
+    this.initialTitle,
+    this.initialBody,
+    this.queuedReportId,
+    this.submitImmediately = false,
+  });
 
   final String? initialTitle;
   final String? initialBody;
+
+  /// The queued crash this screen represents.
+  ///
+  /// Passed explicitly by the recovery banner, which shows a report from
+  /// the queue: without it the screen cannot dismiss that entry after the
+  /// GitHub draft opens, and the banner offers the same crash again three
+  /// days later.
+  final String? queuedReportId;
+
   final bool submitImmediately;
 
   @override
@@ -47,6 +62,7 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
     super.initState();
     _description.text = widget.initialTitle ?? '';
     _savedBody = widget.initialBody;
+    _queuedReportId = widget.queuedReportId;
     _prepare();
   }
 
@@ -160,8 +176,18 @@ Submitted from Grablytic. Please review this report before creating the issue.''
         'labels': 'bug',
       });
       final result = await ref.read(engineProvider).openUrl(uri.toString());
-      if (!mounted) return;
       final opened = result['success'] == true;
+      if (opened) {
+        // The user has the draft in their browser, and the same text is
+        // saved under `_draftKey`, so the queue entry has done its job.
+        // Leaving it queued would re-offer the crash every three days.
+        final queued = _queuedReportId;
+        if (queued != null) {
+          await CrashReports.instance?.dismiss(queued);
+          _queuedReportId = null;
+        }
+      }
+      if (!mounted) return;
       setState(() {
         _stateMessage = opened
             ? 'GitHub opened with your draft. Review it there and tap “Submit new issue” to send it. Your draft is saved here if you need to retry.'

@@ -61,7 +61,7 @@ Reports are captured locally, redacted, and only sent when the user says so.
    handler returns as soon as the file is written.
 2. On the next launch the shell shows a dismissible banner offering
    **Not now / Review report / Send report**. The same report is reachable at
-   **Settings → Help & feedback → Report a problem**.
+   **Settings → Report a problem**.
 3. The form shows the user's own description, a category, and a *Review
    included information* panel with the exact text that would be filed.
 4. Sending opens a prefilled `github.com/.../issues/new` page. A build that was
@@ -86,8 +86,10 @@ by default.
 **Not collected at all:** download history, media files, cookies, tokens,
 personal files, and command-line arguments.
 
-Redaction is applied when the draft is built, again at `_buildBody`, and once
-more inside `issueUrl` / `createIssue`, so a caller that forgets cannot leak.
+Redaction is applied when the draft is built, again at `_buildBody`, when the
+short summary is stored in the queue, and once more inside `issueUrl` /
+`createIssue` — the last two are the points that leave the app, so a caller
+that forgets cannot leak.
 It **fails closed**: if the scrubber throws, the field becomes
 `[diagnostics omitted: safe redaction failed]` rather than the original text.
 The trade-off is deliberate and documented: because whole URLs are stripped, a
