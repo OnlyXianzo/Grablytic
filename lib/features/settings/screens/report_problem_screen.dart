@@ -171,28 +171,48 @@ Submitted from Grablytic. Please review this report before creating the issue.''
           'body': body,
         }),
       );
-      final uri = Uri.https('github.com', '/OnlyXianzo/Grablytic/issues/new', {
-        'title': title,
-        'body': body,
-        'labels': 'bug',
-      });
-      final result = await ref.read(engineProvider).openUrl(uri.toString());
+      // `issueUrl` is the one place that knows the URL budget: it measures
+      // the encoded string against GitHub's 8,192-byte limit and drops the
+      // body rather than hand back a URL the server answers 414 for. Building
+      // the URI here bypassed that, so any long or non-ASCII report (Hindi,
+      // for instance, is ~9 characters per encoded byte) opened an empty
+      // form after GitHub refused the request.
+      final url = GithubReporter().issueUrl(
+        title: title,
+        body: body,
+        labels: const ['bug'],
+      );
+      final bodyFits = url.queryParameters.containsKey('body');
+      final result = await ref.read(engineProvider).openUrl(url.toString());
       final opened = result['success'] == true;
-      if (opened) {
-        // The user has the draft in their browser, and the same text is
-        // saved under `_draftKey`, so the queue entry has done its job.
-        // Leaving it queued would re-offer the crash every three days.
+      if (opened && bodyFits) {
+        // The draft is in the browser and saved under `_draftKey`, so the
+        // queue entry has done its job. Leaving it queued would re-offer the
+        // crash every three days.
         final queued = _queuedReportId;
         if (queued != null) {
           await CrashReports.instance?.dismiss(queued);
           _queuedReportId = null;
         }
       }
+      if (opened && !bodyFits) {
+        // The form opened without the text, and `success` only means a
+        // browser started — not that the draft arrived. Copy the words and
+        // keep the queue entry: this report is still unsent.
+        await Clipboard.setData(ClipboardData(text: body));
+      }
       if (!mounted) return;
       setState(() {
-        _stateMessage = opened
-            ? 'GitHub opened with your draft. Review it there and tap “Submit new issue” to send it. Your draft is saved here if you need to retry.'
-            : 'Could not open GitHub. Your sanitized draft is saved; try again when online or open github.com/OnlyXianzo/Grablytic/issues/new.';
+        if (!opened) {
+          _stateMessage =
+              'Could not open GitHub. Your sanitized draft is saved; try again when online or open github.com/OnlyXianzo/Grablytic/issues/new.';
+        } else if (!bodyFits) {
+          _stateMessage =
+              'GitHub opened, but this report is too long to prefill — it is copied to the clipboard. Paste it into the issue form, or shorten the description and try again.';
+        } else {
+          _stateMessage =
+              'GitHub opened with your draft. Review it there and tap “Submit new issue” to send it. Your draft is saved here if you need to retry.';
+        }
       });
     } on Exception catch (e) {
       if (mounted) {
