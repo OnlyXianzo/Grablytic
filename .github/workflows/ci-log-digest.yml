@@ -150,58 +150,75 @@ jobs:
           # Actions logs are ANSI-coloured and timestamped; both are noise here.
           STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?")
           ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+          STEP_ERROR = re.compile(r"^##\[error\]")
+          STEP_BOUNDARY = re.compile(r"^##\[(group|endgroup)\]")
 
           lines = []
           with open(path, encoding="utf-8", errors="replace") as handle:
               for raw in handle:
                   lines.append(STAMP.sub("", ANSI.sub("", raw.rstrip("\n"))))
 
-          # Markers that identify *why* a job went red.
+          def emit(chunk):
+              """One annotation per chunk; '%' must be escaped for the runner."""
+              body = " | ".join(chunk)[:900]
+              body = body.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error::{body}")
+
+          # 1. Best signal: the block that precedes the step's own error marker.
+          #    The end of a job log is post-job git/checkout cleanup, never the
+          #    failure, so the marker is what anchors the report.
+          last_error = None
+          for index, line in enumerate(lines):
+              if STEP_ERROR.match(line):
+                  last_error = index
+          if last_error is not None:
+              start = max(0, last_error - 60)
+              for index in range(last_error, start - 1, -1):
+                  if STEP_BOUNDARY.match(lines[index]):
+                      start = index
+                      break
+              block = [
+                  l.strip() for l in lines[start:last_error + 1]
+                  if l.strip() and not STEP_BOUNDARY.match(l)
+              ]
+              print(f"::group::Failure block ({len(block)} lines before the step error)")
+              for offset in range(0, min(len(block), 60), 6):
+                  emit(block[offset:offset + 6])
+              print("::endgroup::")
+              raise SystemExit(0)
+
+          # 2. No step marker (a cancelled or timed-out step): pytest-shaped markers.
           markers = [
               re.compile(r"^FAILED "),                       # pytest short summary
               re.compile(r"^ERROR "),                        # collection/runtime error
               re.compile(r"^E\s+\S"),                        # pytest assertion detail
               re.compile(r"Required test coverage of"),      # pytest-cov gate
               re.compile(r"^\s*assert\s"),
-              re.compile(r"^::error"),
               re.compile(r"^(Traceback \(most recent call last\)|.*Error:)"),
               re.compile(r"^\d+ (failed|passed|error)"),     # pytest tail summary
               re.compile(r"=+ .*(failed|passed|error).* =+"),
           ]
-
-          hits = []
-          seen_blocks = set()
+          hits, seen = [], set()
           for index, line in enumerate(lines):
-              if not line.strip():
+              if not line.strip() or not any(m.search(line) for m in markers):
                   continue
-              if not any(marker.search(line) for marker in markers):
+              block = tuple(range(max(0, index - ctx), min(len(lines), index + ctx + 1)))
+              if block in seen:
                   continue
-              start = max(0, index - ctx)
-              end = min(len(lines), index + ctx + 1)
-              block = tuple(range(start, end))
-              if block in seen_blocks:
-                  continue
-              seen_blocks.add(block)
-              hits.append((start, end))
-
-          if not hits:
-              # The markers are best-effort; a build tool that fails without a
-              # familiar shape still has to explain itself, so publish the tail.
-              tail = [l for l in lines if l.strip()][-15:]
-              print("::error::No failure markers matched; emitting the last 15 log lines instead.")
-              for line in tail:
-                  print("::error::tail " + line.strip()[:900])
+              seen.add(block)
+              hits.append(block)
+          if hits:
+              print(f"::group::Extracted {len(hits)} failure block(s)")
+              for block in hits[:10]:
+                  emit([lines[i].strip() for i in block if lines[i].strip()])
+              print("::endgroup::")
               raise SystemExit(0)
 
-          print(f"::group::Extracted {len(hits)} failure block(s)")
-          emitted = 0
-          for start, end in hits[:12]:  # keep well inside GitHub's per-job limit
-              excerpt = " | ".join(l.strip() for l in lines[start:end] if l.strip())
-              excerpt = excerpt[:900].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-              print(f"::error::log[{start + 1}] {excerpt}")
-              emitted += 1
-          print("::endgroup::")
-          print(f"Emitted {emitted} annotation(s).")
+          # 3. Last resort: say so, and show what the log ends with.
+          tail = [l for l in lines if l.strip()][-15:]
+          print("::error::No step marker and no failure marker matched; last 15 lines follow.")
+          for line in tail:
+              print("::error::tail " + line.strip()[:900])
           PY
 
       - name: Coverage + summary tail
