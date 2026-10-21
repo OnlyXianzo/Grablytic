@@ -174,6 +174,14 @@ Useful docs: [architecture](docs/architecture.md),
 
 This project gets a lot of AI-generated text. Keep it readable and specific.
 
+**Required skill:** read [`skills/stop-slop/SKILL.md`](skills/stop-slop/SKILL.md)
+before writing or editing any prose: README, `docs/`, `.agents/vault/`, commit
+bodies, pull request descriptions, release notes, or an answer to the
+maintainer. It is a checklist, so run it over the final text, not the first
+draft. Where it conflicts with the rules below, the rules below win.
+
+The short version, so a missed step is still visible in review:
+
 - Start with the point. Skip the warm-up sentence.
 - Prefer short, plain sentences. Mix lengths so it does not read like a
   template.
