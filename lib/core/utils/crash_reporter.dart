@@ -86,7 +86,7 @@ class ReportOutcome {
 ///    handler turns one failure into two.
 class CrashReporter {
   CrashReporter({
-    required PendingReportStore? store,
+    required ReportStore? store,
     GithubReporter Function()? reporterFactory,
     DateTime Function()? clock,
     Future<SharedPrefsView> Function()? prefsLoader,
@@ -101,7 +101,7 @@ class CrashReporter {
   /// treats as "reporting unavailable" rather than an error.
   static CrashReporter? instance;
 
-  final PendingReportStore? _store;
+  final ReportStore? _store;
   final GithubReporter Function() _reporterFactory;
   final DateTime Function() _clock;
   final Future<SharedPrefsView> Function()? _prefsLoader;

@@ -159,6 +159,24 @@ class PendingReport {
   }
 }
 
+/// The operations a report queue has to provide.
+///
+/// Separate from [PendingReportStore] so a widget test can use an
+/// in-memory queue: `testWidgets` runs in a fake-async zone where a real
+/// disk future never completes, and a reporting test that hangs is worse
+/// than no test. The disk implementation is [PendingReportStore].
+abstract class ReportStore {
+  Future<List<PendingReport>> list();
+  Future<PendingReport?> byId(String id);
+
+  /// Stores [report], collapsing a repeat of the same fingerprint.
+  Future<PendingReport?> add(PendingReport report);
+
+  Future<void> remove(String id);
+  Future<void> markAttempt(String id);
+  Future<void> markPrompted(String id);
+}
+
 /// Disk-backed queue of reports that have not been submitted yet.
 ///
 /// Why a queue at all: the old crash path built a report body inside the
@@ -169,7 +187,7 @@ class PendingReport {
 /// Bounds are deliberate: [maxReports] files, each capped by the caller's
 /// body size, and a fingerprint seen twice becomes one file with a count
 /// instead of a second issue.
-class PendingReportStore {
+class PendingReportStore implements ReportStore {
   PendingReportStore(this.directory, {DateTime Function()? clock})
       : _clock = clock ?? DateTime.now;
 
@@ -207,6 +225,7 @@ class PendingReportStore {
   }
 
   /// Newest first. Corrupt or unreadable files are skipped, never fatal.
+  @override
   Future<List<PendingReport>> list() async {
     final reports = <PendingReport>[];
     try {
@@ -225,6 +244,7 @@ class PendingReportStore {
     return reports;
   }
 
+  @override
   Future<PendingReport?> byId(String id) async {
     for (final report in await list()) {
       if (report.id == id) return report;
@@ -236,6 +256,7 @@ class PendingReportStore {
   ///
   /// Returns the stored report — which may be an *existing* one with a
   /// bumped [PendingReport.occurrences] when the failure was seen before.
+  @override
   Future<PendingReport?> add(PendingReport report) async {
     final safe = _bounded(report);
     try {
@@ -256,6 +277,7 @@ class PendingReportStore {
     }
   }
 
+  @override
   Future<void> remove(String id) async {
     try {
       final file = File('${directory.path}/$id$_suffix');
@@ -266,6 +288,7 @@ class PendingReportStore {
   }
 
   /// Records that a submission was attempted, so the UI can say "tried".
+  @override
   Future<void> markAttempt(String id) async {
     final report = await byId(id);
     if (report == null) return;
@@ -273,6 +296,7 @@ class PendingReportStore {
   }
 
   /// Records that the recovery prompt showed this report.
+  @override
   Future<void> markPrompted(String id) async {
     final report = await byId(id);
     if (report == null) return;

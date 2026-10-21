@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +7,8 @@ import 'package:grablytic/core/utils/crash_reporter.dart';
 import 'package:grablytic/core/utils/github_reporter.dart';
 import 'package:grablytic/core/utils/pending_report.dart';
 import 'package:grablytic/features/settings/screens/report_problem_screen.dart';
+
+import '../../support/memory_report_store.dart';
 
 class _FakeGithubReporter extends GithubReporter {
   _FakeGithubReporter({this.postable = true, this.createdUrl});
@@ -44,13 +44,11 @@ Future<void> settle(WidgetTester tester) async {
 }
 
 void main() {
-  late Directory dir;
-  late PendingReportStore store;
+  late MemoryReportStore store;
   late CrashReporter reporter;
 
-  setUp(() async {
-    dir = await Directory.systemTemp.createTemp('grablytic_report_ui');
-    store = PendingReportStore(dir);
+  setUp(() {
+    store = MemoryReportStore();
     reporter = CrashReporter(
       store: store,
       reporterFactory: () => _FakeGithubReporter(
@@ -60,9 +58,8 @@ void main() {
     CrashReporter.instance = reporter;
   });
 
-  tearDown(() async {
+  tearDown(() {
     CrashReporter.instance = null;
-    if (await dir.exists()) await dir.delete(recursive: true);
   });
 
   Future<void> pump(WidgetTester tester, {Widget? screen}) async {
@@ -152,6 +149,7 @@ void main() {
 
     expect(find.text('Not sent'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+    expect(store.writes, 1);
     expect(await store.list(), hasLength(1));
   });
 

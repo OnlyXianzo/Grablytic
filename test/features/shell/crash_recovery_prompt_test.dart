@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +5,8 @@ import 'package:grablytic/core/utils/crash_reporter.dart';
 import 'package:grablytic/core/utils/pending_report.dart';
 import 'package:grablytic/features/settings/screens/report_problem_screen.dart';
 import 'package:grablytic/features/shell/widgets/crash_recovery_prompt.dart';
+
+import '../../support/memory_report_store.dart';
 
 /// Hosts the prompt the way the shell does: once, after the first frame.
 class _Host extends ConsumerStatefulWidget {
@@ -31,19 +31,16 @@ class _HostState extends ConsumerState<_Host> {
 }
 
 void main() {
-  late Directory dir;
-  late PendingReportStore store;
+  late MemoryReportStore store;
 
-  setUp(() async {
-    dir = await Directory.systemTemp.createTemp('grablytic_prompt');
-    store = PendingReportStore(dir);
+  setUp(() {
+    store = MemoryReportStore();
     CrashRecoveryPrompt.resetForTest();
   });
 
-  tearDown(() async {
+  tearDown(() {
     CrashRecoveryPrompt.resetForTest();
     CrashReporter.instance = null;
-    if (await dir.exists()) await dir.delete(recursive: true);
   });
 
   /// Writes a crash as a previous session would have left it.
