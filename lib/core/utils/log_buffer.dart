@@ -73,6 +73,28 @@ class LogBuffer {
     return List<LogEntry>.of(_entries.skip(_entries.length - limit));
   }
 
+  /// The newest [limit] entries that satisfy [test], oldest-first.
+  ///
+  /// #95: the live log view used to take `snapshot(limit)` FIRST and filter
+  /// afterwards, so a filter that matched older lines showed a shorter list
+  /// than the ring holds — on desktop the ring is bigger than the render
+  /// budget, so matches silently fell off the top. This walks the whole ring
+  /// once, newest-to-oldest, and keeps only the matches it will render: O(n)
+  /// time, O(limit) memory, and the newest match always wins a slot.
+  List<LogEntry> filter({
+    required bool Function(LogEntry entry) test,
+    int limit = 2000,
+  }) {
+    if (limit <= 0) return <LogEntry>[];
+    final matches = ListQueue<LogEntry>();
+    for (final entry in _entries) {
+      if (!test(entry)) continue;
+      if (matches.length == limit) matches.removeFirst();
+      matches.add(entry);
+    }
+    return List<LogEntry>.of(matches);
+  }
+
   /// Read-only copy of every retained entry.
   ///
   /// Unmodifiable on purpose (a caller that appends to this would be

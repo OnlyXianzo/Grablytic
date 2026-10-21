@@ -657,6 +657,7 @@ def _execute_parsed_request(req_id, method, params):
                     po_token=params.get("po_token"),
                     ffmpeg_ld_path=params.get("ffmpeg_ld_path"),
                     nodejs_path=params.get("nodejs_path"),
+                    log_level=params.get("log_level"),
                 )
                 data_dir = params["data_dir"]
                 set_global_log_dir(data_dir + "/logs")

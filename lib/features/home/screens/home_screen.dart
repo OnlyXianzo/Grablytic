@@ -1,4 +1,5 @@
 import 'dart:async' show unawaited;
+import 'dart:io' show Directory, FileSystemException;
 import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../../../core/widgets/thumb.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
+import '../../../core/engine/engine_start_signal.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/widgets/grablytic_components.dart';
 import '../../../providers/download_provider.dart';
@@ -1447,7 +1449,14 @@ class _DownloadCard extends StatelessWidget {
   }
 }
 
-class _EngineStatusBanner extends ConsumerWidget {
+/// Home's engine banner: a REPORT of engine status, not a request for one
+/// (#91).
+///
+/// Watching `engineStatusProvider` here ran `bootstrap()` on the first frame
+/// of the default tab, which is exactly the 40.5 MiB / yt-dlp import the
+/// lazy engine was introduced to avoid. It is watched only after the engine
+/// has actually been started by something the user did.
+class _EngineStatusBanner extends ConsumerStatefulWidget {
   final ColorScheme colorScheme;
   final TextTheme textTheme;
 
@@ -1457,10 +1466,24 @@ class _EngineStatusBanner extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final statusAsync = ref.watch(engineStatusProvider);
+  ConsumerState<_EngineStatusBanner> createState() => _EngineStatusBannerState();
+}
 
-    return statusAsync.when(
+class _EngineStatusBannerState extends ConsumerState<_EngineStatusBanner> {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = widget.colorScheme;
+    final textTheme = widget.textTheme;
+
+    // Watching `engineStatusProvider` is what ran `bootstrap()` on the first
+    // frame of the default tab (#91). It is only watched once the engine is
+    // up — `engineStarted` replays to a late subscriber, so a Home built
+    // after the start still sees it.
+    if (!ref.watch(engineStartedProvider).hasValue) {
+      return const SizedBox.shrink();
+    }
+
+    return ref.watch(engineStatusProvider).when(
       // Bootstrap card removed from Home (binaries live in Settings).
       // Only genuine engine errors and status messages surface here.
       loading: () => const SizedBox.shrink(),
@@ -1473,7 +1496,6 @@ class _EngineStatusBanner extends ConsumerWidget {
           AppLogger.error('Engine status reports error: ${status.error}');
           return _buildErrorPlaceholder(context, colorScheme, textTheme);
         }
-
         final message = status.statusMessage;
         if (message == null) return const SizedBox.shrink();
         return Container(
@@ -1575,8 +1597,57 @@ class _EngineStatusBanner extends ConsumerWidget {
   }
 }
 
-class _ResumeScanSection extends ConsumerWidget {
+/// The interrupted-downloads card, scanned only when there is evidence to
+/// scan for.
+///
+/// The scan is a Python call, so mounting this section used to start the
+/// engine (through `ResumeNotifier`'s constructor, before #91). Now it either
+/// sees a `*.part` file in the download folder or an engine that is already
+/// up, and only then asks for the scan.
+class _ResumeScanSection extends ConsumerStatefulWidget {
   const _ResumeScanSection();
+
+  @override
+  ConsumerState<_ResumeScanSection> createState() => _ResumeScanSectionState();
+}
+
+class _ResumeScanSectionState extends ConsumerState<_ResumeScanSection> {
+  bool _requestedScan = false;
+
+  /// Whether the download folder holds at least one `*.part` file.
+  ///
+  /// This is the evidence that makes the card worth an engine start. Without
+  /// it the card can only appear after something else started the engine —
+  /// and for a user with an interrupted download, the card is how they
+  /// resume, so waiting for them to start a *second* download first would
+  /// quietly remove the feature. `null` until the probe finishes.
+  bool? _hasPartialFiles;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_probeForPartialFiles());
+  }
+
+  Future<void> _probeForPartialFiles() async {
+    var found = false;
+    try {
+      final dir = ref.read(settingsProvider).downloadPath;
+      if (dir.isNotEmpty) {
+        await for (final entity in Directory(dir).list(followLinks: false)) {
+          if (entity.path.endsWith('.part')) {
+            found = true;
+            break;
+          }
+        }
+      }
+    } on FileSystemException {
+      // Unreadable or absent folder: no evidence, so no engine start.
+      found = false;
+    }
+    if (!mounted) return;
+    setState(() => _hasPartialFiles = found);
+  }
 
   String _formatAge(int seconds) {
     if (seconds < 60) return '${seconds}s ago';
@@ -1597,7 +1668,17 @@ class _ResumeScanSection extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final started = ref.watch(engineStartedProvider).hasValue;
+    if (!started && _hasPartialFiles != true) return const SizedBox.shrink();
+    if (!_requestedScan) {
+      _requestedScan = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(resumeProvider.notifier).scanIfNeeded();
+      });
+    }
+
     final resumeState = ref.watch(resumeProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;

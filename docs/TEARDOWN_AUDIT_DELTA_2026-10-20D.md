@@ -163,6 +163,150 @@ runs on a fresh install.
 |---|---|
 | `_replaceItem` allocates a list per tick (#37) | `StateNotifier` needs a new state object to notify; the copy is ~1.6 KB of pointers per coalesced tick. The per-item provider refactor is a larger change with its own ordering risk. |
 | `Python.start` now runs on an IO thread | Chaquopy's own guidance is "call it after checking `isStarted()`" with no thread restriction; `start` is `synchronized` and the failure is latched. Every other entry point (poll worker, DownloadService) still guards with `isStarted()`. |
-| The home screen still starts the engine | `_EngineStatusBanner` watches `engineStatusProvider`, which bootstraps to report binary state. That is a deliberate cost on the screen the user actually lands on, not a startup tax paid by onboarding. |
-| `logChannelProvider` decodes progress events it discards | It filters after decoding, ~10 events/s. A native-side filter would need a second channel name shared with Kotlin. |
 | The maintenance-lane wait is 10 s | Past it the request runs and the log records the ordering violation. The alternative is an engine that never answers because a filesystem never answered. |
+
+---
+
+# Fourth pass: eight findings, and the one that undid pass 3
+
+The third pass moved the engine start behind a "first Python call" rule and
+then left two callers on the home screen holding the trigger. This round
+addresses #91–#98. #37 stays where it was: a pointer copy per coalesced tick
+is not worth a commit of its own.
+
+## The finding that mattered: #91, the engine started itself anyway
+
+`engineStatusProvider` awaits `engineSetPathsFuture` and then calls
+`bootstrap()`, and `_EngineStatusBanner` watched it — so the default tab
+started Chaquopy and imported yt-dlp on every returning launch. Measured cost
+of that import, from pass 3: **40.5 MiB RSS, ~480 modules**. Pass 3 added a
+test that `setPaths` alone sends nothing; nothing tested what the first frame
+does.
+
+The status provider is now split in two:
+
+* `engineStatusProvider` — the live read. It awaits `bootstrap()` and
+  publishes the result into…
+* `cachedEngineStatusProvider` — a `StateProvider<EngineStatus?>`. The banner
+  watches this, so it renders the last known status and starts nothing.
+
+The banner refreshes the live provider once, after the engine has actually
+started, so a stale status from an earlier session is corrected as soon as
+something needs the engine. The start is reported by the transports through
+`engine_start_signal.dart` — `markEngineStarted()` in `_applyPaths` (Android,
+where `paths/set` is what starts the interpreter) and in `_doEnsureRunning`
+(desktop) — and the UI listens.
+
+`ResumeNotifier`'s constructor used to call `scan()`, which made *creating*
+the notifier a Python call. `downloadProvider` reads that notifier, so the
+engine started on first frame whether or not the interrupted-downloads card
+was rendered. The constructor no longer scans; `scanIfNeeded()` is called by
+the card.
+
+That leaves the card itself, which is how a user resumes a download that was
+interrupted by a dead battery. Waiting for them to start a *second* download
+before the resume card appears would have quietly deleted the feature, so the
+card checks for evidence first: a non-recursive listing of the download folder
+for `*.part`. Evidence → scan (engine starts). No evidence → nothing (and
+nothing was going to be shown anyway).
+
+## #92 — redaction ran on one sink out of three
+
+`sanitize()` was applied by the rotating `server_logs.log` handler only. The
+same record also went to the daily `engine_*.txt` file and out over the UI
+bridge verbatim, so `sig=…` was masked in one file and readable in the other —
+including the copy the Diagnostics screen hands the user for an issue report.
+
+Redaction now happens once, on the event dict, before `json.dumps`. It is
+targeted rather than a deep copy of the whole record: `message` and
+`exception` go through `scrub_text`, and `context`/`extra` get the key-aware
+pass only when they are non-empty. A deep copy of the record measured
+**14.8 µs**, of which ~90% was walking `type`/`level`/`ts`/nulls.
+
+| Path | Before | After |
+|---|---|---|
+| INFO, no secret shapes | 27.92 µs | 16.05 µs |
+| INFO, signed URL present | — | 31.42 µs |
+| DEBUG, written | 44.66 µs | 33.09 µs |
+| DEBUG, gated out | 0.16 µs | 0.16 µs |
+
+## #93 — every record written twice
+
+The bridge to the rotating file forwarded INFO and DEBUG too, so each line
+that already existed in `engine_*.txt` was sanitized again (29.3 µs for a
+129-byte line) and written a second time. The bridge floor is now WARNING:
+`server_logs.log` keeps the records worth attaching to a crash report, the
+daily file keeps the narrative.
+
+`persistent._scrub_string` also short-circuits on a "does this look like it
+could hold a secret" regex (2.64 µs, returns the same object when nothing
+matches) so the sanitize pass on a clean line is a scan, not a rebuild.
+
+## #94 — the gate nobody called
+
+`_wants()` was correct and unreachable: `set_min_level` had zero call sites, so
+with a daily file configured the gate always answered "yes" and saved 11.4 µs
+instead of 33.3. It is now a setting. `paths/set` carries the host's
+`log_level`, `_log_level_value` accepts a name or an int, and
+`set_global_min_level` pushes it onto every logger present and future. The
+default is INFO; Diagnostics → "Detailed engine logging" raises it to DEBUG
+for the session.
+
+This is the one place where the fix costs something a user can notice: a
+release build no longer writes yt-dlp's DEBUG flood to the daily file unless
+asked. The trade is deliberate — the file that a user attaches to an issue is
+the one that a support engineer can read, and "Detailed engine logging" is one
+toggle away, labeled in the app. The gate is worth having precisely because
+those lines are now optional.
+
+## #95 — filtering after truncation
+
+`LiveLogView` took `snapshot(limit: kLiveLogRowBudget)` and filtered the
+result, so on desktop — where the ring holds more than the budget — a search
+for something older than the budget returned nothing. `LogBuffer.filter`
+walks the ring once and keeps the newest *matching* entries: O(n) time,
+O(limit) memory.
+
+## #96 — 4 MiB decoded to fill 28 logical pixels
+
+The brand PNGs are 1024×1024. `AdaptiveLogo` renders them at 28 px in the hero
+and 96 px elsewhere, and re-decodes on every theme flip. `cacheWidth` sizes
+the decode to the render box: ~14 KiB instead of 4.00 MiB. The alternative —
+bundling the pre-sized `variants/*_96.png` set — was rejected because it
+needs one asset per (variant × size × device pixel ratio) and still leaves the
+large masters in the bundle for the launcher icons.
+
+## #97 — the first `paths/set` ate the second
+
+`setPaths` parked the map and cleared it when the first apply finished. A
+settings change that landed while `paths/set` was still in flight — that
+handler runs `BinaryPackageManager.init()` and the engine import, so seconds —
+was cleared by the older call's "we're done" step. The apply now counts
+generations and re-sends while the box moved underneath it, bounded at four
+attempts; then `_pathsApplied` is true and further changes go straight
+through.
+
+## #98 — two readers of one native stream
+
+`PlatformChannelEngineService` and `logChannelProvider` each called
+`receiveBroadcastStream()`, which registers a second Kotlin sink: every
+progress event crossed the bridge twice, and was `jsonDecode`d twice, once only
+to be discarded by a `type == 'log'` filter. `ProgressChannel` is now the one
+reader — a single native subscription feeding a broadcast controller — and the
+log provider derives its filtered view from it.
+
+## Verification
+
+* `pytest engine/tests -q` → **821 passed** (up from 808; 13 new in
+  `test_pass4_logging.py`).
+* `pytest tool/tests -q` → 7 passed.
+* `ruff check --select F engine tool` → clean; `ruff format --check` on the
+  touched files → clean.
+* `tool/check_broad_catches.py` → holds at **165 Dart / 234 Python**.
+* New Dart tests: `engine_start_signal_test.dart` (7), `progress_channel_test.dart`
+  (6), four `LogBuffer.filter` cases, two lazy-start cases (#97 re-send, #91
+  start signal).
+* `flutter analyze` / `flutter test` are CI-only, as before — this workspace
+  has no Flutter SDK. The two Dart changes that are easiest to get subtly
+  wrong, the stateful banner and the `.part` probe, are also the two with no
+  local compile check; that is the residual risk of this round.

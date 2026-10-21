@@ -9,6 +9,7 @@ import '../utils/trust_boundary.dart';
 import 'engine_codec.dart';
 import 'engine_contract.dart';
 import 'engine_service.dart';
+import 'engine_start_signal.dart';
 
 const _uuid = Uuid();
 
@@ -322,6 +323,9 @@ class DesktopEngineService implements EngineService {
 
     _running = true;
     _reconnectAttempts = 0;
+    // Desktop equivalent of the Android "paths applied" signal (#91): the
+    // interpreter is up, so Home's resume scan and status banner may run.
+    markEngineStarted();
   }
 
   void _wireProcessStreams(Process process) {

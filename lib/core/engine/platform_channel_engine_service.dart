@@ -1,25 +1,24 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../utils/app_logger.dart';
 import 'engine_codec.dart';
 import 'engine_contract.dart';
 import 'engine_service.dart';
+import 'engine_start_signal.dart';
+import 'progress_channel.dart';
 
 class PlatformChannelEngineService implements EngineService {
   final MethodChannel _channel = const MethodChannel(
     'com.theonly.grablytic/engine',
   );
-  final EventChannel _eventChannel = const EventChannel(
-    'com.theonly.grablytic/progress',
-  );
   final _intentController = StreamController<String>.broadcast();
 
-  /// SINGLE native subscription, shared by progressStream + logStream.
-  /// (Each receiveBroadcastStream() call re-triggers native onListen and
-  /// would orphan the previous sink — so both views derive from this one
-  /// cached broadcast stream. .map/.where preserve broadcast semantics.)
-  Stream<Map<String, dynamic>>? _progressCache;
+  /// The shared native subscription (see [ProgressChannel]).
+  ///
+  /// One reader for the whole process: the engine's progress view and the
+  /// log ingester both derive from it, so an event is decoded once and
+  /// crosses the bridge once (#98).
+  Stream<Map<String, dynamic>> get _events => ProgressChannel.instance.events;
 
   PlatformChannelEngineService() {
     _channel.setMethodCallHandler((call) async {
@@ -82,6 +81,13 @@ class PlatformChannelEngineService implements EngineService {
   bool _pathsApplied = false;
   Future<void>? _startup;
 
+  /// Bumped by every `setPaths`. #97: a settings change that landed while
+  /// the FIRST `paths/set` was still in flight (it can take seconds — the
+  /// handler runs `BinaryPackageManager.init()` and the engine import) used
+  /// to be overwritten by that call's "clear the pending map" step, so the
+  /// new download directory was silently ignored until the next change.
+  int _pathsGeneration = 0;
+
   /// Calls that reach into Python, and so must wait for the engine.
   ///
   /// The rest of the bridge is pure Kotlin (notifications, intents, icon
@@ -119,18 +125,15 @@ class PlatformChannelEngineService implements EngineService {
     if (_pathsApplied) return Future<void>.value();
     final inFlight = _startup;
     if (inFlight != null) return inFlight;
-    final paths = _pendingPaths;
-    if (paths == null) return Future<void>.value();
-    final future = _applyPaths(paths);
+    if (_pendingPaths == null) return Future<void>.value();
+    final future = _applyPaths();
     _startup = future;
     return future;
   }
 
-  Future<void> _applyPaths(Map<String, dynamic> paths) async {
+  Future<void> _applyPaths() async {
     try {
-      await _channel.invokeMethod(EngineMethods.setPaths, paths);
-      _pathsApplied = true;
-      _pendingPaths = null;
+      await _applyLatestPaths();
     } finally {
       // Cleared in `finally`: a failed start must be retryable by the next
       // call rather than pinning every later call to a dead future.
@@ -141,6 +144,28 @@ class PlatformChannelEngineService implements EngineService {
     _deferredConfig.clear();
     for (final entry in pending.entries) {
       await _invokeEnvelope(entry.key, entry.value);
+    }
+  }
+
+  /// Sends the pending paths, and anything that arrived while sending.
+  ///
+  /// Bounded: a `setPaths` that keeps changing during the send is applied a
+  /// few times at most, and a newer value simply wins on the next call (by
+  /// then `_pathsApplied` is true and `setPaths` goes straight through).
+  Future<void> _applyLatestPaths() async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      final paths = _pendingPaths;
+      if (paths == null) return;
+      final generation = _pathsGeneration;
+      await _channel.invokeMethod(EngineMethods.setPaths, paths);
+      _pathsApplied = true;
+      // Native starts Chaquopy inside this call, so the interpreter is up
+      // from here on (#91). Reported before the re-send loop so a Home that
+      // is waiting to scan does not wait for a second round trip.
+      markEngineStarted();
+      if (generation != _pathsGeneration) continue; // a newer map arrived
+      _pendingPaths = null;
+      return;
     }
   }
 
@@ -255,11 +280,16 @@ class PlatformChannelEngineService implements EngineService {
   /// version had, without paying for the import at first frame.
   @override
   Future<void> setPaths(Map<String, dynamic> paths) async {
+    // Counted before the branch so an in-flight first start notices it.
+    _pathsGeneration++;
     if (_pathsApplied) {
       await _channel.invokeMethod(EngineMethods.setPaths, paths);
       return;
     }
     _pendingPaths = paths;
+    // A start may already be running and have taken its own copy: wake it.
+    final inFlight = _startup;
+    if (inFlight != null) await inFlight;
   }
 
   @override
@@ -286,34 +316,7 @@ class PlatformChannelEngineService implements EngineService {
   }
 
   @override
-  Stream<Map<String, dynamic>> get progressStream => _progressCache ??=
-      _eventChannel.receiveBroadcastStream().transform<Map<String, dynamic>>(
-        StreamTransformer.fromHandlers(
-          handleData: (event, sink) {
-            try {
-              if (event is String) {
-                final decoded = jsonDecode(event);
-                if (decoded is Map) {
-                  sink.add(Map<String, dynamic>.from(decoded));
-                }
-              } else if (event is Map) {
-                sink.add(Map<String, dynamic>.from(event));
-              }
-            } catch (_) {
-              // Malformed payload ignored safely
-            }
-          },
-          handleError: (error, stackTrace, sink) {
-            // Formerly swallowed: downstream saw a stalled 0% card
-            // indistinguishable from a dead bridge. Forward so
-            // downloadProvider's onError logs and the UI can react.
-            try {
-              AppLogger.warn('Progress channel error: $error', tag: 'engine');
-            } catch (_) {}
-            sink.addError(error, stackTrace);
-          },
-        ),
-      );
+  Stream<Map<String, dynamic>> get progressStream => _events;
 
   @override
   void dispose() {
@@ -322,7 +325,6 @@ class PlatformChannelEngineService implements EngineService {
       _pathsApplied = false;
       _startup = null;
       _deferredConfig.clear();
-      _progressCache = null;
       if (!_intentController.isClosed) _intentController.close();
     } catch (_) {}
   }
