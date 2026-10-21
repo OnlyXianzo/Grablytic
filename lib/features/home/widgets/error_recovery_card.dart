@@ -138,6 +138,11 @@ class ErrorRecoveryCard extends StatelessWidget {
         return (Icons.tune, 'Pick Format', onPickFormat);
       case 'ERROR_FILE_LOCKED':
         return (Icons.warning, 'Overwrite', onRetry);
+      // Kernel rejected the name (NAME_MAX/ENAMETOOLONG). Retrying the
+      // same output template cannot help, and there is no rename flow
+      // yet — report it plainly instead of offering a doomed retry.
+      case 'ERROR_FILENAME_TOO_LONG':
+        return (Icons.title, 'Name Too Long', null);
       case 'ERROR_QUOTA_EXCEEDED':
         return (Icons.replay, 'Re-download', onRetry);
       case 'ERROR_DRM':

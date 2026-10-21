@@ -486,7 +486,12 @@ def build_ydl_opts(
         "retries": _clamped_int(cfg, "retries", 10, 0, 30),
         "fragment_retries": _clamped_int(cfg, "fragment_retries", 10, 0, 100),
         "windowsfilenames": True,
-        "trim_file_name": 160,
+        # No `trim_file_name`: yt-dlp's option counts characters, not
+        # bytes, and it splits the name on its last two dots, so a title
+        # containing a dot escaped trimming entirely (field logs:
+        # 521-byte name -> [Errno 36]). The name is bounded in bytes by
+        # GuardedYoutubeDL._prepare_filename instead — see
+        # grablytic_engine/filename_guard.py.
     }
 
     opts = apply_aria2c_opts(opts, cfg)
