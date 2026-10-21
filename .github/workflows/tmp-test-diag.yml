@@ -22,67 +22,25 @@ jobs:
 
       - run: flutter pub get
 
-      - name: flutter test (annotated)
+      - name: targeted test run (annotated)
         shell: bash
         run: |
           set +e
-          flutter test --reporter json > /tmp/test.json 2>/tmp/test.err
+          flutter test test/features/home/playlist_selection_screen_test.dart \
+            test/features/library/download_history_screen_test.dart \
+            > /tmp/t.txt 2>&1
           echo "exit=$?"
           python3 - <<'PY'
-          import json
-
-          names = {}
-          errors = []
-          failed = []
-          prints = []
-
-          def emit(level, path, line, msg):
-              msg = (msg or '').replace('\n', ' ').replace('%', 'pct')[:900]
-              loc = f'file={path},line={line}' if path else ''
-              print(f'::{level} {loc}::{msg}')
-
-          for raw in open('/tmp/test.json', errors='replace'):
-              raw = raw.strip()
-              if not raw.startswith('{'):
-                  continue
-              try:
-                  e = json.loads(raw)
-              except ValueError:
-                  continue
-              t = e.get('type')
-              if t == 'testStart':
-                  names[e['test']['id']] = e['test'].get('name', '?')
-              elif t == 'error':
-                  errors.append((names.get(e.get('testID')), e.get('error', ''), e.get('stackTrace', '')))
-              elif t == 'testDone' and e.get('result') != 'success' and not e.get('hidden'):
-                  failed.append(names.get(e.get('testID'), '?'))
-              elif t == 'print':
-                  msg = (e.get('message') or '')
-                  if any(k in msg for k in ('EXCEPTION', 'Exception', 'overflow', 'Timer', 'pumpAndSettle', 'Test failed', 'Error')):
-                      prints.append((names.get(e.get('testID')), msg))
-              elif t == 'done' and not e.get('success'):
-                  print('::error::flutter test reported failure')
-
-          for name, err, stack in errors:
-              where = ''
-              for line in (stack or '').splitlines():
-                  if 'test/' in line and '.dart' in line:
-                      where = line.strip().split(' ')[0]
+          lines = open('/tmp/t.txt', errors='replace').read().splitlines()
+          blocks = 0
+          for i, line in enumerate(lines):
+              if any(k in line for k in ('EXCEPTION CAUGHT', 'The following', 'Failed assertion', 'overflowed', 'Error: ')):
+                  chunk = ' || '.join(l.strip() for l in lines[i:i + 5] if l.strip())
+                  chunk = chunk.replace('%', 'pct')[:800]
+                  print(f'::error::{chunk}')
+                  blocks += 1
+                  if blocks >= 12:
                       break
-              path, lineno = '', ''
-              if ':' in where:
-                  parts = where.rsplit(':', 2)
-                  path, lineno = parts[0], parts[1] if len(parts) > 1 else ''
-              emit('error', path, lineno, f'{name}: {err[:600]}')
-
-          for name in failed[:40]:
-              emit('error', '', '', f'FAILED: {name}')
-
-          for name, msg in prints[:120]:
-              first = [ln for ln in msg.splitlines() if ln.strip()][:3]
-              emit('error', '', '', f'{name}: ' + ' | '.join(first)[:700])
-
-          print(f'::notice::failed tests: {len(failed)}')
+          print(f'::notice::blocks emitted: {blocks}, lines: {len(lines)}')
           PY
-          tail -30 /tmp/test.err | sed 's/^/::error::/'
           exit 0
