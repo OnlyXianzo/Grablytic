@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'app_logger.dart';
+import 'app_version.dart';
 
 /// Automated GitHub Issue reporter (Flutter side, STEP 3C).
 ///
@@ -20,9 +21,12 @@ class GithubReporter {
       var value = AppLogger.redact(input);
       // Authorization and other header-like credentials (including values
       // not anticipated by the general-purpose logger scrubber).
-      value = value.replaceAll(
+      // replaceAll() substitutes its replacement literally: `$1` there
+      // reaches the issue body as the two characters "$1". Capture groups
+      // need the Mapped form (AppLogger already did it this way).
+      value = value.replaceAllMapped(
         RegExp(r'^\s*(authorization|proxy-authorization|cookie|set-cookie)\s*[:=].*$', multiLine: true, caseSensitive: false),
-        r'$1: ***REDACTED***',
+        (m) => '${m.group(1)}: ***REDACTED***',
       );
       // URLs may identify a private resource even after query parameters are
       // removed. Do not send them at all from reports.
@@ -191,7 +195,7 @@ class GithubReporter {
     Object error,
     StackTrace? stack, {
     Map<String, dynamic> context = const {},
-    String appVersion = '0.0.1-beta+1',
+    String? appVersion,
   }) async {
     final stackText = stack?.toString() ?? '';
     final stackLines = stackText.trim().split('\n');
@@ -212,7 +216,7 @@ class GithubReporter {
       logTail: logTail,
       stack: stackText.length > 6000 ? stackText.substring(0, 6000) : stackText,
       context: context,
-      appVersion: appVersion,
+      appVersion: appVersion ?? AppVersion.value,
     );
     return GithubReportDraft(fingerprint: fp, title: title, body: body);
   }
@@ -276,13 +280,13 @@ class GithubReporter {
     Object error,
     StackTrace stack, {
     Map<String, dynamic> context = const {},
-    String appVersion = '0.0.1-beta+1',
+    String? appVersion,
   }) async {
     final draft = await draftCrash(
       error,
       stack,
       context: context,
-      appVersion: appVersion,
+      appVersion: appVersion ?? AppVersion.value,
     );
     return submitDraft(draft);
   }
@@ -296,14 +300,14 @@ class GithubReporter {
   Future<GithubReportResult> reportManual({
     required String userSummary,
     String userSteps = '',
-    String appVersion = '0.0.1-beta+1',
+    String? appVersion,
     bool fullLog = false,
     Map<String, dynamic> context = const {},
   }) async =>
       submitDraft(await draftManual(
         userSummary: userSummary,
         userSteps: userSteps,
-        appVersion: appVersion,
+        appVersion: appVersion ?? AppVersion.value,
         fullLog: fullLog,
         context: context,
       ));
@@ -312,7 +316,7 @@ class GithubReporter {
   Future<GithubReportDraft> draftManual({
     required String userSummary,
     String userSteps = '',
-    String appVersion = '0.0.1-beta+1',
+    String? appVersion,
     bool fullLog = false,
     Map<String, dynamic> context = const {},
   }) async {
@@ -335,7 +339,7 @@ class GithubReporter {
       logTail: logTail,
       stack: '',
       context: context,
-      appVersion: appVersion,
+      appVersion: appVersion ?? AppVersion.value,
       logLabel: fullLog ? 'full' : 'tail',
     );
     return GithubReportDraft(fingerprint: fp, title: title, body: body);

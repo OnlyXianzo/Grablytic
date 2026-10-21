@@ -18,6 +18,18 @@ void main() {
       expect(value, contains('***REDACTED***'));
     });
 
+    test('keeps the header name when masking a header line', () {
+      // replaceAll() writes its replacement literally, so the old code put
+      // the two characters "$1" in every report body instead of the header
+      // name (#104). Both assertions matter: the value is gone, and the
+      // artefact that made the reporter look broken is gone too.
+      final value = GithubReporter.sanitizeForReport(
+        'Authorization: Bearer abc123456',
+      );
+      expect(value, contains('Authorization: ***REDACTED***'));
+      expect(value, isNot(contains(r'$1')));
+    });
+
     test('bounds diagnostics to the requested tail size', () {
       final value = GithubReporter.sanitizeForReport('a' * 100, maxLength: 20);
       expect(value.length, lessThanOrEqualTo(50));
