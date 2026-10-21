@@ -601,7 +601,7 @@ class _UrlInputState extends ConsumerState<_UrlInput> {
               label: 'Clear text',
               child: IconButton(
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                 icon: Icon(
                   Icons.close,
                   size: 16,

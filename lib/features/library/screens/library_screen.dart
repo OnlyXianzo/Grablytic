@@ -23,7 +23,6 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  double _fabScale = 0.0;
 
   /// Local Videos-tab filters (presentation only — no provider changes):
   /// free-text query matched against row titles, plus status chip filter.
@@ -39,24 +38,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     _tabController.addListener(() {
       setState(() {}); // Rebuild to show/hide FAB based on active tab
     });
-    // Drive the FAB from the swipe animation (not just the settled
-    // index) so it shrinks the moment a swipe starts and grows back
-    // only when the playlist tab settles.
-    _tabController.animation?.addListener(_syncFabScale);
-    _syncFabScale();
-  }
-
-  void _syncFabScale() {
-    final v = _tabController.animation?.value ?? _tabController.index.toDouble();
-    final scale = (1.0 - (v - 1.0).abs()).clamp(0.0, 1.0);
-    if ((scale - _fabScale).abs() > 0.01) {
-      setState(() => _fabScale = scale);
-    }
   }
 
   @override
   void dispose() {
-    _tabController.animation?.removeListener(_syncFabScale);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -113,18 +98,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      floatingActionButton: Visibility(
-        visible: _fabScale > 0.05,
-        child: AnimatedScale(
-          scale: _fabScale,
-          duration: const Duration(milliseconds: 150),
-          child: FloatingActionButton.extended(
-            onPressed: () => _showCreatePlaylistDialog(context, ref, colorScheme, textTheme),
-            backgroundColor: colorScheme.primary,
-            foregroundColor: colorScheme.onPrimary,
-            icon: const Icon(Icons.playlist_add),
-            label: const Text('New Playlist'),
-          ),
+      floatingActionButton: AnimatedBuilder(
+        animation: _tabController.animation!,
+        builder: (context, child) {
+          final tabProgress = _tabController.animation!.value;
+          final scale =
+              (1.0 - (tabProgress - 1.0).abs()).clamp(0.0, 1.0).toDouble();
+          return Visibility(
+            visible: scale > 0.05,
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+          );
+        },
+        child: FloatingActionButton.extended(
+          onPressed: () =>
+              _showCreatePlaylistDialog(context, ref, colorScheme, textTheme),
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          icon: const Icon(Icons.playlist_add),
+          label: const Text('New Playlist'),
         ),
       ),
       body: SafeArea(
