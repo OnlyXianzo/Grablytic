@@ -51,7 +51,7 @@ class CrashReports {
         _reporterFactory = reporterFactory ?? GithubReporter.new,
         _clock = clock ?? DateTime.now,
         _autoSendLoader = autoSendLoader,
-        _appVersion = appVersion,
+        _appVersion = appVersion ?? AppVersion.value,
         _sessionStartedAt = (clock ?? DateTime.now)();
 
   /// Process-wide instance, installed by `main()` once the app directory is

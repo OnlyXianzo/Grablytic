@@ -1,7 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
-import '../../../core/utils/app_version.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -27,6 +26,7 @@ import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
 import 'report_problem_screen.dart';
 import '../../../core/utils/offline_link_queue.dart';
+import '../../../core/utils/app_version.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});

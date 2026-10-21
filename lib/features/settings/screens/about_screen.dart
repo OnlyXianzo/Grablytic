@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../../core/utils/app_version.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/adaptive_logo.dart';
+import '../../../core/utils/app_version.dart';
 import '../../../core/widgets/grablytic_components.dart';
 import '../../../core/utils/notification_helper.dart';
 import '../../../providers/settings_provider.dart';
