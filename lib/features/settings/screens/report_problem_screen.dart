@@ -119,13 +119,11 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
     });
 
     PendingReport? report = _report;
-    if (report == null) {
-      report = await reporter.buildManual(
-        summary: _controller.text,
-        category: _category,
-        includeLog: widget.attachLogs,
-      );
-    }
+    report ??= await reporter.buildManual(
+      summary: _controller.text,
+      category: _category,
+      includeLog: widget.attachLogs,
+    );
     if (!mounted) return;
     if (report == null) {
       setState(() {
