@@ -56,43 +56,77 @@ class AdaptiveLogo extends StatelessWidget {
   /// How to inscribe the logo into the space allocated during layout.
   final BoxFit fit;
 
+  String _variantSuffix(double logicalSize) {
+    // Map logical size to closest pre-rendered asset (avoids 1024² decode
+    // for a 28 dp badge — 334× overshoot, 4 MiB decoded → ~11 KiB).
+    // Variants live in assets/brand/variants/ and are registered in pubspec.
+    if (logicalSize <= 32) return '32x32';
+    if (logicalSize <= 48) return '48x48';
+    if (logicalSize <= 72) return '72x72';
+    if (logicalSize <= 96) return '96x96';
+    if (logicalSize <= 144) return '144x144';
+    return '192x192';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final suffix = _variantSuffix(size);
+    final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
+    // Decode width capped at 2× DPR — same rule as CachedThumb/thumb.dart.
+    final cacheW = (size * dpr.clamp(1.0, 2.0)).round().clamp(1, 1024);
 
+    String variantPath(String base) =>
+        'assets/brand/variants/${base}_$suffix.png';
+    // Fallback to the legacy 1024 asset only for sizes >192 or when a
+    // variant is missing in an old bundle. The common path (size 28/48/96)
+    // hits the pre-scaled variant and never decodes 1024².
     final String assetPath;
     switch (variant) {
       case LogoVariant.auto:
         assetPath = isDark
-            ? 'assets/brand/grablytic_logo_dark.png'
-            : 'assets/brand/grablytic_logo_light.png';
+            ? variantPath('grablytic_logo_dark')
+            : variantPath('grablytic_logo_light');
         break;
       case LogoVariant.light:
-        assetPath = 'assets/brand/grablytic_logo_light.png';
+        assetPath = variantPath('grablytic_logo_light');
         break;
       case LogoVariant.dark:
-        assetPath = 'assets/brand/grablytic_logo_dark.png';
+        assetPath = variantPath('grablytic_logo_dark');
         break;
       case LogoVariant.mark:
-        assetPath = 'assets/brand/grablytic_logo_mark.png';
+        assetPath = variantPath('grablytic_logo_mark');
         break;
       case LogoVariant.legacy:
         assetPath = 'assets/brand/grablytic_logo.png';
         break;
     }
 
-    // Bundled assets must always load via Image.asset. A File.existsSync
-    // check against the asset path is CWD-dependent: it is true in a repo
-    // checkout / CI (source files on disk) but false on device (assets are
-    // bundled, not files), which diverged test vs production behavior.
-    // ValueKey forces image reload when theme/variant flips (fixes stuck logo on theme change).
+    // ValueKey forces image reload on theme/variant flip. cacheWidth tells
+    // the codec to downscale at decode time so the ImageCache stores ~11 KiB
+    // instead of 4 MiB for a 28 dp badge.
     final Widget image = Image.asset(
       assetPath,
       key: ValueKey(assetPath),
       width: size,
       height: size,
       fit: fit,
-      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      cacheWidth: cacheW,
+      errorBuilder: (_, _, _) => Image.asset(
+        // Fallback: legacy large asset (still decoded with cacheWidth).
+        variant == LogoVariant.mark
+            ? 'assets/brand/grablytic_logo_mark.png'
+            : (variant == LogoVariant.light
+                ? 'assets/brand/grablytic_logo_light.png'
+                : isDark
+                    ? 'assets/brand/grablytic_logo_dark.png'
+                    : 'assets/brand/grablytic_logo_light.png'),
+        width: size,
+        height: size,
+        fit: fit,
+        cacheWidth: cacheW,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ),
     );
 
     final effectiveRadius = borderRadius ?? BorderRadius.circular(size * 0.28);

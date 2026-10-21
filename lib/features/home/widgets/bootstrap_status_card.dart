@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../providers/engine_status_provider.dart';
 import '../../../core/theme/text_styles.dart';
 
@@ -30,35 +31,7 @@ class BootstrapStatusCard extends ConsumerWidget {
   }
 
   Widget _buildLoadingCard(ColorScheme colorScheme, TextTheme textTheme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withAlpha(40),
-        ),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Checking engine binaries...',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const BootstrapSkeleton();
   }
 
   Widget _buildCompactReadyRow(

@@ -52,6 +52,10 @@ Stream<Map<String, dynamic>> _decodeEventChannel(EventChannel channel) {
           handleData: (event, sink) {
             try {
               if (event is String) {
+                // Fast discard for progress events (~10/s per download).
+                // A substring scan is ~30 ns vs ~2 µs for jsonDecode +
+                // map allocation. Log events carry '"type":"log"'.
+                if (!event.contains('"log"')) return;
                 final decoded = jsonDecode(event);
                 if (decoded is Map) {
                   sink.add(Map<String, dynamic>.from(decoded));

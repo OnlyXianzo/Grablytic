@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/widgets/thumb.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../providers/search_provider.dart';
 import '../../settings/screens/cookie_webview_screen.dart';
 import '../../settings/screens/settings_screen.dart';
@@ -235,20 +236,33 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     TextTheme textTheme,
   ) {
     if (state.isLoading) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(
-              'Searching on ${_currentSite == "soundcloud" ? "SoundCloud" : "YouTube"}...',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
+      return ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Searching on ${_currentSite == "soundcloud" ? "SoundCloud" : "YouTube"}...',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SearchResultsSkeleton(itemCount: 5),
+        ],
       );
     }
 

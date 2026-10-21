@@ -244,17 +244,23 @@ class EngineLogger:
         # Bridge to the rotating server_logs.log handler (STEP 3B).
         # Lazy import avoids a hard dependency cycle; failures are silent
         # so unit tests without persistent init keep passing.
-        try:
-            from grablytic_engine.persistent import bridge_event as _bridge
+        # Perf: persistent bridge is a second disk write per record. Gate to
+        # WARNING+ so DEBUG/INFO ride the daily file + queue only — the
+        # verbose diagnostics path (Diagnostics → File Logs) still has them,
+        # but we avoid a redundant 30 µs redacted copy per record (75% of
+        # per-record cost) that the viewer never shows at verbose-off.
+        if level >= WARN:
+            try:
+                from grablytic_engine.persistent import bridge_event as _bridge
 
-            _level_map = {10: 10, 20: 20, 30: 30, 40: 40, 50: 50}
-            _bridge(
-                _level_map.get(level, 20),
-                f"[{self.name}] {message}"
-                + (f" :: {event['exception']}" if event.get("exception") else ""),
-            )
-        except Exception:
-            pass
+                _level_map = {10: 10, 20: 20, 30: 30, 40: 40, 50: 50}
+                _bridge(
+                    _level_map.get(level, 20),
+                    f"[{self.name}] {message}"
+                    + (f" :: {event['exception']}" if event.get("exception") else ""),
+                )
+            except Exception:
+                pass
 
     def _wants(self, level: int) -> bool:
         """True when at least one sink would accept a record at [level].
@@ -274,7 +280,13 @@ class EngineLogger:
         ):
             return True
         floor = _persistent_bridge_level
-        return floor is not None and level >= floor
+        # Persistent bridge is gated to WARN+ (see _log above) so DEBUG/INFO
+        # records that would only have hit persistent are not wanted.
+        if floor is not None:
+            effective = floor if floor > WARN else WARN
+            if level >= effective:
+                return True
+        return False
 
     def debug(
         self,
