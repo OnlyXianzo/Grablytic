@@ -221,6 +221,29 @@ void main() {
 
         fakeProcess.completeStdoutDone();
         await pumpEventQueue();
+
+        // Closing stdout restarts the engine, and the restart kills the
+        // process, so the exit code that arrives is SIGTERM (-15) rather
+        // than the one the process would have produced. The point of this
+        // test is that a report exists at all.
+        final saved = await store.list();
+        expect(saved, hasLength(1));
+        expect(saved.single.summary, contains('exited with code'));
+        expect(await fakeProcess.exitCode, -15);
+      });
+
+      test('a non-zero exit is captured before the restart', () async {
+        final store = MemoryReportStore();
+        CrashReports.instance = CrashReports(
+          store: store,
+          reporterFactory: _SilentReporter.new,
+        );
+        addTearDown(() => CrashReports.instance = null);
+
+        final service = DesktopEngineService();
+        final fakeProcess = _FakeProcess();
+        service.attachProcessForTesting(fakeProcess);
+
         fakeProcess.completeExit(-9);
         await pumpEventQueue();
 
@@ -239,14 +262,13 @@ void main() {
 
         final service = DesktopEngineService();
         final fakeProcess = _FakeProcess();
-        service.attachProcessForTesting(fakeProcess, wireStreams: true);
+        service.attachProcessForTesting(fakeProcess);
 
-        fakeProcess.completeStdoutDone();
-        await pumpEventQueue();
         fakeProcess.completeExit(0);
         await pumpEventQueue();
 
         expect(await store.list(), isEmpty);
+        expect((await fakeProcess.exitCode), 0);
       });
 
       test('stderr onError logs error safely without restarting engine', () async {
