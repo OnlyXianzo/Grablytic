@@ -437,7 +437,9 @@ def test_download_sections_defaults_off():
 def test_storage_sanitization_options():
     opts = build_ydl_opts()
     assert opts.get("windowsfilenames") is True
-    assert opts.get("trim_file_name") == 160
+    # yt-dlp's trim counts characters and gives up on dotted titles; the
+    # name is bounded in bytes by GuardedYoutubeDL instead.
+    assert "trim_file_name" not in opts
 
 
 def test_js_runtime_configured_with_deno(tmp_path):

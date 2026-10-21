@@ -1366,6 +1366,7 @@ _NO_RETRY_PERMANENT = frozenset(
         "ERROR_QUOTA_EXCEEDED",  # disk full — retry cannot help
         "ERROR_FORMAT_UNAVAILABLE",  # no-video / photo-post class: no media
         "ERROR_FFMPEG_MISSING",  # environment issue, not per-item transient
+        "ERROR_FILENAME_TOO_LONG",  # kernel NAME_MAX — same name always fails
         "ERROR_CANCELLED",  # user intent — never retry
     }
 )

@@ -55,6 +55,13 @@ _ERROR_MAP = {
     "no video formats found": ("ERROR_FORMAT_UNAVAILABLE", True),
     "requested format is not available": ("ERROR_FORMAT_UNAVAILABLE", True),
     "ffmpeg not found": ("ERROR_FFMPEG_MISSING", True),
+    # Kernel NAME_MAX rejection (ENAMETOOLONG, "Errno 36"). Deterministic:
+    # the same name against the same filesystem fails every time, and the
+    # user's only cure is a shorter name — so this must never auto-retry.
+    # Both spellings: Linux "File name too long", Windows "Filename too
+    # long".
+    "file name too long": ("ERROR_FILENAME_TOO_LONG", False),
+    "filename too long": ("ERROR_FILENAME_TOO_LONG", False),
 }
 
 # "Drm" as a bare substring false-positives on filenames
