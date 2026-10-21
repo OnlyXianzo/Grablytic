@@ -1,4 +1,5 @@
 import 'dart:async' show FutureRecord2, runZonedGuarded, unawaited;
+import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -19,9 +20,13 @@ import 'core/utils/log_buffer.dart';
 import 'core/utils/github_reporter.dart';
 import 'core/utils/logging_observers.dart';
 import 'features/home/screens/share_overlay_screen.dart';
+import 'features/settings/screens/report_problem_screen.dart';
 
 /// Route observer instance shared by [GrablyticApp].
 final loggingNavigatorObserver = LoggingNavigatorObserver();
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+const _pendingCrashKey = 'pending_crash_report';
+const _dismissedCrashKey = 'dismissed_crash_report_fingerprint';
 
 void main() {
   // Flutter requires the binding and runApp to live in the SAME zone.
@@ -49,6 +54,7 @@ void main() {
           stackTrace: stack,
         );
         unawaited(AppLogger.flushNow());
+        AppLogger.reportUncaught(error, stack);
       } catch (_) {}
     },
   );
@@ -117,6 +123,18 @@ Future<void> _bootstrap() async {
         if (!autoReport) return;
         final reporter = GithubReporter();
         final result = await reporter.reportCrash(error, stack);
+        if (result.status == GithubReportStatus.failed ||
+            result.status == GithubReportStatus.manualNeeded) {
+          // The report body is sanitized at GithubReporter's final boundary.
+          // Keep only one bounded pending crash for review on next startup.
+          await prefs.setString(_pendingCrashKey, jsonEncode({
+            'fingerprint': result.fingerprint,
+            'title': result.title,
+            'body': result.body,
+            'captured_at': DateTime.now().toUtc().toIso8601String(),
+          }));
+          await prefs.remove(_dismissedCrashKey);
+        }
         AppLogger.info(
           'Auto-report finished: ${result.status.name}${result.url != null ? ' ${result.url}' : ''}',
           tag: 'github-reporter',
@@ -137,6 +155,51 @@ Future<void> _bootstrap() async {
       child: const GrablyticApp(),
     ),
   );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(_promptPendingCrash(prefs));
+  });
+}
+
+Future<void> _promptPendingCrash(SharedPreferences prefs) async {
+  try {
+    final raw = prefs.getString(_pendingCrashKey);
+    if (raw == null) return;
+    final report = jsonDecode(raw);
+    if (report is! Map) return;
+    final fingerprint = report['fingerprint']?.toString() ?? '';
+    if (fingerprint.isEmpty ||
+        prefs.getString(_dismissedCrashKey) == fingerprint) return;
+    final context = appNavigatorKey.currentContext;
+    if (context == null) return;
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('We encountered a problem last time'),
+        content: const Text('A sanitized diagnostic report is saved on this device. Review it first, or open it in GitHub where you can make the final decision to submit.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, 'later'), child: const Text('Not now')),
+          OutlinedButton(onPressed: () => Navigator.pop(dialogContext, 'review'), child: const Text('Review report')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, 'send'), child: const Text('Send report')),
+        ],
+      ),
+    );
+    if (action == null) {
+      await prefs.setString(_dismissedCrashKey, fingerprint);
+      return;
+    }
+    await prefs.setString(_dismissedCrashKey, fingerprint);
+    if (action == 'later') return;
+    appNavigatorKey.currentState?.push(MaterialPageRoute(
+      builder: (_) => ReportProblemScreen(
+        initialTitle: 'The app encountered a problem and restarted.',
+        initialBody: report['body']?.toString(),
+        submitImmediately: action == 'send',
+      ),
+    ));
+  } catch (_) {
+    // A damaged pending report must never prevent normal startup.
+  }
 }
 
 class GrablyticApp extends ConsumerWidget {
@@ -159,6 +222,7 @@ class GrablyticApp extends ConsumerWidget {
     ref.watch(logIngesterProvider);
     final settings = ref.watch(settingsProvider);
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'Grablytic',
       debugShowCheckedModeBanner: false,
       themeMode: _mapThemeMode(settings.themeMode),

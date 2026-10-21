@@ -76,14 +76,26 @@ def redact_text(value) -> str:
     """
     if value is None:
         return ""
-    text = value if isinstance(value, str) else str(value)
+    try:
+        text = value if isinstance(value, str) else str(value)
+    except Exception:
+        return "[field omitted: safe redaction failed]"
     try:
         from grablytic_engine.persistent import scrub_text
 
-        return scrub_text(text)
+        text = scrub_text(text)
     except Exception:
+        # Conservative fallback below is still followed by URL/path removal.
         pass
     text = _SECRET_PARAM_RE.sub(r"\1" + _REDACTED, text)
+    text = re.sub(
+        r"(?im)^([ \t]*(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token)[ \t]*:)[^\r\n]*$",
+        r"\1 " + _REDACTED,
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", r"\1 " + _REDACTED, text
+    )
 
     def _mask_userinfo(m: "re.Match[str]") -> str:
         userinfo = m.group(2)
@@ -91,7 +103,16 @@ def redact_text(value) -> str:
             return m.group(0)
         return f"{m.group(1)}{userinfo.split(':', 1)[0]}:{_REDACTED}@"
 
-    return _USERINFO_RE.sub(_mask_userinfo, text)
+    text = _USERINFO_RE.sub(_mask_userinfo, text)
+    # GitHub issues are public. Even a query-scrubbed URL can expose a private
+    # resource identifier, so remove URLs and absolute local paths entirely.
+    text = re.sub(r"https?://\S+", "[URL removed]", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"(?<![A-Za-z0-9])(?:[A-Za-z]:\\|/(?:[^/\s]+/)+[^\s<>\"']*)",
+        "[local path removed]",
+        text,
+    )
+    return text
 
 
 def redact_context(context) -> dict:
@@ -137,7 +158,9 @@ def redact_context(context) -> dict:
                 v = _sanitize(v)
             except Exception:
                 pass
-        out[k] = redact_text(v) if isinstance(v, str) else v
+        # Never pass structured or non-string values through untouched: their
+        # repr may contain paths, URLs, or credentials just like free text.
+        out[redact_text(k)] = redact_text(v)
     return out
 
 
@@ -272,7 +295,7 @@ def create_issue(
         {
             "title": redact_text(title),
             "body": body,
-            "labels": labels or ["bug", "auto-report"],
+            "labels": labels or ["bug"],
         },
         timeout=20,
     )

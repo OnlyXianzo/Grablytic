@@ -118,9 +118,23 @@ handled by Deno, Node or QuickJS, in that order of preference.
 
 **Privacy.** No account, no analytics, no ad SDKs. Cookies and logins are
 opt-in and, when you do use them, stored in app-private files with owner-only
-permissions rather than in the settings blob. Crash reporting is off unless you
-turn it on; when it is on, the app files a GitHub issue with a redacted log tail
-and nothing else. Uninstalling removes the app's private data, and files you
+permissions rather than in the settings blob. Automatic Flutter crash capture
+is off unless you opt in under Settings → System & Diagnostics. When enabled,
+Flutter/Dart reports that cannot be submitted are saved locally and offered on
+the next launch for review. The Python engine's existing auto-issue notifier
+remains disabled by default and can only file automatically in trusted
+engine deployments that explicitly set `GRABLYTIC_AUTO_REPORT=1` and provide
+`GITHUB_TOKEN`; the in-app switch does not silently turn it on. A manual
+Help & feedback → Report a problem form is available regardless of that setting;
+it prepares a short, sanitized draft and opens the official GitHub issue form.
+Nothing is submitted until you review and confirm it on GitHub. The app never
+ships a GitHub token; direct API submission is therefore unavailable in normal
+builds. Diagnostic attachments are optional and limited to version, platform,
+time, and a small log excerpt. URLs and local paths are removed, credentials
+are masked, and reports can still contain unforeseen private text, so inspect
+the draft before submitting. Automatic capture can record Flutter/Dart errors
+but cannot recover arbitrary native Android process crashes or a forced OS
+termination. Uninstalling removes the app's private data, and files you
 downloaded stay wherever you saved them.
 
 ## Recent work (Oct 18–20)

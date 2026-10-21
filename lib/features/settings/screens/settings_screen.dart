@@ -24,6 +24,7 @@ import 'about_screen.dart';
 import '../../home/screens/link_saver_screen.dart';
 import 'analytics_screen.dart';
 import 'log_viewer_screen.dart';
+import 'report_problem_screen.dart';
 import '../../../core/utils/offline_link_queue.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -181,7 +182,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _matches('Link Saver', 'Saved offline links') ||
                   _matches('Cookies', 'Site logins for members-only content') ||
                   _matches('Packages & Updates', settings.updateChannel) ||
-                  _matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                  _matches('System & Diagnostics', 'Logs, crash reporting, diagnostics, about') ||
+                  _matches('Report a problem', 'Help and feedback'))
                 _SettingsSection(
                   title: 'App',
                   icon: Icons.apps_outlined,
@@ -256,11 +258,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           );
                         },
                       ),
-                    if (_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                    if (_matches('Report a problem', 'Help and feedback'))
+                      _SettingNavItem(
+                        icon: Icons.feedback_outlined,
+                        title: 'Report a problem',
+                        subtitle: 'Help & feedback',
+                        colorScheme: colorScheme,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ReportProblemScreen()),
+                        ),
+                      ),
+                    if (_matches('System & Diagnostics', 'Logs, crash reporting, diagnostics, about'))
                       _SettingNavItem(
                         icon: Icons.info_outline,
                         title: 'System & Diagnostics',
-                        subtitle: 'Logs, diagnostics, about',
+                        subtitle: 'Logs, crash reporting, diagnostics, about',
                         colorScheme: colorScheme,
                         onTap: () {
                           Navigator.of(context).push(
@@ -284,7 +296,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   !_matches('Link Saver', 'Saved offline links') &&
                   !_matches('Cookies', 'Site logins for members-only content') &&
                   !_matches('Packages & Updates', settings.updateChannel) &&
-                  !_matches('System & Diagnostics', 'Logs, diagnostics, about'))
+                  !_matches('System & Diagnostics', 'Logs, crash reporting, diagnostics, about') &&
+                  !_matches('Report a problem', 'Help and feedback'))
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Center(
@@ -1035,11 +1048,24 @@ class PackagesSettingsScreen extends ConsumerWidget {
   }
 }
 
-class SystemSettingsScreen extends ConsumerWidget {
+class SystemSettingsScreen extends ConsumerStatefulWidget {
   const SystemSettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SystemSettingsScreen> createState() => _SystemSettingsScreenState();
+}
+
+class _SystemSettingsScreenState extends ConsumerState<SystemSettingsScreen> {
+  bool _autoCrashReporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoCrashReporting = ref.read(sharedPreferencesProvider).getBool('auto_crash_reporting') ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
@@ -1059,6 +1085,17 @@ class SystemSettingsScreen extends ConsumerWidget {
                 onChanged: () =>
                     ref.read(settingsProvider.notifier).toggleVerbose(),
                 colorScheme: colorScheme,
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.privacy_tip_outlined),
+                title: const Text('Automatic crash reporting'),
+                subtitle: const Text('Off by default. When on, save captured Flutter errors for next-launch review. No background upload or analytics.'),
+                value: _autoCrashReporting,
+                onChanged: (value) async {
+                  await ref.read(sharedPreferencesProvider).setBool('auto_crash_reporting', value);
+                  if (mounted) setState(() => _autoCrashReporting = value);
+                },
               ),
               _SettingNavItem(
                 icon: Icons.bug_report_outlined,

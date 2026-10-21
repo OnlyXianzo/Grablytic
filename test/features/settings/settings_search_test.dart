@@ -37,6 +37,16 @@ void main() {
     });
   }
 
+  testWidgets('reporting entry is discoverable under diagnostics', (tester) async {
+    await pumpSettings(tester);
+    await tester.enterText(find.byType(TextField), 'report a problem');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Report a problem'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tell us what went wrong'), findsOneWidget);
+    expect(find.text('Review and open GitHub'), findsOneWidget);
+  });
+
   testWidgets('clearing a no-match search restores categories', (tester) async {
     await pumpSettings(tester);
     await tester.enterText(find.byType(TextField), 'no-such-setting');

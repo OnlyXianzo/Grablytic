@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_logger.dart';
-import '../../../core/utils/github_reporter.dart';
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/widgets/skeleton.dart';
 import '../../../core/utils/notification_helper.dart';
 import '../../../providers/log_provider.dart';
 import '../widgets/live_log_view.dart';
+import 'report_problem_screen.dart';
 
 class LogViewerScreen extends ConsumerStatefulWidget {
   const LogViewerScreen({super.key});
@@ -29,7 +29,6 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
   int _shownBytes = 0;
   bool _loggingEnabled = AppLogger.isEnabled;
   int _selectedTab = 0;
-  bool _includeFullLog = false;
   bool _exporting = false;
 
   @override
@@ -110,60 +109,10 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
     );
   }
 
-  bool _reporting = false;
-
-  /// Manual GitHub report flow (STEP 3C): flushes logs, dedups, posts.
-  /// Falls back to copying the formatted body when no token is configured.
-  Future<void> _reportToGithub() async {
-    if (_reporting) return;
-    setState(() => _reporting = true);
-    try {
-      final reporter = GithubReporter();
-      final fileName = _selectedFile != null
-          ? _selectedFile!.path.split('/').last
-          : 'none';
-      final result = await reporter.reportManual(
-        userSummary: _selectedFile != null
-            ? 'Log report from $fileName'
-            : 'Manual log report from Diagnostics screen',
-        userSteps: 'Filed manually from Diagnostics & Logs screen.',
-        fullLog: _includeFullLog,
-        context: {'log_file': fileName, 'full_log': _includeFullLog},
-      );
-      if (!mounted) return;
-      switch (result.status) {
-        case GithubReportStatus.created:
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(styledSnackBar(context, 'Issue filed: ${result.url}'));
-          break;
-        case GithubReportStatus.duplicate:
-          ScaffoldMessenger.of(context).showSnackBar(
-            styledSnackBar(context, 'Duplicate exists: ${result.url}'),
-          );
-          break;
-        case GithubReportStatus.manualNeeded:
-          await Clipboard.setData(
-            ClipboardData(text: '${result.title}\n\n${result.body}'),
-          );
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            styledSnackBar(context, 'No token configured — issue text copied. Paste it at github.com/OnlyXianzo/Grablytic/issues/new', duration: const Duration(seconds: 5)),
-          );
-          break;
-        case GithubReportStatus.failed:
-          await Clipboard.setData(
-            ClipboardData(text: '${result.title}\n\n${result.body}'),
-          );
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            styledSnackBar(context, 'Upload failed — issue text copied for manual filing.'),
-          );
-          break;
-      }
-    } finally {
-      if (mounted) setState(() => _reporting = false);
-    }
+  void _reportToGithub() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ReportProblemScreen()),
+    );
   }
 
   /// Saves the selected log into the PUBLIC Downloads folder
@@ -523,23 +472,6 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
             children: [
-              Row(
-                children: [
-                  Icon(Icons.description_outlined, size: 18, color: cs.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Include full log in report (default: tail only)',
-                      style: tt.bodySmall,
-                    ),
-                  ),
-                  Switch(
-                    value: _includeFullLog,
-                    onChanged: (val) => setState(() => _includeFullLog = val),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
               // Save the default export to Downloads through MediaStore.
               SizedBox(
                 width: double.infinity,
@@ -569,15 +501,9 @@ class _LogViewerScreenState extends ConsumerState<LogViewerScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _reporting ? null : _reportToGithub,
-                  icon: _reporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.bug_report_outlined),
-                  label: Text(_reporting ? 'Reporting…' : 'Report to GitHub'),
+                  onPressed: _reportToGithub,
+                  icon: const Icon(Icons.bug_report_outlined),
+                  label: const Text('Report a problem'),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
