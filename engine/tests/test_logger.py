@@ -164,7 +164,13 @@ class TestLogEventStructure:
         logger.fatal("f")
 
         events = _drain(q)
-        assert [e["level"] for e in events] == ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"]
+        assert [e["level"] for e in events] == [
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR",
+            "FATAL",
+        ]
 
     @pytest.mark.unit
     def test_timestamp_format(self) -> None:
@@ -377,7 +383,12 @@ class TestQueueForwarding:
         logger = EngineLogger("test")
 
         class BrokenQueue(queue.Queue[dict[str, Any]]):
-            def put(self, item: dict[str, Any], block: bool = True, timeout: float | None = None) -> None:
+            def put(
+                self,
+                item: dict[str, Any],
+                block: bool = True,
+                timeout: float | None = None,
+            ) -> None:
                 raise RuntimeError("broken")
 
         logger.set_queue(BrokenQueue())
@@ -516,6 +527,7 @@ class TestGlobalPropagation:
         """Order-independent: late-binding globals may be set by other
         modules' tests (e.g. set_paths arms logging)."""
         import grablytic_engine.logger as logger_mod
+
         prev_cb, prev_dir = (
             logger_mod._global_event_callback,
             logger_mod._global_log_dir,
@@ -832,9 +844,7 @@ class TestDownloadLifecycleCorrelation:
         try:
             raise RuntimeError("boom")
         except RuntimeError as exc:
-            logger.log_exception(
-                exc, "Download failed", extra={"download_id": did}
-            )
+            logger.log_exception(exc, "Download failed", extra={"download_id": did})
 
         events = _drain(q)
         assert len(events) == 1
@@ -843,12 +853,12 @@ class TestDownloadLifecycleCorrelation:
         assert "boom" in events[0]["message"]
 
 
-
 @pytest.mark.unit
 def test_concurrent_get_logger_and_global_setters_race_free():
     """Logger registry mutations under concurrency must not raise or lose."""
     import threading as _th
     from grablytic_engine import logger as _lm
+
     errors: list = []
 
     def _make(i: int) -> None:
@@ -893,7 +903,11 @@ class TestFlushLogSinks:
         d = tmp_path / "flush-logs"
         d.mkdir()
         prev_dir = logger_mod._global_log_dir
+        prev_level = logger_mod._global_min_level
         logger_mod.set_global_log_dir(str(d))
+        # DEBUG is opt-in since #94 (paths/set's log_level raises the floor);
+        # this is the "Detailed engine logging" state.
+        logger_mod.set_global_min_level(logger_mod.DEBUG)
         try:
             logger = logger_mod.get_logger("flush-probe")
             for i in range(5):
@@ -911,5 +925,6 @@ class TestFlushLogSinks:
         finally:
             logger_mod.close_log_sinks()
             logger_mod._global_log_dir = prev_dir
+            logger_mod.set_global_min_level(prev_level)
             for lg in list(logger_mod._loggers.values()):
                 lg._log_dir = prev_dir

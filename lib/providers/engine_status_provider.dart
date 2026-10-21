@@ -130,6 +130,16 @@ class EngineStatus {
   }
 }
 
+/// The live engine status: a `bootstrap()` round trip.
+///
+/// **Callers who watch this start the engine** — `bootstrap()` waits for
+/// `paths/set`, and on Android that is the call that starts Chaquopy and
+/// imports yt-dlp (40.5 MiB, ~480 modules). Settings, the share sheet and
+/// the download path want that; the home screen does not (#91).
+///
+/// Home's banner watches it only once `engineStartedProvider` has fired, so
+/// it reports a status instead of requesting one. Anything that needs a
+/// fresh answer can `ref.invalidate(engineStatusProvider)` as before.
 final engineStatusProvider = FutureProvider<EngineStatus>((ref) async {
   final engine = ref.watch(engineProvider);
   try {

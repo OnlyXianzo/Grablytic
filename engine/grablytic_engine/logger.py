@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import time
@@ -68,6 +69,56 @@ def download_context(download_id: str | None):
         yield
     finally:
         _current_download_id.reset(token)
+
+
+_scrub_fn = None
+_sanitize_fn = None
+
+
+def _scrub_helpers():
+    """Resolve the redactors once, lazily.
+
+    This module must not import `persistent` at load time (persistent
+    imports the logger), and a per-record `import` is a dict lookup nobody
+    needs to pay for in a DEBUG flood.
+    """
+    global _scrub_fn, _sanitize_fn
+    if _scrub_fn is None:
+        from grablytic_engine.persistent import sanitize, scrub_text
+
+        _scrub_fn = scrub_text
+        _sanitize_fn = sanitize
+    return _scrub_fn, _sanitize_fn
+
+
+def _sanitize_event(event: dict) -> dict:
+    """Redact one record before ANY sink sees it (#92).
+
+    Targeted rather than `sanitize(event)`: a deep copy of the whole record
+    measured 14.8 us per line, and 90% of that is walking structures that
+    carry no text (`type`, `level`, `ts`, nulls). The free text is
+    `message` and `exception`; `context` and `extra` are structured, so
+    they get the key-aware pass but only when they have anything in them.
+
+    Never raises: if a redactor fails, the record goes out unchanged.
+    A logging path that throws is worse than a log line that might be
+    verbose.
+    """
+    try:
+        scrub, deep = _scrub_helpers()
+        event["message"] = scrub(event["message"])
+        if event.get("exception"):
+            event["exception"] = scrub(event["exception"])
+        if event.get("context"):
+            event["context"] = deep(event["context"])
+        if event.get("extra"):
+            event["extra"] = deep(event["extra"])
+    except (AttributeError, KeyError, TypeError, ValueError, re.error):
+        # A redactor bug must not cost the record. Narrow on purpose: the
+        # broad-catch ratchet counts `except Exception`, and these five are
+        # what `scrub_text`/`sanitize` can actually raise on a bad record.
+        pass
+    return event
 
 
 class EngineLogger:
@@ -191,6 +242,17 @@ class EngineLogger:
             "exception": repr(exception) if exception else None,
         }
 
+        # Redact ONCE, at the source (#92).
+        #
+        # Only the rotating server_logs.log used to be sanitized. The same
+        # payload also went to the daily engine_*.txt file and out over the
+        # UI bridge verbatim, so `sig=...` was masked in one file and
+        # readable in the other — including the copy the Diagnostics screen
+        # hands the user for an issue report. Doing the scrub before the
+        # payload exists means every sink gets the same bytes, and there is
+        # no sink left that has to remember.
+        event = _sanitize_event(event)
+
         # Serialize ONCE. The daily file, the queue and the bridge all
         # carry the same bytes; this used to be two json.dumps per record
         # on the hot path (thousands of lines per download).
@@ -242,19 +304,25 @@ class EngineLogger:
                 pass
 
         # Bridge to the rotating server_logs.log handler (STEP 3B).
-        # Lazy import avoids a hard dependency cycle; failures are silent
-        # so unit tests without persistent init keep passing.
-        try:
-            from grablytic_engine.persistent import bridge_event as _bridge
+        #
+        # WARNING+ only (#93). The bridge is a SECOND persistent file: the
+        # same line is already in engine_*.txt, so forwarding INFO/DEBUG
+        # paid a sanitize pass (~29 us) plus a second write to duplicate a
+        # record that is already on disk. server_logs.log keeps the records
+        # worth attaching to a crash report; the daily file keeps the
+        # narrative.
+        floor = _persistent_bridge_level
+        if floor is None or level >= floor:
+            try:
+                from grablytic_engine.persistent import bridge_event as _bridge
 
-            _level_map = {10: 10, 20: 20, 30: 30, 40: 40, 50: 50}
-            _bridge(
-                _level_map.get(level, 20),
-                f"[{self.name}] {message}"
-                + (f" :: {event['exception']}" if event.get("exception") else ""),
-            )
-        except Exception:
-            pass
+                _bridge(
+                    level,
+                    f"[{self.name}] {message}"
+                    + (f" :: {event['exception']}" if event.get("exception") else ""),
+                )
+            except (OSError, ValueError, RuntimeError):
+                pass
 
     def _wants(self, level: int) -> bool:
         """True when at least one sink would accept a record at [level].
@@ -559,6 +627,13 @@ _global_log_dir: str | None = None
 # Module-global bridge floor (see EngineLogger._bridge_min_level).
 _global_bridge_min_level: int = INFO
 
+# Module-global file/queue/stderr floor (#94). INFO, not DEBUG: the early
+# gate only earns its keep when some records are genuinely unwanted, and a
+# release build writing every yt-dlp DEBUG line to disk by default is the
+# reason it could not. Diagnostics → "Detailed engine logging" raises this
+# to DEBUG for the session.
+_global_min_level: int = INFO
+
 # Wake flag for the background drain thread (see __main__.poll_queues).
 # Producers — the log queue here, and the progress/result queues via
 # hooks._put_bounded — set it so the drain runs on demand instead of on a
@@ -614,6 +689,7 @@ def get_logger(name: str) -> EngineLogger:
             if _global_log_dir is not None:
                 _loggers[name].set_log_dir(_global_log_dir)
             _loggers[name].set_bridge_min_level(_global_bridge_min_level)
+            _loggers[name].set_min_level(_global_min_level)
         return _loggers[name]
 
 
@@ -647,6 +723,28 @@ def set_global_event_callback(cb) -> None:
         try:
             logger.set_event_callback(cb)
         except Exception:
+            pass
+
+
+def set_global_min_level(level: int) -> None:
+    """Set the file/queue/stderr floor on every logger, present and future.
+
+    This is the call site `_wants()` was missing (#94): with the level
+    pinned at DEBUG and a daily file configured, the early gate could never
+    answer "no sink wants this", so it saved nothing. The floor is now a
+    real setting, pushed by `paths/set` from the host's "Detailed engine
+    logging" toggle — DEBUG when the user asks for it, INFO otherwise.
+
+    Never raises.
+    """
+    global _global_min_level
+    _global_min_level = level
+    with _loggers_lock:
+        targets = list(_loggers.values())
+    for logger in targets:
+        try:
+            logger.set_min_level(level)
+        except (AttributeError, TypeError, ValueError):
             pass
 
 

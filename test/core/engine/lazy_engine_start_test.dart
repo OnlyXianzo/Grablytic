@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grablytic/core/engine/engine_start_signal.dart';
 import 'package:grablytic/core/engine/platform_channel_engine_service.dart';
 
 /// Finding #84 — the engine must not come up until something asks for it.
@@ -51,6 +53,9 @@ void main() {
 
   setUp(() {
     calls = <MethodCall>[];
+    // The start signal is process-global; a previous test's start must not
+    // leak into the next one.
+    resetEngineStartSignal();
     install();
   });
 
@@ -201,5 +206,43 @@ void main() {
       (calls.single.arguments as Map)['output_dir'],
       '/new/dir',
     );
+  });
+
+  test('a paths change during the first start is not dropped (#97)', () async {
+    final gate = Completer<void>();
+    final sent = <Map<String, dynamic>>[];
+    install(onPathsSet: (call) async {
+      sent.add(Map<String, dynamic>.from(call.arguments as Map));
+      if (sent.length == 1) await gate.future;
+      return null;
+    });
+
+    final engine = PlatformChannelEngineService();
+    await engine.setPaths(paths());
+    // First Python call: starts the apply, which the mock holds open.
+    final started = engine.queueStatus();
+    // Settings writes a new download folder while that call is in flight.
+    final changed = engine.setPaths({...paths(), 'output_dir': '/new/dir'});
+    await Future<void>.delayed(Duration.zero);
+
+    gate.complete();
+    await started;
+    await changed;
+
+    expect(sent, hasLength(2), reason: 'the change must be sent too');
+    expect(sent.first['output_dir'], paths()['output_dir']);
+    expect(sent.last['output_dir'], '/new/dir',
+        reason: 'the last write is what the engine gets');
+  });
+
+  test('applying the paths reports the engine as started (#91)', () async {
+    expect(engineHasStarted, isFalse);
+    addTearDown(resetEngineStartSignal);
+
+    final engine = PlatformChannelEngineService();
+    await engine.setPaths(paths());
+    await engine.queueStatus();
+
+    expect(engineHasStarted, isTrue);
   });
 }

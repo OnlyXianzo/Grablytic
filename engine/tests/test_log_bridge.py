@@ -105,16 +105,29 @@ def test_queue_path_still_works_alongside_callback(_clean_bridge):
 
 def test_debug_skips_callback_but_reaches_file_and_queue(tmp_path, _clean_bridge):
     """Loop-1 hang fix: DEBUG must never cross the UI bridge (JNI/EventChannel
-    → Flutter rebuilds at tens of Hz), while file + queue keep every byte."""
-    q: queue.Queue = queue.Queue()
-    sink = _Sink()
-    set_global_event_callback(sink)
-    log = get_logger("grablytic_engine.test_bridge_debug_gate")
-    log.set_queue(q)
-    log.set_log_dir(str(tmp_path))
+    → Flutter rebuilds at tens of Hz), while the file + queue keep every byte
+    the user asked for.
 
-    log.debug("per-block progress chatter")
-    log.info("milestone")
+    "Asked for" is the point of #94: DEBUG is now opt-in (the Detailed engine
+    logging toggle raises the floor through set_global_min_level). This test
+    turns it on the way the host does, then asserts the bridge still drops it.
+    """
+    from grablytic_engine import logger as logger_mod
+
+    previous = logger_mod._global_min_level
+    logger_mod.set_global_min_level(logger_mod.DEBUG)
+    try:
+        q: queue.Queue = queue.Queue()
+        sink = _Sink()
+        set_global_event_callback(sink)
+        log = get_logger("grablytic_engine.test_bridge_debug_gate")
+        log.set_queue(q)
+        log.set_log_dir(str(tmp_path))
+
+        log.debug("per-block progress chatter")
+        log.info("milestone")
+    finally:
+        logger_mod.set_global_min_level(previous)
 
     # Bridge: INFO only.
     assert len(sink.events) == 1
@@ -342,8 +355,10 @@ class TestBridgeSanitization:
         prev_dir = persist_mod._configured_dir
         try:
             init_persistent_logging(str(tmp_path))
+            # WARNING, not INFO: #93 gated this second file to the records
+            # worth attaching to a crash report.
             bridge_event(
-                logging.INFO,
+                logging.WARNING,
                 "fetch https://x.test/watch?v=abc&sig=SECRET123&lsig=HUNTER2",
             )
             flush_now()
@@ -639,8 +654,13 @@ class TestVerboseOpts:
     def test_verbose_dumps_sanitized_opts(self, tmp_path, monkeypatch, _clean_bridge):
         import grablytic_engine.downloader as dl_mod
         import grablytic_engine.paths as paths_mod
+        from grablytic_engine import logger as logger_mod
 
         monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+        # DEBUG is opt-in since #94: the host raises the floor through
+        # paths/set's log_level, which is what this reproduces.
+        previous_level = logger_mod._global_min_level
+        logger_mod.set_global_min_level(logger_mod.DEBUG)
         paths_mod.set_paths(
             data_dir=str(tmp_path),
             output_dir=str(tmp_path),
@@ -661,6 +681,7 @@ class TestVerboseOpts:
             )
         finally:
             dl_mod._active_downloads.pop("verb1", None)
+            logger_mod.set_global_min_level(previous_level)
         # Loop-1 contract: the verbose triage dump is DEBUG, so it rides the
         # FILE (diagnostics preserved, sanitized) — never the UI bridge.
         logs = [
@@ -730,11 +751,18 @@ class TestBatchedDailyWriter:
 
     @pytest.mark.unit
     def test_debug_buffered_until_close(self, tmp_path, _clean_bridge):
-        log = get_logger("grablytic_engine.test_writer_buffered")
-        log.set_log_dir(str(tmp_path))
-        for i in range(5):
-            log.debug(f"tick {i}")
-        close_log_sinks()
+        from grablytic_engine import logger as logger_mod
+
+        previous = logger_mod._global_min_level
+        logger_mod.set_global_min_level(logger_mod.DEBUG)
+        try:
+            log = get_logger("grablytic_engine.test_writer_buffered")
+            log.set_log_dir(str(tmp_path))
+            for i in range(5):
+                log.debug(f"tick {i}")
+            close_log_sinks()
+        finally:
+            logger_mod.set_global_min_level(previous)
         files = [p for p in tmp_path.rglob("engine_*.txt")]
         assert files
         content = files[0].read_text()

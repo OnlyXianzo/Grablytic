@@ -100,8 +100,20 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
     this.resolveCacheDir,
     this.resolveDownloadDir,
     this.resolveActiveDownloads,
-  }) : super(const AsyncValue.loading()) {
-    scan();
+  }) : super(const AsyncValue.loading());
+
+  bool _hasScanned = false;
+
+  /// Runs the scan unless one has already run this session.
+  ///
+  /// The constructor used to call `scan()` unconditionally (#91). That made
+  /// merely *constructing* this notifier start the engine — and
+  /// `downloadProvider` reads it, so the engine started on the first frame
+  /// of every launch whether or not the interrupted-downloads card was even
+  /// rendered. Home now calls this once the engine is already up.
+  Future<void> scanIfNeeded() {
+    if (_hasScanned) return Future<void>.value();
+    return scan();
   }
 
   Future<List<String>> _allowedDirectories() async {
@@ -138,6 +150,7 @@ class ResumeNotifier extends StateNotifier<AsyncValue<List<ResumeCandidate>>> {
   }
 
   Future<void> scan() async {
+    _hasScanned = true;
     state = const AsyncValue.loading();
     try {
       final allowedDirs = await _allowedDirectories();

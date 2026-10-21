@@ -135,12 +135,30 @@ def is_sensitive_key(key: Any) -> bool:
     return k.endswith(_SENSITIVE_SUFFIXES)
 
 
+# Cheap pre-check: the five regexes above only match text that carries one
+# of their trigger words or a URL. A message without any of them cannot
+# contain a match, so the full scrub (measured 29.3 us on a 129-byte line)
+# is skipped. Every alternative of every pattern above is covered by this
+# hint — if a new pattern is added, its keyword belongs here too.
+_SCRUB_HINT_RE = re.compile(
+    r"(?i)(?:token|sig|key|auth|secret|passw|session|cookie|credential|"
+    r"bearer|expire|proxy|://)"
+)
+
+
 def _scrub_string(text: str) -> str:
     """Mask secret-bearing shapes inside a free-text string.
 
     Public alias: :func:`scrub_text`. The GitHub notifier posts PUBLIC
     issues, so it must use the same scrubber as the on-disk logger.
+
+    Every persisted copy now goes through here (#92: the daily file and the
+    UI bridge used to get the raw line), so the common case — a message
+    with no URL, token, key or header in it — is answered by one regex
+    search instead of five substitutions.
     """
+    if not _SCRUB_HINT_RE.search(text):
+        return text
     masked = _HEADER_RE.sub(lambda m: m.group("head") + "***REDACTED***", text)
     masked = _BEARER_RE.sub(lambda m: f"{m.group(1)} ***REDACTED***", masked)
     masked = _SECRET_PARAM_RE.sub(r"\1***REDACTED***", masked)
@@ -250,11 +268,17 @@ def init_persistent_logging(
     log_dir: str,
     max_bytes: int = DEFAULT_MAX_BYTES,
     backup_count: int = DEFAULT_BACKUP_COUNT,
-    level: int = logging.DEBUG,
+    level: int = logging.WARNING,
 ) -> logging.Logger:
     """Configure (or reconfigure) the rotating ``server_logs.log`` handler.
 
     Idempotent per directory — repeat calls with the same dir are no-ops.
+
+    Default floor is WARNING (#93). This file is the SECOND copy of every
+    record — the daily ``engine_*.txt`` already has the line — so
+    forwarding INFO and DEBUG from here bought a sanitize pass plus a
+    write to duplicate what was already on disk. What belongs in a crash
+    report is what went wrong, and that is WARNING and above.
     Safe to call from ``paths/set`` and from tests with tmp dirs.
     """
     global _configured_dir, _handler, _std_logger

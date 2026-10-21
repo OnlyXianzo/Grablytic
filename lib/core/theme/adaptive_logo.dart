@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/thumb.dart';
+
 /// Available variants for the Grablytic brand logo.
 enum LogoVariant {
   /// Follows the active theme's brightness (light mode -> light logo, dark mode -> dark logo).
@@ -86,11 +88,17 @@ class AdaptiveLogo extends StatelessWidget {
     // checkout / CI (source files on disk) but false on device (assets are
     // bundled, not files), which diverged test vs production behavior.
     // ValueKey forces image reload when theme/variant flips (fixes stuck logo on theme change).
+    //
+    // `cacheWidth` on the tenth image site (#96): the brand PNGs are
+    // 1024x1024 — 4.00 MiB decoded — and the hero renders one at 28 logical
+    // px. Four variants, re-decoded on every theme flip, for a 28 px box.
+    // Decoding at the rendered size costs ~14 KiB instead.
     final Widget image = Image.asset(
       assetPath,
       key: ValueKey(assetPath),
       width: size,
       height: size,
+      cacheWidth: thumbCacheWidth(context, size),
       fit: fit,
       errorBuilder: (_, _, _) => const SizedBox.shrink(),
     );

@@ -2,6 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grablytic/core/theme/adaptive_logo.dart';
 
+/// The asset name behind an [Image]'s provider.
+///
+/// `Image.asset(..., cacheWidth: ...)` wraps the `AssetImage` in a
+/// `ResizeImage` (#96), so the provider is no longer the AssetImage itself.
+String _assetName(Image image) {
+  final provider = image.image;
+  if (provider is ResizeImage) {
+    return (provider.imageProvider as AssetImage).assetName;
+  }
+  return (provider as AssetImage).assetName;
+}
+
 void main() {
   testWidgets('AdaptiveLogo renders light asset in light mode', (tester) async {
     await tester.pumpWidget(
@@ -17,8 +29,7 @@ void main() {
     expect(imageFinder, findsOneWidget);
 
     final image = tester.widget<Image>(imageFinder);
-    final assetImage = image.image as AssetImage;
-    expect(assetImage.assetName, 'assets/brand/grablytic_logo_light.png');
+    expect(_assetName(image), 'assets/brand/grablytic_logo_light.png');
     expect(image.width, 96);
     expect(image.height, 96);
   });
@@ -37,8 +48,7 @@ void main() {
     expect(imageFinder, findsOneWidget);
 
     final image = tester.widget<Image>(imageFinder);
-    final assetImage = image.image as AssetImage;
-    expect(assetImage.assetName, 'assets/brand/grablytic_logo_dark.png');
+    expect(_assetName(image), 'assets/brand/grablytic_logo_dark.png');
   });
 
   testWidgets('AdaptiveLogo respects explicit variant overrides', (tester) async {
@@ -59,8 +69,8 @@ void main() {
     final images = tester.widgetList<Image>(find.byType(Image)).toList();
     expect(images.length, 2);
 
-    expect((images[0].image as AssetImage).assetName, 'assets/brand/grablytic_logo_light.png');
-    expect((images[1].image as AssetImage).assetName, 'assets/brand/grablytic_logo.png');
+    expect(_assetName(images[0]), 'assets/brand/grablytic_logo_light.png');
+    expect(_assetName(images[1]), 'assets/brand/grablytic_logo.png');
   });
 
   testWidgets('AdaptiveLogo clips with provided borderRadius', (tester) async {

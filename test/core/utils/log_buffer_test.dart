@@ -614,4 +614,55 @@ void main() {
       expect(buffer.getEntriesForDownload('dl-2'), isEmpty);
     });
   });
+
+  group('filter (#95)', () {
+    test('keeps matches older than the render budget', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(message: 'needle', level: LogLevel.error));
+      for (var i = 0; i < 50; i++) {
+        buffer.add(_entry(message: 'filler $i'));
+      }
+
+      // Truncate-then-filter would see only the last 10 entries and return
+      // nothing; filtering the ring finds the old match.
+      final matches = buffer.filter(
+        limit: 10,
+        test: (e) => e.message == 'needle',
+      );
+
+      expect(matches, hasLength(1));
+      expect(matches.single.message, 'needle');
+    });
+
+    test('keeps the NEWEST matches when more than limit match', () {
+      final buffer = LogBuffer();
+      for (var i = 0; i < 30; i++) {
+        buffer.add(_entry(message: 'hit $i'));
+      }
+
+      final matches = buffer.filter(limit: 5, test: (e) => e.message.startsWith('hit'));
+
+      expect(matches.map((e) => e.message), [
+        'hit 25',
+        'hit 26',
+        'hit 27',
+        'hit 28',
+        'hit 29',
+      ]);
+    });
+
+    test('returns an empty list for a non-positive limit', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry());
+      expect(buffer.filter(limit: 0, test: (_) => true), isEmpty);
+    });
+
+    test('does not expose the backing ring', () {
+      final buffer = LogBuffer();
+      buffer.add(_entry(message: 'a'));
+      final matches = buffer.filter(test: (_) => true);
+      matches.clear();
+      expect(buffer.entries, hasLength(1));
+    });
+  });
 }

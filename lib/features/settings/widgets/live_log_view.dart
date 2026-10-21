@@ -95,20 +95,34 @@ class _LiveLogViewState extends ConsumerState<LiveLogView> {
     final needle = _searchQuery.toLowerCase();
     return [
       for (final e in entries)
-        if ((_levelFilter == null || e.level == _levelFilter) &&
-            (_sourceFilter == null || e.source == _sourceFilter) &&
-            (needle.isEmpty || e.matches(needle)))
-          e,
+        if (_matches(e, needle)) e,
     ];
   }
 
-  /// What the list renders: the newest [kLiveLogRowBudget] entries only.
+  /// The one filter predicate, shared by the export (whole ring) and the
+  /// render path (newest matches inside the row budget).
+  bool _matches(LogEntry entry, String needle) =>
+      (_levelFilter == null || entry.level == _levelFilter) &&
+      (_sourceFilter == null || entry.source == _sourceFilter) &&
+      (needle.isEmpty || entry.matches(needle));
+
+  /// What the list renders: the newest [kLiveLogRowBudget] MATCHES.
   ///
   /// A `ListView.builder` over 5,000 rows is fine while scrolling but not
   /// fine while filtering, and nobody scrolls back 5,000 rows in a live
   /// tail. Export still covers everything.
-  List<LogEntry> _visible(LogBuffer buffer) =>
-      _filteredAll(buffer.snapshot(limit: kLiveLogRowBudget));
+  ///
+  /// Filtering inside the budget, not after it (#95): truncate-then-filter
+  /// drops matches that are older than the budget but still in the ring, so
+  /// a search for something that happened earlier returned nothing on
+  /// desktop. The buffer walks its ring once and keeps the newest N hits.
+  List<LogEntry> _visible(LogBuffer buffer) {
+    final needle = _searchQuery.toLowerCase();
+    return buffer.filter(
+      limit: kLiveLogRowBudget,
+      test: (e) => _matches(e, needle),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

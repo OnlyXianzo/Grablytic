@@ -175,6 +175,7 @@ def set_paths(
     po_token: str | None = None,
     ffmpeg_ld_path: str | None = None,
     nodejs_path: str | None = None,
+    log_level: str | int | None = None,
 ) -> dict:
     """Configure every engine path. Serialized by _paths_lock.
 
@@ -182,6 +183,10 @@ def set_paths(
     mapping, PATH, LD_LIBRARY_PATH and sys.path — happens under one
     lock acquisition. Callers on Android invoke this straight from
     Kotlin on a background dispatcher.
+
+    ``log_level`` ("debug" | "info" | an int) is the host's "Detailed
+    engine logging" toggle. It is applied here because this is the one
+    call every platform makes before any work starts (#94).
     """
     with _paths_lock:
         return _set_paths_impl(
@@ -195,6 +200,7 @@ def set_paths(
             po_token,
             ffmpeg_ld_path,
             nodejs_path,
+            log_level,
         )
 
 
@@ -354,20 +360,51 @@ def _ensure_site_packages(data_dir: str) -> None:
     sys.path.insert(0, site_packages)
 
 
-def _init_engine_logging(data_dir: str) -> None:
+def _log_level_value(level) -> int | None:
+    """Map a host-supplied level name/int to a logger level, or None.
+
+    Unknown values return None rather than guessing: a typo in a setting
+    must not silently turn the flood back on.
+    """
+    if isinstance(level, bool):
+        return None
+    if isinstance(level, int):
+        return level if level in (10, 20, 30, 40, 50) else None
+    if isinstance(level, str):
+        return {
+            "debug": 10,
+            "verbose": 10,
+            "info": 20,
+            "warn": 30,
+            "warning": 30,
+            "error": 40,
+            "fatal": 50,
+        }.get(level.strip().lower())
+    return None
+
+
+def _init_engine_logging(data_dir: str, log_level=None) -> None:
     """Point the engine's file loggers at data_dir/logs (never raises).
 
     Engine file logging must work on every platform — including Android,
     where Chaquopy calls set_paths directly and __main__ never runs.
     Both helpers are idempotent per directory and never raise, so a
     logging failure can never break path configuration.
+
+    ``log_level`` sets the file/queue floor (#94). Without a caller the
+    floor stays at its module default, which is INFO.
     """
     import os
 
+    level = _log_level_value(log_level)
     try:
         from grablytic_engine.logger import set_global_log_dir
 
         set_global_log_dir(os.path.join(data_dir, "logs"))
+        if level is not None:
+            from grablytic_engine.logger import set_global_min_level
+
+            set_global_min_level(level)
     except Exception:
         pass
     try:
@@ -389,6 +426,7 @@ def _set_paths_impl(
     po_token: str | None = None,
     ffmpeg_ld_path: str | None = None,
     nodejs_path: str | None = None,
+    log_level=None,
 ) -> dict:
     import os
 
@@ -428,7 +466,7 @@ def _set_paths_impl(
     _apply_loader_path(ffmpeg_ld_path)
     _apply_bin_dir_to_path(bin_dir)
     _ensure_site_packages(data_dir)
-    _init_engine_logging(data_dir)
+    _init_engine_logging(data_dir, log_level)
 
     return {"success": True}
 
