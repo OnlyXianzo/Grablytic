@@ -7,7 +7,7 @@ import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/crash_reporter.dart';
 import '../../../core/utils/pending_report.dart';
 import '../../../core/theme/text_styles.dart';
-import '../../../core/widgets/grablytic_components.dart';
+import '../../../core/utils/notification_helper.dart';
 
 /// "Report a problem" — the one place a non-technical user can say what
 /// went wrong and send it.
@@ -81,16 +81,13 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
   Future<void> _loadExisting(String id) async {
     final reporter = CrashReporter.instance;
     if (reporter == null) return;
-    PendingReport? match;
+    PendingReport? found;
     for (final report in await reporter.pending()) {
       if (report.id == id) {
-        match = report;
+        found = report;
         break;
       }
     }
-    // Bind to a final: a nullable local that a closure captures is not
-    // promotable, and the screen needs `match.category` non-null.
-    final found = match;
     if (!mounted || found == null) return;
     setState(() {
       _report = found;
@@ -137,7 +134,7 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
       _report = report;
       _phase = _Phase.sending;
     });
-    final outcome = await reporter.submit(report!);
+    final outcome = await reporter.submit(report);
     if (!mounted) return;
     setState(() {
       _outcome = outcome;

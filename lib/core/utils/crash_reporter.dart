@@ -240,7 +240,9 @@ class CrashReporter {
     if (!reporter.canPost) {
       return ReportOutcome(
         status: ReportSubmission.needsBrowser,
-        url: reporter.issueUrl(title: title, body: body, labels: _labelsFor(report)),
+        url: reporter
+            .issueUrl(title: title, body: body, labels: _labelsFor(report))
+            .toString(),
         report: report,
         message: 'No GitHub token in this build — submit on the prefilled page.',
       );

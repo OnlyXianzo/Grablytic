@@ -21,6 +21,14 @@ jobs:
             echo "::error::${chunk}"
           done
           exit 1
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-output
+          path: |
+            /tmp/analyze.txt
+            /tmp/test.txt
       - name: Test
         if: always()
         run: |
