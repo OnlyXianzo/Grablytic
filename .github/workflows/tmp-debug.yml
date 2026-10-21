@@ -26,7 +26,8 @@ jobs:
         run: |
           set -o pipefail
           flutter test > /tmp/test.txt 2>&1 && echo "::notice::tests clean" && exit 0
-          sed -n '/\[E\]/,$p' /tmp/test.txt | head -70 | sed -e 's/%/%25/g' -e 's/\r//g' | while IFS= read -r line; do
+          echo "::error::flutter test failed; tail follows"
+          tr -d '\r' < /tmp/test.txt | grep -v '^$' | tail -60 | sed 's/%/%25/g' | while IFS= read -r line; do
             echo "::error::${line:0:280}"
           done
           exit 1
