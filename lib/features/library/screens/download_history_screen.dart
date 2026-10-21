@@ -6,6 +6,7 @@ import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/notification_helper.dart';
 import '../../../core/utils/trust_boundary.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../providers/download_history_provider.dart';
 import '../../home/widgets/download_log_sheet.dart';
 
@@ -345,7 +346,7 @@ class _DownloadHistoryScreenState
                 },
               );
             },
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const HistorySkeleton(),
             error: (err, _) => Center(
               child: Text('Error: $err',
                   style: textTheme.bodyMedium

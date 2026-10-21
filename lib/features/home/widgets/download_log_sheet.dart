@@ -7,6 +7,7 @@ import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/log_entry.dart';
 import '../../../providers/log_provider.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../core/utils/notification_helper.dart';
 
 /// Modal bottom sheet displaying logs scoped to an individual download.
@@ -512,7 +513,7 @@ class _DownloadLogSheetState extends ConsumerState<DownloadLogSheet> {
           // Log list / content area
           Expanded(
             child: _isLoadingDisk
-                ? const Center(child: CircularProgressIndicator())
+                ? const HistorySkeleton(itemCount: 4)
                 : entries.isEmpty
                     ? Center(
                         child: Column(

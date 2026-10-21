@@ -6,6 +6,7 @@ import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/download_config.dart';
 import '../../../core/utils/playlist_selection.dart';
 import '../../../core/utils/schedule_guard.dart';
+import '../../../core/widgets/skeleton.dart';
 import '../../../providers/download_provider.dart';
 import '../../../providers/metered_guard.dart';
 import '../../../providers/preset_provider.dart';
@@ -305,7 +306,7 @@ class _PlaylistSelectionScreenState
       ),
       body: SafeArea(
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const PlaylistSkeleton()
             : _error != null
             ? Center(
                 child: Padding(
