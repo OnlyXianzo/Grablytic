@@ -88,11 +88,16 @@ class _ReportProblemScreenState extends ConsumerState<ReportProblemScreen> {
         break;
       }
     }
-    if (!mounted || found == null) return;
+    // Values are read out here: a local that is assigned after its
+    // declaration is not promotable inside the closure below.
+    final report = found;
+    if (!mounted || report == null) return;
+    final category = report.category;
+    final summary = report.summary;
     setState(() {
-      _report = found;
-      _category = found.category;
-      _controller.text = found.summary;
+      _report = report;
+      _category = category;
+      _controller.text = summary;
     });
     if (widget.autoSend) await _send();
   }
