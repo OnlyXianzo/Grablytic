@@ -107,7 +107,9 @@ jobs:
           # `gh api` follows GitHub's 302 to signed blob storage. Capture the
           # failure instead of dying silently: an unreachable log is the one
           # thing this workflow exists to report on.
-          if gh api "repos/${{ github.repository }}/actions/jobs/${JOB_ID}/logs" > "$LOG" 2>"$RUNNER_TEMP/gh.err"; then
+          # `--allow-escape-sequences`: Actions logs carry ANSI colour codes,
+          # which `gh api` refuses to write to a non-tty by default.
+          if gh api --allow-escape-sequences "repos/${{ github.repository }}/actions/jobs/${JOB_ID}/logs" > "$LOG" 2>"$RUNNER_TEMP/gh.err"; then
             echo "Fetched $(wc -l < "$LOG") log lines via gh api."
           else
             echo "::warning::gh api failed: $(head -c 400 "$RUNNER_TEMP/gh.err" | tr '\n' ' ')"
@@ -145,13 +147,14 @@ jobs:
           except ValueError:
               ctx = 2
 
-          # Timestamped log lines look like `2026-10-20T07:31:39.1234567Z rest`.
+          # Actions logs are ANSI-coloured and timestamped; both are noise here.
           STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?")
+          ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
           lines = []
           with open(path, encoding="utf-8", errors="replace") as handle:
               for raw in handle:
-                  lines.append(STAMP.sub("", raw.rstrip("\n")))
+                  lines.append(STAMP.sub("", ANSI.sub("", raw.rstrip("\n"))))
 
           # Markers that identify *why* a job went red.
           markers = [
@@ -182,7 +185,12 @@ jobs:
               hits.append((start, end))
 
           if not hits:
-              print("::error::No failure markers matched in the job log; see the raw log tail above.")
+              # The markers are best-effort; a build tool that fails without a
+              # familiar shape still has to explain itself, so publish the tail.
+              tail = [l for l in lines if l.strip()][-15:]
+              print("::error::No failure markers matched; emitting the last 15 log lines instead.")
+              for line in tail:
+                  print("::error::tail " + line.strip()[:900])
               raise SystemExit(0)
 
           print(f"::group::Extracted {len(hits)} failure block(s)")
@@ -204,8 +212,9 @@ jobs:
           import sys
 
           STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?")
+          ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
           with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
-              lines = [STAMP.sub("", l.rstrip("\n")) for l in handle]
+              lines = [STAMP.sub("", ANSI.sub("", l.rstrip("\n"))) for l in handle]
 
           # The per-step markers Actions writes name the step that ran; report
           # the last one so the annotation is tied to the right step.
