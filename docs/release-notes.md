@@ -77,7 +77,7 @@ gap to pad.
 - "should now work" when you know it does, or when you do not
 
 Say what you measured or drop the sentence. The writing rules in
-[`AGENTS.md`](../AGENTS.md) and [`skills/stop-slop`](../skills/stop-slop/SKILL.md)
+[`AGENTS.md`](../AGENTS.md) and [`.agents/skills/stop-slop`](../.agents/skills/stop-slop/SKILL.md)
 apply here like everywhere else.
 
 ## Before you tag

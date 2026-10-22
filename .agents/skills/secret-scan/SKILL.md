@@ -94,7 +94,7 @@ Audit all commit hunks and refs across branches.
 ### Option A: Bundled Python Scanner (`scripts/deep_git_scan.py`)
 Run the optimized, zero-dependency Git history scanner located in this skill:
 ```bash
-python3 skills/secret-scan/scripts/deep_git_scan.py <repo_path>
+python3 .agents/skills/secret-scan/scripts/deep_git_scan.py <repo_path>
 ```
 Scans every unified diff across `--all` refs for:
 - AWS Access & Secret Keys
@@ -157,6 +157,16 @@ git-filter-repo --replace-text "${TMPDIR:-/tmp}/replace.txt"
 git push origin --force --all
 git push origin --force --tags
 ```
+
+Coordinate before you run this. A force push rewrites every collaborator's
+clone, orphans open pull requests, and breaks any fork that tracks the branch.
+On a repository you do not own alone, that is a conversation with the
+maintainers first, not a cleanup step.
+
+Rewriting does not un-publish either. GitHub keeps unreferenced commits
+reachable by SHA, and every fork, mirror, and cached pull-request ref keeps its
+own copy. The rotation in step 1 is the remediation; the rewrite only stops the
+next reader from finding it.
 
 ### 4. Alert Repository Collaborators
 Notify repository members to discard existing clones and re-clone fresh copies to avoid accidentally pushing back rewritten historical commits.

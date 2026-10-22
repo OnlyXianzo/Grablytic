@@ -8,6 +8,12 @@ description: |
 license: MIT
 metadata:
   version: "3.1.0"
+  author: Siqi Chen
+  upstream: https://github.com/blader/humanizer
+  upstream_commit: 8c307f367c91bd974002f10f2be2965d642c13df
+  upstream_date: "2026-10-16"
+  upstream_license: MIT
+  vendoring: verbatim copy of SKILL.md at the commit above
 ---
 
 # Humanizer: remove AI writing patterns

@@ -65,7 +65,7 @@ Anything unclear from code goes here. Resolve it by reading code and tests, then
 
 - **Commit `05dc457`.** The Android 14 background-freeze fix is in `main`. The 2026-10-08 snapshot could not find it.
 
-- **Tracked-doc typography drift.** `README.md`, `docs/architecture.md`, `docs/contributing.md`, `docs/features.md`, `AGENTS.md`, `.github/pull_request_template.md`, and `skills/studio-critic-loop/SKILL.md` now name Bricolage Grotesque for headings, Figtree for body, and IosevkaCharonMono for machine text. InstrumentSans remains only in legacy settings screens.
+- **Tracked-doc typography drift.** `README.md`, `docs/architecture.md`, `docs/contributing.md`, `docs/features.md`, `AGENTS.md`, `.github/pull_request_template.md`, and `.agents/skills/studio-critic-loop/SKILL.md` now name Bricolage Grotesque for headings, Figtree for body, and IosevkaCharonMono for machine text. InstrumentSans remains only in legacy settings screens.
 
 - **Log-export docs.** `docs/troubleshooting.md` now names MediaStore `Download/Grablytic-logs/` as the Android default and app-private `log-exports/` as the fallback.
 

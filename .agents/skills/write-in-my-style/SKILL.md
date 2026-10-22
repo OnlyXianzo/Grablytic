@@ -4,6 +4,9 @@ description: Write and edit prose in the maintainer's own voice, learned from sa
 metadata:
   trigger: Drafting or editing prose that carries the maintainer's voice
   author: Grablytic
+  license_source: GPL-3.0, same as the repository
+  upstream: none
+  vendoring: written here, not imported. The voice is learned from this repository's own prose.
 ---
 
 # Write in my style
@@ -64,8 +67,8 @@ writing in the wrong voice.
 
 ## Before you hand it over
 
-Run the text against `skills/stop-slop/SKILL.md` and
-`skills/humanizer/SKILL.md`. Both are checks on the same problem: text that
+Run the text against `.agents/skills/stop-slop/SKILL.md` and
+`.agents/skills/humanizer/SKILL.md`. Both are checks on the same problem: text that
 sounds generated. This skill sets the target voice; those two remove what pulls
 away from it.
 

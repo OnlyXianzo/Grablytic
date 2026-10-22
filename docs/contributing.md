@@ -118,9 +118,10 @@ before writing a release section.
 
 Prose in this repository follows three skills, in this order:
 
-1. [`write-in-my-style`](../skills/write-in-my-style/SKILL.md) sets the voice.
-2. [`stop-slop`](../skills/stop-slop/SKILL.md) removes AI tells.
-3. [`humanizer`](../skills/humanizer/SKILL.md) audits the result.
+1. [`write-in-my-style`](../.agents/skills/write-in-my-style/SKILL.md) sets the
+   voice.
+2. [`stop-slop`](../.agents/skills/stop-slop/SKILL.md) removes AI tells.
+3. [`humanizer`](../.agents/skills/humanizer/SKILL.md) audits the result.
 
 That covers README, `docs/`, `.agents/vault/`, commit bodies, pull request
 descriptions and release notes. [`AGENTS.md`](../AGENTS.md) has the short rule

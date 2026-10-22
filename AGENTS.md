@@ -67,7 +67,7 @@ Do not describe a run you did not perform.
 | `test/` | Flutter widget and unit tests |
 | `android/app/src/main/kotlin/com/theonly/grablytic/` | Kotlin native layer |
 | `docs/` | Product docs |
-| `skills/` | Published agent skills |
+| `.agents/skills/` | Published agent skills |
 | `.agents/vault/` | Project knowledge notes, tracked; read before large changes |
 | `.agents/` (rest) | Local agent workspace, ignored by git |
 
@@ -183,14 +183,21 @@ This project gets a lot of AI-generated text. Keep it readable and specific.
 README, `docs/`, `.agents/vault/`, commit bodies, pull request descriptions,
 release notes, or an answer to the maintainer.
 
-1. [`skills/write-in-my-style/SKILL.md`](skills/write-in-my-style/SKILL.md) sets
-   the target voice, from this repository's own prose.
-2. [`skills/stop-slop/SKILL.md`](skills/stop-slop/SKILL.md) removes AI tells.
-3. [`skills/humanizer/SKILL.md`](skills/humanizer/SKILL.md) audits the result
-   and rewrites what still sounds generated.
+1. [`.agents/skills/write-in-my-style/SKILL.md`](.agents/skills/write-in-my-style/SKILL.md)
+   sets the target voice, from this repository's own prose.
+2. [`.agents/skills/stop-slop/SKILL.md`](.agents/skills/stop-slop/SKILL.md)
+   removes AI tells.
+3. [`.agents/skills/humanizer/SKILL.md`](.agents/skills/humanizer/SKILL.md)
+   audits the result and rewrites what still sounds generated.
 
 They are checklists, so run them over the final text, not the first draft.
 Where any of them conflicts with the rules below, the rules below win.
+
+[`.agents/skills/human-writing/SKILL.md`](.agents/skills/human-writing/SKILL.md)
+is the genre layer. Load it to decide what a README, docs page, changelog entry,
+or blog post should contain and in what order. It does not replace the three
+above: this repository's voice beats its general advice on how a sentence
+sounds, and the three passes still run last.
 
 The short version, so a missed step is still visible in review:
 
@@ -211,8 +218,8 @@ The short version, so a missed step is still visible in review:
 
 ## Skills
 
-Published skills live in [`skills/`](skills/README.md). Read the relevant
-`SKILL.md` before using it.
+Published skills live in [`.agents/skills/`](.agents/skills/README.md). Read the
+relevant `SKILL.md` before using it.
 
 Skills use placeholders for machine-specific paths:
 
