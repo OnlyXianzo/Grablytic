@@ -28,7 +28,7 @@ event bridge) between Flutter and Python.
 | Download accelerator | aria2c (static binary) | Parallel fragments (`-x1..16`, validated). **Never** for DASH/HLS (native downloader instead, CVE-2026-50574). |
 | Persistence | SharedPreferences + SQLite | Settings/presets/playlists/auth in prefs; download history in SQLite (`sqflite` + `sqflite_common_ffi` on desktop). |
 | Logging | `AppLogger` (Dart) + `logger`/`persistent` (Python) | Buffered 30 s flush, `app_logs.txt` mirror, `RotatingFileHandler` (`server_logs.log`), traced IPC, global handlers, Riverpod/nav/engine observers. |
-| Crash reporting | `CrashReports` + `GithubReporter` (Dart), `github_notifier` (Python) | Capture is local and unconditional (redacted draft on disk, no network on the fatal path). A five-report queue with fingerprint dedup and a three-day prompt cooldown feeds a prefilled GitHub form the user submits. The Python notifier is a developer tool that needs an explicit token. |
+| Crash reporting | `CrashReports` + `GithubReporter` (Dart), `github_notifier` (Python) | Capture is local and unconditional (redacted draft on disk, no network on the fatal path). A three-report queue with fingerprint dedup and a three-day prompt cooldown feeds a prefilled GitHub form the user submits. The Python notifier is a developer tool that needs an explicit token. |
 | Fonts | Bricolage Grotesque (headings) / Figtree (body) / Iosevka Charon Mono (mono) | Bundled in `assets/fonts/`, no runtime fetch. InstrumentSans remains only in legacy settings screens. |
 
 ## Layered Architecture
@@ -469,9 +469,11 @@ All screens pass WCAG 2.2 compliance:
 - Screen reader support with descriptive `label` properties
 - Navigation labels on all BottomNav and NavigationRail items
 
-The accessibility rules live in `AGENTS.md` and are checked by
-[`test/features/`](https://github.com/OnlyXianzo/Grablytic/tree/main/test/features)
-and the frame-rate audit under `test/performance/`.
+The rules live in `AGENTS.md`. Touch-target sizes and semantic labels are
+asserted in the widget tests under
+[`test/features/`](https://github.com/OnlyXianzo/Grablytic/tree/main/test/features).
+`test/performance/frame_rate_audit.dart` is a rendering check, not an
+accessibility one: it asserts that screens build and paint without errors.
 
 ## Test Coverage
 

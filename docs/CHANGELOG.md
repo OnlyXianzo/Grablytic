@@ -107,12 +107,9 @@ Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-). Orpha
   Kotlin 11→0, Python 2/2, docs/link-check/secret-scan green; `desktop_engine`
   null guard for `_process` race.
 
-<details>
-<summary>Automated commit listing (57 commits)</summary>
-
-`tool/generate_release_changelog.py v0.0.4 HEAD` cannot see the orphan
-`redesign/ui` history, so those commits were merged in by hand from
-`32a5947..351c8aa`.
+> Generated from `tool/generate_release_changelog.py v0.0.4 HEAD`. That script
+> cannot see the orphan `redesign/ui` history, so those commits were merged in
+> by hand from `32a5947..351c8aa`:
 
 Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-).
 
@@ -209,8 +206,6 @@ Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-).
 - `f544a56` fix(library): history shows thumbnails and plays media
 - `6cea501` fix(downloads): portrait-safe format ladder + batch quality picker
 - `8b681f6` fix(logs): save engine log to Downloads via tail-export + full flush
-
-</details>
 
 ## v0.0.4 — 2026-09-17 (huge improvement release; 118 commits since v0.0.2)
 
@@ -394,7 +389,7 @@ From `tool/generate_release_changelog.py v0.0.2 v0.0.4`. Diff vs v0.0.2: 152 fil
 - `ea50f70ac` fix(metered): confirm user taps on metered links when Wi-Fi Only is on
 - `5849e6224` fix(logs): fix level filtering cancellation bug and improve disk fallback parsing
 
-## Pre-release notes — 2026-09-13 (Speed sparkline, DB resume, background scheduler, share sheet, queue, playlist selection)
+## Unreleased — 2026-09-13 (Speed sparkline, DB resume, background scheduler, share sheet, queue, playlist selection)
 
 - **Speed sparkline & ETA smoothing**:
   - Dual-stage exponential moving average (EMA) smoothing for download speeds ($\alpha=0.3$) and ETA countdowns ($\alpha=0.15$) eliminating erratic UI fluctuations.
@@ -438,7 +433,7 @@ From `tool/generate_release_changelog.py v0.0.2 v0.0.4`. Diff vs v0.0.2: 152 fil
   (release-APK icon, real downloads, Android 13+ permission/alerts,
   Kotlin CI build) remain open manual verification.
 
-## Pre-release notes — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
+## Unreleased — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
 
 ### Fixed
 - **Silent event-channel death** (completed files, 0% UI): `@Keep` on the
@@ -521,7 +516,7 @@ From `tool/generate_release_changelog.py v0.0.2 v0.0.4`. Diff vs v0.0.2: 152 fil
 - PageView tab animation no longer logs intermediate fly-through pages.
 - `yt-dlp` floor raised to `>=2025.11.12` (EJS/JS-runtime requirement).
 
-## Pre-release notes — September 2026
+## Unreleased — September 2026
 
 ### Added
 - Android: `ffmpeg` + `deno` bundled in our own jniLibs (SHA-256-pinned `packages.gradle.kts` fetch, `BinaryPackageManager` resolve/probe/extract).

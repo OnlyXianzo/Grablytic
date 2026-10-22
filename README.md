@@ -299,7 +299,7 @@ rather than a public issue. Details are in [`docs/security.md`](docs/security.md
 | YouTube downloads fail or stop at the format list | Check Diagnostics for `js_runtime`. It should read `deno` or `quickjs`. Re-run bootstrap; on desktop the Deno download needs network access. |
 | FFmpeg missing (Android) | You are probably on a contributor build made with `-PskipNativePackages`. Rebuild with the packages, or set a custom FFmpeg path in Settings. |
 | Progress sticks at 99% | On purpose. The last percent is reserved for the terminal `finished` event. Check the live log for the post-processing stage. |
-| Resume finds nothing | Only `.part` files younger than 24 hours count, in the cache directory or the download folder, including subfolders. The `.info.json` sidecar is only needed when the URL has to be recovered. |
+| Resume finds nothing | The scan covers the cache directory and the download folder, including subfolders. Files older than 24 hours are listed as expired, and Resume is offered only for fresh files that still have a recoverable URL, from the `.info.json` sidecar when one exists. |
 | Anything else | Settings → Diagnostics & Logs → Export gives you `app_logs.txt` and `server_logs.log`. |
 
 Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).

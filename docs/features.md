@@ -63,7 +63,7 @@
 | Update channels | stable / nightly / master; `update_check` diffs SHA-256 | Settings → Updates |
 | Persistent logs | `app_logs.txt` (Dart, 30 s flush) + `server_logs.log` (Python rotation) | Export |
 | Live viewer | Color-coded, level/tag/search/source filters, expand, auto-scroll | Diagnostics & Logs |
-| Crash capture | Flutter errors, uncaught Dart errors and unexpected engine exits become a redacted local report; nothing leaves the device until you press Send | Settings → Report a problem, or the next-launch banner |
+| Crash capture | Flutter errors, uncaught Dart errors and unexpected engine exits become a redacted local report; it leaves the device only when you press Send, or without asking if you turned on auto-send | Settings → Report a problem, or the next-launch banner |
 | Observers | Navigation + Riverpod + engine tracing | Automatic |
 
 ## ♿ Accessibility & theming

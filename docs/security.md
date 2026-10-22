@@ -34,8 +34,11 @@ Report a vulnerability privately:
 ### Threat boundaries
 
 - **Defended against:** malicious shared URLs and payload files, archive
-  traversal, network interception (TLS everywhere, SHA-256 verification of
-  every download), and cross-app inspection (Android sandbox, `0600` files).
+  traversal, network interception (TLS for every request), and cross-app
+  inspection (Android sandbox, `0600` files). Every binary the bootstrapper
+  installs and the pinned yt-dlp wheel are SHA-256 verified against the
+  manifest. Media downloads are not: yt-dlp fetches them over TLS and there is
+  no trusted digest to compare against.
 - **Out of scope:** OS or root compromise, and a zero-day in an upstream
   dependency before that upstream ships a patch.
 
@@ -93,9 +96,11 @@ by default.
 personal files, and command-line arguments.
 
 Redaction is applied when the draft is built, again at `_buildBody`, when the
-short summary is stored in the queue, and once more inside `issueUrl` /
+short summary is stored in the queue, and once more inside `issueUrl` and
 `createIssue`. The last two are the points where a report leaves the app, so a
-caller that forgets to scrub still cannot leak.
+caller that forgets to scrub the title or body still cannot leak one. Labels
+are passed through unchanged: keep them to the fixed `bug`-style set and never
+route free text there.
 It **fails closed**: if the scrubber throws, the field becomes
 `[diagnostics omitted: safe redaction failed]` rather than the original text.
 The trade-off is deliberate and documented: because whole URLs are stripped, a

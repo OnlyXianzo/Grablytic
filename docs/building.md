@@ -132,9 +132,9 @@ Notes:
   CI matrix produces the same artifacts without either risk.
 - First-run download of the runtime instead of bundling is NOT possible on Android:
   API 29+ forbids executing app-downloaded files (W^X), so only APK-bundled jniLibs run.
-- CI builds five variants across three ABIs; the asset names it produces are the
-  ones the README links to (`-arm64-deno`, `-arm64-node`, `-armv7-node`,
-  `-x86_64-deno`, `-x86_64-node`, `-universal`).
+- CI builds five ABI/runtime variants (`arm64-deno`, `arm64-node`,
+  `armv7-node`, `x86_64-deno`, `x86_64-node`) plus a separate `universal`
+  package, six assets in all. Those are the names the README links to.
 
 **Platform notes:**
 - `minSdk = 24` (Chaquopy requirement; Android 7.0+ devices)

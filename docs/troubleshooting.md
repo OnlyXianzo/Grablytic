@@ -22,7 +22,7 @@ queued.
 | Slow fragment downloads | aria2c off or DASH source | Enable aria2c (Wi-Fi), raise chunks (≤16). DASH/HLS always use the native downloader by design (CVE-2026-50574). |
 | Stuck at 99% | Post-processing stage | By design: streaming progress caps at 99%; only terminal `finished` = 100%. Check Live Logs for the PP stage (merge / embed / chapters). |
 | `finished` never arrives | Cancel race / client polling | Update to latest `main`. Finished events are delayed-popped to avoid the polling race; terminal events carry `filesize_bytes`. |
-| Resume finds nothing | Expired or misplaced files | Only `.part` files younger than 24 h qualify, with a matching `.info.json` when the URL has to be recovered. The scan covers the cache dir and the download folder, including subfolders. |
+| Resume finds nothing | Expired or misplaced files | The scan covers the cache dir and the download folder, including subfolders. `.part` files older than 24 h are listed as expired and cannot be resumed. A fresh file needs a recoverable URL, taken from `.info.json` when it exists. |
 | Subtitles not embedded | Old version | Fixed Sept 2026 via `FFmpegEmbedSubtitle` PP. Ensure `embedsubtitles` is on and FFmpeg is healthy. |
 | Chapters not cut | PP order / no categories | SponsorBlock categories must be non-empty; cutter runs EmbedSubtitle → ModifyChapters → Metadata. |
 | Geo/rate-limit errors | Region / IP throttling | Error card shows VPN hint (`suggests_vpn`); try proxy, `geo_bypass`, sleep interval, or cookies. |

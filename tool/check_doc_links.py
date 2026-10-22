@@ -27,7 +27,8 @@ KNOWN_ANCHORS = set()
 
 LINK_RE = re.compile(r"\]\(([^)\s]*?)(#[^)]*)?\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
-FENCE_RE = re.compile(r"^\s*(```|~~~)")
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
 
 
 def slugify(text: str) -> str:
@@ -49,19 +50,47 @@ def slugify(text: str) -> str:
     return "".join(out).replace(" ", "-")
 
 
+def prose_lines(src: str):
+    """Yield the lines that are actually rendered, skipping fenced code.
+
+    A fence closes only on the same character, at least as long as the opener,
+    with nothing but whitespace after it. Anything else stays inside the block,
+    which is what CommonMark does and what keeps a nested ``` in an example
+    from ending the block early.
+    """
+    fence = None
+    for line in src.splitlines():
+        match = FENCE_RE.match(line)
+        if fence is None:
+            if match:
+                fence = (match.group(1)[0], len(match.group(1)))
+                continue
+            yield line
+            continue
+        if match:
+            char, length = fence
+            if (match.group(1)[0] == char and len(match.group(1)) >= length
+                    and not match.group(2).strip()):
+                fence = None
+        # Fence lines and everything between them are not rendered prose.
+
+
+def without_inline_code(line: str) -> str:
+    """Blank out `code spans` so a link-shaped example inside one is ignored."""
+    return INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
+
+
+def readable_text(src: str) -> str:
+    return "\n".join(without_inline_code(line) for line in prose_lines(src))
+
+
 def anchors_of(path: str) -> set:
     try:
         src = open(path, encoding="utf-8").read()
     except OSError:
         return set()
     slugs, seen = set(), {}
-    in_fence = False
-    for line in src.splitlines():
-        if FENCE_RE.match(line):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+    for line in prose_lines(src):
         match = HEADING_RE.match(line)
         if not match:
             continue
@@ -94,7 +123,7 @@ def main() -> int:
         return anchor_cache[rel]
 
     for rel in md_files:
-        src = open(os.path.join(ROOT, rel), encoding="utf-8").read()
+        src = readable_text(open(os.path.join(ROOT, rel), encoding="utf-8").read())
         for match in LINK_RE.finditer(src):
             link = (match.group(1) or "").strip()
             fragment = (match.group(2) or "")[1:]
