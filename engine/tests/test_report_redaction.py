@@ -18,7 +18,9 @@ from pathlib import Path
 import pytest
 
 SECRET = "SUPERSECRETVALUE"
-CORPUS = Path(__file__).resolve().parents[2] / "test" / "fixtures" / "redaction_corpus.json"
+CORPUS = (
+    Path(__file__).resolve().parents[2] / "test" / "fixtures" / "redaction_corpus.json"
+)
 
 
 def _redact(text):
