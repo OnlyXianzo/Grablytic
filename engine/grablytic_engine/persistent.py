@@ -187,10 +187,13 @@ def _mask_cookie_material(text: str) -> str:
     Contextual on purpose: the repr rule runs only on lines that contain
     ``Cookie(``, so a bare ``value='x'`` in any other log line is untouched.
     """
-    if "Cookie(" in text:
+    # Case-insensitive because the rule it gates is `(?i)`: a repr rendered by
+    # anything other than http.cookiejar could spell it `COOKIE(`, and a
+    # case-sensitive gate would skip the line without scrubbing it.
+    if "cookie(" in text.lower():
         lines = []
         for line in text.split("\n"):
-            if "Cookie(" in line:
+            if "cookie(" in line.lower():
                 line = _COOKIE_VALUE_RE.sub(
                     lambda m: m.group(1) + "***REDACTED***" + m.group(3), line
                 )

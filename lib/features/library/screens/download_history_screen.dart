@@ -41,15 +41,17 @@ Future<void> playHistoryRecord(
     return;
   }
   bool opened = false;
+  Object? error;
   try {
     final res = await ref.read(engineProvider).openFile(path);
     opened = res['success'] == true;
+    error = res['error'];
   } catch (_) {}
   if (!context.mounted) return;
   if (opened) return;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text('No app can play this file.\nOpen file at: $path'),
+      content: Text(openFileFailureMessage(path, error)),
       backgroundColor: Theme.of(context).colorScheme.error,
     ),
   );

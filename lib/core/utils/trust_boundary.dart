@@ -66,6 +66,22 @@ String? sanitizeEngineFilePath(String? raw) {
   return normalized;
 }
 
+/// The message to show when `intent/open_file` did not open the file.
+///
+/// The Kotlin side answers `{success: false, error: ...}`, and two of those
+/// errors are not "no player installed": a path outside the download folder
+/// (SEC-004), and a file that is gone. Telling the user no app can play a file
+/// the app refused to share sends them looking for the wrong problem.
+String openFileFailureMessage(String path, Object? error) {
+  final text = error is String ? error : '';
+  if (text.contains('outside the download folder')) {
+    return 'This file is outside the download folder the app manages.\n'
+        'It is probably in a folder you switched away from.\n'
+        'Open file at: $path';
+  }
+  return 'No app can play this file.\nOpen file at: $path';
+}
+
 /// True when [filePath] resolves inside [baseDir] (symlink-aware where the
 /// platform resolves them; string-level otherwise). Never throws.
 bool isPathWithinDir(String filePath, String baseDir) {
