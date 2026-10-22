@@ -262,7 +262,8 @@ every push and PR:
 | Job | What it checks |
 |---|---|
 | Flutter Analyze & Test | `flutter analyze` clean, `flutter test --coverage`, 30% project-lib coverage floor |
-| Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate, broad-catch ratchet, version-literal gate |
+| Linux desktop build | installs the GTK/ninja build deps, builds the release bundle, asserts the `grablytic` executable exists |
+| Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate, broad-catch ratchet, version-literal gate, `pytest tool/tests` |
 | Android API 35 | release lint, then a real emulator run through Flutter → Chaquopy → Python |
 | Docs Link Check | every relative link in `README.md` and `docs/` resolves |
 | Secret Scan | gitleaks over the full history |

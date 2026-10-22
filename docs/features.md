@@ -3,7 +3,7 @@
 > Last updated: **2026-10-21**. Capability catalog; settings paths are the app's
 > labels, not internal names.
 
-## 📥 Downloading
+## Downloading
 
 | Capability | Details | Settings |
 |---|---|---|
@@ -11,21 +11,21 @@
 | Muxed streams | Non-YouTube platforms expose pre-merged streams alongside DASH | Format Picker (muxed badge) |
 | Batch URLs | Multi-URL paste, clipboard/file import, per-item status | Home → Batch |
 | Playlists | Selection screen: multi-select, reverse/shuffle, unavailable marking; ranges (`1-10`), single-item (`no_playlist`) | Playlist Selection |
-| Queue | FIFO engine queue, default 2 concurrent (1–5), queued status, enforced at every entry point | Simultaneous downloads |
+| Queue | FIFO engine queue, default 2 concurrent (3 on 8+ cores), clamped 1–5, queued status, enforced at every entry point | Simultaneous downloads |
 | Per-item controls | Overflow menu: redownload, audio re-fetch, delete (file + history), per-download logs | Home / Library item |
 | Section cutting | FFmpeg-only `download_sections` (`*10:15-20:00`), `force_keyframes_at_cuts`; bad specs warn-and-skip | Advanced |
 | Resume & DB recovery | SQLite schema v8 execution snapshots (`configJson`, byte counters, queue position), 5s heartbeat, automatic startup recovery sweep in `DownloadNotifier`, safe `BootReceiver` (reboot recovery without an illegal background FGS start), plus a `.part`/`.aria2` scan that also covers subfolders | Automatic |
 | Archive | `download_archive` skips repeats; optional per-folder archives | Download Archive |
 | Scheduling | Time window + weekdays queue gating | Schedule |
 | Observed sources & WorkManager | Android WorkManager `ObservedSourcesPollWorker` (`observed-sources-poll`, zero exact alarms), two-tier poll (Atom RSS tier 1, Chaquopy fallback tier 2), `seen_source_videos` deduplication, auto-queueing into the `downloads` table | Observed Sources & Settings → Schedule |
-| Speed sparkline & ETA | Dual-stage EMA speed ($\alpha=0.3$) and ETA ($\alpha=0.15$) smoothing, 60-sample historical ring buffer, zero-dependency `DownloadSparkline` canvas painter | Active download cards |
+| Speed sparkline & ETA | Dual-stage EMA smoothing (speed α 0.3, ETA α 0.15), 60-sample historical ring buffer, zero-dependency `DownloadSparkline` canvas painter | Active download cards |
 | Live | `live_from_start` for livestreams | Advanced |
-| Rate & retries | Rate limit, retries (10), fragment retries (10), sleep interval, concurrent fragments (4), socket timeout (30) | Network |
+| Rate & retries | Rate limit, retries (10), fragment retries (10), sleep interval, concurrent fragments (2, up to 16), socket timeout (30) | Network |
 | Proxy & geo | HTTP/SOCKS proxy, `geo_bypass`, VPN hints on classified errors | Network / Privacy |
 | aria2c | Parallel fragments `-x1..16` (default 5), `--max-download-limit` (validated), 1 MB splits; progressive only; DASH/HLS stay native | aria2c toggle |
 | Keep-alive (Android) | `dataSync` foreground service with progress notification | Automatic |
 
-## 🎨 Media & metadata
+## Media and metadata
 
 | Capability | Details | Settings |
 |---|---|---|
@@ -40,7 +40,7 @@
 | Presets | 7 built-in + unlimited custom (format + container + template) | Presets |
 | Preview | Thumbnail + duration + stream counts header in Format Picker | Format Picker |
 
-## 🔓 Access & bypass
+## Access and bypass
 
 | Capability | Details | Settings |
 |---|---|---|
@@ -51,7 +51,7 @@
 | Extractor strategy | `player_client = ["default", "mweb"]` multi-client (never forced single) | Automatic |
 | Anonymous first | `anonymous_first` tries no-auth before cookies | Privacy |
 
-## 🧰 Reliability & diagnostics
+## Reliability and diagnostics
 
 | Capability | Details | Where |
 |---|---|---|
@@ -66,7 +66,7 @@
 | Crash capture | Flutter errors, uncaught Dart errors and unexpected engine exits become a redacted local report; it leaves the device only when you press Send, or without asking if you turned on auto-send | Settings → Report a problem, or the next-launch banner |
 | Observers | Navigation + Riverpod + engine tracing | Automatic |
 
-## ♿ Accessibility & theming
+## Accessibility and theming
 
 - Semantics on every interactive control, 48×48 minimum targets, labels on the
   navigation bars.
