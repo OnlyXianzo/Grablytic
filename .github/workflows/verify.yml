@@ -262,12 +262,19 @@ jobs:
       # tests are clean, so the exclusion is gone. The ruff VERSION pin
       # is load-bearing (new releases add rules); the ACTION pin is
       # supply-chain hygiene.
+      #
+      # `src` takes whitespace-separated paths, so the gates in tool/ are
+      # covered too (#118): they run in CI on every push, and a broken gate
+      # fails open, which is the one place a lint miss costs the most.
+      # E9 (syntax errors) and W605 (invalid escape sequence) are in the
+      # set because every rule under F is name- and scope-level; W605 is
+      # what an unescaped `\d` in a docstring trips (#116).
       - name: Ruff correctness gate
         uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
         with:
           version: "0.16.7"
-          src: "engine/"
-          args: "check --select F --output-format=github"
+          src: "engine/ tool/"
+          args: "check --select F,E9,W605 --output-format=github"
 
       # Finding #61 of the teardown review: the count of deliberately
       # broad handlers kept rising while the audit record called the work

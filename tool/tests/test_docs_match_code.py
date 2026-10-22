@@ -95,12 +95,34 @@ def contract_methods() -> list[str]:
     raise AssertionError("METHODS is gone from contract.py")
 
 
-def test_every_contract_method_is_documented():
-    # The IPC table is the page a contributor reads before adding a method.
-    # Five methods were missing from it when this test was written.
-    docs = ARCHITECTURE.read_text(encoding="utf-8")
-    missing = [m for m in contract_methods() if f"`{m}`" not in docs]
-    assert not missing, f"methods missing from docs/architecture.md: {missing}"
+HEADING = re.compile(r"^#{1,6} ", re.MULTILINE)
+ROW = re.compile(r"^\|([^|]*)\|", re.MULTILINE)
+
+
+def ipc_table_rows(markdown: str) -> list[str]:
+    """First-column text of the rows in the IPC channel table.
+
+    Scoped to the `### Channels` table on purpose. Finding #117: this used to
+    be a substring search over the whole page, so one prose sentence that
+    named a method satisfied it while the row a contributor reads was gone.
+    """
+    start = markdown.find("### Channels")
+    assert start != -1, "docs/architecture.md has no '### Channels' heading"
+    rest = markdown[start:]
+    end = HEADING.search(rest, len("### Channels"))
+    section = rest[: end.start()] if end else rest
+    return ROW.findall(section)
+
+
+def test_every_contract_method_has_an_ipc_table_row():
+    rows = ipc_table_rows(ARCHITECTURE.read_text(encoding="utf-8"))
+    # A table that stopped parsing would make the assertion below vacuous.
+    assert len(rows) >= 10, f"parsed only {len(rows)} IPC rows"
+    documented = set()
+    for cell in rows:
+        documented.update(re.findall(r"`([^`]+)`", cell))
+    missing = [m for m in contract_methods() if m not in documented]
+    assert not missing, f"methods with no row in the IPC table: {missing}"
 
 
 def test_the_workflow_actually_has_jobs_to_check():

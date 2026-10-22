@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when a build version is hardcoded in `lib/`.
+r"""Fail when a build version is hardcoded in `lib/`.
 
 The app's version is written once, in `pubspec.yaml`, and stamped into the
 build as `--dart-define=GRABLYTIC_APP_VERSION`. Before that it was a literal
