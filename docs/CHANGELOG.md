@@ -1,10 +1,10 @@
 # Changelog
 
-> Current version: `0.6.0+6`. Sections below v0.6.0 are unchanged; the v0.0.5
+> Current version: `0.0.6+6`. Sections below v0.0.6 are unchanged; the v0.0.5
 > entry mixes curated highlights with automated stats from
 > `tool/generate_release_changelog.py v0.0.4 0.0.5`.
 
-## v0.6.0 — 2026-10-21
+## v0.0.6 — 2026-10-21
 
 The release where failures became reportable without becoming someone else's
 data.
