@@ -1,7 +1,8 @@
 # Architecture Overview
 
-> Last updated: **2026-09-11** — reflects bundled jniLibs binaries, `DownloadService`,
-> Kotlin-callback event delivery, JS runtimes, persistent logging + GitHub auto-report.
+> Last updated: **2026-10-21**. Covers bundled jniLibs binaries, `DownloadService`,
+> Kotlin-callback event delivery, JS runtimes, persistent logging, and the
+> crash-report pipeline.
 
 Grablytic uses a layered architecture with a Flutter frontend and a Python
 download engine. The frontend and engine communicate through a platform-specific
@@ -24,10 +25,10 @@ event bridge) between Flutter and Python.
 | JS runtime (Desktop) | Deno (bootstrapped via GitHub releases) | V8-based runtime for YouTube JS decryption. Downloaded on first run, SHA-256 gated. |
 | Challenge scripts | `yt-dlp-ejs` + `remote_components=ejs:github` (only when a JS runtime is configured; never without one) | Solver scripts auto-fetched; integrity gated by yt-dlp's own SHA3-512 + version pin (`ejs.py`), NOT by our SHA-256 stub allowlist (`po_token.verify_js_code` covers only the two inert local stubs). |
 | Media processing | FFmpeg (static binary / jniLibs `.so`) | Muxing DASH streams, audio extraction, subtitle/thumbnail embedding, chapter splitting/cutting. |
-| Download accelerator | aria2c (static binary) | Parallel fragments (`-x1..16`, validated). **Never** for DASH/HLS (native downloader instead — CVE-2026-50574). |
+| Download accelerator | aria2c (static binary) | Parallel fragments (`-x1..16`, validated). **Never** for DASH/HLS (native downloader instead, CVE-2026-50574). |
 | Persistence | SharedPreferences + SQLite | Settings/presets/playlists/auth in prefs; download history in SQLite (`sqflite` + `sqflite_common_ffi` on desktop). |
 | Logging | `AppLogger` (Dart) + `logger`/`persistent` (Python) | Buffered 30 s flush, `app_logs.txt` mirror, `RotatingFileHandler` (`server_logs.log`), traced IPC, global handlers, Riverpod/nav/engine observers. |
-| Crash reporting | `GithubReporter` (Dart) + `github_notifier` (Python) | Search-based dedup so the same crash isn't filed twice. |
+| Crash reporting | `CrashReports` + `GithubReporter` (Dart), `github_notifier` (Python) | Capture is local and unconditional (redacted draft on disk, no network on the fatal path). A three-report queue with fingerprint dedup and a three-day prompt cooldown feeds a prefilled GitHub form the user submits. The Python notifier is a developer tool that needs an explicit token. |
 | Fonts | Bricolage Grotesque (headings) / Figtree (body) / Iosevka Charon Mono (mono) | Bundled in `assets/fonts/`, no runtime fetch. InstrumentSans remains only in legacy settings screens. |
 
 ## Layered Architecture
@@ -148,25 +149,25 @@ event bridge) between Flutter and Python.
 └────────────────────────────────────────────────────────────────┘
 ```
 
-## Flutter Layer — Screens
+## Flutter Layer: Screens
 
 | Screen | File | Navigation |
 |---|---|---|
 | Onboarding | `lib/features/onboarding/screens/onboarding_screen.dart` | Shown before first launch, routes to AppShell |
 | App Shell | `lib/features/shell/screens/app_shell.dart` | BottomNav (narrow) / NavigationRail (wide), IndexedStack |
-| Home | `lib/features/home/screens/home_screen.dart` | Tab 0 — URL input, active downloads, format picker |
-| Format Picker | `lib/features/home/screens/format_picker_screen.dart` | Modal — format list, quality selection, container, muxed badges |
+| Home | `lib/features/home/screens/home_screen.dart` | Tab 0: URL input, active downloads, format picker |
+| Format Picker | `lib/features/home/screens/format_picker_screen.dart` | Modal: format list, quality selection, container, muxed badges |
 | Batch Download | `lib/features/home/screens/batch_download_screen.dart` | Multi-URL paste, list management |
 | Media Preview | `lib/features/home/screens/media_preview_screen.dart` | Downloaded-file thumbnail + metadata, open in system player |
 | Playlist Selection | `lib/features/home/screens/playlist_selection_screen.dart` | Playlist URL → entry multi-select, reverse/shuffle, unavailable marking |
-| Share Sheet | `lib/features/home/widgets/share_intent_sheet.dart` | Bottom sheet — shared-URL choice UI, engine-ready gated |
-| Download Log Sheet | `lib/features/home/widgets/download_log_sheet.dart` | Bottom sheet — one download's logs (live + history) |
+| Share Sheet | `lib/features/home/widgets/share_intent_sheet.dart` | Bottom sheet: shared-URL choice UI, engine-ready gated |
+| Download Log Sheet | `lib/features/home/widgets/download_log_sheet.dart` | Bottom sheet: one download's logs (live + history) |
 | Overflow Menu | `lib/features/home/widgets/download_overflow_menu.dart` | Per-item actions: redownload, audio, delete, logs |
-| Batch Import | `lib/features/home/screens/batch_import_dialog.dart` | Dialog — import from clipboard or file |
-| Library | `lib/features/library/screens/library_screen.dart` | Tab 1 — completed downloads, grid/list toggle |
+| Batch Import | `lib/features/home/screens/batch_import_dialog.dart` | Dialog: import from clipboard or file |
+| Library | `lib/features/library/screens/library_screen.dart` | Tab 1: completed downloads, grid/list toggle |
 | Download History | `lib/features/library/screens/download_history_screen.dart` | SQLite history, search & filters |
 | Playlist Details | `lib/features/library/screens/playlist_details_screen.dart` | Playlist entry list, add/remove items |
-| Settings | `lib/features/settings/screens/settings_screen.dart` | Tab 2 — all settings grouped by section |
+| Settings | `lib/features/settings/screens/settings_screen.dart` | Tab 2: all settings grouped by section |
 | About | `lib/features/settings/screens/about_screen.dart` | Version info, licenses, links |
 | Presets | `lib/features/settings/screens/presets_screen.dart` | Download preset CRUD (7 predefined + custom) |
 | Profile Editor | `lib/features/settings/screens/profile_editor_screen.dart` | Site profile configuration |
@@ -201,12 +202,12 @@ sharedPreferencesProvider (Provider<SharedPreferences>)
   │
   ├── playlistProvider (StateNotifierProvider<PlaylistNotifier, List<Playlist>>)
   ├── presetsProvider (StateNotifierProvider<PresetsNotifier, PresetsState>)
-  ├── batchProvider (StateNotifierProvider — multi-URL queue)
+  ├── batchProvider (StateNotifierProvider, multi-URL queue)
   └── downloadHistoryProvider (SQLite-backed history)
 ```
 
 Plus independent providers:
-- `sharedUrlProvider (StateProvider<String?>)` — set by share intent
+- `sharedUrlProvider (StateProvider<String?>)`, set by share intent
 - `logBufferProvider` (5K circular buffer) → `logEntriesProvider` (filtered view) ← `logIngesterProvider` (subscribes `engine.logStream` + `AppLogger`)
 
 All state that survives app restarts is persisted to `SharedPreferences` (settings, presets, playlists) or SQLite (history). Transient state (active downloads, progress) is held in memory by `DownloadNotifier`.
@@ -242,10 +243,10 @@ abstract class EngineService {
 ### Platform Implementations
 
 1. **`PlatformChannelEngineService`** (Android via Chaquopy):
-   - MethodChannel `com.theonly.grablytic/engine` — request/response
-   - EventChannel `com.theonly.grablytic/progress` — streaming progress events
-   - Kotlin `EngineEventListener.onEvent(json)` — direct hook → Flutter path (no polling)
-   - `MethodCallHandler` for `intent/shared_url` — receives share intents from Kotlin
+   - MethodChannel `com.theonly.grablytic/engine`: request/response
+   - EventChannel `com.theonly.grablytic/progress`: streaming progress events
+   - Kotlin `EngineEventListener.onEvent(json)`: direct hook → Flutter path (no polling)
+   - `MethodCallHandler` for `intent/shared_url`: receives share intents from Kotlin
    - All payloads serialized as JSON strings, decoded by Python via `jsonDecode`
 
 2. **`DesktopEngineService`** (Windows/Linux via JSON stdin/stdout):
@@ -253,8 +254,8 @@ abstract class EngineService {
    - `.venv` detection in `engine/` directory first, falls back to `python3`
    - JSON-RPC over line-delimited stdin/stdout with UUID request IDs
    - `_pending` map of `Completer`s for request/response correlation
-   - Progress events identified by `{"type": "event", ...}` — broadcast via `StreamController`
-   - Log lines identified by `{"type": "log", ...}` — filtered into `logStream`
+   - Progress events identified by `{"type": "event", ...}`: broadcast via `StreamController`
+   - Log lines identified by `{"type": "log", ...}`: filtered into `logStream`
    - Auto-restart on unexpected process exit (up to 3 attempts)
    - 30-second request timeout
 
@@ -284,7 +285,7 @@ Selection is automatic via `engineProvider`:
 
 ## IPC Contract
 
-The IPC payload shapes are defined below and are identical across platforms — only the transport differs.
+The IPC payload shapes are defined below and are identical across platforms. Only the transport differs.
 
 ### Android (MethodChannel + EventChannel + callback)
 
@@ -319,7 +320,7 @@ Log lines interleaved on stdout:
 
 | Channel | Direction | Purpose |
 |---|---|---|
-| `engine/bootstrap` | F → P | App startup — check binaries, manifest, yt-dlp version |
+| `engine/bootstrap` | F → P | App startup: check binaries, manifest, yt-dlp version |
 | `paths/set` | F → P | Inject data/output/cache dirs, binary paths (incl. `deno_path`), cookies, PO token (8 args) |
 | `download/start` | F → P | Start download in thread, returns immediately |
 | `download/cancel` | F → P | Set threading.Event cancel flag |
@@ -332,37 +333,42 @@ Log lines interleaved on stdout:
 | `engine/update_check` | F → P | Force re-check binaries from CDN |
 | `engine/set_update_channel` | F → P | Set stable/nightly/master channel |
 
-## Python Engine — 18 Modules + Entry Point
+## Python Engine: 22 Modules + Entry Point
 
 | Module | File | Responsibility |
 |---|---|---|
 | `paths` | `engine/grablytic_engine/paths.py` | Global path store. `set_paths()`, `get_paths()`, `is_initialized()`. Injects binary directories to PATH, prepends site-packages to sys.path for dynamic yt-dlp updates. |
 | `config` | `engine/grablytic_engine/config.py` | `DEFAULT_CFG` dict: format, container, quality ceiling, subtitles, SponsorBlock, sections, retries, network, auth, archive, playlist, live. |
-| `opts_builder` | `engine/grablytic_engine/opts_builder.py` | `build_ydl_opts()` — merges config with paths, validated aria2c opts (native for DASH/HLS), canonical PP chain (EmbedSubtitle → ModifyChapters → Metadata), `updatetime: False`, `writethumbnail`, sections via `download_range_func`, JS runtime via `_configure_js_runtime()`. |
-| `format_selector` | `engine/grablytic_engine/format_selector.py` | `build_format_string()` — tiered format string: explicit ID > audio-only > quality ceiling cascade (AV1 → VP9 → H264). Muxed-stream support for non-YouTube. |
+| `opts_builder` | `engine/grablytic_engine/opts_builder.py` | `build_ydl_opts()`, merges config with paths, validated aria2c opts (native for DASH/HLS), canonical PP chain (EmbedSubtitle → ModifyChapters → Metadata), `updatetime: False`, `writethumbnail`, sections via `download_range_func`, JS runtime via `_configure_js_runtime()`. |
+| `format_selector` | `engine/grablytic_engine/format_selector.py` | `build_format_string()`, tiered format string: explicit ID > audio-only > quality ceiling cascade (AV1 → VP9 → H264). Muxed-stream support for non-YouTube. |
 | `site_profiles` | `engine/grablytic_engine/site_profiles.py` | 6 built-in profiles (YouTube 1080p, YouTube 4K, Podcast Audio, Lossless FLAC, Opus Compact, Twitter/X Video). CDN-fetchable overrides. |
 | `downloader` | `engine/grablytic_engine/downloader.py` | `start_download()` spawns `threading.Thread` → `download_thread()`. Creates `YoutubeDL` with built opts, progress hook + cancel check. `_active_downloads` updated in place; terminal `finished` carries `filesize_bytes`; errors carry `suggests_vpn`. Accepts `event_callback`. |
-| `hooks` | `engine/grablytic_engine/hooks.py` | `build_progress_hook()` — yt-dlp progress hook → queue **or** `callback.onEvent(json)`. 99 % cap on streaming progress; `filesize_bytes` on finished. `pp_key`-keyed stage lookup with real PP names. |
+| `hooks` | `engine/grablytic_engine/hooks.py` | `build_progress_hook()`, yt-dlp progress hook → queue **or** `callback.onEvent(json)`. 99 % cap on streaming progress; `filesize_bytes` on finished. `pp_key`-keyed stage lookup with real PP names. |
 | `errors` | `engine/grablytic_engine/errors.py` | `GrablyticError` with typed error codes (ERROR_GEO_BLOCKED, ERROR_RATE_LIMITED, …) + recoverable flag + suggests_vpn. `classify_error()` matches exception text against keyword map. `ERROR_CANCELLED` maps to `cancelled` event on desktop. |
-| `formats` | `engine/grablytic_engine/formats.py` | `get_formats()` — extract info without downloading, parse format list into structured objects with codec/resolution/bitrate. Returns recommended video/audio format IDs. |
-| `playlist` | `engine/grablytic_engine/playlist.py` | `get_playlist_info()` — flat-extract playlist entries with generator guards, expanded video IDs, deleted-entry marking, storage sanitization. |
-| `search` | `engine/grablytic_engine/search.py` | `search()` — flat-extract YouTube (`ytsearch{N}:`) and SoundCloud (`scsearch{N}:`) results via yt-dlp search extractors with entry normalization and error classification. |
+| `formats` | `engine/grablytic_engine/formats.py` | `get_formats()`, extract info without downloading, parse format list into structured objects with codec/resolution/bitrate. Returns recommended video/audio format IDs. |
+| `playlist` | `engine/grablytic_engine/playlist.py` | `get_playlist_info()`, flat-extract playlist entries with generator guards, expanded video IDs, deleted-entry marking, storage sanitization. |
+| `search` | `engine/grablytic_engine/search.py` | `search()`, flat-extract YouTube (`ytsearch{N}:`) and SoundCloud (`scsearch{N}:`) results via yt-dlp search extractors with entry normalization and error classification. |
 | `bootstrap` | `engine/grablytic_engine/bootstrap.py` | CDN manifest fetch, SHA-256-or-fail, Zip/Tar-Slip-hardened extraction, parallel ffmpeg/aria2c/deno fetch, uv venv + yt-dlp install (desktop), Android fail-closed + bundled-jniLibs fallback with live `--version` probes, QuickJS + Deno detection. |
-| `resume` | `engine/grablytic_engine/resume.py` | `scan_resume_candidates()` — scans cache dir for .part files, checks age vs 24h expiry, recovers URL from .info.json metadata, sanitizes storage paths. |
+| `resume` | `engine/grablytic_engine/resume.py` | `scan_resume_candidates()`, scans cache dir for .part files, checks age vs 24h expiry, recovers URL from .info.json metadata, sanitizes storage paths. |
 | `scheduler_check` | `engine/grablytic_engine/scheduler_check.py` | Pure helper functions (`parse_atom_feed_entries`, `filter_unseen_videos`) for lightweight YouTube Atom RSS XML feed parsing and video deduplication without heavy extractor overhead. |
 | `po_token` | `engine/grablytic_engine/po_token.py` | Allowlisted JS (`verify_js_code`), `detect_js_runtime()` (paths module first), QuickJS-context + Deno-subprocess generation. |
 | `logger` | `engine/grablytic_engine/logger.py` | 5-level structured logger, daily rotation, IPC queue forwarding, thread-local context, trace timing, exception logging with tracebacks. |
 | `persistent` | `engine/grablytic_engine/persistent.py` | `RotatingFileHandler` (`server_logs.log`), `traced_request` IPC middleware. |
 | `github_notifier` | `engine/grablytic_engine/github_notifier.py` | Crash search-based dedup + auto-report pipeline. |
+| `contract` | `engine/grablytic_engine/contract.py` | Pins the IPC shape (method names, field names, error codes) so a host and an engine from different builds refuse each other instead of half-understanding each other. |
+| `filename_guard` | `engine/grablytic_engine/filename_guard.py` | Bounds every path component to `NAME_MAX` in **bytes**, split on both separators, so an emoji-laden title cannot fail with `[Errno 36]`. |
+| `url_guard` | `engine/grablytic_engine/url_guard.py` | Input guards for every IPC-controlled network and file sink: scheme and host policy, private-address refusal, proxy validation. Fails closed. |
+| `ytdlp_network` | `engine/grablytic_engine/ytdlp_network.py` | Pins yt-dlp's own HTTP(S) connections to the validated transport, closing the DNS time-of-check window that a URL-only check leaves open. |
+| `wheel_pin` | `engine/grablytic_engine/wheel_pin.py` | SHA-256 for the yt-dlp wheel the bootstrap installs. A version pin says which release was tested; the digest says the bytes are that release. |
 
-### `__main__.py` — Entry Point
+### `__main__.py`: Entry Point
 
 The desktop IPC entry point (`python -m grablytic_engine`):
 1. Starts a daemon thread (`poll_queues`) that drains download progress/result queues
 2. Enters a persistent JSON-RPC stdin loop, dispatching to module functions by method name
 3. Supports CLI mode for one-shot commands (e.g., `python -m grablytic_engine bootstrap`)
 
-## Data Flow — Complete Download Lifecycle
+## Data Flow: Complete Download Lifecycle
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -423,9 +429,9 @@ node > quickjs**, resolved by `_configure_js_runtime()` with absolute paths:
   stay fresh without app updates without pointless unfetchable requests.
 - PO Tokens generated via `po_token.generate_po_token()` (inert allowlisted
   stubs returning null; real challenge scripts arrive via `yt-dlp-ejs` and
-  are covered by yt-dlp's hash/version pin, not our stub list — see
+  are covered by yt-dlp's hash/version pin, not our stub list. See
   `po_token.py` module docstring for the trust boundary).
-- Extractor args use `player_client = ["default", "mweb"]` — never force a
+- Extractor args use `player_client = ["default", "mweb"]`, and never force a
   single client (multi-client returns 31+ formats incl. AV1/VP9).
 
 Full research: `docs/JS_RUNTIMES_ANDROID_RESEARCH.md`.
@@ -463,42 +469,42 @@ All screens pass WCAG 2.2 compliance:
 - Screen reader support with descriptive `label` properties
 - Navigation labels on all BottomNav and NavigationRail items
 
-See `docs/testing/ACCESSIBILITY_AUDIT.md` for the audit trail.
+The rules live in `AGENTS.md`. Touch-target sizes and semantic labels are
+asserted in the widget tests under
+[`test/features/`](https://github.com/OnlyXianzo/Grablytic/tree/main/test/features).
+`test/performance/frame_rate_audit.dart` is a rendering check, not an
+accessibility one: it asserts that screens build and paint without errors.
 
 ## Test Coverage
 
 ```
-test/
-├── widget_test.dart              # onboarding, settings, navigation widget tests
-└── performance/
-    ├── frame_rate_audit.dart      # Frame rate audit for all screens
-    └── platform_test_matrix.dart # Platform-specific test definitions
+test/                              105 files
+├── core/                          engine bridge, logger, crash queue, utils
+├── features/                      one folder per screen or widget
+├── providers/                     queue, resume, settings, downloads
+└── performance/                   frame-rate and platform matrix audits
 
-engine/tests/  (309 tests)
-├── test_binstatus.py             # Live probe fail-closed & linker error checks
-├── test_bootstrap_extract.py     # Zip-Slip / Tar-Slip hardening
-├── test_bridge_config.py         # Chaquopy bridge configuration conversion
-├── test_concurrency_effect.py    # Multi-download concurrency validation
-├── test_config.py                # Config defaults, merge behavior
-├── test_downloader.py            # Cancel, VPN hints, filesize, finished contract
-├── test_errors.py                # Error classification, edge cases
-├── test_format_selector.py       # Format string generation + storage guards
-├── test_hooks.py                 # 99% cap, pp_key stages, callback vs queue
-├── test_log_bridge.py            # Event delivery & logging bridge
-├── test_logger.py                # Structured logger, rotation, IPC queue
-├── test_main_ipc.py              # JSON-RPC stdin/stdout dispatch loop
-├── test_misc.py                  # Miscellaneous utility tests
-├── test_opts_builder.py          # yt-dlp opts: PP order, sections, aria2c, JS runtime
-├── test_overflow_engine.py       # Engine overflow menu action integration
-├── test_packages.py              # Bundled .so fallback, shutil.which mocks
-├── test_paths.py                 # Path injection, PATH management
-├── test_playlist.py              # Playlist detection, generators, IDs, sanitization
-├── test_queue.py                 # Download queue FIFO ordering & state
-├── test_scheduler_check.py       # Atom RSS feed parsing & video deduplication
-└── test_search.py                # Search extractor integration & query formatters
+engine/tests/                      62 files, 844 tests
+├── test_config.py                defaults and merge behaviour
+├── test_downloader.py            cancel, VPN hints, filesize, finished contract
+├── test_errors.py                error classification and edge cases
+├── test_format_selector.py       format strings and storage guards
+├── test_hooks.py                 99% cap, pp_key stages, callback vs queue
+├── test_main_ipc.py              JSON-RPC dispatch loop
+├── test_opts_builder.py          PP order, sections, aria2c, JS runtime
+├── test_paths.py                 path injection, PATH management
+├── test_resume_hardening.py      .part/.info.json scans, bounds
+├── test_bootstrap_extract.py     Zip-Slip and Tar-Slip hardening
+├── test_url_guard.py             SSRF, traversal, proxy validation
+├── test_filename_guard.py        NAME_MAX in bytes, both separators
+└── …                             one file per engine module
 ```
 
-Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 performance audit files.
+Both suites are gated in CI rather than counted in docs: the Flutter job
+enforces a 30% floor over `lib/`, the Python job a 75% floor over the engine,
+and the broad-catch ratchet fails when either count grows without a recorded
+reason. Run `pytest engine/tests/ -q` and `flutter test` locally for the
+current numbers.
 
 ## Build & Deploy
 
@@ -522,10 +528,16 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 - **Windows** (`windows-latest`):
   - 64-bit portable release zip (`grablytic-windows-x64.zip`) + release bundle with Python engine included
 
-**Verification workflow** (`verify.yml`):
-- On push/PR to main
-- `flutter analyze` + `flutter test` (Dart)
-- `pytest engine/tests/ -v` with uv-installed yt-dlp + engine (Python)
+**Verification workflow** (`verify.yml`): runs on every push and PR. Six jobs:
+Flutter analyze plus tests with a 30% coverage floor; pytest on 3.11 and 3.12
+with a 75% floor, Ruff `F`, the broad-catch ratchet and the version-literal
+gate; an Android API 35 emulator run; doc link checks; a gitleaks history scan;
+and a YAML lint over every workflow.
+
+**Publish** (`publish-release.yml`): attaches `SHA256SUMS` and keyless cosign
+bundles to an existing release, verified before upload. `nightly.yml` builds
+the rolling nightly tag, and the two `winget-*` workflows maintain the Windows
+package manifests.
 
 ### Binary Distribution
 
@@ -533,7 +545,7 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 - Manifest JSON lists available versions per platform with SHA-256 checksums
 - Bootstrap on first download, SHA-verified on every launch via `engine/bootstrap`
 - yt-dlp updates applied via uv venv + site-packages injection (desktop)
-- Android binaries ride app updates (jniLibs) — no runtime execution of downloads
+- Android binaries ride app updates (jniLibs), so nothing is downloaded and executed at runtime
 - Dynamic `PYTHONPATH` injection ensures updated modules load before system packages
 
 ### Desktop Virtual Environment
@@ -551,4 +563,5 @@ Total: **309 Python unit tests**, **262 Flutter widget + unit tests**, 2 perform
 - Progress events stream at hook rate; Kotlin callback removes polling latency
 - aria2c external downloader for progressive fragments (native for DASH/HLS)
 - `continuedl=True` for resume support
-- No `setState()` for shared state — all Riverpod, minimizing rebuilds
+- No `setState()` for shared state. All of it is Riverpod, which keeps rebuilds
+  local

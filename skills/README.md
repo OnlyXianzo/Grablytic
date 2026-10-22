@@ -27,6 +27,69 @@ One pack stays local and is not published:
   tracked at `.agents/vault/`; the skill still does not commit or push on its
   own.
 
+## The prose pipeline
+
+Three of these run in a fixed order on any prose in this repository. `AGENTS.md`
+requires it for README, `docs/`, `.agents/vault/`, commit bodies, pull request
+descriptions, release notes, and answers to the maintainer.
+
+| Order | Skill | Input it needs | What you look for afterwards |
+|---|---|---|---|
+| 1 | `write-in-my-style` | a voice sample (README, changelog, a few past commit bodies) | The draft sounds like this repo, not like a press release |
+| 2 | `stop-slop` | the draft, nothing else | No banned words, no rule-of-three padding, no "not just X but Y" |
+| 3 | `humanizer` | the draft **and** the same voice sample | Sentence lengths vary, the opening is not a warm-up, the ending is concrete |
+
+Order matters. Style first, because rewriting for voice changes the sentences
+that `stop-slop` would flag. Humanizer last, because it is the audit pass and it
+will undo a rewrite if you run it earlier and then edit again.
+
+### Running it by hand
+
+1. Open the skill file and paste it into the agent along with your draft. One
+   skill at a time, not all three at once.
+
+   ```
+   Read skills/write-in-my-style/SKILL.md and rewrite this section so it
+   matches the voice described there. Keep every fact. Here is the draft:
+   <paste>
+   ```
+
+2. Run the result through `stop-slop`. Ask for the specific list of tells it
+   removed, so you can see whether it found anything real.
+
+   ```
+   Read skills/stop-slop/SKILL.md. Apply it to this text and list what you
+   removed and why. Do not add new claims.
+   ```
+
+3. Run `humanizer` last, with two or three paragraphs of the project's own
+   prose as the voice reference.
+
+   ```
+   Read skills/humanizer/SKILL.md. Audit this text against the voice sample
+   below and rewrite what still reads as generated. Voice sample:
+   <docs/features.md, first 30 lines>
+   ```
+
+4. Diff the result against your draft. If a fact moved, a number changed, or a
+   sentence got vaguer, the pass failed. Rewrite by hand from the draft.
+
+### Doing it on a whole doc set
+
+Do not run the pipeline over a directory in one shot. It degrades into
+"improve this" and rewrites things nobody asked about.
+
+- One section at a time, then `git diff` before moving on.
+- Facts are checked against the code, not against the previous wording. The
+  pipeline will happily make a stale claim read better.
+- Leave frozen records alone. `docs/audits/` and `docs/security-scans.md` are
+  history; editing them for style is rewriting the record.
+
+### When the skills disagree
+
+`AGENTS.md` wins. It is the short list the three skills are meant to implement,
+and it is the one a reviewer reads.
+
 ## Path placeholders
 
 Skills that touch local files use two variables:
