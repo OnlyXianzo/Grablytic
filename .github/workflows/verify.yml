@@ -143,25 +143,9 @@ jobs:
       # in the lint step below rewrites the registrant for the release variant.
       - name: Kotlin unit tests (feed URL policy)
         run: |
-          set +e
-          flutter build apk --debug --config-only > /tmp/cfg.log 2>&1
-          cfg=$?
-          if [ "$cfg" -ne 0 ]; then
-            grep -E "Error|error|Exception" /tmp/cfg.log | head -15 | while IFS= read -r line; do
-              echo "::error title=config-only::$line"
-            done
-            exit "$cfg"
-          fi
+          flutter build apk --debug --config-only
           cd android
-          ./gradlew :app:testDebugUnitTest --console=plain > /tmp/kt.log 2>&1
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            grep -E "^e: |error:|FAILED|What went wrong|Caused by|Could not|not mocked|Unresolved" /tmp/kt.log | head -25 | while IFS= read -r line; do
-              echo "::error title=kotlin::$line"
-            done
-            tail -40 /tmp/kt.log
-            exit "$status"
-          fi
+          ./gradlew :app:testDebugUnitTest --console=plain
 
       # Hosted runners may expose /dev/kvm only to the kvm group. Without access,
       # the emulator silently falls back to slow software CPU emulation.
