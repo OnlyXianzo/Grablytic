@@ -69,8 +69,11 @@ def prose_lines(src: str):
             continue
         if match:
             char, length = fence
-            if (match.group(1)[0] == char and len(match.group(1)) >= length
-                    and not match.group(2).strip()):
+            if (
+                match.group(1)[0] == char
+                and len(match.group(1)) >= length
+                and not match.group(2).strip()
+            ):
                 fence = None
         # Fence lines and everything between them are not rendered prose.
 
