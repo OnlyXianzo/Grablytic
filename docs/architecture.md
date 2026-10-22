@@ -321,14 +321,19 @@ Log lines interleaved on stdout:
 | Channel | Direction | Purpose |
 |---|---|---|
 | `engine/bootstrap` | F → P | App startup: check binaries, manifest, yt-dlp version |
-| `paths/set` | F → P | Inject data/output/cache dirs, binary paths (incl. `deno_path`), cookies, PO token (8 args) |
+| `engine/contract` | F → P | Hand back the pinned method list and error codes, or refuse a mismatched major |
+| `paths/set` | F → P | Inject data/output/cache dirs, binary paths, cookies, log level (8 keys on the desktop payload; Android passes eleven positional arguments to `set_paths()` and so also sets `po_token`, `ffmpeg_ld_path` and `nodejs_path`) |
 | `download/start` | F → P | Start download in thread, returns immediately |
 | `download/cancel` | F → P | Set threading.Event cancel flag |
-| `progress/stream` | P → F | Continuous progress/error/complete events |
+| `download/queue_status` | F → P | Snapshot of the queue and in-flight downloads; runs inline, never queued behind an extraction |
+| `download/set_concurrency` | F → P | Write the concurrency limit and pump the queue |
+| `download/clear_archive` | F → P | Unlink one archive file strictly inside the data dir, so an archive-skipped URL can be re-downloaded; runs on the maintenance lane |
+| `progress/stream` | P → F | Continuous progress/error/complete events (an EventChannel stream, not a method) |
 | `formats/get` | F → P | List available streams for URL |
 | `playlist/info` | F → P | List playlist entries with metadata |
 | `search/query` | F → P | Search YouTube/SoundCloud queries via yt-dlp search extractors |
 | `resume/scan` | F → P | Scan cache dir for .part files |
+| `resume/report` | F → P | Record whether a resume attempt succeeded: success clears the strike count, failure increments a per-file strike count, and three strikes mark the candidate `exhausted` |
 | `schedule/sync` | F → K | Synchronize WorkManager periodic polling constraints and interval |
 | `engine/update_check` | F → P | Force re-check binaries from CDN |
 | `engine/set_update_channel` | F → P | Set stable/nightly/master channel |
@@ -478,7 +483,7 @@ accessibility one: it asserts that screens build and paint without errors.
 ## Test Coverage
 
 ```
-test/                              105 files
+test/                              105 test files
 ├── core/                          engine bridge, logger, crash queue, utils
 ├── features/                      one folder per screen or widget
 ├── providers/                     queue, resume, settings, downloads
@@ -506,6 +511,12 @@ and the broad-catch ratchet fails when either count grows without a recorded
 reason. Run `pytest engine/tests/ -q` and `flutter test` locally for the
 current numbers.
 
+The gates are code too, so `tool/tests/` covers them and the Python job runs
+`pytest tool/tests -q`. A gate that silently stops matching is worse than no
+gate: the version-literal check only caught one of the six shapes that had
+actually shipped until it was taught to look inside a quoted string rather
+than requiring the string to be nothing but a version.
+
 ## Build & Deploy
 
 ### GitHub Actions
@@ -528,11 +539,11 @@ current numbers.
 - **Windows** (`windows-latest`):
   - 64-bit portable release zip (`grablytic-windows-x64.zip`) + release bundle with Python engine included
 
-**Verification workflow** (`verify.yml`): runs on every push and PR. Six jobs:
-Flutter analyze plus tests with a 30% coverage floor; pytest on 3.11 and 3.12
-with a 75% floor, Ruff `F`, the broad-catch ratchet and the version-literal
-gate; an Android API 35 emulator run; doc link checks; a gitleaks history scan;
-and a YAML lint over every workflow.
+**Verification workflow** (`verify.yml`): runs on every push and PR. The job
+table lives in [building.md](building.md#verification-verifyyml) and
+`tool/tests/test_docs_match_code.py` fails when the table drifts from the
+workflow, so this page links to it instead of keeping a second copy. The same
+test keeps the IPC table above in step with `contract.METHODS`.
 
 **Publish** (`publish-release.yml`): attaches `SHA256SUMS` and keyless cosign
 bundles to an existing release, verified before upload. `nightly.yml` builds
