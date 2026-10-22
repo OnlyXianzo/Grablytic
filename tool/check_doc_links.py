@@ -109,7 +109,8 @@ def main() -> int:
                 if link.startswith("#"):
                     continue
                 target = os.path.normpath(
-                    os.path.join(os.path.dirname(rel) or ".", link))
+                    os.path.join(os.path.dirname(rel) or ".", link)
+                )
                 if not os.path.exists(os.path.join(ROOT, target)):
                     if link in KNOWN_MISSING or target in KNOWN_MISSING:
                         reason = KNOWN_MISSING.get(link, KNOWN_MISSING.get(target))
@@ -117,8 +118,9 @@ def main() -> int:
                     else:
                         offenders.append(f"{rel}: {link}")
                     continue
-                target_rel = target if os.path.isfile(os.path.join(ROOT, target)) \
-                    else None
+                target_rel = (
+                    target if os.path.isfile(os.path.join(ROOT, target)) else None
+                )
 
             if not fragment or target_rel is None:
                 continue
@@ -129,8 +131,9 @@ def main() -> int:
                 acknowledged.append(f"{key} (acknowledged)")
                 continue
             if fragment not in anchors(target_rel):
-                offenders.append(f"{rel}: #{fragment} (no such heading in "
-                                 f"{target_rel})")
+                offenders.append(
+                    f"{rel}: #{fragment} (no such heading in {target_rel})"
+                )
 
     for line in acknowledged:
         print(f"ACKNOWLEDGED: {line}")
