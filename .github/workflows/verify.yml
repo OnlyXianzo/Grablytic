@@ -136,13 +136,14 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      # SEC-002 and SEC-003: the tier-1 feed URL policy and the Atom parser are
+      # SEC-002/003/004/005: the tier-1 feed URL policy, the Atom parser, the
+      # file-share path guard and the boot-receiver action allowlist are all
       # pure Kotlin, so their tests are JVM unit tests — no emulator, no
       # device. `--config-only` runs no Gradle task; it writes the plugin
       # registrant and the Gradle wrapper (both git-ignored) that
       # `testDebugUnitTest` needs. The release `--config-only` in the lint step
       # below rewrites the registrant for the release variant.
-      - name: Kotlin unit tests (feed URL policy, Atom parser)
+      - name: Kotlin unit tests (feed URL, Atom parser, path guard, boot actions)
         run: |
           flutter build apk --debug --config-only
           cd android

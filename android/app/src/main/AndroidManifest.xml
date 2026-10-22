@@ -29,14 +29,19 @@
             android:name=".DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-        <!-- Exported because BOOT_COMPLETED is a system broadcast that
-             only the system can send. RECEIVE_BOOT_COMPLETED is a
-             NORMAL permission, not a signature-level sender
-             restriction, so it does not narrow who may send the
-             broadcast. The real guard is in BootReceiver itself: it
-             accepts ONLY BOOT_COMPLETED and MY_PACKAGE_REPLACED and
-             ignores every other action before it touches the database,
-             so a spoofed broadcast cannot trigger the sweep. -->
+        <!-- Exported because BOOT_COMPLETED is a system broadcast.
+             Two things are commonly conflated here (SEC-005):
+             RECEIVE_BOOT_COMPLETED is a NORMAL permission, so the
+             android:permission below does NOT narrow who may send —
+             it admits every app that declared it at install. What
+             actually stops a spoof is the framework: BOOT_COMPLETED
+             and MY_PACKAGE_REPLACED are protected broadcasts, and
+             ActivityManagerService throws SecurityException for any
+             non-system sender before this receiver is resolved.
+             BootReceiver.isSweepAction() is defence in depth, not the
+             guard — it would matter only if the app ever shipped
+             pre-installed, where protected-broadcast registration is
+             the app's job and has been bypassable before. -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true"

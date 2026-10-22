@@ -724,7 +724,19 @@ open class MainActivity : FlutterActivity() {
                             result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "missing path"))
                         } else {
                             val file = File(path)
-                            if (!file.isFile) {
+                            // SEC-004: the provider is rooted at shared storage
+                            // (the download folder is a user choice), so this is
+                            // the gate that decides what may be shared. Contains
+                            // the path in the configured download folder, after
+                            // canonicalisation, before any URI is minted.
+                            if (!DownloadPathGuard.isOpenable(file, outputDir)) {
+                                result.success(
+                                    mapOf(
+                                        KEY_SUCCESS to false,
+                                        KEY_ERROR to "path outside the download folder",
+                                    ),
+                                )
+                            } else if (!file.isFile) {
                                 result.success(mapOf(KEY_SUCCESS to false, KEY_ERROR to "file not found"))
                             } else {
                                 val uri = androidx.core.content.FileProvider.getUriForFile(
