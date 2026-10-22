@@ -107,7 +107,7 @@ Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-). Orpha
   Kotlin 11→0, Python 2/2, docs/link-check/secret-scan green; `desktop_engine`
   null guard for `_process` race.
 
-> Generated from `tool/generate_release_changelog.py v0.0.4 HEAD`. That script
+> Generated with `tool/generate_release_changelog.py v0.0.4 0.0.5`. That script
 > cannot see the orphan `redesign/ui` history, so those commits were merged in
 > by hand from `32a5947..351c8aa`:
 

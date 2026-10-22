@@ -333,7 +333,7 @@ Log lines interleaved on stdout:
 | `engine/update_check` | F → P | Force re-check binaries from CDN |
 | `engine/set_update_channel` | F → P | Set stable/nightly/master channel |
 
-## Python Engine: 22 Modules + Entry Point
+## Python Engine: 23 Modules + Entry Point
 
 | Module | File | Responsibility |
 |---|---|---|
