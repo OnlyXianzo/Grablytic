@@ -1,6 +1,7 @@
 # Security & Privacy Policy
 
-Grablytic is designed with a privacy-first, zero-telemetry architecture. We take the security of our application, user data, and downstream dependencies seriously.
+Grablytic has no accounts, no telemetry and no analytics SDK. This page covers
+what is stored, what leaves the device, and how to report a vulnerability.
 
 ## Supported Versions
 
@@ -11,12 +12,13 @@ Grablytic is designed with a privacy-first, zero-telemetry architecture. We take
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability or sensitive data issue in Grablytic, please report it privately:
+Report a vulnerability privately:
 
 1. **GitHub Security Advisory**: Use the [Private Vulnerability Reporting](https://github.com/OnlyXianzo/Grablytic/security/advisories/new) feature on GitHub to submit a confidential report.
-2. Please provide a clear description of the vulnerability, reproduction steps, affected versions/platforms, and any potential mitigation.
-3. **Do not** open public GitHub issues or discussions for security vulnerabilities.
-4. We aim to acknowledge reports promptly and coordinate a fix prior to public disclosure.
+2. Include reproduction steps, affected versions and platforms, and any
+   mitigation you already see.
+3. **Do not** open a public issue or discussion for a vulnerability.
+4. Reports are acknowledged and a fix is coordinated before public disclosure.
 
 ## Trust Model
 
@@ -29,9 +31,13 @@ If you discover a security vulnerability or sensitive data issue in Grablytic, p
 | Diagnostic logs (`app_logs.txt`) | App-private logs directory | App only (tokens redacted) |
 | Exported logs | User-selected folder / Downloads | User only |
 
-### Threat Boundaries
-- **Defended against**: Malicious shared URLs or payload files, archive traversal attacks, network interception (TLS enforced everywhere, SHA-256 integrity verification for downloads), and cross-app inspection (sandboxed Android storage with `0600` file permissions).
-- **Out of scope**: Operating system compromise, device root compromise, or zero-day exploits within upstream dependencies prior to patch release.
+### Threat boundaries
+
+- **Defended against:** malicious shared URLs and payload files, archive
+  traversal, network interception (TLS everywhere, SHA-256 verification of
+  every download), and cross-app inspection (Android sandbox, `0600` files).
+- **Out of scope:** OS or root compromise, and a zero-day in an upstream
+  dependency before that upstream ships a patch.
 
 ## Protections in Place
 
@@ -57,7 +63,7 @@ Reports are captured locally, redacted, and only sent when the user says so.
 
 1. A Flutter framework error, an uncaught Dart error, or an unexpected Python
    engine exit is turned into a redacted draft and written to
-   `<app>/reports/<id>.json`. **No network call happens on this path** — the
+   `<app>/reports/<id>.json`. **No network call happens on this path.** The
    handler returns as soon as the file is written.
 2. On the next launch the shell shows a dismissible banner offering
    **Not now / Review report / Send report**. The same report is reachable at
@@ -68,7 +74,7 @@ Reports are captured locally, redacted, and only sent when the user says so.
    deliberately compiled with a token may post through the API instead; in that
    case the app only reports success when GitHub returned an issue URL.
 
-Capture is **not** gated on the auto-send switch — otherwise an install that
+Capture is **not** gated on the auto-send switch. Otherwise an install that
 left it off would lose every crash, which is what used to happen. The switch
 only decides whether a queued crash may be filed without asking, and it is off
 by default.
@@ -81,15 +87,15 @@ by default.
 | Stack trace, bounded to 6 KB | Absolute file paths, including account names (`[local path removed]`) |
 | App version, platform, Dart/Flutter version, timestamp | `Authorization` / `Proxy-Authorization` / `Cookie` / `Set-Cookie` header values |
 | Category and session state | `token=`, `sig=`, `key=`, `password=`, `session=` and similar query parameters (via `AppLogger.redact`) |
-| Recent app log tail, bounded | — |
+| Recent app log tail, bounded | Nothing, it is already scrubbed line by line |
 
 **Not collected at all:** download history, media files, cookies, tokens,
 personal files, and command-line arguments.
 
 Redaction is applied when the draft is built, again at `_buildBody`, when the
 short summary is stored in the queue, and once more inside `issueUrl` /
-`createIssue` — the last two are the points that leave the app, so a caller
-that forgets cannot leak.
+`createIssue`. The last two are the points where a report leaves the app, so a
+caller that forgets to scrub still cannot leak.
 It **fails closed**: if the scrubber throws, the field becomes
 `[diagnostics omitted: safe redaction failed]` rather than the original text.
 The trade-off is deliberate and documented: because whole URLs are stripped, a
@@ -126,8 +132,8 @@ GitHub issue against the configured repository (default
 | Exception type and message | URL userinfo passwords (`user:***REDACTED***@host`) |
 | Full traceback frames | `token=` / `sig=` / `lsig=` / `key=` / `auth=` query parameters |
 | Tail of `server_logs.log` (up to 15 KB) | The same parameter names as query strings, plus dict keys matching `cookie`, `token`, `password`, `secret`, `auth`, `proxy`, `api_key`, `session`, `po_token` |
-| Platform versions (OS, Python, yt-dlp) | — |
-| The IPC method that failed | — |
+| Platform versions (OS, Python, yt-dlp) | Nothing |
+| The IPC method that failed | Nothing |
 
 **What is NOT redacted:** the URL path and query parameter *names*, the
 video/channel identifiers in a URL, and file names. If you need those
@@ -144,11 +150,12 @@ gone too, disable the log tail with `GRABLYTIC_REPORT_LOG_TAIL=0`.
 | `GRABLYTIC_REPORT_LOG_TAIL` | `0` keeps the log tail out of the report | `1` |
 
 If the target repository is renamed or deleted, the notifier logs a
-warning once and drops the report — it does not fail silently and it
+warning once and drops the report. It does not fail silently and it
 does not retry against a different repository.
 
 ## Privacy Standards
 
-- **Anonymous by Default**: No user accounts, no telemetry, no tracking, and no advertisements.
-- **Opt-in Storage**: Cookies, logins, and diagnostic logging are strictly opt-in and stored only in private app storage.
-- **User Control**: Users can wipe all application data, logs, and stored cookies at any time directly from Settings.
+- **No account, no telemetry, no ads.** Nothing identifies the install.
+- **Opt-in storage.** Cookies and logins are optional and live in private app
+  storage, never in the settings blob.
+- **User control.** Settings can wipe app data, logs and stored cookies.

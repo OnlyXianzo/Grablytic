@@ -1,7 +1,7 @@
 # Features
 
-> Last updated: **2026-09-13** — complete capability catalog. Settings paths refer to
-> **Settings** tabs in the app unless noted.
+> Last updated: **2026-10-21**. Capability catalog; settings paths are the app's
+> labels, not internal names.
 
 ## 📥 Downloading
 
@@ -14,15 +14,15 @@
 | Queue | FIFO engine queue, default 2 concurrent (1–5), queued status, enforced at every entry point | Simultaneous downloads |
 | Per-item controls | Overflow menu: redownload, audio re-fetch, delete (file + history), per-download logs | Home / Library item |
 | Section cutting | FFmpeg-only `download_sections` (`*10:15-20:00`), `force_keyframes_at_cuts`; bad specs warn-and-skip | Advanced |
-| Resume & DB recovery | SQLite schema v3 execution snapshots (`configJson`, byte counters, queue position), 5s heartbeat, automatic startup recovery sweep in `DownloadNotifier`, safe `BootReceiver` (reboot recovery without illegal background FGS start) + fallback `.part` scan | Automatic |
+| Resume & DB recovery | SQLite schema v8 execution snapshots (`configJson`, byte counters, queue position), 5s heartbeat, automatic startup recovery sweep in `DownloadNotifier`, safe `BootReceiver` (reboot recovery without an illegal background FGS start), plus a `.part`/`.aria2` scan that also covers subfolders | Automatic |
 | Archive | `download_archive` skips repeats; optional per-folder archives | Download Archive |
 | Scheduling | Time window + weekdays queue gating | Schedule |
-| Observed sources & WorkManager | Android WorkManager `ObservedSourcesPollWorker` (`observed-sources-poll`, zero exact alarms), two-tier poll (Atom RSS tier 1, Chaquopy fallback tier 2), SQLite schema v4 `seen_source_videos` deduplication, auto-queueing to `downloads` table | Observed Sources & Settings → Schedule |
+| Observed sources & WorkManager | Android WorkManager `ObservedSourcesPollWorker` (`observed-sources-poll`, zero exact alarms), two-tier poll (Atom RSS tier 1, Chaquopy fallback tier 2), `seen_source_videos` deduplication, auto-queueing into the `downloads` table | Observed Sources & Settings → Schedule |
 | Speed sparkline & ETA | Dual-stage EMA speed ($\alpha=0.3$) and ETA ($\alpha=0.15$) smoothing, 60-sample historical ring buffer, zero-dependency `DownloadSparkline` canvas painter | Active download cards |
 | Live | `live_from_start` for livestreams | Advanced |
 | Rate & retries | Rate limit, retries (10), fragment retries (10), sleep interval, concurrent fragments (4), socket timeout (30) | Network |
 | Proxy & geo | HTTP/SOCKS proxy, `geo_bypass`, VPN hints on classified errors | Network / Privacy |
-| aria2c | Parallel fragments `-x1..16` (default 5), `--max-download-limit` (validated), 1 MB splits; progressive only — DASH/HLS stay native | aria2c toggle |
+| aria2c | Parallel fragments `-x1..16` (default 5), `--max-download-limit` (validated), 1 MB splits; progressive only; DASH/HLS stay native | aria2c toggle |
 | Keep-alive (Android) | `dataSync` foreground service with progress notification | Automatic |
 
 ## 🎨 Media & metadata
@@ -63,11 +63,14 @@
 | Update channels | stable / nightly / master; `update_check` diffs SHA-256 | Settings → Updates |
 | Persistent logs | `app_logs.txt` (Dart, 30 s flush) + `server_logs.log` (Python rotation) | Export |
 | Live viewer | Color-coded, level/tag/search/source filters, expand, auto-scroll | Diagnostics & Logs |
-| GitHub auto-report | Search-dedup filing from both layers | Automatic |
+| Crash capture | Flutter errors, uncaught Dart errors and unexpected engine exits become a redacted local report; nothing leaves the device until you press Send | Settings → Report a problem, or the next-launch banner |
 | Observers | Navigation + Riverpod + engine tracing | Automatic |
 
 ## ♿ Accessibility & theming
 
-- WCAG 2.2 AA: semantics, 48×48 targets, screen-reader labels (see `docs/testing/ACCESSIBILITY_AUDIT.md`).
-- Material 3 light/dark (`GrablyticColors`), Bricolage Grotesque headings, Figtree body, Iosevka Charon Mono for machine text.
-- 120 fps Impeller renderer; frame-rate audit in `test/performance/`.
+- Semantics on every interactive control, 48×48 minimum targets, labels on the
+  navigation bars.
+- Material 3 light and dark from `GrablyticColors`. Bricolage Grotesque for
+  headings, Figtree for body text, Iosevka Charon Mono for anything that reads
+  like code.
+- Impeller renderer; the frame-rate audit lives in `test/performance/`.

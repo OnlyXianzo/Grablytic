@@ -8,7 +8,7 @@
 Grablytic looks like a **curated bazaar**: warm paper, deep ink text, one
 confident terracotta voice for the primary value and the primary action,
 and a quiet sage voice reserved for verified / saved / healthy states.
-Depth comes from cream-on-cream tonal shifts and paper gutters — never
+Depth comes from cream-on-cream tonal shifts and paper gutters, never
 from drop shadows.
 
 ---
@@ -16,7 +16,7 @@ from drop shadows.
 ## 1. Principles
 
 1. **Warm before technical.** The app handles binaries, threads and logs,
-   but it speaks like a shelf of kept media — not a console.
+   but it speaks like a shelf of kept media, not a console.
 2. **One loud thing per card.** Every card has a single oversized terracotta
    value (size, quality, progress, count). Everything else stays quiet.
 3. **Provenance without shouting.** Every item says where it is from and
@@ -33,14 +33,14 @@ from drop shadows.
 
 ## 2. Brand and logo
 
-The Grablytic mark is a white geometric play-mark — an angular play
-triangle folded into a hexagonal `G` form — set on a terracotta paper
+The Grablytic mark is a white geometric play-mark: an angular play
+triangle folded into a hexagonal `G` form, set on a terracotta paper
 field, with a soft-serif `Grablytic` wordmark below it in paper white.
 
 - **Canonical asset (repo):** `assets/branding/Grablytic-logo.png`
 - **TODO (launcher/small-size pass):** the new play-mark artwork
   (`Grablytic-logo-square.jpg` source, 4032×4200) ships full-bleed with a
-  photographic vignette — legible large, but verify 48 dp launcher and
+  photographic vignette. It is legible large, but verify 48 dp launcher and
   16 dp favicon rendering on-device; flatten to a solid Terracotta Deep
   field if the vignette muddies small sizes.
 - **Field:** Terracotta Deep (see §3) with visible paper grain. Never
@@ -84,7 +84,7 @@ field, with a soft-serif `Grablytic` wordmark below it in paper white.
 | Danger wash | `#FFDAD6` `lightErrorContainer` | `#93000A` `darkErrorContainer` | Error card fill |
 
 Full token list (fixed shades, secondary surfaces, inverse pairings) lives
-in `GrablyticColors` — consume via `Theme.of(context).colorScheme`, never
+in `GrablyticColors`. Consume via `Theme.of(context).colorScheme`, never
 as hex literals. New code with a hex literal fails review.
 
 ### 3.2 Distribution
@@ -102,12 +102,12 @@ as hex literals. New code with a hex literal fails review.
 
 ## 4. Typography
 
-- **Product faces (bundled, OFL — never a runtime webfont fetch):**
+- **Product faces** (bundled, OFL; never a runtime webfont fetch)
   Bricolage Grotesque for display and headlines, Figtree for body, labels
   and metadata. The two are clearly distinct: expressive grotesk up top,
   quiet humanist for everything the user must read quickly.
-- **Technical face:** Iosevka Charon Mono (`textTheme.mono`) — bytes,
-  speed, ETA, format codes, URLs, log lines, template strings. Only for
+- **Technical face:** Iosevka Charon Mono (`textTheme.mono`) for bytes,
+  speed, ETA, format codes, URLs, log lines and template strings. Only for
   machine facts, never for prose.
 - **Brand face:** the logo wordmark serif is reserved for the logo lockup
   and the splash hero. Product UI never sets headlines in that serif.
@@ -122,15 +122,15 @@ as hex literals. New code with a hex literal fails review.
 | Body small | 13 / Regular | Helper text under inputs |
 | Label large | 14 / Medium | Buttons |
 | Label small | 12 / Regular | Metadata, timestamps |
-| **Eyebrow** | 11 / 600 / uppercase / +1.5 tracking / terracotta or muted ink | DEPRECATED — do not use. Section titles are sentence case (`Pending`, `Downloaded`) in ink; see `SectionLabel` |
+| **Eyebrow** | 11 / 600 / uppercase / +1.5 tracking / terracotta or muted ink | DEPRECATED, do not use. Section titles are sentence case (`Pending`, `Downloaded`) in ink; see `SectionLabel` |
 | **Primary value** | 20–28 / 700 / terracotta | The loudest thing on the card: size, quality, `%`, count |
 | Mono | 13 / Regular (11 for dense rows) | `128 MB / 1.2 GB`, `4.1 MB/s · ETA 02:14`, `99 % downloading` |
 
 Section titles are always sentence case, left-aligned, letter-spacing 0.
-The `·` joiner appears only inside mono machine lines — never as a
+The `·` joiner appears only inside mono machine lines, never as a
 `A · B · C` meta string on titles or cards. Titles are max
 two lines. Never center-align card text except the empty state and hero.
-Buttons say what happens (`Download`, `Search`, `Retry`) — never `Grab`
+Buttons say what happens (`Download`, `Search`, `Retry`), never `Grab`
 or `Submit`.
 
 ---
@@ -141,7 +141,7 @@ or `Submit`.
   hero tile, viewer), 24 (active nav pill). Filter chips and avatar stacks
   are full pills / circles.
 - **Gutters:** 8 dp between masonry tiles, 12–16 dp card padding, 20 dp
-  screen edge, 24–32 dp section gaps. The gutter is always visible paper —
+  screen edge, 24–32 dp section gaps. The gutter is always visible paper,
   tiles never touch.
 - **Borders:** 1 dp `outlineVariant` at 20–40% alpha on cards and inputs.
   Error cards use danger at 40% + danger wash at ~12% fill.
@@ -150,7 +150,7 @@ or `Submit`.
   the same steps on the dark ramp.
 - **Progress:** 4 dp rounded bar, track = tile-highest, fill = terracotta
   container. Determinate values cap display at 99% until the terminal
-  `finished` event (by design — reserves the completion beat).
+  `finished` event, which reserves the completion beat.
 
 ---
 
@@ -162,7 +162,7 @@ Paper base, no divider. Title is 18 Medium. The search well is a 12-dp
 tile-low field with a leading search icon, hint in faint ink
 (`Enter link…`, `Search library…`), and a trailing clear `×` when text is
 present. Home pairs the field with two 48×48 square actions (batch import,
-submit) — submit is terracotta container with paper icon.
+submit). Submit is terracotta container with paper icon.
 
 ### 6.2 Category / preset chips
 
@@ -185,7 +185,7 @@ Two-column staggered grid, 8-dp paper gutters, borderless tonal tiles:
 - Thumbnail well (tile base, 8-dp radius) with optional top-right circular
   save heart (paper fill, sage icon when saved).
 - Overlapping circular source avatar at the well's bottom-left edge.
-- Quiet provenance line in sentence case (`YouTube · 1080p` at most —
+- Quiet provenance line in sentence case (`YouTube · 1080p` at most,
   the `·` joiner is allowed here only because it is a mono-adjacent
   machine fact, never a shouting label).
 - Title, 14 / 600, two-line max.
@@ -201,7 +201,7 @@ Edge-to-edge media with floating circular back / share / save actions
 case, 28 headline title, terracotta
 primary value row with a muted qualifier (`Local Pickup Only` pattern →
 `Wi-Fi only`, `Subs embedded`, `SponsorBlock on`). Never put the primary
-value in ink — it must be the loudest element.
+value in ink. It must be the loudest element.
 
 ### 6.6 Info tiles
 
@@ -237,7 +237,7 @@ Offer-status pill pattern maps to download state: `downloading`
 (terracotta wash + hourglass), `post-processing` (terracotta wash),
 `complete` (sage wash + check), `error` (danger wash), `expired`
 (danger wash + timer_off). Price-drop badge pattern maps to
-quality/size badges (`4K`, `AV1`, `MPS`, `ARCHIVED`) — 4-dp tile-high chip,
+quality/size badges (`4K`, `AV1`, `MPS`, `ARCHIVED`): 4-dp tile-high chip,
 10-sp mono 700.
 
 ### 6.11 Bottom navigation
@@ -255,7 +255,7 @@ semantics. Minimum target 48×48, every item semantically labelled.
   for healthy/engine notes. Errors use the danger-wash card with bold
   titleSmall + prose + outlined danger action (`Open Log & Report`).
 - **Recovery card:** brightest tile + danger hairline when failed, with
-  one-tap fix row (retry / cookies / proxy / pick format) — never a raw
+  one-tap fix row (retry / cookies / proxy / pick format), never a raw
   string dump.
 - **Dialogs/sheets:** brightest tile, 16-dp radius, titleMedium + bodyMedium,
   48-dp actions. Bottom sheets use the same fills at full-bleed with a
@@ -268,30 +268,30 @@ semantics. Minimum target 48×48, every item semantically labelled.
 Seven connected patterns form the complete flow. Grablytic's
 implementation screens bind to them as noted:
 
-1. **Home feed** — search, chips, featured banner, recent-items masonry.
+1. **Home feed**: search, chips, featured banner, recent-items masonry.
    → `HomeScreen` (URL input, resume scan, `Your Library` cards,
    bootstrap/error states), `OnboardingScreen`.
-2. **Detail** — carousel, provenance line + title + terracotta value,
+2. **Detail**: carousel, provenance line + title + terracotta value,
    info tiles,
    source strip, primary/secondary actions.
    → `MediaPreviewScreen`, `FormatPickerScreen` (stream list, codec /
    container choice, muxed badges).
-3. **Search results** — query field with clear, filter row, result count,
+3. **Search results**: query field with clear, filter row, result count,
    masonry grid with avatars and primary values.
    → `LibraryScreen` (grid/list toggle, search + filters),
    `DownloadHistoryScreen`, `PlaylistDetailsScreen`.
-4. **Source profile** — avatar header, rating/health line, active-items
+4. **Source profile**: avatar header, rating/health line, active-items
    list. → per-site extraction profiles (`ProfileEditorScreen`), observed
    sources (`ObservedSourcesScreen`), cookie identity (`CookieWebViewScreen`).
-5. **Activity** — list with status pills, tap-to-expand rows, export.
+5. **Activity**: list with status pills, tap-to-expand rows, export.
    → `LogViewerScreen` (live color-coded stream, level/tag/search/source
    filters), diagnostics + engine status cards, batch progress
    (`BatchDownloadScreen`).
-6. **New entry flow** — paste/import → configure → confirm. Single primary
+6. **New entry flow**: paste/import → configure → confirm. Single primary
    action per step, schedule-gate dialog when outside the download window.
    → `BatchImportDialog`, preset application (`PresetsScreen`,
    `CommandTemplatesScreen`), schedule confirmation (`ScheduleSettingsScreen`).
-7. **Saved** — saved grid with drop/change badges.
+7. **Saved**: saved grid with drop/change badges.
    → `LibraryScreen` saved filter, `DownloadHistoryScreen`,
    `PresetsScreen` (7 built-in + custom).
 
@@ -309,10 +309,10 @@ archive, auth, updates), `SubtitleSettingsScreen`,
   staggered fade-and-rise on Home sections. Home renders still.
 - Tab changes: 300 ms easeInOut pager animation; swipe and tap land on the
   same destination exactly once (fly-through pages ignored).
-- Progress and log streams update in place — no list jumps, no shimmer on
+- Progress and log streams update in place: no list jumps, no shimmer on
   determinate rows. Shimmer/Lottie/Rive are reserved for indeterminate
   bootstrap and empty-state illustration. Progress fills are solid
-  terracotta — never gradients.
+  terracotta, never gradients.
 
 ---
 
@@ -326,7 +326,7 @@ archive, auth, updates), `SubtitleSettingsScreen`,
   terracotta lightens to `#FFB4A3` for text values while containers stay
   deep; sage lightens for ticks; surfaces step down the dark tile ladder.
 - Mono values (`13 sp`, `11 sp` dense) never drop below 11 sp and never
-  carry prose meaning alone — always paired with an icon or label.
+  carry prose meaning alone; pair it with an icon or label.
 
 ---
 
@@ -336,7 +336,7 @@ archive, auth, updates), `SubtitleSettingsScreen`,
   schemes: `AppTheme.light()` / `AppTheme.dark()` (`useMaterial3: true`,
   scaffold = surface, Bricolage Grotesque display + Figtree body).
 - Mono: `GrablyticTextStyles.mono` (`lib/core/theme/text_styles.dart`).
-- Shell: `AppShell` — `PageView` + bottom pill nav (<600 dp) /
+- Shell: `AppShell`: `PageView` plus bottom pill nav (<600 dp) /
   `NavigationRail` (wide). Providers stay Riverpod; shared UI state never
   in `setState`.
 - Rules for new code: no hex literals, no `BoxShadow`, no primary-colored

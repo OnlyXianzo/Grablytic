@@ -11,7 +11,7 @@
 A media downloader for Android, Windows and Linux.
 Flutter for the app, yt-dlp for the actual work, no accounts and no telemetry.
 
-**[grablytic.vercel.app](https://grablytic.vercel.app)** — screenshots, install
+**[grablytic.vercel.app](https://grablytic.vercel.app)**: screenshots, install
 notes, and the longer version of what this is.
 
 [![CI](https://img.shields.io/badge/CI-verify.yml-brightgreen?logo=githubactions&logoColor=white)](.github/workflows/verify.yml)
@@ -21,7 +21,7 @@ notes, and the longer version of what this is.
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/OnlyXianzo/Grablytic)
 
-[Install](#install) · [What it does](#what-it-does) · [Recent work](#recent-work-oct-1820) · [Architecture](#how-it-fits-together) · [Build it](#build-it-yourself) · [Docs](#docs)
+[Install](#install) · [What it does](#what-it-does) · [What changed](#what-changed-in-006) · [Architecture](#how-it-fits-together) · [Build it](#build-it-yourself) · [Docs](#docs)
 
 </div>
 
@@ -35,7 +35,8 @@ keeps the fiddly parts out of your way: picking the right stream, merging
 video and audio, embedding subtitles and chapters, resuming a download that
 died halfway.
 
-It runs on Android (8.0 and up), Windows 10/11 and Linux. iOS is not
+It runs on Android 7.0 and up (the build sets `minSdk 24`), Windows 10/11 and
+Linux. iOS is not
 supported and there is no plan for it, mostly because everything here leans on
 being able to spawn processes and write into the filesystem.
 
@@ -53,7 +54,7 @@ Obtainium, choose *Add App* and paste
 
 | Build | CPU | JS runtime | Good for |
 |---|---|---|---|
-| [arm64 + Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | arm64-v8a | Deno | most modern phones — start here |
+| [arm64 + Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-deno%5C%22%7D%22%7D) | arm64-v8a | Deno | most modern phones, start here |
 | [arm64 + Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22arm64-node%5C%22%7D%22%7D) | arm64-v8a | Node.js | arm64 phones, roughly 40 MB smaller |
 | [armv7 + Node](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22armv7-node%5C%22%7D%22%7D) | armeabi-v7a | Node.js | older 32-bit budget phones |
 | [x86_64 + Deno](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.theonly.grablytic%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FOnlyXianzo%2FGrablytic%22%2C%22author%22%3A%22OnlyXianzo%22%2C%22name%22%3A%22Grablytic%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22x86_64-deno%5C%22%7D%22%7D) | x86_64 | Deno | emulators, Chromebooks |
@@ -125,7 +126,7 @@ permissions rather than in the settings blob.
 
 Crash reports are the only thing that ever leaves the app, and they only leave
 when you press Send. When something goes wrong the app writes a redacted report
-into its own folder — that happens whether or not you have opted into anything,
+into its own folder. That happens whether or not you have opted into anything,
 because otherwise the next launch would have nothing to offer you. On the next
 launch a dismissible banner says we ran into a problem and asks what to do:
 **Not now**, **Review report**, or **Send report**. The same report is always
@@ -137,7 +138,7 @@ says exactly that instead of pretending it filed something.
 
 *Send crash reports automatically* (Settings → System & Diagnostics) is a
 separate switch and is off until you turn it on. Even then nothing is uploaded
-by a build that has no token — which is every normal build.
+by a build that has no token, which is every normal build.
 
 The Python engine's own notifier is a developer tool: it needs
 `GRABLYTIC_AUTO_REPORT=1` and a `GITHUB_TOKEN` in its environment, neither of
@@ -152,55 +153,27 @@ Flutter/Dart errors and an unexpected engine exit; it cannot recover a native
 Android process crash or a forced OS termination. Uninstalling removes the
 app's private data, and files you downloaded stay wherever you saved them.
 
-## Recent work (Oct 18–20)
+## What changed in 0.0.6
 
-I spent three days on a full adversarial review of the codebase, then on fixing
-what it turned up. The short version: 72 commits, three pull requests, +17,430
-and −3,473 lines across 168 files. The engine suite went from 564 to 770 passing
-tests; the Flutter suite from 583 to 614 declared test cases. None of this is a
-feature release. Almost all of it is the app misbehaving less.
+Most of this release is about what the app does when something fails.
 
-What actually changed:
+- **Crash reports are captured even when you never opted in**, written to the
+  app's own folder, and offered on the next launch. Sending is still your
+  decision, and Send opens a prefilled GitHub form you submit yourself.
+- **An unexpected engine exit is reported.** It used to disappear behind the
+  restart that follows it.
+- **Redaction covers more of what leaks in practice**: `Basic` as well as
+  `Bearer` credentials, whole header lines, every cookie in a header, and
+  signed-URL expiry values. The app and engine scrubbers now agree.
+- **One version everywhere.** About, the report composer and a crash body read
+  the same stamped value instead of three hardcoded strings.
+- **"Detailed engine logging" reaches yt-dlp**, not just the app log.
+- **The interrupted-downloads card finds nested downloads** and aria2c control
+  files, matching what the resume scan actually looks at.
 
-- **Engine.** Fail-closed logging, a bounded single-worker auto-report pool
-  instead of blocking the IPC reader for up to 35 seconds per crash, an EOF
-  shutdown with a real deadline, cycle detection that no longer marks shared
-  references as cyclic, exact-key plus suffix secret redaction (so `author` is
-  no longer redacted and `Authorization:` headers are), a 2 MB cap on
-  `.info.json` sidecars, host-based YouTube detection instead of a substring
-  match, and a process-global `PATH` mutation replaced with a lock and
-  replacement semantics.
-- **App.** Startup moved inside the guarded zone, which is where it belonged;
-  cookie jars in `0600` files behind a `CookieSecretStore`; a pinned yt-dlp
-  version instead of "install whatever is on PyPI"; Python no longer resolved
-  from the current working directory; UTC timestamps everywhere; SQLite schema
-  v7 with UPDATE-then-INSERT instead of `REPLACE`; and request timeouts on
-  every transport. A rejected start request is now an honest `pending` → error
-  transition instead of a card that sits at 0% forever.
-- **Android.** The API-35 foreground-service timeout callback (`onTimeout(startId,
-  fgsType)`) that the system actually calls for `dataSync` services, every
-  `MethodChannel.Result` answered even if the activity is being destroyed, a
-  per-activity event-sink registry so the share overlay can no longer steal the
-  main screen's progress events, and stop paths that cancel the Python workers
-  before the service dies.
-- **CI.** A release lint gate that reads the lint report instead of the log, a
-  Ruff gate over the whole `F` rule set with F401 back on, a Flutter coverage
-  floor, and the Android API-35 emulator job wired into the matrix. Six jobs,
-  all green on the merge commit.
-
-A second review pass then found ten more issues in that work — a startup path
-that re-hashed every bundled package on every launch, a retry that could be
-starved by the queue, a search fallback with a different grammar from the index
-it replaced, and a handful of smaller things. All ten are fixed or ratcheted;
-the response is in
-[`docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md`](docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md).
-
-The gory detail, finding by finding, is in
-[`docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md`](docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md)
-and the reasoning behind the judgement calls is in
-[`docs/TEARDOWN_RESEARCH_2026-10-19_NUCLEAR_REVIEW.md`](docs/TEARDOWN_RESEARCH_2026-10-19_NUCLEAR_REVIEW.md).
-The previous round is summarised in the
-[changelog](docs/CHANGELOG.md).
+The two review rounds behind 0.0.5 and 0.0.6 are written up in the
+[changelog](docs/CHANGELOG.md) and the [audit records](docs/audits/), including
+the findings that are still open.
 
 ## How it fits together
 
@@ -227,7 +200,7 @@ A few rules keep that honest:
   instead of half-understood.
 
 Typography is Bricolage Grotesque for headings and Figtree for body text, with
-Iosevka Charon Mono for anything that reads like code — format ids, URLs, byte
+Iosevka Charon Mono for anything that reads like code: format ids, URLs, byte
 counts. InstrumentSans survives only in older settings screens and goes away
 when those are touched.
 
@@ -277,8 +250,8 @@ yt-dlp installed, and the first request will tell you so.
 ## Tests and CI
 
 ```bash
-pytest engine/tests/ -q                       # 783 engine tests
-flutter test                                  # 658 Flutter tests
+pytest engine/tests/ -q                       # engine suite
+flutter test                                  # widget + unit tests
 flutter analyze                               # must report no issues
 ruff check --select F engine/                 # must be clean
 ```
@@ -289,7 +262,7 @@ every push and PR:
 | Job | What it checks |
 |---|---|
 | Flutter Analyze & Test | `flutter analyze` clean, `flutter test --coverage`, 30% project-lib coverage floor |
-| Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate, broad-catch ratchet |
+| Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate, broad-catch ratchet, version-literal gate |
 | Android API 35 | release lint, then a real emulator run through Flutter → Chaquopy → Python |
 | Docs Link Check | every relative link in `README.md` and `docs/` resolves |
 | Secret Scan | gitleaks over the full history |
@@ -312,8 +285,8 @@ The short list of things that were deliberately made difficult:
   used for DASH/HLS.
 - Temp directories are `0700`, downloaded binaries are checksummed or the
   download fails, and timestamps are aware-UTC.
-- Logs and crash reports are redacted with the same scrubber before they leave
-  the process, and the report path is opt-in.
+- Logs and crash reports are scrubbed before they leave the process. Capture is
+  local and automatic so a crash is not lost; sending stays your decision.
 
 Found something? Please use
 [private vulnerability reporting](https://github.com/OnlyXianzo/Grablytic/security/advisories/new)
@@ -325,8 +298,8 @@ rather than a public issue. Details are in [`docs/security.md`](docs/security.md
 |---|---|
 | YouTube downloads fail or stop at the format list | Check Diagnostics for `js_runtime`. It should read `deno` or `quickjs`. Re-run bootstrap; on desktop the Deno download needs network access. |
 | FFmpeg missing (Android) | You are probably on a contributor build made with `-PskipNativePackages`. Rebuild with the packages, or set a custom FFmpeg path in Settings. |
-| Progress sticks at 99% | On purpose — the last percent is reserved for the terminal `finished` event. Check the live log for the post-processing stage. |
-| Resume finds nothing | Only `.part` files with a matching `.info.json`, less than 24 hours old, inside the cache directory are considered. |
+| Progress sticks at 99% | On purpose. The last percent is reserved for the terminal `finished` event. Check the live log for the post-processing stage. |
+| Resume finds nothing | Only `.part` files younger than 24 hours count, in the cache directory or the download folder, including subfolders. The `.info.json` sidecar is only needed when the URL has to be recovered. |
 | Anything else | Settings → Diagnostics & Logs → Export gives you `app_logs.txt` and `server_logs.log`. |
 
 Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).
@@ -342,11 +315,11 @@ Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).
 | [Security](docs/security.md) | Policy, supported versions, how to report |
 | [Output templates](docs/output_templates.md) | Filename fields, uniqueness, length limits |
 | [JS runtimes](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Why Deno comes first, and what the alternatives cost |
-| [Audit record](docs/TEARDOWN_AUDIT_DELTA_2026-10-19.md) | The 61-finding review, one row per finding |
-| [Second-pass record](docs/TEARDOWN_AUDIT_DELTA_2026-10-20.md) | What the ten follow-up findings were, and what was done with them |
+| [Audit records](docs/audits/) | The review rounds, one row per finding, frozen after the round |
 | [Knowledge vault](.agents/vault/index.md) | Project notes on architecture, IPC, storage and open questions |
 | [Agent skills](skills/README.md) | The reusable review and verification procedures |
-| [Changelog](docs/CHANGELOG.md) | Release notes |
+| [Changelog](docs/CHANGELOG.md) | What shipped in each release |
+| [Release notes](docs/release-notes.md) | How a release section is written |
 
 ## How this is built
 
@@ -357,7 +330,7 @@ suites, installs the builds on real hardware (including a couple of cheap
 32-bit phones, which is where most of the interesting bugs show up), and
 decides what ships.
 
-The upside is speed — the last three days of work would have taken me weeks by
+The upside is speed. The last three days of work would have taken me weeks by
 hand. The downside is that generated code is very good at looking finished. So
 every change has to compile, pass the tests, and survive a deliberately
 adversarial review pass before it lands. The rules the agents work under are in

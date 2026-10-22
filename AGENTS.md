@@ -163,10 +163,15 @@ Useful docs: [architecture](docs/architecture.md),
 
 - Update `docs/` when behavior, commands, or architecture change. Update the
   README when the user-facing story changes.
+- A release gets its section in `docs/CHANGELOG.md` following
+  `docs/release-notes.md`: summary, then Fixed/Changed/Added, then upgrade
+  notes and known issues. User-facing text, not commit archaeology.
 - Run `python3 tool/check_doc_links.py` after editing Markdown.
 - Write for a new contributor. Concrete file names and commands beat abstract
   advice.
-- Do not add internal audits, scratch notes, or work logs to `docs/`.
+- Do not add internal audits, scratch notes, or work logs to `docs/` directly.
+  Review rounds go in `docs/audits/`, one file per round, and stop changing
+  once the round is closed.
 - The vault at `.agents/vault/` is tracked project knowledge. Keep it free of
   secrets, personal paths, and stale working-state notes.
 

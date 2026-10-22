@@ -1,16 +1,16 @@
 # Building From Source
 
-> Last updated: **2026-09-11** — covers bundled jniLibs packages, Deno/QuickJS,
-> `lintVital` workaround, and the 181-test engine suite.
+> Last updated: **2026-10-21**. Covers bundled jniLibs packages, the Deno/Node
+> variants, the `lintVital` workaround, and the current engine suite.
 
 ## Prerequisites
 
 | Dependency | Version | Notes |
 |---|---|---|
 | Flutter SDK | stable (3.x) | Install via `flutter upgrade` or your package manager |
-| Dart | Bundled with Flutter (3.11+) | Ships with the Flutter SDK |
+| Dart | 3.11+ | `environment.sdk` in `pubspec.yaml` |
 | Python | 3.11+ | Required for the engine and Chaquopy (Android) |
-| Android SDK | 34+ | Required for Android builds |
+| Android SDK | 35 | `compileSdk` is `max(flutter.compileSdkVersion, 35)` |
 | NDK | Flutter-bundled | Managed via `flutter.ndkVersion` in Gradle |
 | Java | 17 | Required for Android builds |
 | CMake | 3.31+ | Required for Android Chaquopy builds |
@@ -21,8 +21,8 @@
 | Binary | Android | Desktop |
 |---|---|---|
 | **yt-dlp** (+ `yt-dlp-ejs`) | Bundled via Chaquopy pip block | Installed into uv venv at bootstrap |
-| **FFmpeg** | 🆕 Bundled in jniLibs (`libffmpeg.so`, SHA-256 pinned) | Auto-downloaded on first launch (SHA-256 verified) |
-| **Deno** (JS runtime) | 🆕 Bundled in jniLibs (`libdeno.so`) | Auto-downloaded on first launch (SHA-256 verified) |
+| **FFmpeg** | Bundled in jniLibs (`libffmpeg.so`, SHA-256 pinned) | Auto-downloaded on first launch (SHA-256 verified) |
+| **Deno** (JS runtime) | Bundled in jniLibs (`libdeno.so`) | Auto-downloaded on first launch (SHA-256 verified) |
 | **aria2c** | System/`bin/` path (optional) | Auto-downloaded on first launch (SHA-256 verified) |
 | **QuickJS** | `python-quickjs` binding (fallback JS runtime) | Optional (`qjs` on PATH) |
 
@@ -77,7 +77,7 @@ Chaquopy bundles Python 3.11 and the engine into the APK. yt-dlp and curl_cffi
 are installed via pip during the Gradle build. The Python source lives in
 `engine/` and is compiled into the APK automatically.
 
-🆕 **Native packages:** `android/app/packages.gradle.kts` fetches verified
+**Native packages:** `android/app/packages.gradle.kts` fetches verified
 `ytdlnis-packages` APKs at build time (SHA-256 pinned), extracts the `lib` `.so`
 files into our own jniLibs, and `BinaryPackageManager` resolves + probes them
 at runtime. No helper APKs, no `REQUEST_INSTALL_PACKAGES`, manifest unchanged
@@ -124,7 +124,7 @@ Notes:
 - The runtime fallback chain needs no per-variant app changes: if a `.so` is absent,
   `BinaryPackageManager` skips it and the engine uses whichever runtime is present
   (deno → node → QuickJS).
-- Deno has no `armeabi-v7a` build upstream (only arm64 + x86_64) — armv7 devices take
+- Deno has no `armeabi-v7a` build upstream, only arm64 and x86_64. armv7 devices take
   the Node or universal variant. (`packages.gradle.kts` skips Deno on armv7 automatically.)
 - Deliberately NOT Gradle `splits{}` / product flavors: `splits{}` conflicts with the
   Chaquopy-mandated `ndk.abiFilters` block (hard build error), and flavor-level abiFilters
@@ -132,22 +132,23 @@ Notes:
   CI matrix produces the same artifacts without either risk.
 - First-run download of the runtime instead of bundling is NOT possible on Android:
   API 29+ forbids executing app-downloaded files (W^X), so only APK-bundled jniLibs run.
-- CI matrix rows + README download links for these three variants are owned by the
-  Obtainium task (Task 3) — see that task's handoff for final asset names.
+- CI builds five variants across three ABIs; the asset names it produces are the
+  ones the README links to (`-arm64-deno`, `-arm64-node`, `-armv7-node`,
+  `-x86_64-deno`, `-x86_64-node`, `-universal`).
 
 **Platform notes:**
 - `minSdk = 24` (Chaquopy requirement; Android 7.0+ devices)
 - `targetSdk` / `compileSdk` managed by Flutter Gradle plugin
-- `minSdk 24`, ABIs `arm64-v8a` + `armeabi-v7a` + `x86_64` via `ndk.abiFilters`
-  (universal APK by default; `-PtargetAbi=<abi>` for a single-ABI APK — Chaquopy
-  hard-requires abiFilters, which AGP forbids combining with `--split-per-abi`)
+- ABIs `arm64-v8a`, `armeabi-v7a` and `x86_64` via `ndk.abiFilters`. The default
+  APK is universal; `-PtargetAbi=<abi>` narrows it. Chaquopy hard-requires
+  `abiFilters`, which AGP forbids combining with `--split-per-abi`.
 - Signing: place `key.properties` in `android/` with `storeFile`, `storePassword`, `keyPassword`, `keyAlias`
 - CMake 3.31+ required (install via Android SDK manager if needed)
-- `lintVital*` tasks are disabled (`android/app/build.gradle.kts`) — works around
+- `lintVital*` tasks are disabled (`android/app/build.gradle.kts`), which works around
   an AGP/Kotlin-script analysis crash on `KaModule`; re-enable after AGP fix
 - `zip.so` stripping is skipped so `libffmpeg.zip.so` / `libdeno.zip.so`
   support trees survive packaging
-- 🆕 `DownloadService` (`dataSync` FGS) needs no new permissions
+- `DownloadService` (`dataSync` FGS) needs no new permissions
   (`FOREGROUND_SERVICE` + `DATA_SYNC` are install-time); declared in
   `AndroidManifest.xml`
 
@@ -167,7 +168,7 @@ Output: `build/windows/x64/runner/Release/`
 
 ### Linux
 
-Same approach as Windows — engine copied alongside the bundle.
+Same approach as Windows: the engine is copied alongside the bundle.
 
 ```bash
 # Install Linux build dependencies
@@ -193,7 +194,8 @@ Output: `build/linux/x64/release/bundle/`
 flutter test
 ```
 
-Runs **262 widget and unit tests** under `test/`.
+Runs every widget and unit test under `test/`. CI adds a 30% coverage floor
+over `lib/`.
 
 ### Python Engine Tests
 
@@ -202,14 +204,15 @@ Runs **262 widget and unit tests** under `test/`.
 pytest engine/tests/ -v
 ```
 
-Runs **309 unit tests** covering config, errors, format selection, opts building
-(PP order, sections, aria2c validation, JS runtime), paths, playlists
-(generators, IDs, sanitization), downloader, hooks, bootstrap extraction
-(Zip/Tar-Slip), bundled packages, scheduler checks, and the structured logger.
+Covers config, error classification, format selection, opts building (PP order,
+sections, aria2c validation, JS runtime), paths, playlists, downloader, hooks,
+bootstrap extraction (Zip/Tar-Slip), bundled packages, scheduler checks, the
+structured logger, and the guards (`url_guard`, `filename_guard`,
+`ytdlp_network`). CI runs it on 3.11 and 3.12 with a 75% coverage floor.
 
 > CI installs with `uv pip install --system yt-dlp pytest -e engine/`
 > (see `.github/workflows/verify.yml`). If collection fails locally, ensure
-> `yt-dlp` is installed — several test modules import it.
+> `yt-dlp` is installed, because several test modules import it.
 
 ## Static Analysis
 
@@ -220,30 +223,36 @@ flutter analyze
 Must pass with zero errors before committing.
 
 > If you touch `lib/core/utils/app_logger.dart`, watch the `_redact()` regexes:
-> use triple-quoted raw strings — plain raw strings with `\` escapes once caused
+> use triple-quoted raw strings. Plain raw strings with `\` escapes once caused
 > 181 cascading analyzer errors (fixed Sept 2026).
 
 ## GitHub Actions
 
-Two workflows are available in `.github/workflows/`:
+The workflows in `.github/workflows/` that matter for a build:
 
 ### Verification (`verify.yml`)
 
-Triggers on every push/PR to `main`. Runs:
-- `flutter analyze`
-- `flutter test`
-- `pytest engine/tests/ -v`
+Triggers on every push and PR. Six jobs:
+
+| Job | What it runs |
+|---|---|
+| Flutter Analyze & Test | `flutter analyze`, `flutter test --coverage`, 30% `lib/` floor |
+| Python Engine Tests | pytest on 3.11 and 3.12, 75% floor, Ruff `F`, broad-catch ratchet, version-literal gate |
+| Android API 35 | release lint, then an emulator run through Flutter → Chaquopy → Python |
+| Docs Link Check | `tool/check_doc_links.py` |
+| Secret Scan | gitleaks over the full history |
+| Workflow YAML Lint | every workflow parses and keeps its required keys |
 
 ### Automated Builds (`build.yml`)
 
 The `build.yml` GitHub Actions workflow produces multi-architecture binaries across platforms on manual trigger (`workflow_dispatch`):
 - **Android**:
-  - `grablytic-v<ver>-arm64-deno.apk` (ARM64-v8a + Deno JS runtime — recommended default for 64-bit flagships & modern phones)
-  - `grablytic-v<ver>-arm64-node.apk` (ARM64-v8a + Node.js runtime — smaller footprint for 64-bit devices)
-  - `grablytic-v<ver>-armv7-node.apk` (ARMeabi-v7a + Node.js runtime — optimized for budget & low-end 32-bit devices like Samsung Galaxy A04e)
-  - `grablytic-v<ver>-x86_64-deno.apk` (x86_64 + Deno runtime — 64-bit emulators & Chromebooks)
-  - `grablytic-v<ver>-x86_64-node.apk` (x86_64 + Node.js runtime — smaller download for emulators)
-  - `grablytic-v<ver>-universal.apk` (All ABIs bundled with both runtimes — universal fallback)
+  - `grablytic-v<ver>-arm64-deno.apk` (ARM64-v8a + Deno JS runtime: recommended default for 64-bit flagships & modern phones)
+  - `grablytic-v<ver>-arm64-node.apk` (ARM64-v8a + Node.js runtime: smaller footprint for 64-bit devices)
+  - `grablytic-v<ver>-armv7-node.apk` (ARMeabi-v7a + Node.js runtime: optimized for budget & low-end 32-bit devices like Samsung Galaxy A04e)
+  - `grablytic-v<ver>-x86_64-deno.apk` (x86_64 + Deno runtime: 64-bit emulators & Chromebooks)
+  - `grablytic-v<ver>-x86_64-node.apk` (x86_64 + Node.js runtime: smaller download for emulators)
+  - `grablytic-v<ver>-universal.apk` (All ABIs bundled with both runtimes: universal fallback)
 - **Linux** (built on `ubuntu-latest` and `ubuntu-24.04-arm`):
   - Debian packages (`.deb` for `amd64` and `arm64`)
   - RPM packages (`.rpm` for `x86_64` and `aarch64`)
@@ -265,7 +274,7 @@ fail-closed verification) plus keyless cosign/Sigstore bundles for every
 asset, verified fail-closed before upload. `build.yml`'s embedded publish
 does not do this step, so run this workflow after the release exists.
 
-It needs only the tag — `run_id` is optional and auto-resolves to the latest
+It needs only the tag. `run_id` is optional and auto-resolves to the latest
 successful **Build and Release** run for the tag's own commit (an explicit
 `run_id` still pins an exact build; resolution fails closed when no
 successful build of that commit exists):
@@ -274,15 +283,17 @@ successful build of that commit exists):
 # 1. Build + create the release (tag derived from pubspec.yaml)
 gh workflow run "Build and Release" --ref main
 # 2. Attach SHA256SUMS + cosign bundles (run_id auto-resolved)
-gh workflow run "Publish Release Assets" --ref main -f tag_name=v0.0.4
+gh workflow run "Publish Release Assets" --ref main -f tag_name=v0.0.6
 # Pin an exact build instead of auto-resolving (optional):
-gh workflow run "Publish Release Assets" --ref main -f tag_name=v0.0.4 -f run_id=<build-run-id>
+gh workflow run "Publish Release Assets" --ref main -f tag_name=v0.0.6 -f run_id=<build-run-id>
 ```
 
-> Diagnostics reports stamp the Flutter SDK version via
-> `--dart-define=GRABLYTIC_FLUTTER_VERSION=...` (wired in `build.yml`; read in code
-> with `String.fromEnvironment('GRABLYTIC_FLUTTER_VERSION')`). Dev runs without the
-> flag report `unknown` — expected, not a bug.
+> Builds stamp three values with `--dart-define`: the Flutter SDK version
+> (`GRABLYTIC_FLUTTER_VERSION`), the short git SHA (`GRABLYTIC_GIT_SHA`) and the
+> app version from `pubspec.yaml` (`GRABLYTIC_APP_VERSION`, read by
+> `AppVersion`). A dev run has none of them and reports `unknown` instead of a
+> stale number. Do not hardcode a version in `lib/`; `tool/check_version_literals.py`
+> fails the build when you do.
 
 ## Platform-Specific Notes
 

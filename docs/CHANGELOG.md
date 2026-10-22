@@ -1,42 +1,72 @@
 # Changelog
 
-> Current version: `0.0.6+6`. Sections below v0.0.6 are unchanged; the v0.0.5
-> entry mixes curated highlights with automated stats from
-> `tool/generate_release_changelog.py v0.0.4 0.0.5`.
+Releases, newest first. Each section follows
+[`release-notes.md`](release-notes.md): what changed for someone installing
+this build, then the upgrade notes, then anything still broken.
 
 ## v0.0.6 — 2026-10-21
 
-The release where failures became reportable without becoming someone else's
-data.
+This release is about what the app does when something fails. Crashes are
+captured locally and offered to you on the next launch, nothing leaves the
+device until you press Send, and the report names the build you actually
+installed.
 
-- **Crash capture that does not need permission.** A crash is written to disk
-  whether or not automatic reporting is on; sending stays the user's decision.
-  The fatal path does no network I/O, and the next launch offers the report
-  with a banner that has a three-day cooldown.
-- **One queue for reports.** Atomic file writes, three-report cap, fingerprint
-  dedup with a seven-day window, 64 KB body cap, and a migration from the old
-  preferences blob. Submission is a prefilled GitHub form the user reviews, or
-  a token-free draft — the app never holds a write credential and never claims
-  a report was sent unless GitHub confirmed it.
-- **Engine exits are reported too.** An unexpected Python exit used to be
-  invisible: the restart that follows a closed stdout nulled the process
-  before the exit code was read. Capture now depends on the exit code alone.
-- **Redaction at every exit point.** The stored summary, the report body, the
-  issue URL and the API call each scrub independently, so a caller that forgets
-  cannot publish a token, a cookie header or a private URL.
-- **One version, stamped from `pubspec.yaml`.** The About screen, the report
-  composer and every crash body used to quote three different versions.
-- **Long reports survive.** The composer now uses the length-guarded issue URL,
-  so a report GitHub would answer 414 for is copied to the clipboard and its
-  queue entry is kept instead of being silently dropped.
-- **Engine logging toggle actually reaches the engine** (`log_level` on
-  `paths/set`, `verbose` in the yt-dlp overlay), and the engine scrubber's fast
-  path no longer skips `Basic` credentials.
-- **Resume evidence matches the scan**: both roots, recursive and bounded, so a
-  download in a subfolder brings the interrupted-downloads card back.
-- **Controls that say what they mean**: the broad-catch ratchet refuses a raised
-  budget without a recorded reason, and a new gate fails when an app version
-  literal appears in `lib/`.
+### Fixed
+
+- Downloads in a subfolder no longer hide the interrupted-downloads card. The
+  card's evidence probe now looks in the same places the resume scan does, and
+  accepts an aria2c `.aria2` control file as well as a `.part`.
+- An unexpected Python engine exit now produces a report. The restart that
+  follows a closed stdout used to clear the process before the exit code was
+  read, so the exits worth reporting were the ones skipped.
+- Log redaction covers what actually leaked: `Basic` as well as `Bearer`
+  credentials, whole `Authorization` and `Cookie` lines, every cookie in a
+  multi-cookie header, and signed-URL `expire` values.
+- A long or non-ASCII report no longer opens an empty GitHub form. The composer
+  uses the length-guarded issue URL and, when the text does not fit, copies it
+  to the clipboard and keeps the crash queued instead of dropping it.
+- The report body says `Authorization: ***REDACTED***` instead of a literal
+  `$1: ***REDACTED***`.
+
+### Changed
+
+- Crash reports are captured whether or not automatic reporting is on. The
+  switch now only decides whether a queued report may be filed without asking,
+  and it is still off by default. The fatal path does no network I/O.
+- One version everywhere. About, the report composer and every crash body read
+  the value stamped from `pubspec.yaml`; they used to quote three different
+  strings.
+- "Detailed engine logging" reaches yt-dlp as well as the app log.
+- Opening the GitHub draft from the recovery banner retires that queued crash.
+  Before, the same crash came back after three days.
+- Documentation says `Settings → Report a problem`, which is the row that
+  exists.
+
+### Upgrade notes
+
+- Nothing to do. Settings, history and cookies carry over. The report queue
+  imports the older preferences blob on first launch.
+- Uninstalling still removes the app's private data, including queued reports.
+  Files you downloaded stay where you saved them.
+
+### Known issues
+
+- A native Android process crash and a forced OS termination are not captured.
+  Neither is visible to the Dart error handlers.
+- A report can still contain private text the scrubber did not anticipate. The
+  review panel shows the exact body for that reason.
+- The interrupted-downloads probe walks up to four levels and 2,000 entries.
+  A download nested deeper than that is found by the scan but does not bring
+  the card up by itself.
+
+### For contributors
+
+- The broad-catch ratchet now refuses a raised budget unless the entry carries
+  a `why`, so the reason lands in the same file as the number.
+- `tool/check_version_literals.py` fails the build on a hardcoded app version
+  in `lib/`.
+- `skills/` gained `stop-slop`, `humanizer` and `write-in-my-style`;
+  `AGENTS.md` requires the three in order for any prose.
 
 ## v0.0.5 — 2026-10-11 (feature + polish release; 57 commits + orphan redesign merge since v0.0.4)
 
@@ -77,15 +107,16 @@ Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-). Orpha
   Kotlin 11→0, Python 2/2, docs/link-check/secret-scan green; `desktop_engine`
   null guard for `_process` race.
 
-> Full automated listing (tree diff, grouped, newest last) — `v0.0.4..HEAD` via
-> `tool/generate_release_changelog.py` misses orphan `redesign/ui` commits (unrelated
-> history), so they are listed here manually from `32a5947..351c8aa`:
+<details>
+<summary>Automated commit listing (57 commits)</summary>
 
-### v0.0.5 — 2026-10-11 (57 commits since v0.0.4, incl. redesign/ui orphan)
+`tool/generate_release_changelog.py v0.0.4 HEAD` cannot see the orphan
+`redesign/ui` history, so those commits were merged in by hand from
+`32a5947..351c8aa`.
 
 Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-).
 
-#### Every change (grouped, newest last, manual from 32a5947..351c8aa + main)
+#### Every change (grouped, newest last, from 32a5947..351c8aa plus main)
 
 ##### Redesign / Picker / Clipboard / Queue (32a5947..351c8aa)
 - `351c8aa` fix(cookie): preserve empty-valued JSON cookies (trim regression)
@@ -179,7 +210,7 @@ Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-).
 - `6cea501` fix(downloads): portrait-safe format ladder + batch quality picker
 - `8b681f6` fix(logs): save engine log to Downloads via tail-export + full flush
 
-## v0.0.4 — 2026-09-17 (huge improvement release; 118 commits since v0.0.2)
+</details>
 
 ## v0.0.4 — 2026-09-17 (huge improvement release; 118 commits since v0.0.2)
 
@@ -213,11 +244,9 @@ Diff vs v0.0.4: 238 files changed, 21499 insertions(+), 4285 deletions(-).
 - **Perf**: throttled progress at source, bounded queues, single-card
   rebuilds, bundled Instrument Sans (no runtime webfont fetch).
 
-> Full automated listing (`tool/generate_release_changelog.py v0.0.2 0.0.4`):
+### Release stats
 
-## v0.0.4 — 2026-09-17 (118 commits since v0.0.2)
-
-Diff vs v0.0.2: 152 files changed, 14221 insertions(+), 1494 deletions(-).
+From `tool/generate_release_changelog.py v0.0.2 v0.0.4`. Diff vs v0.0.2: 152 files changed, 14221 insertions(+), 1494 deletions(-).
 
 ### Lines of code by area (+added / -removed)
 
@@ -365,7 +394,7 @@ Diff vs v0.0.2: 152 files changed, 14221 insertions(+), 1494 deletions(-).
 - `ea50f70ac` fix(metered): confirm user taps on metered links when Wi-Fi Only is on
 - `5849e6224` fix(logs): fix level filtering cancellation bug and improve disk fallback parsing
 
-## Unreleased — 2026-09-13 (Speed sparkline, DB resume, background scheduler, share sheet, queue, playlist selection)
+## Pre-release notes — 2026-09-13 (Speed sparkline, DB resume, background scheduler, share sheet, queue, playlist selection)
 
 - **Speed sparkline & ETA smoothing**:
   - Dual-stage exponential moving average (EMA) smoothing for download speeds ($\alpha=0.3$) and ETA countdowns ($\alpha=0.15$) eliminating erratic UI fluctuations.
@@ -409,7 +438,7 @@ Diff vs v0.0.2: 152 files changed, 14221 insertions(+), 1494 deletions(-).
   (release-APK icon, real downloads, Android 13+ permission/alerts,
   Kotlin CI build) remain open manual verification.
 
-## Unreleased — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
+## Pre-release notes — 2026-09-12 (Linker Closure, Fail-Closed Probes & Library UI)
 
 ### Fixed
 - **Silent event-channel death** (completed files, 0% UI): `@Keep` on the
@@ -492,7 +521,7 @@ Diff vs v0.0.2: 152 files changed, 14221 insertions(+), 1494 deletions(-).
 - PageView tab animation no longer logs intermediate fly-through pages.
 - `yt-dlp` floor raised to `>=2025.11.12` (EJS/JS-runtime requirement).
 
-## Unreleased — September 2026
+## Pre-release notes — September 2026
 
 ### Added
 - Android: `ffmpeg` + `deno` bundled in our own jniLibs (SHA-256-pinned `packages.gradle.kts` fetch, `BinaryPackageManager` resolve/probe/extract).
@@ -520,3 +549,9 @@ Diff vs v0.0.2: 152 files changed, 14221 insertions(+), 1494 deletions(-).
 - Security audits: JS execution + tmpdir fixes, executable permissions, aria2c assets.
 - Format ladder: muxed streams for non-YouTube; platform-aware JS UI; duplicate-download guard; desktop IPC hardening (queueing, single startup, venv fixes, `sqflite_ffi`).
 - Sprint 4–5 features: history (SQLite), archive toggle, aria2c config, scheduler, media preview, SponsorBlock settings, templates, observed sources, batch import, cookie/WebView auth, share intent, resume UI, update channels, binary bootstrapper, error-recovery UI.
+
+## How this file is kept
+
+Sections are written once, when the tag is cut, and then left alone. The rules
+for what belongs in one, and what stays in the commits, are in
+[`release-notes.md`](release-notes.md).
