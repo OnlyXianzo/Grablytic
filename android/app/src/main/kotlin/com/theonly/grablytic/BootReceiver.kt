@@ -30,16 +30,36 @@ import android.util.Log
  * The sweep runs on a background thread via `goAsync()`: the helper waits
  * out Dart's lock with busy-timeout + retries, which must never block
  * `onReceive` on the main thread.
+ *
+ * What keeps other apps out (SEC-005): nothing in this class, and nothing in
+ * the manifest. `RECEIVE_BOOT_COMPLETED` is a normal permission, so the
+ * receiver's `android:permission` only admits every app that asked for it at
+ * install. The actual guard is the framework's: `BOOT_COMPLETED` and
+ * `MY_PACKAGE_REPLACED` are protected broadcasts, and a non-system sender gets
+ * `SecurityException` in `ActivityManagerService.broadcastIntentLocked` before
+ * this receiver is resolved at all. [isSweepAction] is defence in depth — it
+ * matters if the app is ever shipped pre-installed, which is the only place
+ * the 2020 (un)protected-broadcast class could apply.
  */
 class BootReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "BootReceiver"
+
+        /**
+         * The only actions this receiver acts on.
+         *
+         * Extracted so a JVM test can pin it: widening the list is how the
+         * class would quietly start trusting something the framework does not
+         * protect.
+         */
+        fun isSweepAction(action: String?): Boolean =
+            action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) {
+        if (!isSweepAction(action)) {
             return
         }
         Log.i(TAG, "Handling broadcast: $action")
