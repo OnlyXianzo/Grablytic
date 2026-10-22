@@ -177,12 +177,16 @@ class ObservedSourcesScreen extends ConsumerWidget {
     try {
       await showDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: colorScheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Add Source'),
-          content: StatefulBuilder(
-            builder: (dialogCtx, setDialogState) => SingleChildScrollView(
+        // SEC-002: the URL error is rendered on the field, so the state that
+        // holds it has to wrap the dialog's actions as well as its content.
+        builder: (ctx) => StatefulBuilder(
+          builder: (dialogCtx, setDialogState) => AlertDialog(
+            backgroundColor: colorScheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text('Add Source'),
+            content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -230,46 +234,48 @@ class ObservedSourcesScreen extends ConsumerWidget {
                       DropdownMenuItem(value: 'audio', child: Text('Audio Only')),
                     ],
                     onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() => selectedQuality = val);
-                      }
+                      if (val == null) return;
+                      selectedQuality = val;
+                      setDialogState(() {});
                     },
                   ),
                 ],
               ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  final url = urlController.text.trim();
+                  if (name.isEmpty) return;
+                  final error = validateObservedSourceUrl(url);
+                  if (error != null) {
+                    setDialogState(() => urlError = error);
+                    return;
+                  }
+                  final added =
+                      ref.read(settingsProvider.notifier).addObservedSource({
+                    'name': name,
+                    'url': url,
+                    'quality': selectedQuality,
+                    'enabled': true,
+                  });
+                  if (!added) {
+                    setDialogState(
+                      () => urlError = 'That URL could not be added.',
+                    );
+                    return;
+                  }
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('Add'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                final url = urlController.text.trim();
-                if (name.isEmpty) return;
-                final error = validateObservedSourceUrl(url);
-                if (error != null) {
-                  setDialogState(() => urlError = error);
-                  return;
-                }
-                final added =
-                    ref.read(settingsProvider.notifier).addObservedSource({
-                  'name': name,
-                  'url': url,
-                  'quality': selectedQuality,
-                  'enabled': true,
-                });
-                if (!added) {
-                  setDialogState(() => urlError = 'That URL could not be added.');
-                  return;
-                }
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Add'),
-            ),
-          ],
         ),
       );
     } finally {
