@@ -1,7 +1,10 @@
 {
-  "dart_catch_underscore_in_lib": 163,
-  "python_except_exception_in_engine": {
-    "limit": 235,
-    "why": "redact_text(): str(value) can raise from a caller-supplied __str__, and the fallback is a fixed safe string, so the handler cannot hide a real failure (PR #32)"
+  "dart_broad_catch_in_lib": {
+    "limit": 230,
+    "why": "re-baselined (#125): the previous 163 counted only `catch (_)`, so the same handler binding `e` was invisible. 230 is every catch in lib/ with no `on Type` clause, counting all bindings; the 12 typed handlers are narrower by construction and stay out."
+  },
+  "python_broad_except_in_engine": {
+    "limit": 236,
+    "why": "re-baselined (#125): the pattern now also matches `except BaseException`, which is the one deliberate last-resort handler in downloader.py:1969 (after KeyboardInterrupt and Exception are handled above it). The previous 235 was the `except Exception` count alone."
   }
 }

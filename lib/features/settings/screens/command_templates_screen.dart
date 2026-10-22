@@ -79,7 +79,11 @@ class CommandTemplatesScreen extends ConsumerWidget {
     );
   }
 
-  void _showTemplateDialog(BuildContext context, WidgetRef ref, int? index) {
+  Future<void> _showTemplateDialog(
+    BuildContext context,
+    WidgetRef ref,
+    int? index,
+  ) async {
     final templates = ref.read(settingsProvider).customTemplates;
     final existing = index != null && index < templates.length
         ? _decodeTemplate(templates[index])
@@ -88,74 +92,79 @@ class CommandTemplatesScreen extends ConsumerWidget {
     final nameController = TextEditingController(text: existing?.name ?? '');
     final argsController = TextEditingController(text: existing?.args ?? '');
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(index != null ? 'Edit Template' : 'Add Template'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Template Name',
-                hintText: 'e.g. Subtitles',
+    try {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(index != null ? 'Edit Template' : 'Add Template'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Template Name',
+                  hintText: 'e.g. Subtitles',
+                ),
+                autofocus: index == null,
               ),
-              autofocus: index == null,
+              const SizedBox(height: 12),
+              TextField(
+                controller: argsController,
+                decoration: const InputDecoration(
+                  labelText: 'Command-line arguments',
+                  hintText: 'e.g. --write-sub --sub-lang en',
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: argsController,
-              decoration: const InputDecoration(
-                labelText: 'Command-line arguments',
-                hintText: 'e.g. --write-sub --sub-lang en',
-              ),
-              maxLines: 3,
+            FilledButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final args = argsController.text.trim();
+                if (name.isEmpty || args.isEmpty) return;
+
+                // SEC-04: gate path escapes at input (engine confines too).
+                final problem = validateTemplateArgs(args);
+                if (problem != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    styledSnackBar(context, problem),
+                  );
+                  return;
+                }
+
+                final entry = jsonEncode({'name': name, 'args': args});
+                final updated = [...templates];
+                if (index != null && index < updated.length) {
+                  updated[index] = entry;
+                } else {
+                  updated.add(entry);
+                }
+                ref.read(settingsProvider.notifier).setCustomTemplates(updated);
+                if (templateWantsExec(args)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    styledSnackBar(context, 'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.',
+                      duration: Duration(seconds: 5),
+                    ),
+                  );
+                }
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              final args = argsController.text.trim();
-              if (name.isEmpty || args.isEmpty) return;
-
-              // SEC-04: gate path escapes at input (engine confines too).
-              final problem = validateTemplateArgs(args);
-              if (problem != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  styledSnackBar(context, problem),
-                );
-                return;
-              }
-
-              final entry = jsonEncode({'name': name, 'args': args});
-              final updated = [...templates];
-              if (index != null && index < updated.length) {
-                updated[index] = entry;
-              } else {
-                updated.add(entry);
-              }
-              ref.read(settingsProvider.notifier).setCustomTemplates(updated);
-              if (templateWantsExec(args)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  styledSnackBar(context, 'Warning: --exec runs shell commands on your device. Only use templates you typed yourself.',
-                    duration: Duration(seconds: 5),
-                  ),
-                );
-              }
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      nameController.dispose();
+      argsController.dispose();
+    }
   }
 
   void _confirmDelete(BuildContext context, WidgetRef ref, int index) {

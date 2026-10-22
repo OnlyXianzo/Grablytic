@@ -105,3 +105,26 @@ def test_a_second_raise_needs_a_new_reason(tmp_path):
 
     second = cbc._raised_without_reason({"a": 150}, cbc._parse_budget(first))
     assert second and "without a 'why'" in second[0]
+
+
+def test_a_renamed_binding_does_not_lower_the_count(tmp_path):
+    """#125: the count used to measure the variable name, not the handler."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "a.dart").write_text(
+        "try { x(); } catch (_) { }\n"
+        "try { x(); } catch (e) { }\n"
+        "try { x(); } catch (e, stack) { }\n"
+        "try { x(); } on FormatException catch (e) { }\n",
+        encoding="utf-8",
+    )
+    assert cbc._count_files(str(lib), ".dart", cbc.DART_PATTERN, cbc.DART_TYPED) == 3
+
+
+def test_a_typed_catch_is_not_a_broad_handler(tmp_path):
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "b.dart").write_text(
+        "try { x(); } on FormatException catch (e) { }\n", encoding="utf-8"
+    )
+    assert cbc._count_files(str(lib), ".dart", cbc.DART_PATTERN, cbc.DART_TYPED) == 0

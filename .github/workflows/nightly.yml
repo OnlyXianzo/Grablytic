@@ -45,7 +45,7 @@ jobs:
       commit_count: ${{ steps.check.outputs.commit_count }}
       base: ${{ steps.check.outputs.base }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -133,7 +133,7 @@ jobs:
       datestamp: ${{ steps.stamp.outputs.datestamp }}
       sha: ${{ steps.stamp.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - id: stamp
         run: |
@@ -170,7 +170,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Download x86_64 nightly APK
-  #       uses: actions/download-artifact@v4
+  #       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
   #       with:
   #         pattern: grablytic-x86_64-deno-*
   #         path: apk
@@ -181,7 +181,7 @@ jobs:
   #         sudo udevadm control --reload-rules
   #         sudo udevadm trigger --name-match=kvm
   #     - name: Boot emulator, install, force Doze, capture diagnostics
-  #       uses: reactivecircus/android-emulator-runner@v2
+  #       uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
   #       with:
   #         api-level: 34
   #         target: google_apis
@@ -211,7 +211,7 @@ jobs:
   #           echo "no fatal crashes; diagnostics captured"
   #     - name: Upload Doze diagnostics
   #       if: always()
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
   #       with:
   #         name: doze-diagnostics${{ needs.prep.outputs.suffix }}
   #         path: doze-out/
@@ -225,15 +225,15 @@ jobs:
   #     contents: read
   #   steps:
   #     - name: Download arm64 nightly APK
-  #       uses: actions/download-artifact@v4
+  #       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
   #       with:
   #         pattern: grablytic-arm64-deno-*
   #         path: ftl-apk
   #         merge-multiple: true
-  #     - uses: google-github-actions/auth@v2
+  #     - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
   #       with:
   #         credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-  #     - uses: google-github-actions/setup-gcloud@v2
+  #     - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
   #     - name: Robo crawl on physical device
   #       run: |
   #         APK=$(ls ftl-apk/*.apk | head -n 1)
@@ -250,7 +250,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -262,7 +262,7 @@ jobs:
           python3 tool/generate_nightly_notes.py "$DATESTAMP" "$SHA" > nightly_notes.md
 
       - name: Download all nightly artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: nightly-artifacts
 

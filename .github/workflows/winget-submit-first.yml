@@ -13,6 +13,11 @@ name: Submit First WinGet Manifest
 on:
   workflow_dispatch:
 
+# Least privilege, stated rather than inherited (#120). The push to
+# winget-pkgs goes through WINGET_TOKEN; this repo's token only reads.
+permissions:
+  contents: read
+
 jobs:
   submit-first:
     name: Submit 0.0.2 manifests to winget-pkgs
@@ -22,7 +27,7 @@ jobs:
       WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Check WINGET_TOKEN present
         shell: bash

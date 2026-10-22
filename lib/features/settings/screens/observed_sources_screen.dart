@@ -167,88 +167,93 @@ class ObservedSourcesScreen extends ConsumerWidget {
     );
   }
 
-  void _showAddSourceDialog(BuildContext context, WidgetRef ref) {
+  Future<void> _showAddSourceDialog(BuildContext context, WidgetRef ref) async {
     final colorScheme = Theme.of(context).colorScheme;
     final nameController = TextEditingController();
     final urlController = TextEditingController();
     String selectedQuality = 'best';
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: colorScheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Add Source'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: 'Channel Name',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+    try {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: colorScheme.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Add Source'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Channel Name',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: urlController,
-                decoration: InputDecoration(
-                  labelText: 'Channel URL',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: urlController,
+                  decoration: InputDecoration(
+                    labelText: 'Channel URL',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selectedQuality,
-                decoration: InputDecoration(
-                  labelText: 'Quality',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedQuality,
+                  decoration: InputDecoration(
+                    labelText: 'Quality',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
+                  items: const [
+                    DropdownMenuItem(value: 'best', child: Text('Best Available')),
+                    DropdownMenuItem(value: '4k', child: Text('4K')),
+                    DropdownMenuItem(value: '1080p', child: Text('1080p')),
+                    DropdownMenuItem(value: '720p', child: Text('720p')),
+                    DropdownMenuItem(value: '480p', child: Text('480p')),
+                    DropdownMenuItem(value: 'audio', child: Text('Audio Only')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) selectedQuality = val;
+                  },
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'best', child: Text('Best Available')),
-                  DropdownMenuItem(value: '4k', child: Text('4K')),
-                  DropdownMenuItem(value: '1080p', child: Text('1080p')),
-                  DropdownMenuItem(value: '720p', child: Text('720p')),
-                  DropdownMenuItem(value: '480p', child: Text('480p')),
-                  DropdownMenuItem(value: 'audio', child: Text('Audio Only')),
-                ],
-                onChanged: (val) {
-                  if (val != null) selectedQuality = val;
-                },
-              ),
-            ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final url = urlController.text.trim();
+                if (name.isNotEmpty && url.isNotEmpty) {
+                  ref.read(settingsProvider.notifier).addObservedSource({
+                    'name': name,
+                    'url': url,
+                    'quality': selectedQuality,
+                    'enabled': true,
+                  });
+                  Navigator.of(ctx).pop();
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              final url = urlController.text.trim();
-              if (name.isNotEmpty && url.isNotEmpty) {
-                ref.read(settingsProvider.notifier).addObservedSource({
-                  'name': name,
-                  'url': url,
-                  'quality': selectedQuality,
-                  'enabled': true,
-                });
-                Navigator.of(ctx).pop();
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      nameController.dispose();
+      urlController.dispose();
+    }
   }
 }

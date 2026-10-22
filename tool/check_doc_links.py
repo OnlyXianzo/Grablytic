@@ -3,9 +3,12 @@
 
 Usage: python3 tool/check_doc_links.py  (run from repo root)
 
-Every relative `](...)` target in the root Markdown files (README, SECURITY,
+Every relative link target in the root Markdown files (README, SECURITY,
 DESIGN, AGENTS) and in docs/**/*.md must resolve to a file on disk, and every
-`#fragment` must match a heading in the target file.
+`#fragment` must match a heading in the target file. All three Markdown link
+syntaxes count: inline (`[x](./a.md)`, including `<...>` destinations and
+balanced parentheses), reference (`[x][ref]` plus its definition) and HTML
+(`<a href="./a.md">`).
 That second half matters because a renamed heading leaves a link that still
 "works" as a path and silently jumps nowhere.
 
@@ -26,10 +29,81 @@ KNOWN_MISSING = {}
 # Anchors that point at generated or external content by design.
 KNOWN_ANCHORS = set()
 
-LINK_RE = re.compile(r"\]\(([^)\s]*?)(#[^)]*)?\)")
+REF_DEF = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*(?:<([^>]*)>|(\S+))", re.MULTILINE)
+REF_USE = re.compile(r"(?<!!)\[([^\]]+)\]\[([^\]]*)\]")
+HTML_HREF = re.compile(r"""<a\s[^>]*href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
+
+
+def link_targets(markdown: str):
+    """Yield (destination, fragment) for every inline link, CommonMark-style.
+
+    A bare destination may contain balanced parentheses, and a destination
+    with a space has to be wrapped in `<...>`. The old `[^)]*` pattern handled
+    neither: it truncated `./weird(1).md` to `./weird(1` and never matched
+    `(<./my file.md>)` at all (#123).
+    """
+    index = 0
+    while True:
+        start = markdown.find("](", index)
+        if start == -1:
+            return
+        cursor = start + 2
+        if cursor < len(markdown) and markdown[cursor] == "<":
+            end = markdown.find(">", cursor)
+            if end == -1:
+                index = cursor
+                continue
+            destination = markdown[cursor + 1 : end]
+            index = end + 1
+        else:
+            depth = 0
+            end = cursor
+            while end < len(markdown):
+                char = markdown[end]
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                end += 1
+            destination = markdown[cursor:end]
+            index = end
+        path, _, fragment = destination.partition("#")
+        yield path.strip(), fragment.strip()
+
+
+def reference_definitions(markdown: str) -> dict[str, str]:
+    """`[label]: target` definitions, label case-folded, as CommonMark does."""
+    return {
+        match.group(1).strip().lower(): (
+            match.group(2) if match.group(2) is not None else match.group(3)
+        )
+        for match in REF_DEF.finditer(markdown)
+    }
+
+
+def reference_targets(markdown: str) -> list[str]:
+    """Destinations reached through `[text][label]` and `[label][]` (#124).
+
+    An undefined label renders as literal text, so it is not a link and is
+    not reported.
+    """
+    definitions = reference_definitions(markdown)
+    found = []
+    for match in REF_USE.finditer(markdown):
+        label = (match.group(2) or match.group(1)).strip().lower()
+        if label in definitions:
+            found.append(definitions[label])
+    return found
+
+
+def html_targets(markdown: str) -> list[str]:
+    """`<a href="...">` destinations, which render like any Markdown link."""
+    return [match.group(1) for match in HTML_HREF.finditer(markdown)]
 
 
 def slugify(text: str) -> str:
@@ -115,17 +189,9 @@ def main() -> int:
     # Root files too. GitHub shows SECURITY.md on the Security tab, and a
     # link there rotted unnoticed while the checker only looked at README
     # and docs/.
-    md_files = [
-        fn
-        for fn in (
-            "README.md",
-            "SECURITY.md",
-            "CONTRIBUTING.md",
-            "AGENTS.md",
-            "DESIGN.md",
-        )
-        if os.path.exists(os.path.join(ROOT, fn))
-    ]
+    md_files = sorted(
+        fn for fn in os.listdir(ROOT) if fn.endswith(".md") and not fn.startswith(".")
+    )
     docs = os.path.join(ROOT, "docs")
     for dirpath, _, files in os.walk(docs):
         for fn in sorted(files):
@@ -141,9 +207,10 @@ def main() -> int:
 
     for rel in md_files:
         src = readable_text(open(os.path.join(ROOT, rel), encoding="utf-8").read())
-        for match in LINK_RE.finditer(src):
-            link = (match.group(1) or "").strip()
-            fragment = (match.group(2) or "")[1:]
+        targets = list(link_targets(src))
+        targets += [(target, "") for target in reference_targets(src)]
+        targets += [(target, "") for target in html_targets(src)]
+        for link, fragment in targets:
             if link.startswith(("http://", "https://", "mailto:")):
                 continue
             if "{" in link or "<" in link:

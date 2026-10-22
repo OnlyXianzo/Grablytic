@@ -17,10 +17,14 @@ Usage:
     python3 tool/check_broad_catches.py            # check (CI gate)
     python3 tool/check_broad_catches.py --update   # rewrite the budget
 
-The counts are deliberately literal, matching the audit's definition:
-    * Dart: `catch (_)` in lib/ (an unnamed handler, so nothing can be
-      inspected or logged).
-    * Python: `except Exception` in engine/grablytic_engine/.
+The counts measure the construct, not the variable name (#125):
+    * Dart: every `catch (...)` in lib/ that is not preceded by an `on Type`
+      clause, whether it binds `_`, `e` or `e, stack`. Renaming a binding
+      does not change what the handler catches, so it must not change the
+      count either. A typed `on FormatException catch (e)` is narrower by
+      construction and is not counted.
+    * Python: `except Exception` and `except BaseException` in
+      engine/grablytic_engine/.
 """
 
 from __future__ import annotations
@@ -35,21 +39,28 @@ from typing import Any
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUDGET_PATH = os.path.join(ROOT, "tool", "broad_catch_budget.json")
 
-DART_PATTERN = re.compile(r"catch\s*\(\s*_\s*\)")
-PYTHON_PATTERN = re.compile(r"except\s+Exception\b")
+# Any catch that can swallow anything. A named binding is the same handler as
+# `_`; only the first was counted until #125.
+DART_PATTERN = re.compile(r"catch\s*\(")
+# A typed catch narrows the exceptions it sees, so it is not a broad handler.
+DART_TYPED = re.compile(r"on\s+[A-Za-z_][\w.<>?]*\s*catch\s*\(")
+# `except Exception` and `except BaseException` are the two ways to name the
+# broad base class. `except (A, B)` is explicit and stays out.
+PYTHON_PATTERN = re.compile(r"except\s+(?:Base)?Exception\b")
 
 TARGETS = {
-    "dart_catch_underscore_in_lib": {
+    "dart_broad_catch_in_lib": {
         "root": os.path.join(ROOT, "lib"),
         "suffix": ".dart",
         "pattern": DART_PATTERN,
+        "exclude": DART_TYPED,
         "hint": (
             "Give the exception a name and log it, or narrow the type. "
             "If the swallow is deliberate, say why in a comment and keep "
             "the count flat."
         ),
     },
-    "python_except_exception_in_engine": {
+    "python_broad_except_in_engine": {
         "root": os.path.join(ROOT, "engine", "grablytic_engine"),
         "suffix": ".py",
         "pattern": PYTHON_PATTERN,
@@ -62,8 +73,16 @@ TARGETS = {
 }
 
 
-def _count_files(root: str, suffix: str, pattern: re.Pattern[str]) -> int:
+def _count_files(
+    root: str,
+    suffix: str,
+    pattern: re.Pattern[str],
+    exclude: re.Pattern[str] | None = None,
+) -> int:
     """Count literal regex matches in matching files beneath ``root``.
+
+    ``exclude`` matches are subtracted from ``pattern`` matches, which is how
+    a typed `on Type catch (...)` stays out of a broad-catch count.
 
     Skip paths containing ``__pycache__`` and files that raise OSError on
     read. Matches in comments and strings count too; UTF-8 decoding errors
@@ -83,13 +102,17 @@ def _count_files(root: str, suffix: str, pattern: re.Pattern[str]) -> int:
             except OSError:
                 continue
             total += len(pattern.findall(text))
+            if exclude is not None:
+                total -= len(exclude.findall(text))
     return total
 
 
 def _current_counts() -> dict[str, int]:
     """Return literal broad-handler counts for each configured target."""
     return {
-        key: _count_files(spec["root"], spec["suffix"], spec["pattern"])
+        key: _count_files(
+            spec["root"], spec["suffix"], spec["pattern"], spec.get("exclude")
+        )
         for key, spec in TARGETS.items()
     }
 
