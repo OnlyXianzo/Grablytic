@@ -136,6 +136,17 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      # SEC-002: the tier-1 feed URL policy is pure Kotlin, so its tests are
+      # JVM unit tests — no emulator, no device. `--config-only` runs no Gradle
+      # task; it writes the plugin registrant and the Gradle wrapper (both
+      # git-ignored) that `testDebugUnitTest` needs. The release `--config-only`
+      # in the lint step below rewrites the registrant for the release variant.
+      - name: Kotlin unit tests (feed URL policy)
+        run: |
+          flutter build apk --debug --config-only
+          cd android
+          ./gradlew :app:testDebugUnitTest --console=plain
+
       # Hosted runners may expose /dev/kvm only to the kvm group. Without access,
       # the emulator silently falls back to slow software CPU emulation.
       - name: Enable KVM for the Android emulator

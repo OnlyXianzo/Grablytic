@@ -1065,10 +1065,22 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(customTemplates: safe);
   }
 
-  void addObservedSource(Map<String, dynamic> source) {
-    final updated = [...state.observedSources, source];
+  /// Adds [source] and returns false when its URL would fail both poll tiers.
+  ///
+  /// The URL is stored as typed. Tier 1 (the Kotlin RSS fetch) only ever
+  /// requests a YouTube feed it built itself, so a source outside that shape
+  /// falls through to tier 2, which hands the URL to yt-dlp through the engine
+  /// and therefore to the engine's URL guard (SEC-002).
+  bool addObservedSource(Map<String, dynamic> source) {
+    final raw = (source['url'] as String? ?? '').trim();
+    if (validateObservedSourceUrl(raw) != null) return false;
+    final updated = [
+      ...state.observedSources,
+      {...source, 'url': raw},
+    ];
     _prefs.setString('observedSources', jsonEncode(updated));
     state = state.copyWith(observedSources: updated);
+    return true;
   }
 
   void removeObservedSource(int index) {
@@ -1140,6 +1152,23 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((r
     cookieSecretStore: ref.watch(cookieSecretStoreProvider),
   );
 });
+
+/// SEC-002 (Dart half): a source URL must be absolute, http(s) and carry a host.
+///
+/// An entry that fails this test fails both poll tiers without saying so: tier 1
+/// needs a YouTube URL shape it can rebuild, and tier 2 needs something yt-dlp
+/// can resolve. Returns an error message, or null when the URL is usable.
+String? validateObservedSourceUrl(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return 'Enter a URL.';
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme) return 'That is not a complete URL.';
+  if (uri.scheme != 'http' && uri.scheme != 'https') {
+    return 'Only http:// and https:// URLs are supported.';
+  }
+  if (uri.host.isEmpty) return 'That URL has no host.';
+  return null;
+}
 
 /// SEC-04: custom yt-dlp argument templates are user-typed CLI fragments.
 /// They are stored but never executed today; when (if) a command runner
