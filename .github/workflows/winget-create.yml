@@ -10,6 +10,11 @@ on:
         required: false
         default: ''
 
+# Least privilege, stated rather than inherited (#120). This job authenticates
+# to winget-pkgs with WINGET_TOKEN; its own repo token only reads the checkout.
+permissions:
+  contents: read
+
 jobs:
   winget:
     name: Submit WinGet Manifest
@@ -18,7 +23,7 @@ jobs:
     if: github.repository == 'OnlyXianzo/Grablytic'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Check WINGET_TOKEN present
         shell: bash
@@ -27,7 +32,7 @@ jobs:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
 
       - name: Submit package to Windows Package Manager Community Repository
-        uses: vedantmgoyal2009/winget-releaser@v2
+        uses: vedantmgoyal2009/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
         with:
           identifier: OnlyXianzo.Grablytic
           version: ${{ inputs.version || github.event.release.tag_name || '0.0.2' }}

@@ -27,7 +27,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Single-dispatch fix: an explicit run_id is still honored (pin an
       # exact build), but the default path resolves the newest successful
@@ -99,7 +99,7 @@ jobs:
       # a Sigstore bundle (Fulcio cert + Rekor transparency entry) bound to
       # this workflow's OIDC identity — no long-lived keys to rotate or leak.
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
         with:
           cosign-release: 'v2.4.3'
 

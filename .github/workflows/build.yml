@@ -26,6 +26,12 @@ on:
         default: true
         type: boolean
 
+# Least privilege, stated rather than inherited (#120). The publish job below
+# widens itself to contents: write because it creates the release; every other
+# job only reads the checkout.
+permissions:
+  contents: read
+
 jobs:
   # TEARDOWN-6: manual dispatches used to build+publish without ever running
   # verify (analyze + flutter test + pytest + coverage gate). Reuse the
@@ -73,16 +79,16 @@ jobs:
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Install Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
@@ -96,22 +102,31 @@ jobs:
           ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "cmake;3.31.4"
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
 
+      # The values come from `env:`, so the shell sees data (#121). `printf '%s'`
+      # keeps a trailing newline out of the base64 payload and decodes a paste
+      # that was wrapped mid-line; `test -s` turns a corrupt keystore into a
+      # named failure here instead of a signing error twenty minutes later.
       - name: Decode keystore
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         run: |
-          echo "${{ env.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          test -s android/app/upload-keystore.jks
 
       - name: Create key.properties
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         run: |
-          echo "storePassword=${{ env.KEYSTORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ env.KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ env.KEY_ALIAS }}" >> android/key.properties
-          echo "storeFile=upload-keystore.jks" >> android/key.properties
+          set -euo pipefail
+          {
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyPassword=%s\n'   "$KEY_PASSWORD"
+            printf 'keyAlias=%s\n'      "$KEY_ALIAS"
+            printf 'storeFile=upload-keystore.jks\n'
+          } > android/key.properties
 
       - run: flutter pub get
 
@@ -133,19 +148,19 @@ jobs:
       - name: Build Android APK (${{ matrix.variant }})
         run: |
           flutter build apk --release \
-            --dart-define=GRABLYTIC_FLUTTER_VERSION="${{ env.GRABLYTIC_FLUTTER_VERSION }}" \
-            --dart-define=GRABLYTIC_GIT_SHA="${{ env.GRABLYTIC_GIT_SHA }}" \
-            --dart-define=GRABLYTIC_APP_VERSION="${{ env.GRABLYTIC_APP_VERSION }}" \
+            --dart-define=GRABLYTIC_FLUTTER_VERSION="${GRABLYTIC_FLUTTER_VERSION}" \
+            --dart-define=GRABLYTIC_GIT_SHA="${GRABLYTIC_GIT_SHA}" \
+            --dart-define=GRABLYTIC_APP_VERSION="${GRABLYTIC_APP_VERSION}" \
             ${{ matrix.target_arg }} \
             ${{ matrix.jsruntime_arg }}
 
       - name: Prepare APK output
         run: |
           mkdir -p dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-${{ matrix.variant }}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/grablytic-v${GRABLYTIC_RELEASE_VERSION}${{ inputs.asset_suffix }}-${{ matrix.variant }}.apk"
 
       - name: Upload Android Artifact (${{ matrix.variant }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: grablytic-${{ matrix.variant }}${{ inputs.asset_suffix }}
           path: dist/android/grablytic-v${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-${{ matrix.variant }}.apk
@@ -169,16 +184,16 @@ jobs:
             arch_arch: aarch64
             os: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Install Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
@@ -204,7 +219,7 @@ jobs:
 
       - name: Set up Flutter (Linux x64)
         if: matrix.arch != 'arm64'
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
 
@@ -225,9 +240,9 @@ jobs:
       - name: Build Linux Release Bundle
         run: |
           flutter build linux --release \
-            --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" \
-            --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}" \
-            --dart-define="GRABLYTIC_APP_VERSION=${{ env.GRABLYTIC_APP_VERSION }}"
+            --dart-define="GRABLYTIC_FLUTTER_VERSION=${GRABLYTIC_FLUTTER_VERSION}" \
+            --dart-define="GRABLYTIC_GIT_SHA=${GRABLYTIC_GIT_SHA}" \
+            --dart-define="GRABLYTIC_APP_VERSION=${GRABLYTIC_APP_VERSION}"
 
       - name: Bundle Python Engine
         run: |
@@ -239,7 +254,7 @@ jobs:
       - name: Package Tarball (.tar.gz)
         run: |
           mkdir -p dist/linux
-          tar -czvf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
+          tar -czvf "dist/linux/grablytic-${GRABLYTIC_RELEASE_VERSION}${{ inputs.asset_suffix }}-linux-${{ matrix.arch }}.tar.gz" -C "$BUNDLE_DIR" .
 
       - name: Package Debian (.deb)
         run: |
@@ -253,9 +268,11 @@ jobs:
           # execute under an unquoted heredoc — keep this body literal-only.
           # (Replaces/Conflicts takes over a manually installed pre-rename
           # v0.0.1 `truestream` package instead of orphaning it alongside.)
-          cat << 'EOF' > pkg_deb/DEBIAN/control
+          # Unquoted delimiter: the body interpolates ${GRABLYTIC_RELEASE_VERSION}.
+          # Nothing else in it contains a `$`, so there is nothing to escape.
+          cat << EOF > pkg_deb/DEBIAN/control
           Package: grablytic
-          Version: ${{ env.GRABLYTIC_RELEASE_VERSION }}
+          Version: ${GRABLYTIC_RELEASE_VERSION}
           Section: video
           Priority: optional
           Architecture: ${{ matrix.deb_arch }}
@@ -291,14 +308,14 @@ jobs:
           cp assets/brand/grablytic_logo_circle.png pkg_deb/usr/share/icons/hicolor/512x512/apps/grablytic.png
           chmod -R 755 pkg_deb/opt/grablytic
 
-          dpkg-deb --build pkg_deb "dist/linux/grablytic_${{ env.GRABLYTIC_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
+          dpkg-deb --build pkg_deb "dist/linux/grablytic_${GRABLYTIC_RELEASE_VERSION}_${{ matrix.deb_arch }}.deb"
 
       - name: Package RPM (.rpm)
         run: |
-          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/grablytic_${{ env.GRABLYTIC_RELEASE_VERSION }}_${{ matrix.deb_arch }}.deb"
+          sudo alien --to-rpm --scripts --target=${{ matrix.rpm_arch }} "dist/linux/grablytic_${GRABLYTIC_RELEASE_VERSION}_${{ matrix.deb_arch }}.deb"
           RPM_FILE=$(ls grablytic*.rpm 2>/dev/null | head -n 1)
           if [ -n "$RPM_FILE" ]; then
-            mv "$RPM_FILE" "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}-1.${{ matrix.rpm_arch }}.rpm"
+            mv "$RPM_FILE" "dist/linux/grablytic-${GRABLYTIC_RELEASE_VERSION}-1.${{ matrix.rpm_arch }}.rpm"
           fi
 
       - name: Package Arch Linux (.pkg.tar.zst)
@@ -318,7 +335,7 @@ jobs:
           INST_SIZE=$(du -sb pkg_arch | awk '{print $1}')
           cat << EOF > pkg_arch/.PKGINFO
           pkgname = grablytic
-          pkgver = ${{ env.GRABLYTIC_RELEASE_VERSION }}-1
+          pkgver = ${GRABLYTIC_RELEASE_VERSION}-1
           pkgdesc = Fast, beautiful, privacy-first media downloader
           url = https://github.com/OnlyXianzo/Grablytic
           builddate = $(date +%s)
@@ -333,10 +350,10 @@ jobs:
           depend = aria2
           EOF
 
-          tar --zstd -cf "dist/linux/grablytic-${{ env.GRABLYTIC_RELEASE_VERSION }}${{ inputs.asset_suffix }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
+          tar --zstd -cf "dist/linux/grablytic-${GRABLYTIC_RELEASE_VERSION}${{ inputs.asset_suffix }}-1-${{ matrix.arch_arch }}.pkg.tar.zst" -C pkg_arch .PKGINFO opt usr
 
       - name: Upload Linux Packages (${{ matrix.arch }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: grablytic-linux-${{ matrix.arch }}-packages
           path: dist/linux/*
@@ -346,20 +363,20 @@ jobs:
     needs: [verify]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Install Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
 
@@ -377,7 +394,7 @@ jobs:
           echo "GRABLYTIC_APP_VERSION=$V" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build Windows App (64-bit)
-        run: flutter build windows --release --dart-define="GRABLYTIC_FLUTTER_VERSION=${{ env.GRABLYTIC_FLUTTER_VERSION }}" --dart-define="GRABLYTIC_GIT_SHA=${{ env.GRABLYTIC_GIT_SHA }}" --dart-define="GRABLYTIC_APP_VERSION=${{ env.GRABLYTIC_APP_VERSION }}"
+        run: flutter build windows --release --dart-define="GRABLYTIC_FLUTTER_VERSION=$env:GRABLYTIC_FLUTTER_VERSION" --dart-define="GRABLYTIC_GIT_SHA=$env:GRABLYTIC_GIT_SHA" --dart-define="GRABLYTIC_APP_VERSION=$env:GRABLYTIC_APP_VERSION"
 
       - name: Copy Python Engine to Bundle
         run: xcopy /E /I engine\grablytic_engine build\windows\x64\runner\Release\grablytic_engine
@@ -388,13 +405,13 @@ jobs:
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\windows\grablytic-windows-x64${{ inputs.asset_suffix }}.zip"
 
       - name: Upload Windows Portable Zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: grablytic-windows-x64-zip${{ inputs.asset_suffix }}
           path: dist\windows\grablytic-windows-x64${{ inputs.asset_suffix }}.zip
 
       - name: Upload Windows Release Bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: grablytic-windows-x64-bundle
           path: build\windows\x64\runner\Release\
@@ -410,10 +427,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: build-artifacts
 
