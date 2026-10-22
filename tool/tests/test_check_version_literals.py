@@ -216,6 +216,18 @@ def test_an_exemption_for_a_missing_file_is_reported(tmp_path):
         cvl.ROOT, cvl.ALLOWED = original_root, original_allowed
 
 
+def test_a_directory_where_a_file_is_expected_is_reported_not_raised(tmp_path):
+    original_root, original_allowed = cvl.ROOT, dict(cvl.ALLOWED)
+    try:
+        cvl.ROOT = str(tmp_path)
+        cvl.ALLOWED = {("dir", "'1.2.3'"): "why"}
+        (tmp_path / "dir").mkdir()
+        problems = cvl.stale_exemptions()
+        assert problems and "cannot be read" in problems[0]
+    finally:
+        cvl.ROOT, cvl.ALLOWED = original_root, original_allowed
+
+
 def test_an_exemption_without_a_reason_is_reported(tmp_path):
     original_root, original_allowed = cvl.ROOT, dict(cvl.ALLOWED)
     try:

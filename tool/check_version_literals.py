@@ -146,12 +146,17 @@ def stale_exemptions() -> list[str]:
             problems.append(f"{relative}: {literal} has no reason")
             continue
         path = os.path.join(ROOT, relative)
-        if not os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                present = literal in handle.read()
+        except FileNotFoundError:
             problems.append(f"{relative}: exempted file does not exist")
             continue
-        with open(path, encoding="utf-8") as handle:
-            if literal not in handle.read():
-                problems.append(f"{relative}: {literal} is not in the file any more")
+        except OSError:
+            problems.append(f"{relative}: exempted file cannot be read")
+            continue
+        if not present:
+            problems.append(f"{relative}: {literal} is not in the file any more")
     return problems
 
 
