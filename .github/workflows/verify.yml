@@ -274,8 +274,8 @@ jobs:
       # complete. Deleting them is not the fix (most are load-bearing in
       # logging and storage paths), so this gate holds the two counts at
       # their current values and fails only when one grows. Reduce them
-      # with `python3 tool/check_broad_catches.py --update`; raising one
-      # requires a "why" on the entry, recorded in its own commit.
+      # with `python3 tool/check_broad_catches.py --update`; each raise
+      # needs its own "why", and the reason retires when the number moves.
       - name: Broad-catch ratchet
         run: python3 tool/check_broad_catches.py
 
@@ -284,6 +284,11 @@ jobs:
       # this gate fails when a new literal appears in lib/.
       - name: App version literals
         run: python3 tool/check_version_literals.py
+
+      # The gates above are code, so they get tests. Without this step the
+      # suite in tool/tests/ only ran when somebody remembered to run it.
+      - name: Tooling tests
+        run: pytest tool/tests -q
 
   docs_links:
     name: Docs Link Check

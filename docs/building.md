@@ -237,7 +237,7 @@ Triggers on every push and PR. Six jobs:
 | Job | What it runs |
 |---|---|
 | Flutter Analyze & Test | `flutter analyze`, `flutter test --coverage`, 30% `lib/` floor |
-| Python Engine Tests | pytest on 3.11 and 3.12, 75% floor, Ruff `F`, broad-catch ratchet, version-literal gate |
+| Python Engine Tests | pytest on 3.11 and 3.12, 75% floor, Ruff `F`, broad-catch ratchet, version-literal gate, `tool/tests` |
 | Android API 35 | release lint, then an emulator run through Flutter → Chaquopy → Python |
 | Docs Link Check | `tool/check_doc_links.py` |
 | Secret Scan | gitleaks over the full history |

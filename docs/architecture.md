@@ -506,6 +506,12 @@ and the broad-catch ratchet fails when either count grows without a recorded
 reason. Run `pytest engine/tests/ -q` and `flutter test` locally for the
 current numbers.
 
+The gates are code too, so `tool/tests/` covers them and the Python job runs
+`pytest tool/tests -q`. A gate that silently stops matching is worse than no
+gate: the version-literal check only caught one of the six shapes that had
+actually shipped until it was taught to look inside a quoted string rather
+than requiring the string to be nothing but a version.
+
 ## Build & Deploy
 
 ### GitHub Actions

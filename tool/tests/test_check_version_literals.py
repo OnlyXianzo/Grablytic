@@ -3,7 +3,13 @@
 Finding #105: `0.0.5+5`, `0.0.1-beta` and `0.0.1-beta+1` all lived in `lib/`,
 so a crash report and the About screen could describe a different build than
 the one the user installed.
+
+Finding #108: the first version of this gate only matched a string that was
+nothing but a three-component version, so five of the six shapes that had
+actually shipped passed it. The parametrized cases below are those shapes.
 """
+
+import pytest
 
 import importlib.util
 import os
@@ -64,3 +70,47 @@ def test_allowlisted_files_are_skipped(tmp_path):
         assert cvl.scan(str(tmp_path / "lib")) == []
     finally:
         cvl.ROOT, cvl.ALLOWED = original_root, original_allowed
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "const a = '0.0.6';",
+        "const a = 'v1.0';",
+        "const a = '0.6';",
+        "const a = '1.2.3.4';",
+        "const a = 'Version 0.0.1-beta (Build 1)';",
+        "const a = 'v0.0.1-beta · The Only';",
+    ],
+)
+def test_catches_the_shapes_that_shipped(tmp_path, source):
+    _write(str(tmp_path), "x.dart", source + "\n")
+    assert cvl.scan(str(tmp_path)), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Python version in prose, not a build.
+        "const a = 'Houses a sandboxed Python 3.11 environment';",
+        # Milliseconds inside an ISO timestamp.
+        "const t = '2026-10-19T21:30:00.000';",
+        "const w = '1280x720';",
+        "const n = 1.5;",
+        "const u = 'https://example.com/watch?v=abc';",
+    ],
+)
+def test_does_not_cry_wolf(tmp_path, source):
+    _write(str(tmp_path), "x.dart", source + "\n")
+    assert cvl.scan(str(tmp_path)) == [], source
+
+
+def test_reports_every_offending_line(tmp_path):
+    _write(str(tmp_path), "a.dart", "const a = '1.0.0';\nconst b = 'v2.5';\n")
+    assert [entry[1] for entry in cvl.scan(str(tmp_path))] == [1, 2]
+
+
+def test_a_version_only_counts_inside_a_string(tmp_path):
+    # Dart numbers are not versions, however many dots they appear to have.
+    _write(str(tmp_path), "a.dart", "final x = 1.0;\nfinal y = 3.14;\n")
+    assert cvl.scan(str(tmp_path)) == []

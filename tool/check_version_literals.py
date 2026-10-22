@@ -25,9 +25,48 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIB = os.path.join(ROOT, "lib")
 
-# A string literal that is nothing but a version, optionally prefixed with
-# "v" and carrying a build number: '0.0.5+5', "v0.6.0", '2026.8.19'.
-LITERAL = re.compile(r"""['"]v?\d+\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?['"]""")
+# A quoted string, escapes included. Versions are searched for inside these
+# and never in bare code: `1.0` and `1280` are ordinary Dart numbers, and
+# matching them would bury the signal (#108).
+STRING_LITERAL = re.compile(r"""(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")""")
+
+# Version-shaped, two components or more: '0.0.5+5', "v1.0", '0.0.1-beta',
+# '1.2.3.4', '2026.8.19'. The lookbehind keeps a partial match out of a longer
+# dotted run. Two components matter because the literals #105 removed were not
+# bare versions: one was 'Version 0.0.1-beta (Build 1)'.
+VERSION = re.compile(
+    r"(?<![0-9A-Za-z_.:])v?[0-9]+\.[0-9]+(?:\.[0-9]+)*(?:[+-][0-9A-Za-z.-]+)?"
+)
+
+
+def is_version_shaped(token: str, whole_string: bool) -> bool:
+    """Whether a dotted number is worth failing a build over.
+
+    A bare '3.11' inside a sentence is prose, not a build. Anything carrying a
+    'v' prefix, two or more dots, or a +build / -prerelease suffix is a version
+    by shape. A string that is only a number qualifies too, which is how
+    '0.6' and '1.0' stay covered (#108).
+    """
+    return (
+        whole_string
+        or token.startswith("v")
+        or token.count(".") >= 2
+        or "+" in token
+        or "-" in token
+    )
+
+
+def version_literal_in(line: str) -> str | None:
+    """The first quoted string on this line that holds a version, if any."""
+    for literal in STRING_LITERAL.finditer(line):
+        content = literal.group(0)[1:-1]
+        for match in VERSION.finditer(content):
+            if is_version_shaped(
+                match.group(0), whole_string=content.strip() == match.group(0)
+            ):
+                return literal.group(0)
+    return None
+
 
 # Component versions, not the app's. Add a line, and say what it is.
 ALLOWED = {
@@ -53,9 +92,9 @@ def scan(root: str = LIB) -> list[tuple[str, int, str]]:
             except OSError:
                 continue
             for number, line in enumerate(lines, start=1):
-                match = LITERAL.search(line)
-                if match:
-                    found.append((relative, number, match.group(0)))
+                literal = version_literal_in(line)
+                if literal is not None:
+                    found.append((relative, number, literal))
     return found
 
 

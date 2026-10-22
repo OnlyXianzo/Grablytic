@@ -116,14 +116,22 @@ def _parse_entry(value: Any) -> tuple[int | None, str | None]:
     return None, None
 
 
-def _load_budget(path: str = BUDGET_PATH) -> dict[str, tuple[int | None, str | None]]:
-    """Load budgets, or return {} on read, parse, or conversion errors."""
+def _parse_budget(data: Any) -> dict[str, tuple[int | None, str | None]]:
+    """Parse a decoded budget object; anything that is not a mapping is empty."""
+    if not isinstance(data, dict):
+        return {}
+    return {key: _parse_entry(value) for key, value in data.items()}
+
+
+def _load_budget(path: str | None = None) -> dict[str, tuple[int | None, str | None]]:
+    """Load budgets, or return {} on read, parse, or conversion errors.
+
+    The path is resolved per call rather than bound as a default, so a test
+    or a caller can point BUDGET_PATH somewhere else and have it respected.
+    """
     try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            return {}
-        return {key: _parse_entry(value) for key, value in data.items()}
+        with open(path or BUDGET_PATH, encoding="utf-8") as handle:
+            return _parse_budget(json.load(handle))
     except (OSError, ValueError, TypeError):
         return {}
 
@@ -131,12 +139,22 @@ def _load_budget(path: str = BUDGET_PATH) -> dict[str, tuple[int | None, str | N
 def _serialise(
     counts: dict[str, int], budget: dict[str, tuple[int | None, str | None]]
 ) -> dict:
-    """The budget as written to disk: keep every recorded reason."""
+    """The budget as written to disk.
+
+    A reason explains one number, so it is kept only while that number is
+    unchanged. Carrying it forward is how a justification turns into a rubber
+    stamp (#109): at 300 catches the file would still cite the argument
+    written for 235, and a reviewer would have no way to tell.
+
+    A reduction drops the reason too. Nothing is being justified any more,
+    and the entry earns a new one if it ever climbs again.
+    """
     out: dict[str, Any] = {}
     for key in sorted(counts):
         limit = counts[key]
-        _old_limit, why = budget.get(key, (None, None))
-        out[key] = {"limit": limit, "why": why} if why else limit
+        old_limit, why = budget.get(key, (None, None))
+        keep_reason = why is not None and limit == old_limit
+        out[key] = {"limit": limit, "why": why} if keep_reason else limit
     return out
 
 
