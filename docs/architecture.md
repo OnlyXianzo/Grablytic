@@ -534,11 +534,10 @@ than requiring the string to be nothing but a version.
 - **Windows** (`windows-latest`):
   - 64-bit portable release zip (`grablytic-windows-x64.zip`) + release bundle with Python engine included
 
-**Verification workflow** (`verify.yml`): runs on every push and PR. Six jobs:
-Flutter analyze plus tests with a 30% coverage floor; pytest on 3.11 and 3.12
-with a 75% floor, Ruff `F`, the broad-catch ratchet and the version-literal
-gate; an Android API 35 emulator run; doc link checks; a gitleaks history scan;
-and a YAML lint over every workflow.
+**Verification workflow** (`verify.yml`): runs on every push and PR. The job
+table lives in [building.md](building.md#verification-verifyyml) and
+`tool/tests/test_docs_match_workflows.py` fails when it drifts from the
+workflow, so this page links to it instead of keeping a second copy.
 
 **Publish** (`publish-release.yml`): attaches `SHA256SUMS` and keyless cosign
 bundles to an existing release, verified before upload. `nightly.yml` builds

@@ -232,12 +232,13 @@ The workflows in `.github/workflows/` that matter for a build:
 
 ### Verification (`verify.yml`)
 
-Triggers on every push and PR. Six jobs:
+Triggers on every push and PR. Seven jobs:
 
 | Job | What it runs |
 |---|---|
 | Flutter Analyze & Test | `flutter analyze`, `flutter test --coverage`, 30% `lib/` floor |
 | Python Engine Tests | pytest on 3.11 and 3.12, 75% floor, Ruff `F`, broad-catch ratchet, version-literal gate, `tool/tests` |
+| Linux desktop build | `flutter build linux --release` against the native deps the release job installs, so a plugin that fails CMake configure fails here |
 | Android API 35 | release lint, then an emulator run through Flutter → Chaquopy → Python |
 | Docs Link Check | `tool/check_doc_links.py` |
 | Secret Scan | gitleaks over the full history |

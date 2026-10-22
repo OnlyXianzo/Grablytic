@@ -22,5 +22,10 @@ class AppVersion {
 
   /// `0.6.0` — the version without the build number, for places that show a
   /// tag rather than a package version.
-  static String get short => value.split('+').first;
+  static String get short => shortOf(value);
+
+  /// `0.0.6+6` → `0.0.6`. Pure, so a test can exercise the split without a
+  /// dart-define. The old test compared two compile-time constants and could
+  /// not fail (#115).
+  static String shortOf(String raw) => raw.split('+').first;
 }
