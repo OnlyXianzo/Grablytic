@@ -23,6 +23,7 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.ObjectInputStream
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -493,32 +494,47 @@ class ObservedSourcesPollWorker(
     }
 
     private fun tryFetchYouTubeRss(url: String): List<SourceEntry>? {
-        val channelIdMatch = "channel/(UC[a-zA-Z0-9_-]{22})".toRegex().find(url)
-            ?: "channel_id=(UC[a-zA-Z0-9_-]{22})".toRegex().find(url)
-
-        val feedUrl = when {
-            channelIdMatch != null -> "https://www.youtube.com/feeds/videos.xml?channel_id=${channelIdMatch.groupValues[1]}"
-            url.contains("/feeds/videos.xml") -> url
-            else -> null
-        } ?: return null
+        // SEC-002: tier 1 talks to a socket directly, so it never gets to trust
+        // the configured string. The policy rebuilds the URL from parsed parts
+        // and returns null for anything that is not a YouTube channel or feed,
+        // and the "not a feed" answer falls through to the guarded tier 2.
+        val feedUrl = YouTubeFeedUrl.feedUrlFor(url) ?: return null
 
         return try {
             val conn = URL(feedUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 10000
             conn.requestMethod = "GET"
+            // SEC-002: HttpURLConnection follows 3xx by default, so validating
+            // only this URL would leave any host free to answer
+            // `302 Location: http://10.0.0.5/…` and have it fetched. A feed
+            // host that redirects is not a feed; tier 2 handles it instead.
+            conn.instanceFollowRedirects = false
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Grablytic)")
-            if (conn.responseCode != 200) {
-                return null
-            }
-            conn.inputStream.use { stream ->
-                parseAtomFeed(stream)
+            try {
+                if (conn.responseCode != 200) {
+                    return null
+                }
+                conn.inputStream.use { stream ->
+                    parseAtomFeed(stream)
+                }
+            } finally {
+                conn.disconnect()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "RSS fetch failed for $feedUrl: ${e.message}")
+            // The configured source can carry a token in its query string; the
+            // host is enough to diagnose a failed poll (SEC-002).
+            Log.w(TAG, "RSS fetch failed for ${hostOf(feedUrl)}: ${e.message}")
             null
         }
     }
+
+    /**
+     * The host of [raw], for logs. Never the whole string: a source URL may
+     * carry credentials or a token in its query.
+     */
+    private fun hostOf(raw: String): String =
+        runCatching { URI(raw.trim()).host }.getOrNull() ?: "an unparseable URL"
 
     private fun parseAtomFeed(stream: InputStream): List<SourceEntry> {
         val entries = mutableListOf<SourceEntry>()
@@ -603,7 +619,7 @@ class ObservedSourcesPollWorker(
             }
             entries
         } catch (e: Exception) {
-            Log.w(TAG, "Chaquopy flat extract failed for $sourceUrl: ${e.message}")
+            Log.w(TAG, "Chaquopy flat extract failed for ${hostOf(sourceUrl)}: ${e.message}")
             emptyList()
         }
     }

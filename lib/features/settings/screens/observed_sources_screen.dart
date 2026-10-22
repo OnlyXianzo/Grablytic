@@ -172,6 +172,7 @@ class ObservedSourcesScreen extends ConsumerWidget {
     final nameController = TextEditingController();
     final urlController = TextEditingController();
     String selectedQuality = 'best';
+    String? urlError;
 
     try {
       await showDialog(
@@ -180,51 +181,62 @@ class ObservedSourcesScreen extends ConsumerWidget {
           backgroundColor: colorScheme.surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Add Source'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: InputDecoration(
-                    labelText: 'Channel Name',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+          content: StatefulBuilder(
+            builder: (dialogCtx, setDialogState) => SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Channel Name',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: urlController,
-                  decoration: InputDecoration(
-                    labelText: 'Channel URL',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: urlController,
+                    decoration: InputDecoration(
+                      labelText: 'Channel URL',
+                      // SEC-002: the URL is checked before it is stored, so a
+                      // typo is visible here instead of failing silently on
+                      // every background poll.
+                      errorText: urlError,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedQuality,
-                  decoration: InputDecoration(
-                    labelText: 'Quality',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedQuality,
+                    decoration: InputDecoration(
+                      labelText: 'Quality',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'best',
+                        child: Text('Best Available'),
+                      ),
+                      DropdownMenuItem(value: '4k', child: Text('4K')),
+                      DropdownMenuItem(value: '1080p', child: Text('1080p')),
+                      DropdownMenuItem(value: '720p', child: Text('720p')),
+                      DropdownMenuItem(value: '480p', child: Text('480p')),
+                      DropdownMenuItem(value: 'audio', child: Text('Audio Only')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedQuality = val);
+                      }
+                    },
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'best', child: Text('Best Available')),
-                    DropdownMenuItem(value: '4k', child: Text('4K')),
-                    DropdownMenuItem(value: '1080p', child: Text('1080p')),
-                    DropdownMenuItem(value: '720p', child: Text('720p')),
-                    DropdownMenuItem(value: '480p', child: Text('480p')),
-                    DropdownMenuItem(value: 'audio', child: Text('Audio Only')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) selectedQuality = val;
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
@@ -236,15 +248,24 @@ class ObservedSourcesScreen extends ConsumerWidget {
               onPressed: () {
                 final name = nameController.text.trim();
                 final url = urlController.text.trim();
-                if (name.isNotEmpty && url.isNotEmpty) {
-                  ref.read(settingsProvider.notifier).addObservedSource({
-                    'name': name,
-                    'url': url,
-                    'quality': selectedQuality,
-                    'enabled': true,
-                  });
-                  Navigator.of(ctx).pop();
+                if (name.isEmpty) return;
+                final error = validateObservedSourceUrl(url);
+                if (error != null) {
+                  setDialogState(() => urlError = error);
+                  return;
                 }
+                final added =
+                    ref.read(settingsProvider.notifier).addObservedSource({
+                  'name': name,
+                  'url': url,
+                  'quality': selectedQuality,
+                  'enabled': true,
+                });
+                if (!added) {
+                  setDialogState(() => urlError = 'That URL could not be added.');
+                  return;
+                }
+                Navigator.of(ctx).pop();
               },
               child: const Text('Add'),
             ),

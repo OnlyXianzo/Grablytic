@@ -163,6 +163,12 @@ dependencies {
     // entries and extracts them as text files, breaking the linker).
     implementation("org.apache.commons:commons-compress:1.26.2")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+
+    // SEC-002: the feed-URL policy is plain Kotlin with no Android types, so
+    // its tests run on the JVM (`./gradlew :app:testDebugUnitTest`) instead of
+    // needing an emulator. JUnit 4 because that is what AGP's default test
+    // runtime expects out of the box.
+    testImplementation("junit:junit:4.13.2")
 }
 
 chaquopy {
