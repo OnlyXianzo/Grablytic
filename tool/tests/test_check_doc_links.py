@@ -82,7 +82,9 @@ def _run(tmp_path, monkeypatch, files):
 def test_a_paren_path_that_exists_is_not_reported(tmp_path, monkeypatch, capsys):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "weird(1).md").write_text("# t\n", encoding="utf-8")
-    (tmp_path / "docs" / "c.md").write_text("See [x](./weird(1).md).\n", encoding="utf-8")
+    (tmp_path / "docs" / "c.md").write_text(
+        "See [x](./weird(1).md).\n", encoding="utf-8"
+    )
     monkeypatch.setattr(cdl, "ROOT", str(tmp_path))
     assert cdl.main() == 0
     assert "weird(1" not in capsys.readouterr().out

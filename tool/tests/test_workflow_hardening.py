@@ -106,9 +106,5 @@ def test_no_secret_is_interpolated_into_a_shell_script():
 
 def test_the_secret_scanner_reads_run_blocks():
     # The guard above is only as good as this parser, so prove it sees a block.
-    blocks = [
-        block
-        for path in workflow_files()
-        for _line, block in run_blocks(path)
-    ]
+    blocks = [block for path in workflow_files() for _line, block in run_blocks(path)]
     assert any("pytest" in block for block in blocks), "no run: blocks parsed"
