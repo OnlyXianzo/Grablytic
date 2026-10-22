@@ -65,6 +65,30 @@
       "must_contain": ["Download finished: 12.3 MB/s"]
     },
     {
+      "name": "posix path with a space in the account name (SEC-006)",
+      "input": "open('/Users/Alice Smith/Library/Logs/grablytic.log') failed",
+      "must_not_contain": ["Alice", "Smith", "Library"],
+      "must_contain": ["[local path removed]", "failed"]
+    },
+    {
+      "name": "windows path with a space in the account name (SEC-006)",
+      "input": "open('C:\\\\Users\\\\Bob Smith\\\\Videos\\\\x.mp4') failed",
+      "must_not_contain": ["Bob", "Smith", "Videos"],
+      "must_contain": ["[local path removed]"]
+    },
+    {
+      "name": "posix path with a space and following prose (SEC-006)",
+      "input": "failed reading /home/alice/My Videos/clip.mp4 because it vanished",
+      "must_not_contain": ["alice", "My Videos", "clip.mp4"],
+      "must_contain": ["[local path removed]", "because it vanished"]
+    },
+    {
+      "name": "posix path with an apostrophe in the account name (SEC-006)",
+      "input": "open('/Users/O'Brien/Library/x.log') failed",
+      "must_not_contain": ["Brien", "Library"],
+      "must_contain": ["[local path removed]"]
+    },
+    {
       "name": "signed url",
       "input": "https://example.test/private?token=abc123def",
       "must_not_contain": ["abc123def", "example.test"],

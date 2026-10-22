@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/engine/engine_provider.dart';
 import '../../../core/theme/text_styles.dart';
+import '../../../core/utils/trust_boundary.dart';
 
 class MediaPreviewScreen extends ConsumerWidget {
   final String? filePath;
@@ -231,15 +232,19 @@ class MediaPreviewScreen extends ConsumerWidget {
     // Never throws — falls back to showing the path.
     if (Platform.isAndroid) {
       bool opened = false;
+      Object? error;
       try {
         final res = await ref.read(engineProvider).openFile(path);
         opened = res['success'] == true;
+        error = res['error'];
       } catch (_) {}
       if (!context.mounted) return;
       if (opened) return;
+      // The Kotlin sink can refuse a path it will not share (SEC-004); that is
+      // not a missing player, and the message says so.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No app can play this file.\nOpen file at: $path'),
+          content: Text(openFileFailureMessage(path, error)),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );

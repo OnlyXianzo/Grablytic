@@ -60,13 +60,27 @@ _USERINFO_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@")
 # the doubled form a repr or a JSON blob carries (`C:\\Users\\…`), and the
 # forward-slash form. The old pattern consumed only `C:\`, so the rest of the
 # path — including the account name — was published in the issue (SEC-001).
-# Every repeat is disjoint (a segment cannot contain a separator), so a long run
-# of separators cannot backtrack.
+#
+# Whitespace is legal inside a directory name (`/Users/Alice Smith/…`), so a
+# segment is one or more non-space runs joined by single spaces, and only the
+# leaf excludes spaces. Stopping the whole match at the first space published
+# the surname and the tree behind it (SEC-006); letting the leaf keep spaces
+# would swallow the sentence that follows a path.
+#
+# Every repeat is still disjoint (a segment cannot contain a separator, and a
+# space run must be followed by a non-space), so a long run of separators or
+# spaces cannot backtrack. A segment also may not start or end with a space,
+# which is what keeps `" / " * 20000` linear instead of quadratic; no real
+# directory name is spelled that way.
 _LOCAL_PATH_RE = re.compile(
     r"(?<![A-Za-z0-9])"
     r"(?:"
-    r"[A-Za-z]:[\\/]+(?:[^\\/\s<>\"']+[\\/]+)*[^\\/\s<>\"']*"
-    r"|/(?:[^/\s<>\"']+/)*[^/\s<>\"']+"
+    r"[A-Za-z]:[\\/]+"
+    r"(?:[^\\/\s\r\n<>\"]+(?:[ ]+[^\\/\s\r\n<>\"]+)*[\\/]+)*"
+    r"[^\\/\s\r\n<>\"']*"
+    r"|/"
+    r"(?:[^/\s\r\n<>\"]+(?:[ ]+[^/\s\r\n<>\"]+)*/)*"
+    r"[^/\s\r\n<>\"']+"
     r")"
 )
 

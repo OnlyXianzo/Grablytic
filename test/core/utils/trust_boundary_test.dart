@@ -64,6 +64,33 @@ void main() {
     });
   });
 
+  group('openFileFailureMessage', () {
+    test('a refused path names the folder, not a missing player', () {
+      final message = openFileFailureMessage(
+        '/storage/emulated/0/Old/video.mp4',
+        'path outside the download folder',
+      );
+      expect(message, contains('outside the download folder'));
+      expect(message, isNot(contains('No app can play')));
+      expect(message, contains('/storage/emulated/0/Old/video.mp4'));
+    });
+
+    test('any other engine error keeps the old wording', () {
+      expect(
+        openFileFailureMessage('/dl/video.mp4', 'no handler'),
+        'No app can play this file.\nOpen file at: /dl/video.mp4',
+      );
+      expect(
+        openFileFailureMessage('/dl/video.mp4', null),
+        contains('No app can play this file.'),
+      );
+      expect(
+        openFileFailureMessage('/dl/video.mp4', 42),
+        contains('No app can play this file.'),
+      );
+    });
+  });
+
   group('settings proxy validation', () {
     test('malformed settings proxy omitted', () {
       const s = AppSettings(proxy: 'not a url');

@@ -107,6 +107,39 @@ def test_the_corpus_holds_for_the_engine_redactor():
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    "payload,secret",
+    [
+        ("open('/Users/Alice Smith/Library/Logs/grablytic.log') failed", "Smith"),
+        (r"open('C:\Users\Bob Smith\Videos\x.mp4') failed", "Smith"),
+        ("failed reading /home/alice/My Videos/clip.mp4", "My Videos"),
+        ("open('/Users/O'Brien/Library/x.log') failed", "Brien"),
+    ],
+)
+def test_a_path_with_a_space_does_not_publish_its_tail(payload, secret):
+    """SEC-006: the path rule stopped at the first space.
+
+    A macOS or Windows account name containing a space is the common case, and
+    the hole published the surname plus the rest of the tree into a public
+    issue. Whitespace is legal inside a directory name, so the segment class
+    allows it and only the leaf stops at it.
+    """
+    assert secret not in _redact(payload)
+
+
+@pytest.mark.unit
+def test_a_path_with_a_space_leaves_the_sentence_after_it_alone():
+    out = _redact("failed reading /home/alice/private/movie.mp4 because it vanished")
+    assert out == "failed reading [local path removed] because it vanished"
+
+
+@pytest.mark.unit
+def test_an_uppercased_cookiejar_repr_is_still_masked():
+    out = _redact("COOKIE(version=0, name='SID', value='SUPERSECRETVALUE')")
+    assert "SUPERSECRETVALUE" not in out
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     "payload",
     [
         "C:" + "\\" * 100_000,
@@ -115,6 +148,11 @@ def test_the_corpus_holds_for_the_engine_redactor():
         "C:" + "\\a" * 50_000,
         "Cookie(" + "value='" * 20_000,
         ".youtube.com" + "\tTRUE\t/\tTRUE\t0\tSID\tx" * 20_000,
+        # A space is now legal inside a segment, so the shape that used to be
+        # free is the one to watch: slashes separated by spaces must not chain
+        # into a quadratic scan.
+        " / " * 20_000,
+        "/a" + " " * 40_000,
     ],
 )
 def test_hostile_text_is_redacted_in_linear_time(payload):

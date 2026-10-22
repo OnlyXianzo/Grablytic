@@ -38,11 +38,19 @@ class GithubReporter {
       // forward-slash form. The old rule accepted exactly one separator, so the
       // doubled spelling kept the account name (SEC-001). A boundary character
       // is captured rather than look-behinded because look-behind is not
-      // portable across Dart targets; every repeat below is disjoint, so a long
-      // separator run cannot backtrack.
+      // portable across Dart targets.
+      //
+      // A space is legal inside a directory name (`/Users/Alice Smith/…`), so a
+      // segment is non-space runs joined by single spaces and only the leaf
+      // excludes them. Ending the match at the first space published the
+      // surname and the tree behind it (SEC-006). Every repeat stays disjoint,
+      // and a segment cannot start or end with a space, so a long run of
+      // separators or spaces cannot backtrack. Mirrors `_LOCAL_PATH_RE` in
+      // engine/grablytic_engine/github_notifier.py; the shared corpus keeps the
+      // two in step.
       value = value.replaceAllMapped(
         RegExp(
-          r"""(^|[\s(\[{<=:,;'"])(?:[A-Za-z]:[\\/]+(?:[^\\/\s<>"']+[\\/]+)*[^\\/\s<>"']*|/(?:[^/\s<>"']+/)*[^/\s<>"']+)""",
+          r"""(^|[\s(\[{<=:,;'"])(?:[A-Za-z]:[\\/]+(?:[^\\/\s\r\n<>"]+(?: +[^\\/\s\r\n<>"]+)*[\\/]+)*[^\\/\s\r\n<>"']*|/(?:[^/\s\r\n<>"]+(?: +[^/\s\r\n<>"]+)*/)*[^/\s\r\n<>"']+)""",
         ),
         (m) => '${m.group(1)}[local path removed]',
       );
