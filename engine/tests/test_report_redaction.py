@@ -128,9 +128,7 @@ def test_a_path_with_a_space_does_not_publish_its_tail(payload, secret):
 
 @pytest.mark.unit
 def test_a_path_with_a_space_leaves_the_sentence_after_it_alone():
-    out = _redact(
-        "failed reading /home/alice/private/movie.mp4 because it vanished"
-    )
+    out = _redact("failed reading /home/alice/private/movie.mp4 because it vanished")
     assert out == "failed reading [local path removed] because it vanished"
 
 
