@@ -21,6 +21,7 @@ this repository looks first. It is tracked, and the rest of `.agents/` is not.
 | [`stop-slop`](stop-slop/SKILL.md) | Removes AI writing tells from prose. Vendored from [hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop), MIT. Required reading before any prose, per `AGENTS.md`. |
 | [`humanizer`](humanizer/SKILL.md) | Rewrites AI-sounding text without changing what it says. Vendored from [blader/humanizer](https://github.com/blader/humanizer), MIT. |
 | [`write-in-my-style`](write-in-my-style/SKILL.md) | Matches this project's own voice, learned from its README, docs, changelog, and commit bodies. Local to Grablytic. |
+| [`human-writing`](human-writing/SKILL.md) | Voice rules plus per-genre structure for READMEs, docs, changelogs, blog posts, and narration. The general case that `reddit-speak` specialises. |
 | [`reddit-speak`](reddit-speak/SKILL.md) | How to write for Reddit so the post reads as a person, not a brand. Loads on the word "Reddit". |
 | [`studio-critic-loop`](studio-critic-loop/SKILL.md) | Renders a Flutter screen, sends only the screenshot to a fresh critic, fixes one thing per round until it scores 9/10. |
 | [`teardown-myproject`](teardown-myproject/SKILL.md) | Adversarial review across architecture, debt, edge cases, security, and onboarding. |
@@ -32,6 +33,13 @@ and `flaws-hunter-endlessly` are a diagnosis pass and a repair loop.
 exploitable, which is a different question from whether it is broken. A combined
 report buries one real vulnerability under twenty style notes, so run them
 separately.
+
+`human-writing` overlaps the three prose skills below on purpose too. It is the
+genre layer, and they are the voice layer. Load it when the question is what a
+README, a docs page, or a release note should contain and in what order. When
+`write-in-my-style` has an opinion about how a sentence sounds, that opinion
+wins, because it is learned from this repository. `human-writing` still supplies
+the structure and the genre conventions.
 
 ## The prose pipeline
 
@@ -51,6 +59,10 @@ will undo a rewrite if you run it earlier and then edit again.
 
 `reddit-speak` overrides all three for Reddit content. It is narrower and it
 knows more about that audience than a general voice guide can.
+
+`human-writing` sits before the pipeline, not inside it. Load it to decide the
+shape of the piece: which genre, which sections, in what order. Then run the
+three passes above on the prose that fills it.
 
 ### Running it by hand
 

@@ -193,6 +193,12 @@ release notes, or an answer to the maintainer.
 They are checklists, so run them over the final text, not the first draft.
 Where any of them conflicts with the rules below, the rules below win.
 
+[`.agents/skills/human-writing/SKILL.md`](.agents/skills/human-writing/SKILL.md)
+is the genre layer. Load it to decide what a README, docs page, changelog entry,
+or blog post should contain and in what order. It does not replace the three
+above: this repository's voice beats its general advice on how a sentence
+sounds, and the three passes still run last.
+
 The short version, so a missed step is still visible in review:
 
 - Start with the point. Skip the warm-up sentence.
