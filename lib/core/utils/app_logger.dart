@@ -333,6 +333,18 @@ class AppLogger {
       // URL userinfo passwords (proxy creds): scheme://user:PASS@host.
       // Mirrors the engine sanitize() userinfo mask — same secret class.
       r"""([A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)""",
+      // A cookie-jar repr, which is what a Python traceback formats:
+      // Cookie(version=0, name='SID', value='…'). No ':' or '=' follows the
+      // word "Cookie", so the header rules above never saw it, and the session
+      // cookie reached public issue bodies verbatim (SEC-001).
+      r"""(\bCookie\([^\r\n]*?\bvalue\s*=\s*["'])([^"'\r\n]*)(["'])""",
+      // str(jar entry): <Cookie SID=… for .youtube.com/>. A second spelling of
+      // the same secret, which the repr rule does not cover.
+      r"""(<Cookie\s+[^\s=>]+=)([^>\s]*)(\s+for\s)""",
+      // A Netscape cookies.txt row: domain\tTRUE\t/\tTRUE\t0\tSID\t….
+      // Anchored on the tab layout rather than on ^/$ because Dart RegExp has no
+      // inline (?m); the loop already compiles every pattern case-insensitively.
+      r"""(\t(?:TRUE|FALSE)\t[^\t\r\n]*\t(?:TRUE|FALSE)\t\d+\t[^\t\r\n]+\t)[^\t\r\n]*""",
     ];
     for (final p in patterns) {
       out = out.replaceAllMapped(RegExp(p, caseSensitive: false), (m) {
