@@ -4,6 +4,9 @@ description: Write and edit prose in the maintainer's own voice, learned from sa
 metadata:
   trigger: Drafting or editing prose that carries the maintainer's voice
   author: Grablytic
+  license_source: GPL-3.0, same as the repository
+  upstream: none
+  vendoring: written here, not imported. The voice is learned from this repository's own prose.
 ---
 
 # Write in my style

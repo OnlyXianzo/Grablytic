@@ -1,9 +1,15 @@
 ---
 name: stop-slop
 description: Remove AI writing patterns from prose. Use when drafting, editing, or reviewing text to eliminate predictable AI tells.
+license: MIT
 metadata:
   trigger: Writing prose, editing drafts, reviewing content for AI patterns
   author: Hardik Pandya (https://hvpandya.com)
+  upstream: https://github.com/hardikpandya/stop-slop
+  upstream_commit: 8da1f030185bdfe8471220585162991eaeb970e9
+  upstream_date: "2026-03-17"
+  upstream_license: MIT
+  vendoring: upstream rules verbatim, plus the "How this copy differs from upstream" note
 ---
 
 # Stop Slop

@@ -27,6 +27,15 @@ this repository looks first. It is tracked, and the rest of `.agents/` is not.
 | [`teardown-myproject`](teardown-myproject/SKILL.md) | Adversarial review across architecture, debt, edge cases, security, and onboarding. |
 | [`verified-implementation`](verified-implementation/SKILL.md) | Research, cross-check, map the blast radius, implement, then test and retest. |
 
+Two packs stay local and are not published:
+
+- `doc-workflow` maintains the project knowledge vault. It lives beside these
+  under `.agents/skills/` and is ignored by git. The vault itself is tracked at
+  `.agents/vault/`; the skill does not commit or push on its own.
+- `design-critic-loop` is the maintainer's own working copy. Nothing in this
+  repository references it, so treat it as local tooling rather than part of
+  the pack.
+
 Two of these overlap on purpose and should not be merged. `teardown-myproject`
 and `flaws-hunter-endlessly` are a diagnosis pass and a repair loop.
 `security-auditing` is a third pass again: it asks whether something is
