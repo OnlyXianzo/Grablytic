@@ -117,7 +117,13 @@ def main() -> int:
     # and docs/.
     md_files = [
         fn
-        for fn in ("README.md", "SECURITY.md", "CONTRIBUTING.md", "AGENTS.md", "DESIGN.md")
+        for fn in (
+            "README.md",
+            "SECURITY.md",
+            "CONTRIBUTING.md",
+            "AGENTS.md",
+            "DESIGN.md",
+        )
         if os.path.exists(os.path.join(ROOT, fn))
     ]
     docs = os.path.join(ROOT, "docs")
