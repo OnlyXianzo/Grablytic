@@ -14,7 +14,9 @@ jobs:
         run: uv pip install --system yt-dlp pytest pytest-cov -e engine/
       - name: Which pytest
         run: |
-          which pytest; pytest --version; python3 -c "import pytest,cov; print(pytest.__version__)"
+          which pytest
+          pytest --version
+          python3 -c "import pytest, pytest_cov; print(pytest.__version__)"
       - name: Run tool tests
         run: |
           set +e
@@ -22,5 +24,5 @@ jobs:
           code=$?
           echo "exit=$code"
           cat /tmp/out.txt
-          while IFS= read -r line; do echo "::warning::$line"; done < <(tail -n 25 /tmp/out.txt)
+          while IFS= read -r line; do echo "::warning title=pyout::$line"; done < /tmp/out.txt
           exit 0
