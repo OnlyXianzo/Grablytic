@@ -92,54 +92,60 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
   Future<void> _addViaWebView() async {
     final urlCtrl = TextEditingController(text: 'https://');
     final nameCtrl = TextEditingController();
-    final spec = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('New cookie login'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: urlCtrl,
-              autofocus: true,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'Site URL',
-                hintText: 'https://youtube.com',
+    Map<String, String>? spec;
+    try {
+      spec = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('New cookie login'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: urlCtrl,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Site URL',
+                  hintText: 'https://youtube.com',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Name (optional)',
-                hintText: 'YouTube',
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Name (optional)',
+                  hintText: 'YouTube',
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                final url = urlCtrl.text.trim();
+                if (url.isEmpty || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    styledSnackBar(context, 'Enter a full URL starting with https://'),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, {
+                  'url': url,
+                  'name': nameCtrl.text.trim().isEmpty ? url : nameCtrl.text.trim(),
+                });
+              },
+              child: const Text('Log in'),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              final url = urlCtrl.text.trim();
-              if (url.isEmpty || (!url.startsWith('http://') && !url.startsWith('https://'))) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  styledSnackBar(context, 'Enter a full URL starting with https://'),
-                );
-                return;
-              }
-              Navigator.pop(ctx, {
-                'url': url,
-                'name': nameCtrl.text.trim().isEmpty ? url : nameCtrl.text.trim(),
-              });
-            },
-            child: const Text('Log in'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      urlCtrl.dispose();
+      nameCtrl.dispose();
+    }
     if (spec == null || !mounted) return;
     await _openWebLogin(spec['url']!, spec['name']!);
   }
@@ -181,60 +187,66 @@ class _CookiesScreenState extends ConsumerState<CookiesScreen> {
       formatHint = cookieFormatHint(fmt);
     }
 
-    final spec = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx2, setState2) {
-          pasteCtrl.removeListener(() {});
-          pasteCtrl.addListener(() {
-            setState2(() => updateHint());
-          });
-          // Initialize hint.
-          updateHint();
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text('Paste cookies'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: urlCtrl,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'Site URL',
-                      hintText: 'youtube.com',
+    Map<String, String>? spec;
+    try {
+      spec = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx2, setState2) {
+            pasteCtrl.removeListener(() {});
+            pasteCtrl.addListener(() {
+              setState2(() => updateHint());
+            });
+            // Initialize hint.
+            updateHint();
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('Paste cookies'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: urlCtrl,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Site URL',
+                        hintText: 'youtube.com',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: pasteCtrl,
-                    maxLines: 6,
-                    decoration: InputDecoration(
-                      labelText: 'Cookie text',
-                      hintText: 'Netscape file or name=value; … (JSON/header/base64 auto-detected)',
-                      border: const OutlineInputBorder(),
-                      helperText: formatHint,
-                      helperMaxLines: 3,
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: pasteCtrl,
+                      maxLines: 6,
+                      decoration: InputDecoration(
+                        labelText: 'Cookie text',
+                        hintText: 'Netscape file or name=value; … (JSON/header/base64 auto-detected)',
+                        border: const OutlineInputBorder(),
+                        helperText: formatHint,
+                        helperMaxLines: 3,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx2, {
-                  'url': urlCtrl.text.trim(),
-                  'text': pasteCtrl.text,
-                }),
-                child: const Text('Import'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx2, {
+                    'url': urlCtrl.text.trim(),
+                    'text': pasteCtrl.text,
+                  }),
+                  child: const Text('Import'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      urlCtrl.dispose();
+      pasteCtrl.dispose();
+    }
     if (spec == null) return;
     final lines = parsePastedCookies(spec['text'] ?? '', spec['url'] ?? '');
     if (lines.isEmpty) {
