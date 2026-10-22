@@ -238,7 +238,7 @@ Triggers on every push and PR. Seven jobs:
 |---|---|
 | Flutter Analyze & Test | `flutter analyze`, `flutter test --coverage`, 30% `lib/` floor |
 | Python Engine Tests | pytest on 3.11 and 3.12, 75% floor, Ruff `F`, broad-catch ratchet, version-literal gate, `tool/tests` |
-| Linux desktop build | `flutter build linux --release` against the native deps the release job installs, so a plugin that fails CMake configure fails here |
+| Linux desktop build | installs the GTK, libsecret, ninja and jsoncpp toolchain, runs `flutter build linux --release`, then asserts the bundle binary exists |
 | Android API 35 | release lint, then an emulator run through Flutter → Chaquopy → Python |
 | Docs Link Check | `tool/check_doc_links.py` |
 | Secret Scan | gitleaks over the full history |
