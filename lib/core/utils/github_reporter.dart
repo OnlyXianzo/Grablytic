@@ -32,7 +32,20 @@ class GithubReporter {
       // removed. Do not send them at all from reports.
       value = value.replaceAll(RegExp(r'https?://\S+', caseSensitive: false), '[URL removed]');
       // File paths expose usernames, mounted volumes, and personal folders.
-      value = value.replaceAll(RegExp(r'(?:(?:[A-Za-z]:\\|/)(?:[^\s\n\r:]+[\\/])+[^\s\n\r:]+)'), '[local path removed]');
+      //
+      // Three spellings reach a log: `C:\\Users\\name\\…`, the doubled form a
+      // repr or a JSON blob carries (`C:\\\\Users\\\\name\\\\…`), and the
+      // forward-slash form. The old rule accepted exactly one separator, so the
+      // doubled spelling kept the account name (SEC-001). A boundary character
+      // is captured rather than look-behinded because look-behind is not
+      // portable across Dart targets; every repeat below is disjoint, so a long
+      // separator run cannot backtrack.
+      value = value.replaceAllMapped(
+        RegExp(
+          r"""(^|[\s(\[{<=:,;'"])(?:[A-Za-z]:[\\/]+(?:[^\\/\s<>"']+[\\/]+)*[^\\/\s<>"']*|/(?:[^/\s<>"']+/)*[^/\s<>"']+)""",
+        ),
+        (m) => '${m.group(1)}[local path removed]',
+      );
       value = value.replaceAll(RegExp(r'\b(?:/home|/Users)/[^/\s]+', caseSensitive: false), '[user path removed]');
       if (value.length > maxLength) {
         value = '[earlier content omitted]\n${value.substring(value.length - maxLength)}';

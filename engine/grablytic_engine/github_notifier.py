@@ -56,6 +56,20 @@ _SECRET_PARAM_RE = re.compile(
 # scheme://user:password@host
 _USERINFO_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@")
 
+# Absolute local paths, in the three spellings that reach a log: `C:\Users\…`,
+# the doubled form a repr or a JSON blob carries (`C:\\Users\\…`), and the
+# forward-slash form. The old pattern consumed only `C:\`, so the rest of the
+# path — including the account name — was published in the issue (SEC-001).
+# Every repeat is disjoint (a segment cannot contain a separator), so a long run
+# of separators cannot backtrack.
+_LOCAL_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9])"
+    r"(?:"
+    r"[A-Za-z]:[\\/]+(?:[^\\/\s<>\"']+[\\/]+)*[^\\/\s<>\"']*"
+    r"|/(?:[^/\s<>\"']+/)*[^/\s<>\"']+"
+    r")"
+)
+
 _unreachable_warning_state = {"emitted": False}
 _unreachable_warning_lock = threading.Lock()
 
@@ -107,11 +121,7 @@ def redact_text(value) -> str:
     # GitHub issues are public. Even a query-scrubbed URL can expose a private
     # resource identifier, so remove URLs and absolute local paths entirely.
     text = re.sub(r"https?://\S+", "[URL removed]", text, flags=re.IGNORECASE)
-    text = re.sub(
-        r"(?<![A-Za-z0-9])(?:[A-Za-z]:\\|/(?:[^/\s]+/)+[^\s<>\"']*)",
-        "[local path removed]",
-        text,
-    )
+    text = _LOCAL_PATH_RE.sub("[local path removed]", text)
     return text
 
 

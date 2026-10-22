@@ -163,6 +163,47 @@ _SCRUB_HINT_WORDS = (
 )
 _SCRUB_HINT_RE = re.compile(r"(?i)(?:" + "|".join(_SCRUB_HINT_WORDS) + r")")
 
+# http.cookiejar prints a cookie three ways and all three carry the value
+# (SEC-001: a traceback that formatted a jar published the session cookie in a
+# PUBLIC issue, and the patterns above knew none of these shapes):
+#   repr  Cookie(version=0, name='SID', value='<secret>', ...)
+#   str   <Cookie SID=<secret> for .youtube.com/>
+#   file  .youtube.com\tTRUE\t/\tTRUE\t0\tSID\t<secret>
+_COOKIE_VALUE_RE = re.compile(r"""(?i)(\bvalue\s*=\s*["'])([^"'\r\n]*)(["'])""")
+_COOKIE_STR_RE = re.compile(r"(<Cookie\s+[^\s=>]+=)([^>\s]*)(\s+for\s)")
+_NETSCAPE_ROW_RE = re.compile(
+    r"(\t(?:TRUE|FALSE)\t[^\t\r\n]*\t(?:TRUE|FALSE)\t\d+\t[^\t\r\n]+\t)[^\t\r\n]*",
+    re.IGNORECASE,
+)
+# The pre-check below decides whether a line is scrubbed at all. A cookie-jar
+# repr carries the word "cookie", but a Netscape row carries none of the trigger
+# words, so it needs its own hint or the row is skipped unscrubbed.
+_NETSCAPE_HINT_RE = re.compile(r"\t(?:TRUE|FALSE)\t", re.IGNORECASE)
+
+
+def _mask_cookie_material(text: str) -> str:
+    """Mask the value inside the three shapes :mod:`http.cookiejar` prints.
+
+    Contextual on purpose: the repr rule runs only on lines that contain
+    ``Cookie(``, so a bare ``value='x'`` in any other log line is untouched.
+    """
+    if "Cookie(" in text:
+        lines = []
+        for line in text.split("\n"):
+            if "Cookie(" in line:
+                line = _COOKIE_VALUE_RE.sub(
+                    lambda m: m.group(1) + "***REDACTED***" + m.group(3), line
+                )
+            lines.append(line)
+        text = "\n".join(lines)
+    if "<Cookie " in text:
+        text = _COOKIE_STR_RE.sub(
+            lambda m: m.group(1) + "***REDACTED***" + m.group(3), text
+        )
+    if _NETSCAPE_HINT_RE.search(text):
+        text = _NETSCAPE_ROW_RE.sub(lambda m: m.group(1) + "***REDACTED***", text)
+    return text
+
 
 def _scrub_string(text: str) -> str:
     """Mask secret-bearing shapes inside a free-text string.
@@ -175,7 +216,7 @@ def _scrub_string(text: str) -> str:
     with no URL, token, key or header in it — is answered by one regex
     search instead of five substitutions.
     """
-    if not _SCRUB_HINT_RE.search(text):
+    if not _SCRUB_HINT_RE.search(text) and not _NETSCAPE_HINT_RE.search(text):
         return text
     masked = _HEADER_RE.sub(lambda m: m.group("head") + "***REDACTED***", text)
     masked = _BEARER_RE.sub(lambda m: f"{m.group(1)} ***REDACTED***", masked)
@@ -191,11 +232,12 @@ def _scrub_string(text: str) -> str:
             return m.group(0)
         return f"{m.group(1)}{userinfo.split(':', 1)[0]}:***REDACTED***@"
 
-    return re.sub(
+    masked = re.sub(
         r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^\s/@]+)@",
         _mask_userinfo,
         masked,
     )
+    return _mask_cookie_material(masked)
 
 
 def scrub_text(text: str) -> str:

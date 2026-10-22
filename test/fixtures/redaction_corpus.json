@@ -1,0 +1,80 @@
+{
+  "note": "Shared by engine/tests/test_report_redaction.py and test/core/utils/redaction_corpus_test.dart (SEC-001). Two scrubbers, two languages, one sink: a public GitHub issue. Each case asserts that the secret is gone and, where it is given, that the surrounding text a maintainer needs is still there. Drift in either redactor fails one of the two CI jobs.",
+  "cases": [
+    {
+      "name": "cookiejar repr",
+      "input": "Cookie(version=0, name='SID', value='SUPERSECRETVALUE', port=None, domain='.youtube.com')",
+      "must_not_contain": ["SUPERSECRETVALUE"],
+      "must_contain": ["name='SID'", "domain='.youtube.com'"]
+    },
+    {
+      "name": "cookiejar str",
+      "input": "<Cookie SID=SUPERSECRETVALUE for .youtube.com/>",
+      "must_not_contain": ["SUPERSECRETVALUE"],
+      "must_contain": ["for", "youtube.com"]
+    },
+    {
+      "name": "netscape cookie row",
+      "input": ".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tSUPERSECRETVALUE",
+      "must_not_contain": ["SUPERSECRETVALUE"],
+      "must_contain": ["SID", "youtube.com"]
+    },
+    {
+      "name": "two netscape rows in one line",
+      "input": ".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tSECRETONE\n.youtube.com\tTRUE\t/\tTRUE\t0\tHSID\tSECRETTWO",
+      "must_not_contain": ["SECRETONE", "SECRETTWO"]
+    },
+    {
+      "name": "windows path, single separators",
+      "input": "open('C:\\Users\\bob\\Videos\\x.mp4') failed",
+      "must_not_contain": ["bob", "Users"],
+      "must_contain": ["failed"]
+    },
+    {
+      "name": "windows path, doubled separators (repr or JSON)",
+      "input": "open('C:\\\\Users\\\\bob\\\\Videos\\\\x.mp4') failed",
+      "must_not_contain": ["bob", "Users"]
+    },
+    {
+      "name": "windows path, forward slashes",
+      "input": "open('C:/Users/bob/Videos/x.mp4') failed",
+      "must_not_contain": ["bob", "Users"]
+    },
+    {
+      "name": "posix path",
+      "input": "failed reading /home/alice/private/movie.mp4",
+      "must_not_contain": ["alice", "movie.mp4"],
+      "must_contain": ["failed reading"]
+    },
+    {
+      "name": "relative doc link survives",
+      "input": "see docs/building.md for details",
+      "must_not_contain": [],
+      "must_contain": ["docs/building.md"]
+    },
+    {
+      "name": "a value= outside a cookie object survives",
+      "input": "config value='keep-me' was rejected",
+      "must_not_contain": [],
+      "must_contain": ["keep-me"]
+    },
+    {
+      "name": "ordinary progress line survives",
+      "input": "Download finished: 12.3 MB/s",
+      "must_not_contain": [],
+      "must_contain": ["Download finished: 12.3 MB/s"]
+    },
+    {
+      "name": "signed url",
+      "input": "https://example.test/private?token=abc123def",
+      "must_not_contain": ["abc123def", "example.test"],
+      "must_contain": ["[URL removed]"]
+    },
+    {
+      "name": "proxy credential",
+      "input": "proxy http://alice:sup3rs3cret@10.0.0.1:8080",
+      "must_not_contain": ["sup3rs3cret"],
+      "must_contain": ["[URL removed]"]
+    }
+  ]
+}
