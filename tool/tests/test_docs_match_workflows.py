@@ -56,9 +56,7 @@ def test_the_stated_job_count_matches_the_workflow():
 def test_every_job_has_a_row_in_the_docs_table():
     docs = building_docs()
     missing = [
-        name
-        for _key, name in jobs()
-        if f"| {table_heading(name)} |" not in docs
+        name for _key, name in jobs() if f"| {table_heading(name)} |" not in docs
     ]
     assert not missing, f"jobs with no row in docs/building.md: {missing}"
 
