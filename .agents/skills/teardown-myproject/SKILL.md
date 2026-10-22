@@ -134,7 +134,10 @@ Enumerate the paths that were never walked:
 
 ### 2.4 Security & performance
 
-Treat any real finding here as **Critical** and lead with it.
+Lead with any real vulnerability. Rate it on the §6 scale like everything
+else: a confirmed cross-tenant leak or an unauthenticated injection is
+Critical, a permissive TLS setting with no reachable path is not, and
+inflating the second one is how the first one stops being read.
 
 - Injection: SQL, command, path traversal, deserialisation of untrusted input,
   template injection, XSS in rendered output.

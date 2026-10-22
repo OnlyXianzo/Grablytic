@@ -7,25 +7,31 @@ adapt them. Each folder has a `SKILL.md` with frontmatter (`name`,
 These are not framework plugins. They are Markdown procedures. Any agent that
 can read a file and follow instructions can use them.
 
+The folder sits at `.agents/skills/` because that is where an agent working in
+this repository looks first. It is tracked, and the rest of `.agents/` is not.
+
 ## What is here
 
 | Skill | What it does |
 |---|---|
-| [`flaws-hunter-endlessly`](flaws-hunter-endlessly/SKILL.md) | Repeats an audit, research, fix, and prove cycle until a full rescan finds nothing. |
+| [`flaws-hunter-endlessly`](flaws-hunter-endlessly/SKILL.md) | Repeats an audit, research, fix, and prove cycle until a full rescan comes back clean. |
+| [`security-auditing`](security-auditing/SKILL.md) | Audits a codebase, diff, or fix claim for exploitable defects. Findings carry evidence, severity, a patch, and a regression test. |
+| [`bug-hunting`](bug-hunting/SKILL.md) | Reproduces, localises, and fixes a defect, then proves it with the original reproduction. |
 | [`secret-scan`](secret-scan/SKILL.md) | Audits the working tree and commit history for credentials. Includes a small Python scanner. |
 | [`stop-slop`](stop-slop/SKILL.md) | Removes AI writing tells from prose. Vendored from [hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop), MIT. Required reading before any prose, per `AGENTS.md`. |
 | [`humanizer`](humanizer/SKILL.md) | Rewrites AI-sounding text without changing what it says. Vendored from [blader/humanizer](https://github.com/blader/humanizer), MIT. |
 | [`write-in-my-style`](write-in-my-style/SKILL.md) | Matches this project's own voice, learned from its README, docs, changelog, and commit bodies. Local to Grablytic. |
+| [`reddit-speak`](reddit-speak/SKILL.md) | How to write for Reddit so the post reads as a person, not a brand. Loads on the word "Reddit". |
 | [`studio-critic-loop`](studio-critic-loop/SKILL.md) | Renders a Flutter screen, sends only the screenshot to a fresh critic, fixes one thing per round until it scores 9/10. |
 | [`teardown-myproject`](teardown-myproject/SKILL.md) | Adversarial review across architecture, debt, edge cases, security, and onboarding. |
 | [`verified-implementation`](verified-implementation/SKILL.md) | Research, cross-check, map the blast radius, implement, then test and retest. |
 
-One pack stays local and is not published:
-
-- `doc-workflow` maintains the project knowledge vault. It lives in
-  `.agents/skills/` and is not part of the published pack. The vault itself is
-  tracked at `.agents/vault/`; the skill still does not commit or push on its
-  own.
+Two of these overlap on purpose and should not be merged. `teardown-myproject`
+and `flaws-hunter-endlessly` are a diagnosis pass and a repair loop.
+`security-auditing` is a third pass again: it asks whether something is
+exploitable, which is a different question from whether it is broken. A combined
+report buries one real vulnerability under twenty style notes, so run them
+separately.
 
 ## The prose pipeline
 
@@ -43,13 +49,16 @@ Order matters. Style first, because rewriting for voice changes the sentences
 that `stop-slop` would flag. Humanizer last, because it is the audit pass and it
 will undo a rewrite if you run it earlier and then edit again.
 
+`reddit-speak` overrides all three for Reddit content. It is narrower and it
+knows more about that audience than a general voice guide can.
+
 ### Running it by hand
 
 1. Open the skill file and paste it into the agent along with your draft. One
    skill at a time, not all three at once.
 
    ```
-   Read skills/write-in-my-style/SKILL.md and rewrite this section so it
+   Read .agents/skills/write-in-my-style/SKILL.md and rewrite this section so it
    matches the voice described there. Keep every fact. Here is the draft:
    <paste>
    ```
@@ -58,7 +67,7 @@ will undo a rewrite if you run it earlier and then edit again.
    removed, so you can see whether it found anything real.
 
    ```
-   Read skills/stop-slop/SKILL.md. Apply it to this text and list what you
+   Read .agents/skills/stop-slop/SKILL.md. Apply it to this text and list what you
    removed and why. Do not add new claims.
    ```
 
@@ -66,7 +75,7 @@ will undo a rewrite if you run it earlier and then edit again.
    prose as the voice reference.
 
    ```
-   Read skills/humanizer/SKILL.md. Audit this text against the voice sample
+   Read .agents/skills/humanizer/SKILL.md. Audit this text against the voice sample
    below and rewrite what still reads as generated. Voice sample:
    <docs/features.md, first 30 lines>
    ```
@@ -99,8 +108,8 @@ REPO_ROOT="${REPO_ROOT:-$HOME/grablytic}"
 VAULT_ROOT="${VAULT_ROOT:-$REPO_ROOT/.agents/vault}"
 ```
 
-The default vault path is `.agents/vault`, which is tracked in this repository.
-Other `.agents/` contents stay local and ignored. Some people keep notes
+Both defaults point at paths that are tracked in this repository. Anything else
+you keep under `.agents/` stays local and ignored. Some people keep notes
 elsewhere, including directly in `$REPO_ROOT`. If the path is wrong, the agent
 should ask you where the repo or vault lives and continue with your answer. It
 should not guess or write your personal path into a tracked file. Local answers
@@ -111,13 +120,14 @@ go in `.agents/local-paths.md`, which is ignored by git.
 Copy a folder into the skills directory your agent reads. Common locations:
 
 - `~/.agents/skills/` for a user-wide install.
-- `<repo>/.agents/skills/` for a project-local install.
+- `<repo>/.agents/skills/` for a project-local install, which is where these
+  live in this repository.
 - The equivalent directory for your tool, if it uses a different name.
 
 For example:
 
 ```bash
-cp -r skills/verified-implementation ~/.agents/skills/
+cp -r .agents/skills/verified-implementation ~/.agents/skills/
 ```
 
 Read the target tool's documentation before copying. Some tools expect a
@@ -130,13 +140,15 @@ different frontmatter format or a plugin manifest.
 - Write commands that work when pasted. Avoid pseudo-commands.
 - State what the skill must not do, not only what it should do.
 - Use placeholders for paths that differ per machine.
-- Keep it short enough to read in one sitting. Link to deeper docs instead of
-  pasting them.
+- Keep the body short enough to read in one sitting. Put the long material in
+  `references/` and point at it, so it loads only when the workflow reaches it.
+- Say what the skill cannot verify. Every procedure has a blind spot, and the
+  agent will fill a silent one with confidence.
 
 ## License
 
 Skills written here are part of Grablytic and use the same license as the
-repository: GPL-3.0. See [`LICENSE`](../LICENSE).
+repository: GPL-3.0. See [`LICENSE`](../../LICENSE).
 
 Two exceptions are vendored and keep their own MIT license, included beside
 each skill:

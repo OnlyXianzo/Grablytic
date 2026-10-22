@@ -57,10 +57,14 @@ build/
 /android/app/profile
 /android/app/release
 
-# Agent workspace. The vault is tracked; everything else stays local.
+# Agent workspace. The vault and the published skills are tracked; everything
+# else stays local. Anything you keep for yourself under .agents/ (notes,
+# scratch work, a private skill pack) is ignored by the .agents/* rule.
 .agents/*
 !.agents/vault/
 !.agents/vault/**
+!.agents/skills/
+!.agents/skills/**
 session_app_work
 session_*
 graphify-out/

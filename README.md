@@ -318,7 +318,7 @@ Longer answers live in [`docs/troubleshooting.md`](docs/troubleshooting.md).
 | [JS runtimes](docs/JS_RUNTIMES_ANDROID_RESEARCH.md) | Why Deno comes first, and what the alternatives cost |
 | [Audit records](docs/audits/) | The review rounds, one row per finding, frozen after the round |
 | [Knowledge vault](.agents/vault/index.md) | Project notes on architecture, IPC, storage and open questions |
-| [Agent skills](skills/README.md) | The reusable review and verification procedures |
+| [Agent skills](.agents/skills/README.md) | The reusable review and verification procedures |
 | [Changelog](docs/CHANGELOG.md) | What shipped in each release |
 | [Release notes](docs/release-notes.md) | How a release section is written |
 
@@ -336,7 +336,8 @@ hand. The downside is that generated code is very good at looking finished. So
 every change has to compile, pass the tests, and survive a deliberately
 adversarial review pass before it lands. The rules the agents work under are in
 [`AGENTS.md`](AGENTS.md); the procedures themselves are published in
-[`skills/`](skills/README.md) if you want to try them on your own project.
+[`.agents/skills/`](.agents/skills/README.md) if you want to try them on your own
+project.
 
 ## Contributing
 
