@@ -56,16 +56,7 @@ jobs:
         run: flutter analyze
 
       - name: Run widget & unit tests with coverage
-        run: |
-          set +e
-          flutter test --coverage > /tmp/flutter.log 2>&1
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            grep -E "^[0-9]{2}:[0-9]{2} \+|FAILED|Expected:|Actual:|\[E\]" /tmp/flutter.log | head -30 | while IFS= read -r line; do
-              echo "::error title=fluttertest::$line"
-            done
-            exit "$status"
-          fi
+        run: flutter test --coverage
 
       - name: Enforce Flutter project-lib coverage floor
         # --max-unloaded 0 plus the allow-list: one file, `engine_service.dart`,
