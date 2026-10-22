@@ -7,7 +7,6 @@ import android.content.SharedPreferences
 import android.database.sqlite.SQLiteDatabase
 import android.util.Base64
 import android.util.Log
-import android.util.Xml
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
@@ -18,9 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
-import java.io.InputStream
 import java.io.ObjectInputStream
 import java.net.HttpURLConnection
 import java.net.URI
@@ -515,8 +512,17 @@ class ObservedSourcesPollWorker(
                 if (conn.responseCode != 200) {
                     return null
                 }
+                // SEC-003: an optimisation, not the control. A chunked body
+                // reports -1 here, so the size budget is enforced while
+                // reading, in AtomFeed.parseBounded. If a future change adds
+                // Accept-Encoding, the budget has to move to the decoded
+                // stream, or a 2 MB gzip body inflates past it.
+                if (conn.contentLengthLong > AtomFeed.MAX_FEED_BYTES) {
+                    Log.w(TAG, "feed declares ${conn.contentLengthLong} bytes; refusing to parse")
+                    return null
+                }
                 conn.inputStream.use { stream ->
-                    parseAtomFeed(stream)
+                    AtomFeed.parseBounded(stream)
                 }
             } finally {
                 conn.disconnect()
@@ -535,65 +541,6 @@ class ObservedSourcesPollWorker(
      */
     private fun hostOf(raw: String): String =
         runCatching { URI(raw.trim()).host }.getOrNull() ?: "an unparseable URL"
-
-    private fun parseAtomFeed(stream: InputStream): List<SourceEntry> {
-        val entries = mutableListOf<SourceEntry>()
-        val parser = Xml.newPullParser()
-        parser.setInput(stream, "UTF-8")
-
-        var eventType = parser.eventType
-        var inEntry = false
-        var currentId: String? = null
-        var currentTitle: String? = null
-        var currentUrl: String? = null
-
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            val tagName = parser.name
-            when (eventType) {
-                XmlPullParser.START_TAG -> {
-                    if (tagName.equals("entry", ignoreCase = true)) {
-                        inEntry = true
-                        currentId = null
-                        currentTitle = null
-                        currentUrl = null
-                    } else if (inEntry) {
-                        when {
-                            tagName.equals("videoId", ignoreCase = true) -> {
-                                currentId = parser.nextText().trim()
-                            }
-                            tagName.equals("title", ignoreCase = true) && currentTitle == null -> {
-                                currentTitle = parser.nextText().trim()
-                            }
-                            tagName.equals("link", ignoreCase = true) && currentUrl == null -> {
-                                val href = parser.getAttributeValue(null, "href")
-                                if (href != null && href.startsWith("http")) {
-                                    currentUrl = href
-                                }
-                            }
-                            tagName.equals("id", ignoreCase = true) && currentId == null -> {
-                                val idText = parser.nextText().trim()
-                                val last = idText.substringAfterLast(":")
-                                if (last.length == 11) {
-                                    currentId = last
-                                }
-                            }
-                        }
-                    }
-                }
-                XmlPullParser.END_TAG -> {
-                    if (tagName.equals("entry", ignoreCase = true)) {
-                        if (currentId != null && currentId.length == 11) {
-                            val finalUrl = currentUrl ?: "https://www.youtube.com/watch?v=$currentId"
-                            entries.add(SourceEntry(currentId, finalUrl, currentTitle ?: currentId))
-                        }
-                        inEntry = false
-                    }
-                }
-            }
-            eventType = parser.next()
-        }
-        return entries
-    }
 
     private fun tryChaquopyFlatExtract(sourceUrl: String, seenIds: Set<String>): List<SourceEntry> {
         return try {

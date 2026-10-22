@@ -143,6 +143,14 @@ android {
         }
     }
 
+    // JVM unit tests call android.util.Log through the parser's truncation
+    // path (SEC-003). Without this, AGP's mockable android.jar throws
+    // "Method w in android.util.Log not mocked" and the test fails for a
+    // reason that has nothing to do with the code under test.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     lint {
         // Lint runs on release builds again (the AGP default) and its
         // errors fail the build. The old configuration disabled both
@@ -164,11 +172,15 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.26.2")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
-    // SEC-002: the feed-URL policy is plain Kotlin with no Android types, so
-    // its tests run on the JVM (`./gradlew :app:testDebugUnitTest`) instead of
-    // needing an emulator. JUnit 4 because that is what AGP's default test
-    // runtime expects out of the box.
+    // SEC-002 / SEC-003: the feed-URL policy and the Atom parser are plain
+    // Kotlin, so their tests run on the JVM (`./gradlew :app:testDebugUnitTest`)
+    // instead of needing an emulator. JUnit 4 because that is what AGP's default
+    // test runtime expects out of the box.
     testImplementation("junit:junit:4.13.2")
+    // `android.util.Xml.newPullParser()` is a stub outside an Android runtime.
+    // kxml2 is the parser Android ships a fork of, so the tests parse with the
+    // same implementation family the device uses.
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
 }
 
 chaquopy {
