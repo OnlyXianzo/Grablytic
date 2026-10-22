@@ -53,10 +53,30 @@ jobs:
         run: flutter pub get
 
       - name: Run static analysis
-        run: flutter analyze
+        run: |
+          set +e
+          flutter analyze 2>&1 | tee analyze.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            grep -E "error|warning|info" analyze.log | head -20 | while IFS= read -r line; do
+              echo "::error title=analyze::$line"
+            done
+            exit "$status"
+          fi
 
       - name: Run widget & unit tests with coverage
-        run: flutter test --coverage
+        run: |
+          set +e
+          flutter test --coverage 2>&1 | tee test.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            grep -E "\[E\]|Expected:|Actual:|error" test.log | head -20 | while IFS= read -r line; do
+              echo "::error title=test::$line"
+            done
+            exit "$status"
+          fi
 
       - name: Enforce Flutter project-lib coverage floor
         # --max-unloaded 0 plus the allow-list: one file, `engine_service.dart`,
