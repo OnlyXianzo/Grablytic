@@ -63,5 +63,7 @@ def test_the_ruff_gate_covers_the_tool_directory():
     assert step, "the Ruff gate step is gone from verify.yml"
     src = re.search(r"src: \"([^\"]+)\"", workflow[step.start() : step.end() + 200])
     assert src, "the Ruff gate has no src"
-    assert "tool/" in src.group(1).split(), f"Ruff src does not cover tool/: {src.group(1)}"
+    assert "tool/" in src.group(1).split(), (
+        f"Ruff src does not cover tool/: {src.group(1)}"
+    )
     assert "W605" in step.group(1), "the Ruff selection lost W605"
