@@ -265,7 +265,7 @@ every push and PR:
 | Linux desktop build | installs the GTK/ninja build deps, builds the release bundle, asserts the `grablytic` executable exists |
 | Python Engine Tests | pytest on 3.11 and 3.12, 75% engine coverage floor, Ruff `F` gate, broad-catch ratchet, version-literal gate, `pytest tool/tests` |
 | Android API 35 | release lint, then a real emulator run through Flutter → Chaquopy → Python |
-| Docs Link Check | every relative link in `README.md` and `docs/` resolves |
+| Docs Link Check | every relative link in the root Markdown files and `docs/` resolves, anchors included |
 | Secret Scan | gitleaks over the full history |
 | Workflow YAML Lint | every workflow file parses and carries the required keys |
 

@@ -3,8 +3,9 @@
 
 Usage: python3 tool/check_doc_links.py  (run from repo root)
 
-Every relative `](...)` target in README.md and docs/**/*.md must resolve to a
-file on disk, and every `#fragment` must match a heading in the target file.
+Every relative `](...)` target in the root Markdown files (README, SECURITY,
+DESIGN, AGENTS) and in docs/**/*.md must resolve to a file on disk, and every
+`#fragment` must match a heading in the target file.
 That second half matters because a renamed heading leaves a link that still
 "works" as a path and silently jumps nowhere.
 
@@ -111,7 +112,14 @@ def anchors_of(path: str) -> set:
 def main() -> int:
     offenders = []
     acknowledged = []
-    md_files = ["README.md"]
+    # Root files too. GitHub shows SECURITY.md on the Security tab, and a
+    # link there rotted unnoticed while the checker only looked at README
+    # and docs/.
+    md_files = [
+        fn
+        for fn in ("README.md", "SECURITY.md", "CONTRIBUTING.md", "AGENTS.md", "DESIGN.md")
+        if os.path.exists(os.path.join(ROOT, fn))
+    ]
     docs = os.path.join(ROOT, "docs")
     for dirpath, _, files in os.walk(docs):
         for fn in sorted(files):
