@@ -243,6 +243,9 @@ jobs:
             echo "::warning::Android lint aborted inside the lint tool while analysing the Kotlin DSL build scripts (Cannot find a KaModule for the VirtualFile). That is a lint bug, not a finding in this project, so the release lint could not produce a report."
             exit 0
           fi
+          tail -80 "$RUNNER_TEMP/lint-release.log" | while IFS= read -r line; do
+            echo "::error title=lintlog::$line"
+          done
           echo "::error::Android lint failed with status $lint_status and produced no report."
           exit "$lint_status"
 
